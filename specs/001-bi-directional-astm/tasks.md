@@ -24,10 +24,10 @@
 
 **Purpose**: Prepare development environment and verify existing infrastructure
 
-- [ ] T001 Clone ASTM Mock Server for testing: `git clone https://github.com/DIGI-UW/astm-mock-server.git tools/astm-mock-server`
-- [ ] T002 [P] Verify mock server runs: `cd tools/astm-mock-server && pip install -r requirements.txt && python server.py --help`
-- [ ] T003 [P] Verify bridge builds: `mvn clean compile` in repository root
-- [ ] T004 Create test resources directory: `src/test/resources/`
+- [x] T001 Clone ASTM Mock Server for testing: `git clone https://github.com/DIGI-UW/astm-mock-server.git tools/astm-mock-server`
+- [x] T002 [P] Verify mock server runs: `cd tools/astm-mock-server && pip install -r requirements.txt && python server.py --help`
+- [x] T003 [P] Verify bridge builds: `mvn clean compile` in repository root
+- [x] T004 Create test resources directory: `src/test/resources/`
 
 ---
 
@@ -37,9 +37,9 @@
 
 **⚠️ CRITICAL**: No user story implementation can begin until this phase is complete
 
-- [ ] T005 Update `ASTMHandler` interface to add `sourceIp` parameter with default method for backward compatibility in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMHandler.java`
-- [ ] T006 Update `ASTMHandlerService.handle()` signature to accept `sourceIp` and add backward-compatible overload in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMHandlerService.java`
-- [ ] T007 Verify all `ASTMHandler` implementations compile with updated interface (may need signature updates)
+- [x] T005 Update `ASTMHandler` interface to add `sourceIp` parameter with default method for backward compatibility in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMHandler.java`
+- [x] T006 Update `ASTMHandlerService.handle()` signature to accept `sourceIp` and add backward-compatible overload in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMHandlerService.java`
+- [x] T007 Verify all `ASTMHandler` implementations compile with updated interface (may need signature updates)
 
 **Checkpoint**: Handler interface ready - user story implementation can now begin
 
@@ -55,24 +55,24 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T008 [P] [US1] Unit test for source IP extraction (IPv4) in `src/test/java/org/itech/ahb/astm/handling/SourceIPExtractionTest.java`
-- [ ] T008b [P] [US1] Unit test for source IP extraction (IPv6 addresses like `2001:db8::1`, `::1`) in `src/test/java/org/itech/ahb/astm/handling/SourceIPExtractionTest.java` (FR-003)
-- [ ] T009 [P] [US1] Unit test for `X-Source-Analyzer-IP` header addition in `src/test/java/org/itech/ahb/http/handling/HTTPForwardingHeaderTest.java`
-- [ ] T010 [P] [US1] Integration test for multi-analyzer header verification in `src/test/java/org/itech/ahb/integration/MultiAnalyzerIPTest.java`
+- [x] T008 [P] [US1] Unit test for source IP extraction (IPv4) in `src/test/java/org/itech/ahb/astm/handling/SourceIPExtractionTest.java`
+- [x] T008b [P] [US1] Unit test for source IP extraction (IPv6 addresses like `2001:db8::1`, `::1`) in `src/test/java/org/itech/ahb/astm/handling/SourceIPExtractionTest.java` (FR-003)
+- [x] T009 [P] [US1] Unit test for `X-Source-Analyzer-IP` header addition in `src/test/java/org/itech/ahb/http/handling/HTTPForwardingHeaderTest.java`
+- [x] T010 [P] [US1] Integration test for multi-analyzer header verification in `src/test/java/org/itech/ahb/integration/MultiAnalyzerIPTest.java`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Add `extractSourceIp(Socket socket)` private method in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMReceiveThread.java`
-- [ ] T012 [US1] Call `extractSourceIp()` in `run()` method and pass to `astmHandlerService.handle()` in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMReceiveThread.java`
-- [ ] T013 [US1] Add `X-Source-Analyzer-IP` header to HTTP request builder when `sourceIp` is not null in `astm-http-lib/src/main/java/org/itech/ahb/lib/http/handling/DefaultForwardingASTMToHTTPHandler.java`
-- [ ] T014 [US1] Add debug logging for IP extraction success and header addition in `DefaultForwardingASTMToHTTPHandler.java`
-- [ ] T015 [US1] Add warning logging when IP extraction fails (null socket, closed socket, null address) in `ASTMReceiveThread.java`
-- [ ] T016 [US1] Verify tests pass: `mvn test -Dtest=SourceIPExtractionTest,HTTPForwardingHeaderTest,MultiAnalyzerIPTest` (includes IPv4 and IPv6 tests)
+- [x] T011 [US1] Add `extractSourceIp(Socket socket)` private method in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMReceiveThread.java`
+- [x] T012 [US1] Call `extractSourceIp()` in `run()` method and pass to `astmHandlerService.handle()` in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/ASTMReceiveThread.java`
+- [x] T013 [US1] Add `X-Source-Analyzer-IP` header to HTTP request builder when `sourceIp` is not null in `astm-http-lib/src/main/java/org/itech/ahb/lib/astm/handling/DefaultForwardingASTMToHTTPHandler.java`
+- [x] T014 [US1] Add debug logging for IP extraction success and header addition in `DefaultForwardingASTMToHTTPHandler.java`
+- [x] T015 [US1] Add warning logging when IP extraction fails (null socket, closed socket, null address) in `ASTMReceiveThread.java`
+- [x] T016 [US1] Verify tests pass: `mvn test -Dtest=SourceIPExtractionTest,HTTPForwardingHeaderTest,MultiAnalyzerIPTest` (includes IPv4 and IPv6 tests)
 
 ### Manual Verification for User Story 1
 
-- [ ] T017 [US1] Test with mock server push mode: verify `X-Source-Analyzer-IP` header appears in bridge logs (see `quickstart.md`)
-- [ ] T018 [US1] Test with 3 mock server instances: verify each message has correct source IP (TS-002 from spec)
+- [x] T017 [US1] Test with mock server push mode: verify `X-Source-Analyzer-IP` header appears in bridge logs (see `quickstart.md`)
+- [x] T018 [US1] Test with 3 mock server instances: verify each message has correct source IP (TS-002 from spec)
 
 **Checkpoint**: User Story 1 complete - analyzer messages include source IP header. MVP deliverable! ✅
 
@@ -88,21 +88,21 @@
 
 > **NOTE: Write verification tests, ensure they PASS (verifying existing functionality)**
 
-- [ ] T019 [P] [US2] Integration test for query response flow (TS-003) in `src/test/java/org/itech/ahb/integration/QueryFlowTest.java`
-- [ ] T019b [P] [US2] Integration test for retry logic: verify retries when analyzer temporarily unavailable (FR-010) in `src/test/java/org/itech/ahb/integration/RetryLogicTest.java`
-- [ ] T020 [P] [US2] Integration test for line contention handling (TS-004) in `src/test/java/org/itech/ahb/integration/LineContentionTest.java`
-- [ ] T021 [P] [US2] Integration test for protocol version selection (TS-005) in `src/test/java/org/itech/ahb/integration/ProtocolVersionTest.java`
+- [x] T019 [P] [US2] Integration test for query response flow (TS-003) in `src/test/java/org/itech/ahb/integration/QueryFlowTest.java`
+- [x] T019b [P] [US2] Integration test for retry logic: verify retries when analyzer temporarily unavailable (FR-010) in `src/test/java/org/itech/ahb/integration/RetryLogicTest.java`
+- [x] T020 [P] [US2] Integration test for line contention handling (TS-004) in `src/test/java/org/itech/ahb/integration/LineContentionTest.java`
+- [x] T021 [P] [US2] Integration test for protocol version selection (TS-005) in `src/test/java/org/itech/ahb/integration/ProtocolVersionTest.java`
 
 ### Verification for User Story 2
 
-- [ ] T022 [US2] Verify `forwardAddress` and `forwardPort` parameters work in `src/main/java/org/itech/ahb/controller/HTTPListenController.java` (read-only verification)
-- [ ] T023 [US2] Verify line contention handling in `astm-http-lib/src/main/java/org/itech/ahb/lib/http/handling/DefaultForwardingHTTPToASTMHandler.java` (read-only verification)
-- [ ] T024 [US2] Verify tests pass: `mvn test -Dtest=QueryFlowTest,RetryLogicTest,LineContentionTest,ProtocolVersionTest`
+- [x] T022 [US2] Verify `forwardAddress` and `forwardPort` parameters work in `src/main/java/org/itech/ahb/controller/HTTPListenController.java` (read-only verification)
+- [x] T023 [US2] Verify line contention handling in `astm-http-lib/src/main/java/org/itech/ahb/lib/http/handling/DefaultForwardingHTTPToASTMHandler.java` (read-only verification)
+- [x] T024 [US2] Verify tests pass: `mvn test -Dtest=QueryFlowTest,RetryLogicTest,LineContentionTest,ProtocolVersionTest`
 
 ### Manual Verification for User Story 2
 
-- [ ] T025 [US2] Test query flow with mock server: `curl -X POST "http://localhost:8443/?forwardAddress=localhost&forwardPort=5000" -d "H|\^&|||"` (see `quickstart.md`)
-- [ ] T026 [US2] Test line contention with mock server: `python test_communication.py --host localhost --port 12001 --mode query`
+- [x] T025 [US2] Test query flow with mock server: `curl -X POST "http://localhost:8443/?forwardAddress=localhost&forwardPort=5000" -d "H|\^&|||"` (see `quickstart.md`)
+- [x] T026 [US2] Test line contention with mock server: `python test_communication.py --host localhost --port 12001 --mode query`
 
 **Checkpoint**: User Story 2 complete - query flow verified and tested
 
@@ -116,17 +116,17 @@
 
 ### Documentation Tasks for User Story 3
 
-- [ ] T027 [P] [US3] Add architecture overview section to `README.md` with bi-directional flow diagram
-- [ ] T028 [P] [US3] Add multi-analyzer setup instructions to `README.md`
-- [ ] T029 [P] [US3] Add `X-Source-Analyzer-IP` header documentation to `README.md`
-- [ ] T030 [P] [US3] Add troubleshooting section to `README.md`
-- [ ] T031 [P] [US3] Update configuration examples in `README.md` with correct Spring Boot property paths
-- [ ] T032 [US3] Verify `configuration.yml` structure matches Spring Boot property names per FR-011
+- [x] T027 [P] [US3] Add architecture overview section to `README.md` with bi-directional flow diagram
+- [x] T028 [P] [US3] Add multi-analyzer setup instructions to `README.md`
+- [x] T029 [P] [US3] Add `X-Source-Analyzer-IP` header documentation to `README.md`
+- [x] T030 [P] [US3] Add troubleshooting section to `README.md`
+- [x] T031 [P] [US3] Update configuration examples in `README.md` with correct Spring Boot property paths
+- [x] T032 [US3] Verify `configuration.yml` structure matches Spring Boot property names per FR-011
 
 ### Verification for User Story 3
 
-- [ ] T033 [US3] Validate README by following it to deploy fresh bridge instance (SC-003: under 30 minutes)
-- [ ] T034 [US3] Validate all configuration examples work without modification
+- [x] T033 [US3] Validate README by following it to deploy fresh bridge instance (SC-003: under 30 minutes)
+- [x] T034 [US3] Validate all configuration examples work without modification
 
 **Checkpoint**: User Story 3 complete - documentation enables self-service deployment
 
@@ -136,12 +136,12 @@
 
 **Purpose**: Final improvements affecting multiple user stories
 
-- [ ] T035 [P] Run full test suite: `mvn test`
-- [ ] T036 [P] Verify no regressions in existing functionality
-- [ ] T037 [P] Update `docs/BRIDGE_DOCUMENTATION_IMPROVEMENTS.md` to mark completed items
-- [ ] T038 Create Docker Compose test environment file `docker-compose.test.yml` per `quickstart.md`
-- [ ] T039 Run `quickstart.md` validation end-to-end
-- [ ] T040 Update spec status to "Complete" in `/specs/001-bi-directional-astm/spec.md`
+- [x] T035 [P] Run full test suite: `mvn test`
+- [x] T036 [P] Verify no regressions in existing functionality
+- [x] T037 [P] Update `docs/BRIDGE_DOCUMENTATION_IMPROVEMENTS.md` to mark completed items
+- [x] T038 Create Docker Compose test environment file `docker-compose.test.yml` per `quickstart.md`
+- [x] T039 Run `quickstart.md` validation end-to-end
+- [x] T040 Update spec status to "Complete" in `/specs/001-bi-directional-astm/spec.md`
 
 ---
 

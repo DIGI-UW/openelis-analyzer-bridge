@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-bi-directional-astm`  
 **Created**: 2025-12-03  
-**Status**: Draft  
+**Status**: Complete  
 **Input**: Deep analysis of ASTM bridge documentation and OpenELIS integration requirements  
 **Test Tool**: [ASTM Mock Server](https://github.com/DIGI-UW/astm-mock-server)
 
@@ -156,6 +156,8 @@ in a test environment and verifying all features work as documented.
 
 - **FR-010**: Bridge MUST apply retry logic for failed outbound connections to analyzers, 
   with configurable retry count and delay.
+  - **Note**: Current implementation uses hardcoded values (max 3 retries, 10s delay). 
+    Configuration via YAML is a future enhancement.
 
 #### Configuration and Documentation (P3)
 
