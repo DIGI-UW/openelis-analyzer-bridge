@@ -8,3 +8,10 @@ server:
 logging:
   level:
     root: INFO
+
+# MLLP Server Configuration (HL7 v2.x transport)
+org.itech.ahb.mllp:
+  enabled: ${MLLP_ENABLED:false}
+  port: ${MLLP_PORT:2575}
+  timeout: ${MLLP_TIMEOUT:30000}
+  max-message-size: ${MLLP_MAX_MESSAGE_SIZE:1048576}
