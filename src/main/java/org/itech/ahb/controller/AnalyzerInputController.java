@@ -24,10 +24,17 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>
  * Protocol detection:
  * <ul>
- *   <li>application/hl7-v2 or x-hl7-v2 → HL7</li>
- *   <li>text/csv → CSV</li>
+ *   <li>application/hl7-v2 or x-application/hl7-v2 → HL7</li>
+ *   <li>text/csv or application/csv → CSV</li>
+ *   <li>application/x-astm or text containing "astm" → ASTM</li>
  *   <li>text/plain or other → auto-detect from message content</li>
  * </ul>
+ * </p>
+ * <p>
+ * Security note: This endpoint accepts any Content-Type to accommodate diverse analyzer
+ * implementations. Authentication and rate limiting should be configured at the
+ * infrastructure level (API gateway, firewall). IP headers (X-Forwarded-For, X-Real-IP)
+ * are trusted for logging; do not use for security decisions without proxy validation.
  * </p>
  */
 @RestController
@@ -54,7 +61,7 @@ public class AnalyzerInputController {
      * @param request the HTTP servlet request (for extracting remote address)
      * @return ResponseEntity with envelope details or error message
      */
-    @PostMapping(consumes = MediaType.ALL_VALUE)
+    @PostMapping(consumes = MediaType.ALL_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<InputResponse> receiveAnalyzerMessage(
             @RequestBody(required = false) String requestBody,
             @RequestHeader(value = "Content-Type", required = false) String contentType,
@@ -65,48 +72,54 @@ public class AnalyzerInputController {
         log.trace("Content-Type: {}", contentType);
         log.trace("X-Forwarded-For: {}", xForwardedFor);
 
-        // Validate request body
-        if (requestBody == null || requestBody.trim().isEmpty()) {
-            log.warn("Received empty request body");
-            return ResponseEntity.badRequest()
-                    .body(new InputResponse(false, "Request body is required", null, null, null));
-        }
-
-        // Extract source IP
+        // Extract source IP early for inclusion in all responses
         String sourceIp = extractSourceIp(xForwardedFor, request);
         log.debug("Source IP: {}", sourceIp);
 
-        // Detect protocol
-        Protocol protocol = detectProtocol(contentType, requestBody);
-        log.debug("Detected protocol: {}", protocol);
-
-        // Reject UNKNOWN protocol
-        if (protocol == Protocol.UNKNOWN) {
-            log.warn("Unable to detect protocol for message from {}", sourceIp);
-            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .body(new InputResponse(false, "Unable to detect message protocol", sourceIp, null, null));
+        // Validate request body
+        if (requestBody == null || requestBody.trim().isEmpty()) {
+            log.warn("Received empty request body from {}", sourceIp);
+            return ResponseEntity.badRequest()
+                    .body(new InputResponse(false, "Request body is required", sourceIp, null, null));
         }
 
-        // Create MessageEnvelope
-        MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(protocol)
-                .transport(Transport.HTTP)
-                .sourceId(sourceIp)
-                .rawMessage(requestBody)
-                .build();
+        try {
+            // Detect protocol
+            Protocol protocol = detectProtocol(contentType, requestBody);
+            log.debug("Detected protocol: {}", protocol);
 
-        log.info("Created MessageEnvelope: protocol={}, transport={}, sourceId={}",
-                envelope.getProtocol(), envelope.getTransport(), envelope.getSourceId());
+            // Reject UNKNOWN protocol
+            if (protocol == Protocol.UNKNOWN) {
+                log.warn("Unable to detect protocol for message from {}", sourceIp);
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                        .body(new InputResponse(false, "Unable to detect message protocol", sourceIp, null, null));
+            }
 
-        // TODO: In M7, this will be forwarded to the MessageNormalizer for routing
-        // For now, we just return success with envelope details
+            // Create MessageEnvelope
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                    .protocol(protocol)
+                    .transport(Transport.HTTP)
+                    .sourceId(sourceIp)
+                    .rawMessage(requestBody)
+                    .build();
 
-        return ResponseEntity.ok(new InputResponse(
-                true,
-                "Message received successfully",
-                sourceIp,
-                protocol.name(),
-                envelope.getReceivedAt().toString()));
+            log.info("Created MessageEnvelope: protocol={}, transport={}, sourceId={}",
+                    envelope.getProtocol(), envelope.getTransport(), envelope.getSourceId());
+
+            // TODO: Forward to MessageNormalizer for routing once M7 integration is available
+            // For now, return success with envelope details
+
+            return ResponseEntity.ok(new InputResponse(
+                    true,
+                    "Message received successfully",
+                    sourceIp,
+                    protocol.name(),
+                    envelope.getReceivedAt().toString()));
+        } catch (RuntimeException e) {
+            log.error("Failed to process analyzer message from {}", sourceIp, e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new InputResponse(false, "Invalid or malformed analyzer message", sourceIp, null, null));
+        }
     }
 
     /**
@@ -118,6 +131,9 @@ public class AnalyzerInputController {
      *   <li>X-Real-IP header (common proxy header)</li>
      *   <li>Remote address from the servlet request</li>
      * </ol>
+     * </p>
+     * <p>
+     * Note: These headers can be spoofed. Use for logging only, not security decisions.
      * </p>
      *
      * @param xForwardedFor the X-Forwarded-For header value
@@ -153,7 +169,8 @@ public class AnalyzerInputController {
      * Content-Type hints:
      * <ul>
      *   <li>application/hl7-v2, x-application/hl7-v2 → HL7</li>
-     *   <li>text/csv → CSV</li>
+     *   <li>text/csv, application/csv → CSV</li>
+     *   <li>application/x-astm, text/astm → ASTM</li>
      *   <li>text/plain, other, or missing → auto-detect from content</li>
      * </ul>
      * </p>
@@ -195,6 +212,12 @@ public class AnalyzerInputController {
 
     /**
      * Response DTO for the input endpoint.
+     *
+     * @param success whether the message was accepted
+     * @param message human-readable status message
+     * @param sourceIp the detected source IP address
+     * @param protocol the detected protocol (ASTM, HL7, CSV)
+     * @param receivedAt timestamp when the message was received
      */
     public record InputResponse(
             boolean success,
@@ -202,5 +225,14 @@ public class AnalyzerInputController {
             String sourceIp,
             String protocol,
             String receivedAt) {
+
+        /**
+         * Returns the processing status for the request.
+         *
+         * @return "ACCEPTED" if message was validated and queued, "REJECTED" otherwise
+         */
+        public String status() {
+            return success ? "ACCEPTED" : "REJECTED";
+        }
     }
 }
