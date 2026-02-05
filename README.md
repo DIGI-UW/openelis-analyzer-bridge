@@ -1,47 +1,135 @@
-# ASTM-HTTP Bridge
+# OpenELIS Analyzer Bridge
 
-A bi-directional protocol translator for medical laboratory systems, enabling communication between ASTM/TCP analyzers and HTTP-based Laboratory Information Systems (LIS) like OpenELIS.
+Middleware that receives analyzer messages over multiple **protocols/transports** and forwards them to **OpenELIS via HTTP**.
 
-## Architecture Overview
+This repository was previously named **ASTM-HTTP Bridge**. For **backward compatibility**, some technical identifiers (Maven `artifactId`, jar filename, and some Docker/Compose service naming) still use `astm-http-bridge`.
 
-The ASTM-HTTP Bridge provides two-way communication:
+## Scope
+
+### Today (stable on `develop`)
+
+- **ASTM over TCP** (CLSI LIS1-A / ASTM E1381-95 variants) → HTTP forward to OpenELIS
+- **HTTP → ASTM** forwarding (OpenELIS queries / host-driven messaging) with `forwardAddress`/`forwardPort`
+- **Source analyzer IP propagation** via `X-Source-Analyzer-IP`
+
+### Universal Bridge transports (status depends on commit)
+
+Additional transports are being added as part of the “Universal Bridge” scope expansion. Depending on which commit/branch you are running, these may or may not be present. Historical entry points:
+
+- **HL7 v2.x over MLLP** (PR `#7`)
+- **File watcher transport** (CSV/HL7/ASTM routing) (PR `#8`)
+- **Serial/RS232 transport** (ASTM + HL7 framing) (PR `#9`)
+
+## Architecture overview
 
 ```
-┌─────────────────────┐                    ┌─────────────────────┐
-│   Medical Analyzer  │                    │      OpenELIS       │
-│   (ASTM/TCP)        │                    │      (HTTP)         │
-└─────────┬───────────┘                    └──────────┬──────────┘
-          │                                           │
-          │ ASTM Protocol                   HTTP POST │
-          │ (TCP Port 12001)            (Port 8443)   │
-          ▼                                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      ASTM-HTTP Bridge                           │
-│                                                                 │
-│  ┌─────────────────┐              ┌─────────────────┐          │
-│  │ ASTM Listener   │  ───────────►│ HTTP Forwarder  │          │
-│  │ (Analyzer→LIS)  │              │ + X-Source-IP   │          │
-│  └─────────────────┘              └─────────────────┘          │
-│                                                                 │
-│  ┌─────────────────┐              ┌─────────────────┐          │
-│  │ HTTP Listener   │  ◄───────────│ ASTM Forwarder  │          │
-│  │ (LIS→Analyzer)  │              │ + Query Support │          │
-│  └─────────────────┘              └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────┘
+Analyzer(s)                              OpenELIS
+───────────                              ────────
+ASTM/TCP   ─┐
+HL7/MLLP   ─┼─> [OpenELIS Analyzer Bridge] ──HTTP POST──> /api/OpenELIS-Global/analyzer/{astm|hl7|csv}
+RS232/Serial┤
+Files (CSV)─┘
+
+OpenELIS ──HTTP POST──> [Bridge] ──TCP──> Analyzer (ASTM host query / outbound)
 ```
 
-### Communication Flows
+### Protocol vs transport
 
-1. **Analyzer → OpenELIS** (Results submission)
-   - Analyzer sends ASTM message to bridge (TCP port 12001)
-   - Bridge extracts analyzer's IP address from socket
-   - Bridge forwards message to OpenELIS via HTTP POST
-   - HTTP request includes `X-Source-Analyzer-IP` header with analyzer's IP
+- **Protocol**: message format (ASTM, HL7 v2, CSV)
+- **Transport**: how the message arrives (TCP, MLLP, Serial, File, HTTP)
 
-2. **OpenELIS → Analyzer** (Query/Configuration)
-   - OpenELIS sends HTTP POST to bridge with `forwardAddress` and `forwardPort` parameters
-   - Bridge establishes ASTM connection to specified analyzer
-   - Bridge forwards the query and returns analyzer's response
+## Quick start
+
+### Using Docker
+
+```bash
+git clone https://github.com/DIGI-UW/openelis-analyzer-bridge.git
+cd openelis-analyzer-bridge
+
+docker compose up -d --build
+docker logs --follow astm-http-bridge
+```
+
+### Building from source
+
+```bash
+cd astm-http-lib
+mvn clean install
+
+cd ..
+mvn clean package
+
+java -jar target/astm-http-bridge-*.jar --spring.config.location=configuration.yml
+```
+
+## Configuration
+
+Runtime configuration is read from `configuration.yml` in the repo root (mounted into the container at `/app/configuration.yml` in Compose).
+
+```yaml
+org:
+  itech:
+    ahb:
+      # Where to forward inbound analyzer messages (OpenELIS endpoint)
+      forward-http-server:
+        uri: https://openelis.example.org:8443/api/OpenELIS-Global/analyzer/astm
+        # username: admin
+        # password: ${OPENELIS_PASSWORD}
+
+      # ASTM listener ports (analyzers connect here)
+      listen-astm-server:
+        port: 12001
+        establishment-timeout-seconds: 15
+        receive-timeout-seconds: 30
+      listen-astm-e1381-95-server:
+        port: 12011
+
+      # Default outbound target (OpenELIS → analyzer). Can be overridden per-request.
+      forward-astm-server:
+        host-name: analyzer.local
+        port: 5000
+
+server:
+  port: 8443
+```
+
+## HTTP behavior (ASTM stable path)
+
+### Analyzer → OpenELIS (results submission)
+
+- Bridge receives ASTM over TCP.
+- Bridge forwards the raw message to the configured OpenELIS endpoint as `text/plain`.
+- Bridge adds `X-Source-Analyzer-IP` when source IP can be extracted from the TCP socket.
+
+### OpenELIS → Analyzer (query/config)
+
+OpenELIS can send raw ASTM payloads to the bridge HTTP listener and specify the target analyzer:
+
+```bash
+curl -X POST "http://bridge:8443/?forwardAddress=192.168.1.10&forwardPort=5000" \
+  -H "Content-Type: text/plain" \
+  -d "H|\\^&|||"
+```
+
+## Testing
+
+- Unit tests:
+
+```bash
+mvn test
+```
+
+- Docker-based integration tests / mock analyzers: see `docker-compose.test.yml` and `scripts/integration-test.sh`.
+
+## Docs
+
+- `docs/SCOPE_AND_NAMING.md`: canonical naming + compatibility policy
+- `docs/ASTM_MESSAGE_PROCESSING_FLOW.md`: ASTM flow details (OpenELIS-side processing)
+- `specs/001-bi-directional-astm/`: historical spec for the `X-Source-Analyzer-IP` header contract
+
+## License / Contributing
+
+TBD (add project license and contribution guidelines).
 
 ## Quick Start
 

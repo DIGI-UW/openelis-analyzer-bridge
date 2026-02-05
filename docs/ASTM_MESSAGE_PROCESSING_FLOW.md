@@ -4,6 +4,8 @@
 **Feature**: 004-astm-analyzer-mapping  
 **Purpose**: Document how ASTM analyzer messages are received, processed, and stored in OpenELIS
 
+> **Scope note (2026-02)**: This document is **ASTM-specific** (it traces what happens after the bridge forwards an ASTM message into OpenELIS). The repository has expanded into the **OpenELIS Analyzer Bridge** with additional protocols/transports; those follow similar “bridge → HTTP → OpenELIS processing” patterns but use different endpoints/parsers. For high-level context, see the repository `README.md`.
+
 ---
 
 ## Overview

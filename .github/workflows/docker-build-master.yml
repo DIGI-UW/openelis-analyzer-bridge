@@ -16,6 +16,7 @@ env:
   REGISTRY: docker.io
   IMAGE_NAME: ${{ github.repository }}
   DOCKER_NAME: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+  LEGACY_DOCKER_NAME: ${{ vars.DOCKERHUB_USERNAME }}/astm-http-bridge
 
 jobs:
   test:
@@ -69,7 +70,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_NAME }}
+          images: |
+            ${{ env.DOCKER_NAME }}
+            ${{ env.LEGACY_DOCKER_NAME }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -79,6 +82,7 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.tags }}
             ${{ env.DOCKER_NAME }}:latest
+            ${{ env.LEGACY_DOCKER_NAME }}:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ env.DOCKER_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.DOCKER_NAME }}:buildcache,mode=max

@@ -12,8 +12,9 @@
 	<groupId>org.itech</groupId>
 	<artifactId>astm-http-bridge</artifactId>
 	<version>2.3.5</version>
-	<name>astm-http-bridge</name>
-	<description>Translates astm to http and vice versa</description>
+	<name>openelis-analyzer-bridge</name>
+	<description>OpenELIS Analyzer Bridge: transports/protocol mediation (ASTM, HL7/MLLP, serial, file) forwarding analyzer messages to OpenELIS via HTTP.</description>
+	<url>https://github.com/DIGI-UW/openelis-analyzer-bridge</url>
 	<properties>
 		<java.version>21</java.version>
 	</properties>
