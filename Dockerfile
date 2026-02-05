@@ -8,21 +8,21 @@ FROM maven:3.9.7-eclipse-temurin-21-jammy AS build
 ADD ./astm-http-lib/pom.xml /build/astm-http-lib/pom.xml
 WORKDIR /build/astm-http-lib
 RUN --mount=type=cache,target=/root/.m2,sharing=locked \
-  mvn dependency:go-offline 
+  mvn dependency:go-offline
 ADD ./astm-http-lib/src /build/astm-http-lib/src
-RUN --mount=type=cache,target=/root/.m2,sharing=locked \
-  mvn clean install -DskipTests
 
 ##
 # Build Project
 #
 WORKDIR /build
 ADD ./pom.xml /build/pom.xml
-# Note: Skipping dependency:go-offline to avoid issues with local library dependencies
-# Dependencies will be downloaded during the build step below
 ADD ./src /build/src
+
+# Build library and main project in a single RUN to share .m2 repository
+# This ensures the locally installed library is available for the main project build
 RUN --mount=type=cache,target=/root/.m2,sharing=locked \
-  mvn clean package -DskipTests
+  cd /build/astm-http-lib && mvn clean install -DskipTests && \
+  cd /build && mvn clean package -DskipTests
 
 ##
 # Run Stage
