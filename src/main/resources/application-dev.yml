@@ -16,3 +16,24 @@ org.itech.ahb.mllp:
   port: 2575
   timeout: 30000
   max-message-size: 1048576
+
+# Serial port configuration (for development/testing)
+org.itech.ahb.serial:
+  enabled: false  # Set to true to enable serial port listening
+  message-timeout-ms: 30000
+  reconnect-interval-ms: 5000
+  max-reconnect-attempts: -1  # -1 for unlimited
+  ports: []
+  # Example configuration (uncomment and modify as needed):
+  #   - path: /dev/ttyUSB0
+  #     name: "Analyzer 1"
+  #     baud-rate: 9600
+  #     data-bits: 8
+  #     stop-bits: 1
+  #     parity: NONE
+  #     protocol: AUTO      # AUTO, ASTM, or HL7
+  #     flow-control: NONE  # NONE, RTS_CTS, or XON_XOFF
+  #     analyzer-id: ANALYZER-001
+  #     read-timeout-ms: 1000
+  #     rts-enabled: true
+  #     dtr-enabled: true

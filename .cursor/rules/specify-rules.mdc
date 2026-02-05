@@ -1,10 +1,15 @@
-# astm-http-bridge Development Guidelines
+# openelis-analyzer-bridge Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-12-03
+Auto-generated from all feature plans. Last updated: 2026-02-05
 
 ## Active Technologies
 
-- Java 21 + astm-http-lib, Spring Boot Actuator, Spring Boot Web (001-bi-directional-astm)
+- Java 21 + Spring Boot 3.3.x
+- `astm-http-lib` (ASTM protocol implementation)
+- Spring Boot Actuator + Spring Boot Web
+- HAPI HL7 v2 (dependency present; transport layer in progress via PRs)
+- jSerialComm (dependency present; transport layer in progress via PRs)
+- Apache Commons CSV (dependency present; transport layer in progress via PRs)
 
 ## Project Structure
 
@@ -23,7 +28,8 @@ Java 21: Follow standard conventions
 
 ## Recent Changes
 
-- 001-bi-directional-astm: Added Java 21 + astm-http-lib, Spring Boot Actuator, Spring Boot Web
+- 001-bi-directional-astm: Bi-directional ASTM workflow + `X-Source-Analyzer-IP` header support
+- universal-bridge-foundation: Protocol/transport foundation types (Protocol/Transport/Envelope)
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

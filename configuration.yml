@@ -1,25 +1,80 @@
+# ============================================================================
 # ASTM-HTTP Bridge Configuration
-# This file configures the bridge for bi-directional ASTM communication
+# ============================================================================
+# This file configures the bridge for bi-directional analyzer communication.
+#
+# CONFIGURATION FORMATS:
+#
+# 1. NEW FORMAT (bridge.*) - Universal Bridge v2.0+ [RECOMMENDED]
+#    Unified structure for all transport types (ASTM, MLLP, Serial, File, HTTP).
+#    Used by: File watcher (M4), future MLLP/Serial listeners.
+#    Properties: bridge.file.*, bridge.openelis.*, bridge.mllp.* (future)
+#
+# 2. LEGACY FORMAT (org.itech.ahb.*) - Original Bridge v1.x [DEPRECATED]
+#    Used by: Existing ASTM TCP listener only.
+#    Properties: org.itech.ahb.forward-http-server.*, etc.
+#    Will be migrated to new format in future releases.
+#
+# PRECEDENCE: New format takes precedence when both are defined.
+# MIGRATION: New deployments should use bridge.* format exclusively.
+# ============================================================================
 
-# Forward HTTP Server - Where ASTM messages from analyzers are forwarded
+# Bridge Configuration (NEW FORMAT - v2.0+)
+bridge:
+  # OpenELIS connection settings
+  openelis:
+    url: http://localhost:8443
+    connectTimeoutSeconds: 30
+    readTimeoutSeconds: 30
+    retry:
+      maxAttempts: 3
+      backoffMs: 1000
+
+  # File watcher configuration (M4)
+  file:
+    enabled: false  # Set to true to enable file watcher
+    watchDirectories:
+      - /mnt/analyzer-import/quantstudio
+      - /mnt/analyzer-import/hain
+    archiveDirectory: /mnt/analyzer-archive
+    errorDirectory: /mnt/analyzer-error
+    pollIntervalMs: 5000
+    fileStabilityTimeoutMs: 3000
+    maxRetryAttempts: 3
+    retryDelayMs: 1000
+    filePatterns:
+      - "*.csv"
+      - "*.hl7"
+      - "*.txt"
+    # Per-analyzer CSV column mappings (optional)
+    csvMappings:
+      QUANTSTUDIO-001:
+        sampleId: 0
+        testCode: 1
+        result: 2
+        units: 3
+        timestamp: 4
+        flags: 5
+
+# Legacy configuration (still supported)
 org:
   itech:
     ahb:
       forward-http-server:
         # URI of the OpenELIS ASTM endpoint (or http-capture for testing)
         uri: http://localhost:8080/api/analyzer/astm
-      
+
       # ASTM LIS1-A Server - Listens for ASTM messages from analyzers
       listen-astm-server:
         port: 12001
         # Timeouts per CLSI LIS1-A specification
         establishment-timeout-seconds: 15
         receive-timeout-seconds: 30
-      
+
       # ASTM E1381-95 Server - Listens for legacy ASTM messages
       listen-astm-e1381-95-server:
         port: 12011
-      
+
       # Forward ASTM Server - Default target for sending messages TO analyzers
       forward-astm-server:
         host-name: localhost

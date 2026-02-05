@@ -6,6 +6,8 @@
 - `tools/astm-http-bridge` (v2.3.5) - DIGI-UW/astm-http-bridge submodule
 - `tools/astm-mock-server` - Python mock analyzer server
 
+> **Scope note (2026-02)**: This report covers **ASTM-only** compatibility and bi-directional workflows. The repository has since expanded into the **OpenELIS Analyzer Bridge** to support additional protocols/transports (HL7/MLLP, Serial/RS232, File). Keep this doc as ASTM historical context; for the broadened scope, see the repository `README.md`.
+
 ---
 
 ## Executive Summary
