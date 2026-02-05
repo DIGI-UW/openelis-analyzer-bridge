@@ -1,0 +1,47 @@
+# ASTM-HTTP Bridge Configuration
+# This file configures the bridge for bi-directional ASTM communication
+
+# Forward HTTP Server - Where ASTM messages from analyzers are forwarded
+org:
+  itech:
+    ahb:
+      forward-http-server:
+        # URI of the OpenELIS ASTM endpoint (or http-capture for testing)
+        uri: http://localhost:8080/api/analyzer/astm
+      
+      # ASTM LIS1-A Server - Listens for ASTM messages from analyzers
+      listen-astm-server:
+        port: 12001
+        # Timeouts per CLSI LIS1-A specification
+        establishment-timeout-seconds: 15
+        receive-timeout-seconds: 30
+      
+      # ASTM E1381-95 Server - Listens for legacy ASTM messages
+      listen-astm-e1381-95-server:
+        port: 12011
+      
+      # Forward ASTM Server - Default target for sending messages TO analyzers
+      forward-astm-server:
+        host-name: localhost
+        port: 5000
+
+# Server configuration
+server:
+  port: 8443
+
+# Logging configuration
+logging:
+  level:
+    root: INFO
+    org.itech: DEBUG
+
+# Actuator endpoints for health monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+

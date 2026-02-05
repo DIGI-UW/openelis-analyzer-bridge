@@ -1,0 +1,29 @@
+# astm-http-bridge Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2025-12-03
+
+## Active Technologies
+
+- Java 21 + astm-http-lib, Spring Boot Actuator, Spring Boot Web (001-bi-directional-astm)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+# Add commands for Java 21
+
+## Code Style
+
+Java 21: Follow standard conventions
+
+## Recent Changes
+
+- 001-bi-directional-astm: Added Java 21 + astm-http-lib, Spring Boot Actuator, Spring Boot Web
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->

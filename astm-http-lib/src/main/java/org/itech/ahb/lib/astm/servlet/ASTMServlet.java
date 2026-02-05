@@ -1,7 +1,9 @@
 package org.itech.ahb.lib.astm.servlet;
 
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.lib.astm.communication.GeneralASTMCommunicator;
 import org.itech.ahb.lib.astm.handling.ASTMHandlerService;
@@ -33,6 +35,8 @@ public class ASTMServlet {
   private final ASTMInterpreterFactory astmInterpreterFactory;
   private final int listenPort;
   private final ASTMVersion astmVersion;
+  private final AtomicBoolean running = new AtomicBoolean(false);
+  private volatile ServerSocket serverSocket;
 
   /**
    * Constructs a new ASTMServlet with the specified handler service, interpreter factory, listen port, and ASTM version.
@@ -60,22 +64,77 @@ public class ASTMServlet {
    * Will spawn a new thread for every incoming connection.
    */
   public void listen() {
-    try (ServerSocket serverSocket = new ServerSocket(listenPort)) {
+    if (running.getAndSet(true)) {
+      log.warn("Server is already running on port " + listenPort);
+      return;
+    }
+    
+    try {
+      serverSocket = new ServerSocket(listenPort);
       log.info(
         "Server is listening on port " + listenPort + " for ASTM transmission protocol: " + astmVersion + " messages"
       );
       // Communication Endpoint for the client and server.
-      while (true) {
-        // Waiting for socket connection
-        Socket s = serverSocket.accept();
-        new ASTMReceiveThread(
-          new GeneralASTMCommunicator(astmInterpreterFactory, s, astmVersion),
-          s,
-          astmHandlerService
-        ).start();
+      while (running.get()) {
+        try {
+          // Waiting for socket connection
+          Socket s = serverSocket.accept();
+          new ASTMReceiveThread(
+            new GeneralASTMCommunicator(astmInterpreterFactory, s, astmVersion),
+            s,
+            astmHandlerService
+          ).start();
+        } catch (IOException e) {
+          if (running.get()) {
+            log.error("Error accepting connection on port " + listenPort, e);
+          }
+          // If not running, this is expected due to socket close during shutdown
+        }
       }
     } catch (Exception e) {
       log.error("an exception caused the astm server to shut down", e);
+    } finally {
+      running.set(false);
+      closeServerSocket();
+    }
+  }
+
+  /**
+   * Stops the servlet from listening for ASTM messages.
+   * This will close the server socket and cause listen() to exit.
+   */
+  public void stop() {
+    log.info("Stopping ASTM server on port " + listenPort);
+    running.set(false);
+    closeServerSocket();
+  }
+
+  /**
+   * Checks if the servlet is currently running.
+   *
+   * @return true if the servlet is running, false otherwise.
+   */
+  public boolean isRunning() {
+    return running.get();
+  }
+
+  /**
+   * Gets the port this servlet is listening on.
+   *
+   * @return the listen port
+   */
+  public int getListenPort() {
+    return listenPort;
+  }
+
+  private void closeServerSocket() {
+    if (serverSocket != null && !serverSocket.isClosed()) {
+      try {
+        serverSocket.close();
+        log.debug("Closed server socket on port " + listenPort);
+      } catch (IOException e) {
+        log.error("Error closing server socket on port " + listenPort, e);
+      }
     }
   }
 }

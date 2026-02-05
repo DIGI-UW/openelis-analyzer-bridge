@@ -1,6 +1,7 @@
 package org.itech.ahb.lib.astm.handling;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import lombok.extern.slf4j.Slf4j;
@@ -69,10 +70,15 @@ public class ASTMReceiveThread extends Thread {
 
   /**
    * Runs the thread to receive and handle ASTM messages.
+   * Extracts the source analyzer IP from the socket and passes it to the handler service.
    */
   @Override
   public void run() {
     log.trace("thread started to receive ASTM message");
+    
+    // Extract source IP from socket before processing (FR-001)
+    String sourceIp = extractSourceIp(socket);
+    
     try {
       ASTMMessage message;
       try {
@@ -91,7 +97,9 @@ public class ASTMReceiveThread extends Thread {
         log.error("there was a timeout in the receive protocol at the socket level, abandoning message", e);
         return;
       }
-      ASTMHandlerServiceResponse response = astmHandlerService.handle(message);
+      
+      // Pass source IP to handler service so it can be included in HTTP headers
+      ASTMHandlerServiceResponse response = astmHandlerService.handle(message, sourceIp);
       if (response.getResponses() == null || response.getResponses().size() == 0) {
         log.error("message was unhandled");
       } else {
@@ -114,6 +122,34 @@ public class ASTMReceiveThread extends Thread {
           log.error("error occurred closing socket with astm sender", e);
         }
       }
+    }
+  }
+
+  /**
+   * Extracts the source IP address from the socket's remote address.
+   * This method handles both IPv4 and IPv6 addresses (FR-003).
+   * If extraction fails, logs a warning and returns null for graceful degradation (FR-004).
+   *
+   * @param socket the socket to extract the IP from
+   * @return the source IP address as a string, or null if extraction fails
+   */
+  private String extractSourceIp(Socket socket) {
+    try {
+      if (socket == null || socket.isClosed()) {
+        log.warn("Cannot extract source IP: socket is null or closed");
+        return null;
+      }
+      InetSocketAddress address = (InetSocketAddress) socket.getRemoteSocketAddress();
+      if (address == null) {
+        log.warn("Cannot extract source IP: remote address is null");
+        return null;
+      }
+      String ip = address.getAddress().getHostAddress();
+      log.debug("Extracted source IP: {}", ip);
+      return ip;
+    } catch (Exception e) {
+      log.warn("Error extracting source IP from socket", e);
+      return null;
     }
   }
 

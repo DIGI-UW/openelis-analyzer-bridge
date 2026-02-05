@@ -1,0 +1,4 @@
+# Enable auto-env through sdkman_auto_env=true in ~/.sdkman/etc/config
+# Required Java version for astm-http-bridge
+java=21.0.5-tem
+

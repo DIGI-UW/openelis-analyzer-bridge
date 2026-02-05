@@ -21,6 +21,9 @@ import org.itech.ahb.lib.util.LogUtil;
 @Slf4j
 public class DefaultForwardingASTMToHTTPHandler implements ASTMHandler {
 
+  /** HTTP header name for the source analyzer IP address */
+  public static final String SOURCE_IP_HEADER = "X-Source-Analyzer-IP";
+
   private final URI forwardingUri;
   private final String username;
   private final char[] password;
@@ -51,18 +54,27 @@ public class DefaultForwardingASTMToHTTPHandler implements ASTMHandler {
 
   /**
    * Handles the given ASTM message by forwarding it over HTTP(S) to the URI endpoint that was passed into this class.
+   * Includes the source analyzer IP in the X-Source-Analyzer-IP header when available.
    *
    * @param message the ASTM message.
+   * @param sourceIp the IP address of the analyzer that sent the message (may be null).
    * @return the ASTM handler response.
    */
   @Override
-  public ASTMHandlerResponse handle(ASTMMessage message) {
+  public ASTMHandlerResponse handle(ASTMMessage message, String sourceIp) {
     HttpClient client = HttpClient.newHttpClient();
     log.debug("creating request to forward to http server at " + forwardingUri.toString());
     log.trace("request: '" + message.getMessage() + "'");
     Builder requestBuilder = HttpRequest.newBuilder() //
       .uri(forwardingUri) //
       .POST(HttpRequest.BodyPublishers.ofString(message.getMessage())); //
+
+    // Add source analyzer IP header if available (FR-002)
+    if (sourceIp != null && !sourceIp.isEmpty()) {
+      requestBuilder.header(SOURCE_IP_HEADER, sourceIp);
+      log.debug("added {} header with value: {}", SOURCE_IP_HEADER, sourceIp);
+    }
+
     if (!(username == null || username.equals(""))) {
       log.debug("using username '" + username + "' to forward to http server at " + forwardingUri.toString());
       requestBuilder.header(

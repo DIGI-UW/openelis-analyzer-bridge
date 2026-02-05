@@ -1,0 +1,22 @@
+# Test configuration for Spring Boot tests
+org:
+  itech:
+    ahb:
+      forward-http-server:
+        uri: http://localhost:8080/test
+      listen-astm-server:
+        port: 12001
+      listen-astm-e1381-95-server:
+        port: 12011
+      forward-astm-server:
+        host-name: localhost
+        port: 5000
+
+server:
+  port: 0  # Random port for tests
+
+logging:
+  level:
+    root: WARN
+    org.itech: INFO
+

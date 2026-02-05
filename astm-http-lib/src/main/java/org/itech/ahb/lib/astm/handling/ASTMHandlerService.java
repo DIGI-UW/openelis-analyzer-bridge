@@ -45,23 +45,46 @@ public class ASTMHandlerService {
   }
 
   /**
-   * Calls the relevant handler(s) for the given ASTM message.
+   * Calls the relevant handler(s) for the given ASTM message without source IP information.
    *
    * @param message the ASTM message.
    * @return the ASTM handler service response.
    */
   public ASTMHandlerServiceResponse handle(ASTMMessage message) {
-    return handle(message, Set.of());
+    return handle(message, (String) null);
   }
 
   /**
-   * Handles the given ASTM message with the provided handler information.
+   * Calls the relevant handler(s) for the given ASTM message with source IP information.
+   *
+   * @param message the ASTM message.
+   * @param sourceIp the IP address of the analyzer that sent the message (may be null).
+   * @return the ASTM handler service response.
+   */
+  public ASTMHandlerServiceResponse handle(ASTMMessage message, String sourceIp) {
+    return handle(message, sourceIp, Set.of());
+  }
+
+  /**
+   * Handles the given ASTM message with the provided handler information (backward compatibility).
    *
    * @param message the ASTM message.
    * @param handlersInfos the set of handler information.
    * @return the ASTM handler service response.
    */
   public ASTMHandlerServiceResponse handle(ASTMMessage message, Set<ASTMForwardingHandlerInfo> handlersInfos) {
+    return handle(message, null, handlersInfos);
+  }
+
+  /**
+   * Handles the given ASTM message with the provided source IP and handler information.
+   *
+   * @param message the ASTM message.
+   * @param sourceIp the IP address of the analyzer that sent the message (may be null).
+   * @param handlersInfos the set of handler information.
+   * @return the ASTM handler service response.
+   */
+  public ASTMHandlerServiceResponse handle(ASTMMessage message, String sourceIp, Set<ASTMForwardingHandlerInfo> handlersInfos) {
     Map<ASTMMessage, List<ASTMHandler>> messageHandlersMap = new HashMap<>();
     log.debug("finding a handler for astm message: " + message.hashCode());
     log.trace("message: '" + message.getMessage() + "'");
@@ -87,7 +110,7 @@ public class ASTMHandlerService {
     for (Entry<ASTMMessage, List<ASTMHandler>> matchingMessageHandlers : messageHandlersMap.entrySet()) {
       for (ASTMHandler messageHandler : matchingMessageHandlers.getValue()) {
         try {
-          ASTMHandlerResponse handleResponse = messageHandler.handle(matchingMessageHandlers.getKey());
+          ASTMHandlerResponse handleResponse = messageHandler.handle(matchingMessageHandlers.getKey(), sourceIp);
           log.debug("'" + messageHandler.getName() + "' finished handling http astm message");
           handleResponses.add(handleResponse);
         } catch (RuntimeException e) {
