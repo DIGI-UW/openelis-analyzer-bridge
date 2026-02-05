@@ -31,7 +31,7 @@ FROM eclipse-temurin:21-jre-alpine
 
 RUN addgroup -S astm --gid 9257 && adduser -S astm -s /bin/bash -u 9257 -G astm
 RUN mkdir /app
-RUN chown astm:astm /app 
+RUN chown astm:astm /app
 
 
 #Deploy the jar into java image
@@ -44,9 +44,8 @@ RUN chown astm:astm /app/docker-entrypoint.sh; \
   chown astm:astm /app/astm-http-bridge.jar; \
   chmod 770 /app/astm-http-bridge.jar; \
   chown astm:astm /app/healthcheck.sh; \
-  chmod 770 /app/healthcheck.sh; 
+  chmod 770 /app/healthcheck.sh;
 
 USER astm:astm
 
 ENTRYPOINT [ "/app/docker-entrypoint.sh" ]
-
