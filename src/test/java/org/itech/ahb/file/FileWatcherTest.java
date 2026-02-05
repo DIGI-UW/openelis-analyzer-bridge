@@ -11,7 +11,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -152,7 +151,7 @@ class FileWatcherTest {
     }
 
     @Test
-    void testCalculateFileHash() throws IOException, NoSuchAlgorithmException {
+    void testCalculateFileHash() throws IOException {
         // Arrange
         Path testFile = watchDir.resolve("test.csv");
         Files.writeString(testFile, CSV_CONTENT);
@@ -168,7 +167,7 @@ class FileWatcherTest {
     }
 
     @Test
-    void testCalculateFileHash_DifferentContent() throws IOException, NoSuchAlgorithmException {
+    void testCalculateFileHash_DifferentContent() throws IOException {
         // Arrange
         Path file1 = watchDir.resolve("test1.csv");
         Path file2 = watchDir.resolve("test2.csv");

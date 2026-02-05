@@ -70,7 +70,7 @@ public class FileConfig {
      * File patterns to watch (glob patterns)
      * Default: *.csv, *.hl7, *.txt
      */
-    private List<String> filePatterns = List.of("*.csv", "*.hl7", "*.txt");
+    private List<String> filePatterns = new ArrayList<>(List.of("*.csv", "*.hl7", "*.txt"));
 
     /**
      * Per-analyzer CSV column mappings

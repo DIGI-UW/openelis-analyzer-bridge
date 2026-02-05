@@ -29,7 +29,7 @@ import java.nio.file.Path;
  * <p>
  * NOTE: This component currently forwards directly to OpenELIS endpoints.
  * When M7 (Message Normalizer) is implemented, refactor to route through
- * the centraliz normalizer for consistent audit logging and analyzer identification.
+ * the centralized normalizer for consistent audit logging and analyzer identification.
  * </p>
  */
 @Component
@@ -40,6 +40,9 @@ public class FileMessageHandler {
     private final CSVParser csvParser;
     private final RestTemplate restTemplate;
     private final FileConfig fileConfig;
+
+    // Maximum file size to process (10MB default)
+    private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
     @Value("${bridge.openelis.url:http://localhost:8443}")
     private String openelisBaseUrl;
@@ -64,6 +67,16 @@ public class FileMessageHandler {
      */
     public MessageEnvelope processFile(Path filePath, String analyzerId) throws IOException, FileProcessingException {
         log.info("Processing file: {} for analyzer: {}", filePath, analyzerId);
+
+        // Check file size before reading
+        long fileSize = Files.size(filePath);
+        if (fileSize > MAX_FILE_SIZE_BYTES) {
+            log.warn("File size ({} bytes) exceeds maximum ({}), processing anyway with caution",
+                    fileSize, MAX_FILE_SIZE_BYTES);
+        }
+        if (fileSize == 0) {
+            throw new FileProcessingException("File is empty: " + filePath);
+        }
 
         // Read file content
         String content = Files.readString(filePath);

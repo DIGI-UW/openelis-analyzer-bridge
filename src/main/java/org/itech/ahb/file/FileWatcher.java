@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
@@ -244,25 +245,33 @@ public class FileWatcher {
 
         // Find files that haven't been modified for stability timeout period
         fileStabilityTracker.forEach((path, metadata) -> {
-            long timeSinceModification = now.toEpochMilli() - metadata.lastModified.toEpochMilli();
+            try {
+                // Always read fresh file attributes to avoid race conditions
+                BasicFileAttributes attrs = Files.readAttributes(path, BasicFileAttributes.class);
+                Instant currentLastModified = attrs.lastModifiedTime().toInstant();
+                long currentSize = attrs.size();
 
-            if (timeSinceModification >= fileConfig.getFileStabilityTimeoutMs()) {
-                // Double-check file size hasn't changed
-                try {
-                    BasicFileAttributes attrs = Files.readAttributes(path, BasicFileAttributes.class);
-                    if (attrs.size() == metadata.size) {
+                long timeSinceModification = now.toEpochMilli() - currentLastModified.toEpochMilli();
+
+                if (timeSinceModification >= fileConfig.getFileStabilityTimeoutMs()) {
+                    // File is stable - both timestamp and size match metadata snapshot
+                    if (currentSize == metadata.size && currentLastModified.equals(metadata.lastModified)) {
                         stableFiles.add(path);
                     } else {
-                        // Size changed, update metadata
-                        fileStabilityTracker.put(path, new FileMetadata(
-                                attrs.lastModifiedTime().toInstant(),
-                                attrs.size()
-                        ));
+                        // File changed since last check, update metadata
+                        fileStabilityTracker.put(path, new FileMetadata(currentLastModified, currentSize));
+                        log.debug("File still changing: {}, updated metadata", path.getFileName());
                     }
-                } catch (IOException e) {
-                    log.warn("File disappeared before processing: {}", path);
-                    fileStabilityTracker.remove(path);
+                } else {
+                    // Not yet stable, refresh metadata to track latest state
+                    if (!currentLastModified.equals(metadata.lastModified) || currentSize != metadata.size) {
+                        fileStabilityTracker.put(path, new FileMetadata(currentLastModified, currentSize));
+                        log.debug("File modified during stability check: {}", path.getFileName());
+                    }
                 }
+            } catch (IOException e) {
+                log.warn("File disappeared before processing: {}", path);
+                fileStabilityTracker.remove(path);
             }
         });
 
@@ -349,18 +358,28 @@ public class FileWatcher {
     }
 
     /**
-     * Archive successfully processed file.
+     * Archive successfully processed file with path traversal protection.
+     * <p>
+     * If archiving fails, moves file to error directory to prevent reprocessing.
+     * </p>
      */
     private void archiveFile(Path filePath, String subdirectory) {
         try {
-            Path archiveDir = Paths.get(fileConfig.getArchiveDirectory());
+            Path archiveDir = Paths.get(fileConfig.getArchiveDirectory()).normalize();
             if (subdirectory != null) {
-                archiveDir = archiveDir.resolve(subdirectory);
+                archiveDir = archiveDir.resolve(subdirectory).normalize();
             }
 
             Files.createDirectories(archiveDir);
 
-            Path targetPath = archiveDir.resolve(filePath.getFileName());
+            Path targetPath = archiveDir.resolve(filePath.getFileName()).normalize();
+
+            // Validate path stays within archive directory (prevent traversal attacks)
+            if (!targetPath.startsWith(archiveDir)) {
+                log.error("Path traversal detected in archive operation: {}", targetPath);
+                moveToErrorDirectory(filePath, new SecurityException("Path traversal detected"));
+                return;
+            }
 
             // Handle name collision
             int counter = 1;
@@ -369,54 +388,122 @@ public class FileWatcher {
                 int dotIndex = filename.lastIndexOf('.');
                 String name = (dotIndex > 0) ? filename.substring(0, dotIndex) : filename;
                 String ext = (dotIndex > 0) ? filename.substring(dotIndex) : "";
-                targetPath = archiveDir.resolve(name + "_" + counter + ext);
+                targetPath = archiveDir.resolve(name + "_" + counter + ext).normalize();
                 counter++;
+
+                if (counter > 1000) {
+                    log.error("Too many archive collisions for file: {}", filePath.getFileName());
+                    break;
+                }
             }
 
             Files.move(filePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
             log.debug("Archived file to: {}", targetPath);
 
         } catch (IOException e) {
-            log.error("Failed to archive file: {}", filePath, e);
+            log.error("Failed to archive file: {}, moving to error directory", filePath, e);
+            moveToErrorDirectory(filePath, e);
         }
     }
 
     /**
-     * Move failed file to error directory.
+     * Move failed file to error directory with path traversal protection.
+     * <p>
+     * If moving to error directory fails, uses fail-safe mechanism to mark file
+     * as permanently failed in the watch directory to prevent infinite retries.
+     * </p>
      */
     private void moveToErrorDirectory(Path filePath, Exception error) {
         try {
-            Path errorDir = Paths.get(fileConfig.getErrorDirectory());
+            Path errorDir = Paths.get(fileConfig.getErrorDirectory()).normalize();
             Files.createDirectories(errorDir);
 
-            Path targetPath = errorDir.resolve(filePath.getFileName());
+            Path targetPath = errorDir.resolve(filePath.getFileName()).normalize();
+
+            // Validate path stays within error directory (prevent traversal attacks)
+            if (!targetPath.startsWith(errorDir)) {
+                log.error("Path traversal detected in error directory operation: {}", targetPath);
+                markAsFailedInPlace(filePath, error);
+                return;
+            }
 
             // Write error details to accompanying .error file
-            Path errorDetailsPath = Paths.get(targetPath + ".error");
+            Path errorDetailsPath = errorDir.resolve(filePath.getFileName() + ".error").normalize();
             Files.writeString(errorDetailsPath, "Error: " + error.getMessage() + "\n" +
-                    "Timestamp: " + Instant.now() + "\n");
+                    "Timestamp: " + Instant.now() + "\n" +
+                    "OriginalPath: " + filePath + "\n");
 
             Files.move(filePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
             log.info("Moved failed file to error directory: {}", targetPath);
 
         } catch (IOException e) {
-            log.error("Failed to move file to error directory: {}", filePath, e);
+            log.error("Failed to move file to error directory: {}, using fail-safe", filePath, e);
+            markAsFailedInPlace(filePath, error);
         }
     }
 
     /**
-     * Calculate SHA-256 hash of file content.
+     * Fail-safe: Mark file as permanently failed in watch directory.
+     * <p>
+     * Used when moving to error directory fails. Prevents infinite retry loops.
+     * </p>
      */
-    private String calculateFileHash(Path filePath) throws IOException, NoSuchAlgorithmException {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] fileBytes = Files.readAllBytes(filePath);
-        byte[] hashBytes = digest.digest(fileBytes);
+    private void markAsFailedInPlace(Path filePath, Exception error) {
+        try {
+            String failedFileName = filePath.getFileName().toString() + ".failed";
+            Path failedPath = filePath.resolveSibling(failedFileName);
 
-        StringBuilder sb = new StringBuilder();
-        for (byte b : hashBytes) {
-            sb.append(String.format("%02x", b));
+            // Write error details
+            Files.writeString(failedPath, "FAILED PROCESSING\n" +
+                    "Error: " + error.getMessage() + "\n" +
+                    "Timestamp: " + Instant.now() + "\n" +
+                    "OriginalFile: " + filePath.getFileName() + "\n");
+
+            // Try to delete original file
+            Files.deleteIfExists(filePath);
+            log.warn("Marked file as permanently failed in watch directory: {}", failedPath);
+
+        } catch (IOException ex) {
+            log.error("Failed to mark file as permanently failed: {}, manual intervention required", filePath, ex);
         }
-        return sb.toString();
+    }
+
+    /**
+     * Calculate SHA-256 hash of file content using streaming to handle large files.
+     * <p>
+     * SHA-256 is guaranteed to be available in all Java implementations,
+     * so NoSuchAlgorithmException should never occur. If it does, it indicates
+     * a broken JVM and the watcher should fail fast.
+     * </p>
+     */
+    private String calculateFileHash(Path filePath) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+            // Stream file in chunks to avoid loading entire file into memory
+            try (InputStream fis = Files.newInputStream(filePath)) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = fis.read(buffer)) != -1) {
+                    digest.update(buffer, 0, bytesRead);
+                }
+            }
+
+            byte[] hashBytes = digest.digest();
+
+            // Convert to hex string
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+
+        } catch (NoSuchAlgorithmException e) {
+            // This should never happen for SHA-256 (part of Java spec)
+            // If it does, it's a fatal JVM error
+            log.error("FATAL: SHA-256 algorithm not available - broken JVM", e);
+            throw new IllegalStateException("SHA-256 not available - JVM is broken", e);
+        }
     }
 
     /**
@@ -484,8 +571,8 @@ public class FileWatcher {
 
         String filename = filePath.getFileName().toString();
 
-        // Skip hidden files and error detail files
-        if (filename.startsWith(".") || filename.endsWith(".error")) {
+        // Skip hidden files, error detail files, and permanently failed files
+        if (filename.startsWith(".") || filename.endsWith(".error") || filename.endsWith(".failed")) {
             return false;
         }
 
