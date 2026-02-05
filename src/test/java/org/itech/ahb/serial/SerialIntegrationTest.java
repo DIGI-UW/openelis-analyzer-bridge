@@ -363,7 +363,11 @@ class SerialIntegrationTest {
             SerialPortConfig portConfig = new SerialPortConfig();
             portConfig.setPath("/dev/nonexistent_port_xyz123");
             portConfig.setBaudRate(9600);
-            config.getPorts().add(portConfig);
+
+            // Use setPorts instead of getPorts().add() due to defensive copy
+            List<SerialPortConfig> ports = new ArrayList<>();
+            ports.add(portConfig);
+            config.setPorts(ports);
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort));
