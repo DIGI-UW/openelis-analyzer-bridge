@@ -1,6 +1,7 @@
 package org.itech.ahb.serial;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -98,11 +99,12 @@ public class SerialFrameBuffer {
 
     /**
      * Appends incoming data to the buffer and processes it.
+     * Thread-safe: synchronized to handle concurrent access from serial port callbacks and timeout checkers.
      *
      * @param data the incoming data bytes
      * @return list of response bytes to send back (ACK, NAK, etc.)
      */
-    public List<byte[]> appendData(byte[] data) {
+    public synchronized List<byte[]> appendData(byte[] data) {
         if (data == null || data.length == 0) {
             return pendingResponses;
         }
@@ -248,11 +250,11 @@ public class SerialFrameBuffer {
             return false;
         }
 
-        // Extract text
-        String text = new String(frameData, 1, textEnd - 1);
+        // Extract text (ASTM uses ISO-8859-1 encoding)
+        String text = new String(frameData, 1, textEnd - 1, StandardCharsets.ISO_8859_1);
 
         // Verify checksum
-        String receivedChecksum = new String(frameData, textEnd + 1, 2);
+        String receivedChecksum = new String(frameData, textEnd + 1, 2, StandardCharsets.ISO_8859_1);
         String calculatedChecksum = calculateChecksum(frameNumber, text, terminator);
 
         if (!receivedChecksum.equalsIgnoreCase(calculatedChecksum)) {
@@ -277,7 +279,8 @@ public class SerialFrameBuffer {
     private String calculateChecksum(int frameNumber, String text, byte terminator) {
         int checksum = 0;
         checksum += (byte) Character.forDigit(frameNumber, 10);
-        for (byte b : text.getBytes()) {
+        // Use ISO-8859-1 for ASTM protocol consistency
+        for (byte b : text.getBytes(StandardCharsets.ISO_8859_1)) {
             checksum += b;
         }
         checksum += terminator;
@@ -318,14 +321,15 @@ public class SerialFrameBuffer {
                 buffer.flip();
                 byte[] messageData = new byte[buffer.remaining() - 1]; // Exclude FS
                 buffer.get(messageData);
-                String message = new String(messageData);
+                // HL7 typically uses UTF-8 encoding
+                String message = new String(messageData, StandardCharsets.UTF_8);
                 completedMessages.add(message);
                 log.info("HL7: Complete message received ({} bytes)", message.length());
                 buffer.clear();
 
                 // Send ACK for HL7
                 String ack = generateHL7ACK(message);
-                pendingResponses.add(wrapMLLP(ack.getBytes()));
+                pendingResponses.add(wrapMLLP(ack.getBytes(StandardCharsets.UTF_8)));
             } else {
                 buffer.put(b);
             }
@@ -339,17 +343,23 @@ public class SerialFrameBuffer {
      */
     private String generateHL7ACK(String originalMessage) {
         // Extract message control ID from MSH-10
-        String messageControlId = "ACK";
+        String messageControlId = "UNKNOWN";
         try {
             String[] segments = originalMessage.split("\r");
             if (segments.length > 0 && segments[0].startsWith("MSH|")) {
                 String[] fields = segments[0].split("\\|");
-                if (fields.length > 9) {
+                if (fields.length > 9 && fields[9] != null && !fields[9].isEmpty()) {
                     messageControlId = fields[9];
+                } else {
+                    log.warn("HL7 message missing control ID (MSH-10), using 'UNKNOWN' in ACK");
                 }
+            } else {
+                log.warn("Invalid HL7 message format (no MSH segment), using 'UNKNOWN' in ACK");
             }
-        } catch (Exception e) {
-            log.warn("Could not extract message control ID for ACK", e);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            log.warn("Error parsing HL7 MSH segment for control ID: {}", e.getMessage());
+        } catch (NullPointerException e) {
+            log.warn("Null field in HL7 MSH segment: {}", e.getMessage());
         }
 
         return String.format(
@@ -376,10 +386,11 @@ public class SerialFrameBuffer {
 
     /**
      * Gets and clears the list of completed messages.
+     * Thread-safe: synchronized to prevent concurrent access.
      *
      * @return list of complete messages
      */
-    public List<String> getCompletedMessages() {
+    public synchronized List<String> getCompletedMessages() {
         List<String> messages = new ArrayList<>(completedMessages);
         completedMessages.clear();
         return messages;
@@ -387,16 +398,18 @@ public class SerialFrameBuffer {
 
     /**
      * Checks if there are any completed messages waiting.
+     * Thread-safe: synchronized for consistency.
      */
-    public boolean hasCompletedMessages() {
+    public synchronized boolean hasCompletedMessages() {
         return !completedMessages.isEmpty();
     }
 
     /**
      * Clears the buffer and resets state.
+     * Thread-safe: synchronized to prevent concurrent modification.
      * Call this on timeout or error.
      */
-    public void reset() {
+    public synchronized void reset() {
         buffer.clear();
         completedMessages.clear();
         pendingResponses.clear();
@@ -420,16 +433,18 @@ public class SerialFrameBuffer {
         if (buffer.remaining() < additionalBytes) {
             int newCapacity = Math.min(buffer.capacity() * 2, MAX_CAPACITY);
             if (newCapacity <= buffer.capacity()) {
-                // At max capacity - attempt to salvage complete messages before discarding
-                List<String> salvaged = getCompletedMessages();
+                // At max capacity - salvage complete messages before discarding incomplete data
+                List<String> salvaged = new ArrayList<>(completedMessages);
                 int discardedBytes = buffer.position();
                 log.warn("SerialFrameBuffer at max capacity ({}MB), discarding {} bytes of incomplete message. " +
-                        "Salvaged {} complete messages before clearing.",
+                        "Preserved {} complete messages.",
                     MAX_CAPACITY / 1024 / 1024, discardedBytes, salvaged.size());
-                // Reset state
+                // Reset state but preserve completed messages
                 currentASTMMessage.setLength(0);
                 astmState = ASTMState.IDLE;
                 buffer.clear();
+                completedMessages.clear();
+                completedMessages.addAll(salvaged);
                 return;
             }
             ByteBuffer newBuffer = ByteBuffer.allocate(newCapacity);

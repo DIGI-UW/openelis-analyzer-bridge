@@ -68,10 +68,8 @@ public class SerialPortListener {
      */
     @PostConstruct
     public void start() {
-        if (!config.isEnabled()) {
-            log.info("Serial port listener is disabled");
-            return;
-        }
+        // @ConditionalOnProperty ensures this bean only loads when enabled=true
+        // No need to check isEnabled() here
 
         List<SerialPortConfig> ports = config.getPorts();
         if (ports == null || ports.isEmpty()) {
@@ -151,32 +149,45 @@ public class SerialPortListener {
                 portConfig.getStopBits()
             );
 
-            // Create frame buffer
-            SerialFrameBuffer frameBuffer = new SerialFrameBuffer(portConfig.getProtocol());
+            try {
+                // Create frame buffer
+                SerialFrameBuffer frameBuffer = new SerialFrameBuffer(portConfig.getProtocol());
 
-            // Create managed port
-            ManagedSerialPort managedPort = new ManagedSerialPort(
-                serialPort,
-                portConfig,
-                frameBuffer,
-                0
-            );
-            managedPorts.put(portPath, managedPort);
+                // Create managed port
+                ManagedSerialPort managedPort = new ManagedSerialPort(
+                    serialPort,
+                    portConfig,
+                    frameBuffer,
+                    0
+                );
+                managedPorts.put(portPath, managedPort);
 
-            // Add data listener
-            serialPort.addDataListener(new SerialPortDataListener() {
-                @Override
-                public int getListeningEvents() {
-                    return SerialPort.LISTENING_EVENT_DATA_AVAILABLE;
-                }
-
-                @Override
-                public void serialEvent(SerialPortEvent event) {
-                    if (event.getEventType() == SerialPort.LISTENING_EVENT_DATA_AVAILABLE) {
-                        handleDataAvailable(portPath);
+                // Add data listener
+                serialPort.addDataListener(new SerialPortDataListener() {
+                    @Override
+                    public int getListeningEvents() {
+                        return SerialPort.LISTENING_EVENT_DATA_AVAILABLE;
                     }
+
+                    @Override
+                    public void serialEvent(SerialPortEvent event) {
+                        if (event.getEventType() == SerialPort.LISTENING_EVENT_DATA_AVAILABLE) {
+                            handleDataAvailable(portPath);
+                        }
+                    }
+                });
+
+            } catch (Exception e) {
+                // Clean up port if listener setup fails
+                log.error("Error setting up serial port listener for {}: {}", portPath, e.getMessage(), e);
+                try {
+                    serialPort.closePort();
+                } catch (Exception closeEx) {
+                    log.warn("Error closing port after setup failure: {}", closeEx.getMessage());
                 }
-            });
+                scheduleReconnect(portConfig);
+                return;
+            }
 
         } catch (Exception e) {
             log.error("Error opening serial port {}: {}", portPath, e.getMessage(), e);
@@ -259,9 +270,12 @@ public class SerialPortListener {
      */
     private void handlePortError(String portPath) {
         ManagedSerialPort managedPort = managedPorts.remove(portPath);
-        if (managedPort != null) {
+        if (managedPort != null && managedPort.serialPort != null) {
             try {
+                // Remove listeners before closing port
+                managedPort.serialPort.removeDataListener();
                 managedPort.serialPort.closePort();
+                log.debug("Closed port {} after error", portPath);
             } catch (Exception e) {
                 log.warn("Error closing port {}: {}", portPath, e.getMessage());
             }
@@ -365,6 +379,8 @@ public class SerialPortListener {
         for (ManagedSerialPort managedPort : managedPorts.values()) {
             if (managedPort.serialPort != null && managedPort.serialPort.isOpen()) {
                 try {
+                    // Remove data listener before closing port
+                    managedPort.serialPort.removeDataListener();
                     managedPort.serialPort.closePort();
                     log.info("Closed serial port {}", managedPort.portConfig.getPath());
                 } catch (Exception e) {
