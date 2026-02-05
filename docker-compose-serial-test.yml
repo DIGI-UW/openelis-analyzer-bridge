@@ -1,0 +1,199 @@
+# Docker Compose for Serial Port Integration Tests
+#
+# This configuration creates a test environment with:
+# 1. Virtual serial port pair using socat
+# 2. ASTM mock server connected to one end
+# 3. Bridge application connected to the other end
+# 4. Mock OpenELIS HTTP endpoint
+#
+# Usage:
+#   docker compose -f docker-compose-serial-test.yml up -d
+#   docker compose -f docker-compose-serial-test.yml logs -f
+#   docker compose -f docker-compose-serial-test.yml down
+#
+# For running integration tests:
+#   docker compose -f docker-compose-serial-test.yml run --rm test-runner
+
+services:
+  # Creates virtual serial port pair: /dev/pts/X and /dev/pts/Y
+  # Symlinked to /tmp/vserial0 and /tmp/vserial1
+  socat:
+    image: alpine/socat:latest
+    command: >
+      -d -d
+      pty,raw,echo=0,link=/shared/vserial0
+      pty,raw,echo=0,link=/shared/vserial1
+    volumes:
+      - serial-shared:/shared
+    healthcheck:
+      test: ["CMD", "test", "-e", "/shared/vserial0"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  # Mock HTTP server to receive forwarded messages (simulates OpenELIS)
+  mock-openelis:
+    image: python:3.11-slim
+    command: >
+      python -c "
+      from http.server import HTTPServer, BaseHTTPRequestHandler
+      import json
+      import sys
+
+      received_messages = []
+
+      class Handler(BaseHTTPRequestHandler):
+          def do_POST(self):
+              content_length = int(self.headers.get('Content-Length', 0))
+              body = self.rfile.read(content_length).decode('utf-8')
+
+              msg = {
+                  'path': self.path,
+                  'content_type': self.headers.get('Content-Type'),
+                  'source_id': self.headers.get('X-Source-Analyzer-IP'),
+                  'transport': self.headers.get('X-Message-Transport'),
+                  'body': body
+              }
+              received_messages.append(msg)
+              print(f'Received: {json.dumps(msg, indent=2)}', flush=True)
+
+              self.send_response(200)
+              self.send_header('Content-Type', 'text/plain')
+              self.end_headers()
+              self.wfile.write(b'OK')
+
+          def do_GET(self):
+              if self.path == '/health':
+                  self.send_response(200)
+                  self.send_header('Content-Type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(json.dumps({'status': 'healthy', 'messages': len(received_messages)}).encode())
+              elif self.path == '/messages':
+                  self.send_response(200)
+                  self.send_header('Content-Type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(json.dumps(received_messages).encode())
+              else:
+                  self.send_response(404)
+                  self.end_headers()
+
+      print('Starting mock OpenELIS on port 8443...', flush=True)
+      HTTPServer(('0.0.0.0', 8443), Handler).serve_forever()
+      "
+    ports:
+      - "8443:8443"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8443/health')"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # ASTM Mock Server - sends messages via the virtual serial port
+  astm-mock:
+    image: python:3.11-slim
+    depends_on:
+      socat:
+        condition: service_healthy
+    volumes:
+      - serial-shared:/shared
+    environment:
+      - ASTM_PORT=5000
+      - ANALYZER_TYPE=HEMATOLOGY
+    # Install pyserial and send test message via serial
+    command: >
+      sh -c "
+      pip install pyserial &&
+      python -c \"
+      import serial
+      import time
+      import sys
+
+      # Wait for serial port
+      time.sleep(2)
+
+      print('Connecting to virtual serial port...', flush=True)
+
+      try:
+          ser = serial.Serial('/shared/vserial1', 9600, timeout=5)
+          print(f'Connected to {ser.name}', flush=True)
+
+          # Send ASTM message
+          ENQ = b'\\\\x05'
+          ACK = b'\\\\x06'
+          STX = b'\\\\x02'
+          ETX = b'\\\\x03'
+          EOT = b'\\\\x04'
+          CR = b'\\\\x0D'
+          LF = b'\\\\x0A'
+
+          # Send ENQ
+          ser.write(ENQ)
+          print('Sent ENQ', flush=True)
+          time.sleep(0.1)
+
+          # Read ACK (might not get it in test)
+          if ser.in_waiting:
+              resp = ser.read(1)
+              print(f'Received: {resp.hex()}', flush=True)
+
+          # Build and send frame
+          text = b'H|\\\\\\\\^&|||MOCK-ANALYZER|||||||P|1|20260205120000'
+          fn = b'1'
+          checksum = sum([fn[0]] + list(text) + [ETX[0]]) % 256
+          frame = STX + fn + text + ETX + f'{checksum:02X}'.encode() + CR + LF
+          ser.write(frame)
+          print(f'Sent frame: {len(frame)} bytes', flush=True)
+          time.sleep(0.1)
+
+          # Send terminator frame
+          text2 = b'L|1|N'
+          fn2 = b'2'
+          checksum2 = sum([fn2[0]] + list(text2) + [ETX[0]]) % 256
+          frame2 = STX + fn2 + text2 + ETX + f'{checksum2:02X}'.encode() + CR + LF
+          ser.write(frame2)
+          print(f'Sent frame 2: {len(frame2)} bytes', flush=True)
+          time.sleep(0.1)
+
+          # Send EOT
+          ser.write(EOT)
+          print('Sent EOT', flush=True)
+
+          ser.close()
+          print('Message sent successfully!', flush=True)
+
+      except Exception as e:
+          print(f'Error: {e}', flush=True)
+          sys.exit(1)
+      \"
+      "
+    networks:
+      - default
+
+  # Test runner for automated integration tests
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      socat:
+        condition: service_healthy
+      mock-openelis:
+        condition: service_healthy
+    volumes:
+      - serial-shared:/shared
+    environment:
+      - SERIAL_TEST_PORT=/shared/vserial0
+      - SERIAL_TEST_PORT_PAIR=/shared/vserial1
+      - OPENELIS_URL=http://mock-openelis:8443
+    command: >
+      mvn test -Dtest=SerialIntegrationTest -DfailIfNoTests=false
+    profiles:
+      - test
+
+volumes:
+  serial-shared:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
