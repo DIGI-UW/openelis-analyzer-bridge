@@ -5,6 +5,8 @@
 **Analysis Type**: Architecture Gap Analysis  
 **Scope**: Minimal updates needed to `tools/astm-http-bridge` for multi-analyzer mediation and bi-directional query support
 
+> **Scope note (2026-02)**: This analysis is **ASTM-focused**. It remains relevant for the ASTM transport path, but the repository now targets a broader “Analyzer Bridge” scope (HL7/MLLP, Serial/RS232, File). For the broader context, see the repository `README.md`.
+
 ---
 
 ## Executive Summary

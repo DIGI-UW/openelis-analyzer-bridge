@@ -11,53 +11,55 @@ Sync Impact Report (v1.0.0)
 - Follow-up TODOs: None
 -->
 
-# ASTM-HTTP Bridge Constitution
+# OpenELIS Analyzer Bridge Constitution
 
 ## Purpose
 
-The ASTM-HTTP Bridge is a **simple, reliable protocol translator** that enables 
-bi-directional communication between medical laboratory analyzers (ASTM/TCP) and 
-Laboratory Information Systems like OpenELIS (HTTP). The bridge MUST remain focused 
-on protocol translation and MUST NOT implement business logic.
+The OpenELIS Analyzer Bridge is a **simple, reliable protocol/transport bridge** that enables
+bi-directional communication between medical laboratory analyzers and **OpenELIS**.
+
+The bridge MUST remain focused on **transport + protocol mediation** (and minimal metadata
+propagation) and MUST NOT implement OpenELIS business logic (mapping, persistence, workflow).
 
 ## Core Principles
 
 ### I. Single Responsibility
 
-The bridge has ONE job: translate between ASTM TCP protocol and HTTP.
+The bridge has ONE job: translate analyzer protocol/transports to **OpenELIS HTTP** endpoints
+(and support outbound forwarding from OpenELIS to analyzers where required).
 
-- Bridge MUST translate ASTM messages to HTTP POST requests and vice versa
-- Bridge MUST NOT interpret message content beyond protocol requirements
-- Bridge MUST NOT implement analyzer identification logic (OpenELIS responsibility)
-- Bridge MUST NOT implement field mapping or data transformation (OpenELIS responsibility)
-- Bridge MUST NOT persist data (stateless translation only)
+- Bridge MUST translate inbound analyzer messages to HTTP POST requests and vice versa (when applicable)
+- Bridge MUST NOT interpret message content beyond protocol requirements (framing, checksums, acknowledgments)
+- Bridge MUST NOT implement analyzer identification, mapping, or data transformation logic (OpenELIS responsibility)
+- Bridge MUST NOT persist domain data (stateless translation only)
+- Bridge MAY attach **minimal source metadata** derived from the transport (e.g., source IP / port / transport type)
 
 **Rationale**: Keeping the bridge simple ensures reliability, maintainability, and clear 
 separation of concerns. OpenELIS owns all business logic.
 
 ### II. Protocol Compliance
 
-The bridge MUST comply with ASTM/CLSI standards for laboratory communication.
+The bridge MUST comply with the relevant standards for each supported protocol/transport.
 
-- Bridge MUST support CLSI LIS1-A (LIS01-A) protocol
-- Bridge MUST support E1381-95 protocol for legacy analyzers
-- Bridge MUST handle frame numbering, checksums, and ENQ/ACK/NAK handshakes
-- Bridge MUST support line contention handling per CLSI LIS1-A section 8.3.5
-- Bridge SHOULD support non-compliant fallback mode for non-standard analyzers
-- Bridge MUST provide configurable timeouts (establishment: 15s, receive: 30s)
+- **ASTM**:
+  - Bridge MUST support CLSI LIS1-A (LIS01-A)
+  - Bridge MUST support E1381-95 for legacy analyzers
+  - Bridge MUST handle framing, checksums, ENQ/ACK/NAK handshakes, and line contention (CLSI LIS1-A §8.3.5)
+- **HL7 v2.x (MLLP framing)** (when enabled):
+  - Bridge MUST respect MLLP framing delimiters (VT start, FS+CR end)
+  - Bridge MUST generate appropriate ACK/NAK responses where required by the transport/server role
+- Bridge MUST provide configurable timeouts appropriate to the transport (e.g., establishment/receive)
 
 **Rationale**: Standards compliance ensures interoperability with diverse medical analyzers.
 
 ### III. Bi-Directional Communication
 
-The bridge MUST support communication in both directions.
+The bridge MUST support communication in both directions (where the protocol/transport requires it).
 
-- **Analyzer → LIS**: Bridge receives ASTM over TCP, forwards via HTTP POST
-- **LIS → Analyzer**: Bridge receives HTTP POST, forwards via ASTM TCP
-- Bridge MUST include source analyzer IP in HTTP headers (`X-Source-Analyzer-IP`) 
-  when forwarding analyzer messages to LIS
-- Bridge MUST accept target analyzer address (`forwardAddress`, `forwardPort`) via 
-  HTTP request parameters when LIS sends to analyzer
+- **Analyzer → OpenELIS**: Bridge receives messages (e.g., ASTM/TCP) and forwards via HTTP POST
+- **OpenELIS → Analyzer**: Bridge receives HTTP POST and forwards to analyzer (e.g., ASTM/TCP host queries)
+- Bridge MUST include source analyzer identity hints where safely derivable (e.g., `X-Source-Analyzer-IP`)
+- Bridge MUST accept target routing overrides (e.g., `forwardAddress`, `forwardPort`) when OpenELIS sends outbound messages
 - Bridge MUST handle concurrent connections (one thread per connection)
 
 **Rationale**: Bi-directional flow enables both result submission and query operations.
@@ -82,7 +84,8 @@ Runtime behavior MUST be configurable without code changes.
 
 - Connection settings MUST be configurable via `configuration.yml`
 - Forward HTTP server URI MUST be configurable (`org.itech.ahb.forward-http-server.uri`)
-- Listen ports MUST be configurable (LIS1-A: 12001, E1381-95: 12011 by default)
+- Listen ports MUST be configurable (e.g., LIS1-A: 12001, E1381-95: 12011 by default)
+- Optional transports (e.g., MLLP/Serial/File) MUST be enable/disable configurable
 - Timeout values MUST be configurable
 - Authentication credentials MUST be configurable and MUST NOT be hardcoded
 - Sensitive values SHOULD use environment variable substitution (`${VAR_NAME}`)
@@ -97,7 +100,7 @@ The bridge MUST provide visibility into its operation.
 - Bridge MUST log message handling status (success, fail, unhandled)
 - Bridge MUST provide health check endpoint (`/actuator/health`)
 - Log levels MUST be configurable (DEBUG for development, INFO/WARN for production)
-- Bridge SHOULD expose metrics for connection counts and message throughput
+- Bridge SHOULD expose metrics for connection counts and message throughput (by transport/protocol where possible)
 
 **Rationale**: Healthcare systems require auditability and operational visibility.
 
@@ -109,7 +112,7 @@ The bridge MUST handle failures gracefully without losing messages.
 - Bridge MUST handle connection timeouts without crashing
 - Bridge MUST log detailed error context for troubleshooting
 - Bridge MUST close sockets cleanly after errors
-- Bridge SHOULD fall back to non-compliant mode if analyzer doesn't respond with control characters
+- Bridge SHOULD fall back to non-compliant mode if an ASTM analyzer doesn't respond with control characters (where appropriate)
 
 **Rationale**: Laboratory operations depend on reliable message delivery.
 
@@ -178,4 +181,4 @@ astm-http-bridge/
 - [Compatibility Analysis](docs/ASTM_BRIDGE_COMPATIBILITY_ANALYSIS.md) - Protocol coverage
 - [Message Flow](docs/ASTM_MESSAGE_PROCESSING_FLOW.md) - Integration architecture
 
-**Version**: 1.0.0 | **Ratified**: 2025-12-03 | **Last Amended**: 2025-12-03
+**Version**: 1.1.0 | **Ratified**: 2025-12-03 | **Last Amended**: 2026-02-05

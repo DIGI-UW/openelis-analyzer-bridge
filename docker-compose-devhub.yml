@@ -9,7 +9,7 @@ x-logging: &local-logging
 services:
   astm-http-bridge:
     container_name: astm-http-bridge
-    image: itechuw/astm-http-bridge:develop
+    image: itechuw/openelis-analyzer-bridge:develop
     pull_policy: always
     ports:
       - "8442:8443"

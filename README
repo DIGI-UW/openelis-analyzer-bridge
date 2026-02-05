@@ -1,15 +1,6 @@
-To build and deploy this project for development, run the following command in the top-level directory of the project:
+This repository’s primary documentation is in `README.md`.
 
-`sudo docker compose -f docker-compose-dev.yml up -d --build`
+Quick link:
 
-- Note, the project will not commence startup in dev mode until a debugger is attached on port 8000
+- `README.md`: project overview, architecture, quickstart, configuration
 
-To build and deploy this project normally using the latest image on Docker Hub, run the following command in the top-level directory of the project:
-
-`sudo docker compose up -d --build`
-
-to view logging of running container, run:
-
-`sudo docker logs --follow astm-http-bridge`
-
-`configuration.yml` should contain any configuration parameters that a user wants to pass to the application.
