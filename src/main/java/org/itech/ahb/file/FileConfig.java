@@ -1,6 +1,7 @@
 package org.itech.ahb.file;
 
 import lombok.Data;
+import org.itech.ahb.model.Protocol;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -13,6 +14,10 @@ import java.util.Map;
  * Configuration properties for file-based analyzer message processing.
  * <p>
  * Configures directory watching, file patterns, and per-analyzer CSV column mappings.
+ * </p>
+ * <p>
+ * NOTE: Configuration validation should be added when Jakarta Validation dependency is available.
+ * Ensure: watchDirectories not empty, positive timeouts, maxRetryAttempts >= 1
  * </p>
  */
 @Configuration
@@ -84,6 +89,13 @@ public class FileConfig {
     private Map<String, Map<String, Integer>> csvMappings = new HashMap<>();
 
     /**
+     * Analyzer identification configuration.
+     * Map of pattern string to AnalyzerConfig.
+     * Pattern can be glob pattern (quantstudio-*) or substring match.
+     */
+    private Map<String, AnalyzerConfig> analyzers = new HashMap<>();
+
+    /**
      * Get CSV column mapping for a specific analyzer
      *
      * @param analyzerId the analyzer identifier
@@ -101,5 +113,41 @@ public class FileConfig {
      */
     public boolean hasCustomCsvMapping(String analyzerId) {
         return csvMappings.containsKey(analyzerId) && !csvMappings.get(analyzerId).isEmpty();
+    }
+
+    /**
+     * Get analyzer configuration by pattern
+     *
+     * @param pattern the pattern string
+     * @return AnalyzerConfig or null if not found
+     */
+    public AnalyzerConfig getAnalyzerByPattern(String pattern) {
+        return analyzers.get(pattern);
+    }
+
+    /**
+     * Analyzer configuration for pattern-based identification
+     */
+    @Data
+    public static class AnalyzerConfig {
+        /**
+         * Unique analyzer identifier (e.g., "QUANTSTUDIO-001")
+         */
+        private String id;
+
+        /**
+         * Human-readable analyzer name
+         */
+        private String name;
+
+        /**
+         * Expected protocol for this analyzer
+         */
+        private Protocol expectedProtocol;
+
+        /**
+         * File pattern regex for matching (optional, overrides pattern key)
+         */
+        private String filePattern;
     }
 }

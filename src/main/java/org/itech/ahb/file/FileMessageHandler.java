@@ -5,7 +5,9 @@ import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
 import org.itech.ahb.util.ProtocolDetector;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -24,8 +26,14 @@ import java.nio.file.Path;
  * Reads file content, detects protocol format, and forwards to appropriate
  * OpenELIS endpoint based on protocol type (ASTM, HL7, CSV).
  * </p>
+ * <p>
+ * NOTE: This component currently forwards directly to OpenELIS endpoints.
+ * When M7 (Message Normalizer) is implemented, refactor to route through
+ * the centraliz normalizer for consistent audit logging and analyzer identification.
+ * </p>
  */
 @Component
+@ConditionalOnProperty(prefix = "bridge.file", name = "enabled", havingValue = "true")
 @Slf4j
 public class FileMessageHandler {
 
@@ -36,10 +44,13 @@ public class FileMessageHandler {
     @Value("${bridge.openelis.url:http://localhost:8443}")
     private String openelisBaseUrl;
 
-    public FileMessageHandler(CSVParser csvParser, FileConfig fileConfig) {
+    public FileMessageHandler(
+            CSVParser csvParser,
+            FileConfig fileConfig,
+            @Qualifier("fileWatcherRestTemplate") RestTemplate restTemplate) {
         this.csvParser = csvParser;
         this.fileConfig = fileConfig;
-        this.restTemplate = new RestTemplate();
+        this.restTemplate = restTemplate;
     }
 
     /**

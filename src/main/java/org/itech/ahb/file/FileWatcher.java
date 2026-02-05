@@ -36,6 +36,9 @@ public class FileWatcher {
     private final Set<String> processedFileHashes = ConcurrentHashMap.newKeySet();
     private final Map<Path, RetryInfo> retryTracker = new ConcurrentHashMap<>();
 
+    // Maximum number of file hashes to keep in memory (prevent unbounded growth)
+    private static final int MAX_HASH_CACHE_SIZE = 10000;
+
     private WatchService watchService;
     private ExecutorService watcherExecutor;
     private ExecutorService processorExecutor;
@@ -102,32 +105,65 @@ public class FileWatcher {
     }
 
     /**
-     * Stop file watcher service.
+     * Stop file watcher service with graceful shutdown.
      */
     @PreDestroy
     public void stop() {
         log.info("Stopping file watcher service...");
         running = false;
 
-        if (watcherExecutor != null) {
-            watcherExecutor.shutdownNow();
-        }
-        if (processorExecutor != null) {
-            processorExecutor.shutdownNow();
-        }
-        if (stabilityChecker != null) {
-            stabilityChecker.shutdownNow();
+        // Shutdown executors gracefully
+        shutdownExecutor(watcherExecutor, "watcher");
+        shutdownExecutor(processorExecutor, "processor");
+        shutdownExecutor(stabilityChecker, "stability-checker");
+
+        // Close watch service
+        closeWatchService();
+
+        log.info("File watcher service stopped");
+    }
+
+    /**
+     * Shutdown executor service gracefully with timeout.
+     *
+     * @param executor the executor to shutdown
+     * @param name     executor name for logging
+     */
+    private void shutdownExecutor(ExecutorService executor, String name) {
+        if (executor == null) {
+            return;
         }
 
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                log.warn("{} executor did not terminate gracefully within 30s, forcing shutdown", name);
+                executor.shutdownNow();
+                if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    log.error("{} executor did not terminate after forced shutdown", name);
+                }
+            } else {
+                log.debug("{} executor shutdown successfully", name);
+            }
+        } catch (InterruptedException e) {
+            log.warn("{} executor shutdown interrupted", name);
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Close watch service with error handling.
+     */
+    private void closeWatchService() {
         try {
             if (watchService != null) {
                 watchService.close();
+                log.debug("Watch service closed successfully");
             }
         } catch (IOException e) {
             log.error("Error closing watch service", e);
         }
-
-        log.info("File watcher service stopped");
     }
 
     /**
@@ -194,8 +230,15 @@ public class FileWatcher {
 
     /**
      * Check for stable files and process them.
+     * Also performs periodic cleanup of hash cache to prevent memory leaks.
      */
     private void checkStableFiles() {
+        // Periodic cleanup of hash cache to prevent unbounded growth
+        if (processedFileHashes.size() > MAX_HASH_CACHE_SIZE) {
+            log.warn("Processed file hash cache exceeded {} entries, clearing cache", MAX_HASH_CACHE_SIZE);
+            processedFileHashes.clear();
+        }
+
         List<Path> stableFiles = new ArrayList<>();
         Instant now = Instant.now();
 
@@ -378,14 +421,56 @@ public class FileWatcher {
 
     /**
      * Determine analyzer ID from file path pattern.
+     * <p>
+     * Matches file path against configured analyzer patterns.
+     * Falls back to parent directory name if no patterns match.
+     * </p>
+     *
+     * @param filePath the file path to analyze
+     * @return analyzer ID or null if cannot be determined
      */
     private String determineAnalyzerId(Path filePath) {
-        // TODO: Implement pattern matching based on fileConfig.analyzers configuration
-        // For now, extract from parent directory name or return null
+        String pathString = filePath.toString();
+        String filename = filePath.getFileName().toString();
+
+        // Check configured analyzer patterns
+        for (Map.Entry<String, FileConfig.AnalyzerConfig> entry : fileConfig.getAnalyzers().entrySet()) {
+            String pattern = entry.getKey();
+            FileConfig.AnalyzerConfig config = entry.getValue();
+
+            // Use filePattern if specified, otherwise use key as pattern
+            String matchPattern = config.getFilePattern() != null ? config.getFilePattern() : pattern;
+
+            // Glob pattern matching (e.g., "quantstudio-*")
+            if (matchPattern.contains("*") || matchPattern.contains("?")) {
+                try {
+                    PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + matchPattern);
+                    if (matcher.matches(filePath.getFileName())) {
+                        log.debug("Matched file {} to analyzer {} via glob pattern: {}",
+                                filename, config.getId(), matchPattern);
+                        return config.getId();
+                    }
+                } catch (Exception e) {
+                    log.warn("Invalid glob pattern: {}", matchPattern, e);
+                }
+            }
+            // Substring matching (e.g., "quantstudio")
+            else if (pathString.contains(matchPattern) || filename.contains(matchPattern)) {
+                log.debug("Matched file {} to analyzer {} via substring: {}",
+                        filename, config.getId(), matchPattern);
+                return config.getId();
+            }
+        }
+
+        // Fallback: use parent directory name
         Path parent = filePath.getParent();
         if (parent != null) {
-            return parent.getFileName().toString().toUpperCase();
+            String dirName = parent.getFileName().toString().toUpperCase();
+            log.debug("No pattern match for file {}, using directory name: {}", filename, dirName);
+            return dirName;
         }
+
+        log.debug("Could not determine analyzer ID for file: {}", filePath);
         return null;
     }
 
