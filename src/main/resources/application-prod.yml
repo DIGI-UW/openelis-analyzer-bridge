@@ -9,7 +9,9 @@ logging:
   level:
     root: INFO
 
-# MLLP Server Configuration (HL7 v2.x transport)
+# MLLP Server Configuration (HL7 v2.x transport via HAPI SimpleServer)
+# Disabled by default in production for safety. Set MLLP_ENABLED=true
+# in the environment to enable. This aligns with MLLPConfig default (enabled=false).
 org.itech.ahb.mllp:
   enabled: ${MLLP_ENABLED:false}
   port: ${MLLP_PORT:2575}

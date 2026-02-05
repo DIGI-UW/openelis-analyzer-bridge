@@ -20,8 +20,10 @@ public class MLLPConfig {
 
     /**
      * Whether the MLLP server is enabled.
+     * Defaults to false for safety; production deployments should explicitly enable
+     * via the MLLP_ENABLED environment variable.
      */
-    private boolean enabled = true;
+    private boolean enabled = false;
 
     /**
      * The port on which the MLLP server listens.
