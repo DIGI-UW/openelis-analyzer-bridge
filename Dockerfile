@@ -18,10 +18,10 @@ RUN --mount=type=cache,target=/root/.m2,sharing=locked \
 #
 WORKDIR /build
 ADD ./pom.xml /build/pom.xml
-RUN --mount=type=cache,target=/root/.m2 \
-  mvn dependency:go-offline   
+# Note: Skipping dependency:go-offline to avoid issues with local library dependencies
+# Dependencies will be downloaded during the build step below
 ADD ./src /build/src
-RUN --mount=type=cache,target=/root/.m2 \
+RUN --mount=type=cache,target=/root/.m2,sharing=locked \
   mvn clean package -DskipTests
 
 ##
