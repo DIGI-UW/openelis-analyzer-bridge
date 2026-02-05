@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.properties.SerialConfigurationProperties;
@@ -43,6 +44,8 @@ public class SerialPortListener {
     private final SerialMessageHandler messageHandler;
     private final Map<String, ManagedSerialPort> managedPorts;
     private final ScheduledExecutorService scheduler;
+    private ScheduledFuture<?> timeoutCheckerFuture;
+    private ScheduledFuture<?> reconnectionCheckerFuture;
 
     /**
      * Creates a new SerialPortListener.
@@ -83,7 +86,7 @@ public class SerialPortListener {
         }
 
         // Schedule timeout checker
-        scheduler.scheduleAtFixedRate(
+        timeoutCheckerFuture = scheduler.scheduleAtFixedRate(
             this::checkTimeouts,
             config.getMessageTimeoutMs(),
             config.getMessageTimeoutMs() / 2,
@@ -91,7 +94,7 @@ public class SerialPortListener {
         );
 
         // Schedule reconnection checker
-        scheduler.scheduleAtFixedRate(
+        reconnectionCheckerFuture = scheduler.scheduleAtFixedRate(
             this::checkReconnections,
             config.getReconnectIntervalMs(),
             config.getReconnectIntervalMs(),
@@ -335,10 +338,24 @@ public class SerialPortListener {
     public void stop() {
         log.info("Stopping serial port listener");
 
+        // Cancel scheduled tasks explicitly to prevent race conditions
+        if (timeoutCheckerFuture != null) {
+            timeoutCheckerFuture.cancel(false);
+            log.debug("Cancelled timeout checker task");
+        }
+        if (reconnectionCheckerFuture != null) {
+            reconnectionCheckerFuture.cancel(false);
+            log.debug("Cancelled reconnection checker task");
+        }
+
+        // Shutdown scheduler gracefully
         scheduler.shutdown();
         try {
             if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
+                List<Runnable> droppedTasks = scheduler.shutdownNow();
+                if (!droppedTasks.isEmpty()) {
+                    log.warn("Dropped {} pending tasks during shutdown", droppedTasks.size());
+                }
             }
         } catch (InterruptedException e) {
             scheduler.shutdownNow();
