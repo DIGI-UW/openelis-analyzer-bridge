@@ -40,8 +40,25 @@ public class SerialConfigurationProperties {
 
     /**
      * List of serial port configurations.
+     * Returns a defensive copy to prevent external modification.
      */
     private List<SerialPortConfig> ports = new ArrayList<>();
+
+    /**
+     * Gets the list of serial port configurations.
+     * @return defensive copy of the ports list
+     */
+    public List<SerialPortConfig> getPorts() {
+        return new ArrayList<>(ports);
+    }
+
+    /**
+     * Sets the list of serial port configurations.
+     * @param ports the ports to configure
+     */
+    public void setPorts(List<SerialPortConfig> ports) {
+        this.ports = ports != null ? new ArrayList<>(ports) : new ArrayList<>();
+    }
 
     /**
      * Default timeout in milliseconds for waiting for complete messages.
