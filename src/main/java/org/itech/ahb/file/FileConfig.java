@@ -91,7 +91,20 @@ public class FileConfig {
     /**
      * Analyzer identification configuration.
      * Map of pattern string to AnalyzerConfig.
-     * Pattern can be glob pattern (quantstudio-*) or substring match.
+     * <p>
+     * Pattern Matching Strategy:
+     * <ul>
+     *   <li>If {@code filePattern} is specified in AnalyzerConfig, it overrides the map key pattern</li>
+     *   <li>Patterns containing wildcards (* or ?) use glob matching against the filename</li>
+     *   <li>Patterns without wildcards use substring matching against the full path and filename</li>
+     * </ul>
+     * Examples:
+     * <ul>
+     *   <li>Key: "quantstudio-*", filePattern: null - glob match on "quantstudio-*"</li>
+     *   <li>Key: "QUANTSTUDIO-001", filePattern: "quantstudio-*.csv" - glob match on "quantstudio-*.csv"</li>
+     *   <li>Key: "analyzer1", filePattern: null - substring match on "analyzer1"</li>
+     * </ul>
+     * </p>
      */
     private Map<String, AnalyzerConfig> analyzers = new HashMap<>();
 

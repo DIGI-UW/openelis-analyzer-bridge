@@ -189,7 +189,25 @@ class CSVParserTest {
     }
 
     @Test
-    void testToCsvString_Empty() {
+    void testToCsvString_WithNewlinesInValues() throws IOException {
+        // Arrange
+        Map<String, String> record1 = new HashMap<>();
+        record1.put("sampleId", "12345");
+        record1.put("testCode", "TEST");
+        record1.put("result", "Line1\nLine2");  // Contains newline
+
+        List<Map<String, String>> records = List.of(record1);
+
+        // Act
+        String csvString = csvParser.toCsvString(records);
+
+        // Assert
+        assertNotNull(csvString);
+        assertTrue(csvString.contains("\"Line1\nLine2\""));  // Should be quoted
+    }
+
+    @Test
+    void testToCsvString_Empty() throws IOException {
         // Act
         String csvString = csvParser.toCsvString(List.of());
 
@@ -198,7 +216,7 @@ class CSVParserTest {
     }
 
     @Test
-    void testToCsvString_Null() {
+    void testToCsvString_Null() throws IOException {
         // Act
         String csvString = csvParser.toCsvString(null);
 

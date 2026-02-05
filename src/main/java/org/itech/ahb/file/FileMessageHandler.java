@@ -1,12 +1,12 @@
 package org.itech.ahb.file;
 
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
 import org.itech.ahb.util.ProtocolDetector;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -40,19 +40,19 @@ public class FileMessageHandler {
     private final CSVParser csvParser;
     private final RestTemplate restTemplate;
     private final FileConfig fileConfig;
+    private final OpenELISConfig openelisConfig;
 
     // Maximum file size to process (10MB default)
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-    @Value("${bridge.openelis.url:http://localhost:8443}")
-    private String openelisBaseUrl;
-
     public FileMessageHandler(
             CSVParser csvParser,
             FileConfig fileConfig,
+            OpenELISConfig openelisConfig,
             @Qualifier("fileWatcherRestTemplate") RestTemplate restTemplate) {
         this.csvParser = csvParser;
         this.fileConfig = fileConfig;
+        this.openelisConfig = openelisConfig;
         this.restTemplate = restTemplate;
     }
 
@@ -92,6 +92,11 @@ public class FileMessageHandler {
             throw new FileProcessingException("Unable to detect protocol for file: " + filePath);
         }
 
+        // Validate file content for detected protocol
+        if (!validateFileContent(filePath, protocol)) {
+            throw new FileProcessingException("Invalid " + protocol + " content in file: " + filePath);
+        }
+
         // Create envelope
         MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(protocol)
@@ -115,7 +120,7 @@ public class FileMessageHandler {
      */
     private void forwardToOpenELIS(MessageEnvelope envelope) throws FileProcessingException {
         String endpoint = getEndpointForProtocol(envelope.getProtocol());
-        String fullUrl = openelisBaseUrl + endpoint;
+        String fullUrl = openelisConfig.getUrl() + endpoint;
 
         log.debug("Forwarding {} message to: {}", envelope.getProtocol(), fullUrl);
 

@@ -6,9 +6,12 @@ import org.apache.commons.csv.CSVRecord;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import org.apache.commons.csv.CSVPrinter;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -160,7 +163,8 @@ public class CSVParser {
                 }
             }
 
-            return rowCount >= 2;
+            // If we reach here, fewer than 2 rows were found
+            return false;
         } catch (IOException e) {
             log.warn("CSV validation failed: {}", e.getMessage());
             return false;
@@ -211,35 +215,35 @@ public class CSVParser {
 
     /**
      * Convert parsed records back to CSV format for forwarding to OpenELIS.
+     * Uses Apache Commons CSV CSVPrinter for proper escaping of commas,
+     * quotes, and newlines within field values.
      *
      * @param records list of parsed record maps
      * @return CSV string with headers
+     * @throws IOException if CSV writing fails
      */
-    public String toCsvString(List<Map<String, String>> records) {
+    public String toCsvString(List<Map<String, String>> records) throws IOException {
         if (records == null || records.isEmpty()) {
             return "";
         }
 
-        StringBuilder csv = new StringBuilder();
-
-        // Build header from first record keys
+        StringWriter writer = new StringWriter();
         Map<String, String> firstRecord = records.get(0);
-        csv.append(String.join(",", firstRecord.keySet())).append("\n");
 
-        // Build data rows
-        for (Map<String, String> record : records) {
-            List<String> values = new ArrayList<>();
-            for (String key : firstRecord.keySet()) {
-                String value = record.getOrDefault(key, "");
-                // Escape commas and quotes in values
-                if (value.contains(",") || value.contains("\"")) {
-                    value = "\"" + value.replace("\"", "\"\"") + "\"";
+        try (CSVPrinter printer = CSVFormat.DEFAULT.print(writer)) {
+            // Print header
+            printer.printRecord(firstRecord.keySet());
+
+            // Print data rows
+            for (Map<String, String> record : records) {
+                List<String> values = new ArrayList<>();
+                for (String key : firstRecord.keySet()) {
+                    values.add(record.getOrDefault(key, ""));
                 }
-                values.add(value);
+                printer.printRecord(values);
             }
-            csv.append(String.join(",", values)).append("\n");
         }
 
-        return csv.toString();
+        return writer.toString();
     }
 }

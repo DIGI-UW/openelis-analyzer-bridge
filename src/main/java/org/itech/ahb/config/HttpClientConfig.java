@@ -21,18 +21,19 @@ public class HttpClientConfig {
      * RestTemplate bean for file watcher HTTP forwarding.
      * <p>
      * Only created when file watcher is enabled.
-     * Configured with timeouts and error handling.
+     * Configured with timeouts from OpenELISConfig.
      * </p>
      *
      * @param builder Spring-provided RestTemplate builder
+     * @param openelisConfig OpenELIS configuration with timeout settings
      * @return configured RestTemplate instance
      */
     @Bean
     @ConditionalOnProperty(prefix = "bridge.file", name = "enabled", havingValue = "true")
-    public RestTemplate fileWatcherRestTemplate(RestTemplateBuilder builder) {
+    public RestTemplate fileWatcherRestTemplate(RestTemplateBuilder builder, OpenELISConfig openelisConfig) {
         return builder
-                .setConnectTimeout(Duration.ofSeconds(30))
-                .setReadTimeout(Duration.ofSeconds(30))
+                .setConnectTimeout(Duration.ofSeconds(openelisConfig.getConnectTimeoutSeconds()))
+                .setReadTimeout(Duration.ofSeconds(openelisConfig.getReadTimeoutSeconds()))
                 .build();
     }
 

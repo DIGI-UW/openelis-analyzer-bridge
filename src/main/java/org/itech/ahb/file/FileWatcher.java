@@ -365,17 +365,24 @@ public class FileWatcher {
      */
     private void archiveFile(Path filePath, String subdirectory) {
         try {
-            Path archiveDir = Paths.get(fileConfig.getArchiveDirectory()).normalize();
+            Path baseArchiveDir = Paths.get(fileConfig.getArchiveDirectory()).normalize();
+            Path archiveDir = baseArchiveDir;
+
             if (subdirectory != null) {
-                archiveDir = archiveDir.resolve(subdirectory).normalize();
+                archiveDir = baseArchiveDir.resolve(subdirectory).normalize();
+                // Validate subdirectory doesn't escape base archive directory
+                if (!archiveDir.startsWith(baseArchiveDir)) {
+                    log.error("Invalid subdirectory (path traversal): {}", subdirectory);
+                    archiveDir = baseArchiveDir;
+                }
             }
 
             Files.createDirectories(archiveDir);
 
             Path targetPath = archiveDir.resolve(filePath.getFileName()).normalize();
 
-            // Validate path stays within archive directory (prevent traversal attacks)
-            if (!targetPath.startsWith(archiveDir)) {
+            // Validate final path stays within base archive directory (defense-in-depth)
+            if (!targetPath.startsWith(baseArchiveDir)) {
                 log.error("Path traversal detected in archive operation: {}", targetPath);
                 moveToErrorDirectory(filePath, new SecurityException("Path traversal detected"));
                 return;

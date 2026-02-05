@@ -1,12 +1,31 @@
+# ============================================================================
 # ASTM-HTTP Bridge Configuration
-# This file configures the bridge for bi-directional ASTM communication
+# ============================================================================
+# This file configures the bridge for bi-directional analyzer communication.
+#
+# CONFIGURATION FORMATS:
+#
+# 1. NEW FORMAT (bridge.*) - Universal Bridge v2.0+ [RECOMMENDED]
+#    Unified structure for all transport types (ASTM, MLLP, Serial, File, HTTP).
+#    Used by: File watcher (M4), future MLLP/Serial listeners.
+#    Properties: bridge.file.*, bridge.openelis.*, bridge.mllp.* (future)
+#
+# 2. LEGACY FORMAT (org.itech.ahb.*) - Original Bridge v1.x [DEPRECATED]
+#    Used by: Existing ASTM TCP listener only.
+#    Properties: org.itech.ahb.forward-http-server.*, etc.
+#    Will be migrated to new format in future releases.
+#
+# PRECEDENCE: New format takes precedence when both are defined.
+# MIGRATION: New deployments should use bridge.* format exclusively.
+# ============================================================================
 
-# Bridge Configuration
+# Bridge Configuration (NEW FORMAT - v2.0+)
 bridge:
-  # OpenELIS connection (output)
+  # OpenELIS connection settings
   openelis:
     url: http://localhost:8443
-    timeout: 30000
+    connectTimeoutSeconds: 30
+    readTimeoutSeconds: 30
     retry:
       maxAttempts: 3
       backoffMs: 1000
