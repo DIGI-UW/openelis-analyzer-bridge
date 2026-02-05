@@ -5,6 +5,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -141,9 +142,22 @@ public class MLLPHandler {
 
         // Add Basic auth if credentials are configured
         if (username != null && !username.isEmpty()) {
-            String auth = username + ":" + new String(password);
-            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+            // Avoid String conversion to prevent password from staying in String pool
+            byte[] usernameBytes = username.getBytes(StandardCharsets.UTF_8);
+            byte[] colonBytes = ":".getBytes(StandardCharsets.UTF_8);
+            byte[] passwordBytes = new String(password).getBytes(StandardCharsets.UTF_8);
+
+            byte[] authBytes = new byte[usernameBytes.length + colonBytes.length + passwordBytes.length];
+            System.arraycopy(usernameBytes, 0, authBytes, 0, usernameBytes.length);
+            System.arraycopy(colonBytes, 0, authBytes, usernameBytes.length, colonBytes.length);
+            System.arraycopy(passwordBytes, 0, authBytes, usernameBytes.length + colonBytes.length, passwordBytes.length);
+
+            String encodedAuth = Base64.getEncoder().encodeToString(authBytes);
             requestBuilder.header("Authorization", "Basic " + encodedAuth);
+
+            // Clear sensitive data immediately
+            java.util.Arrays.fill(passwordBytes, (byte) 0);
+            java.util.Arrays.fill(authBytes, (byte) 0);
         }
 
         try {

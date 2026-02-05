@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,6 +49,11 @@ public class MLLPServer {
     private final ExecutorService executorService;
     private volatile ServerSocket serverSocket;
 
+    /** Connection rate limiting: track last connection time per IP */
+    private final ConcurrentHashMap<String, Long> lastConnectionTime = new ConcurrentHashMap<>();
+    /** Minimum milliseconds between connections from same IP (100ms = 10 connections/sec per IP) */
+    private static final long MIN_CONNECTION_INTERVAL_MS = 100;
+
     /**
      * Constructs a new MLLPServer with the specified configuration and handler.
      *
@@ -84,6 +90,19 @@ public class MLLPServer {
             while (running.get()) {
                 try {
                     Socket clientSocket = serverSocket.accept();
+                    String sourceIp = extractSourceIp(clientSocket);
+
+                    // Rate limiting: check if connection from this IP is too frequent
+                    long now = System.currentTimeMillis();
+                    Long lastTime = lastConnectionTime.get(sourceIp);
+                    if (lastTime != null && (now - lastTime) < MIN_CONNECTION_INTERVAL_MS) {
+                        log.warn("Rate limit exceeded for {}: {} ms since last connection (min: {} ms)",
+                                sourceIp, now - lastTime, MIN_CONNECTION_INTERVAL_MS);
+                        closeSocket(clientSocket);
+                        continue;
+                    }
+                    lastConnectionTime.put(sourceIp, now);
+
                     clientSocket.setSoTimeout(timeout);
                     executorService.submit(() -> handleConnection(clientSocket));
                 } catch (IOException e) {
@@ -101,13 +120,27 @@ public class MLLPServer {
     }
 
     /**
-     * Stops the MLLP server.
+     * Stops the MLLP server and waits for active connections to complete.
      */
     public void stop() {
         log.info("Stopping MLLP server on port {}", port);
         running.set(false);
         closeServerSocket();
+
         executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                log.warn("ExecutorService did not terminate gracefully within 30s, forcing shutdown");
+                executorService.shutdownNow();
+                if (!executorService.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                    log.error("ExecutorService did not terminate after forced shutdown");
+                }
+            }
+        } catch (InterruptedException e) {
+            log.warn("Interrupted while waiting for executor termination, forcing shutdown");
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -196,10 +229,6 @@ public class MLLPServer {
         int currentByte;
 
         while ((currentByte = in.read()) != -1) {
-            if (buffer.size() > maxMessageSize) {
-                throw new IOException("MLLP message exceeds maximum size of " + maxMessageSize + " bytes");
-            }
-
             // Check for end of message: FS followed by CR
             if (prevByte == FS && currentByte == CR) {
                 // Remove the FS that was added to buffer
@@ -208,6 +237,12 @@ public class MLLPServer {
             }
 
             buffer.write(currentByte);
+
+            // Check size AFTER writing to ensure we catch the exact limit
+            if (buffer.size() > maxMessageSize) {
+                throw new IOException("MLLP message exceeds maximum size of " + maxMessageSize + " bytes");
+            }
+
             prevByte = currentByte;
         }
 
