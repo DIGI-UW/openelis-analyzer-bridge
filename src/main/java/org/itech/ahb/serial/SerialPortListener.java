@@ -186,7 +186,8 @@ public class SerialPortListener {
      */
     private void handleDataAvailable(String portPath) {
         ManagedSerialPort managedPort = managedPorts.get(portPath);
-        if (managedPort == null) {
+        if (managedPort == null || managedPort.serialPort == null || managedPort.frameBuffer == null) {
+            log.trace("Port {} not ready for data (null port or buffer)", portPath);
             return;
         }
 
@@ -312,12 +313,16 @@ public class SerialPortListener {
      * Checks for ports needing reconnection.
      */
     private void checkReconnections() {
-        for (Map.Entry<String, ManagedSerialPort> entry : managedPorts.entrySet()) {
-            ManagedSerialPort managedPort = entry.getValue();
-            if (managedPort.serialPort == null) {
-                // Port needs reconnection
-                log.debug("Attempting reconnection for port {}", entry.getKey());
-                managedPorts.remove(entry.getKey());
+        // Collect ports needing reconnection to avoid ConcurrentModificationException
+        List<String> portsToReconnect = managedPorts.entrySet().stream()
+            .filter(e -> e.getValue().serialPort == null)
+            .map(Map.Entry::getKey)
+            .toList();
+
+        for (String portPath : portsToReconnect) {
+            log.debug("Attempting reconnection for port {}", portPath);
+            ManagedSerialPort managedPort = managedPorts.remove(portPath);
+            if (managedPort != null) {
                 openPort(managedPort.portConfig);
             }
         }

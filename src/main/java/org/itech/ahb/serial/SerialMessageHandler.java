@@ -115,9 +115,16 @@ public class SerialMessageHandler {
 
         // Add authentication if configured
         if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
-            String auth = httpConfig.getUsername() + ":" + new String(httpConfig.getPassword());
-            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
-            requestBuilder.header("Authorization", "Basic " + encodedAuth);
+            // Use byte array to avoid keeping password in String memory longer than necessary
+            byte[] credentials = (httpConfig.getUsername() + ":" +
+                new String(httpConfig.getPassword())).getBytes();
+            try {
+                String encodedAuth = Base64.getEncoder().encodeToString(credentials);
+                requestBuilder.header("Authorization", "Basic " + encodedAuth);
+            } finally {
+                // Zero out credentials array to minimize memory exposure
+                java.util.Arrays.fill(credentials, (byte) 0);
+            }
         }
 
         try {

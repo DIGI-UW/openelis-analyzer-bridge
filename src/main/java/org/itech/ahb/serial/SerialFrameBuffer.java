@@ -45,7 +45,7 @@ public class SerialFrameBuffer {
 
     private ByteBuffer buffer;
     private ProtocolMode protocolMode;
-    private ProtocolMode detectedProtocol;
+    private volatile ProtocolMode detectedProtocol; // Volatile for thread-safe protocol detection
     private Instant lastDataTime;
     private final List<String> completedMessages;
     private final List<byte[]> pendingResponses;
@@ -420,7 +420,15 @@ public class SerialFrameBuffer {
         if (buffer.remaining() < additionalBytes) {
             int newCapacity = Math.min(buffer.capacity() * 2, MAX_CAPACITY);
             if (newCapacity <= buffer.capacity()) {
-                log.warn("SerialFrameBuffer at max capacity, clearing buffer");
+                // At max capacity - attempt to salvage complete messages before discarding
+                List<String> salvaged = getCompletedMessages();
+                int discardedBytes = buffer.position();
+                log.warn("SerialFrameBuffer at max capacity ({}MB), discarding {} bytes of incomplete message. " +
+                        "Salvaged {} complete messages before clearing.",
+                    MAX_CAPACITY / 1024 / 1024, discardedBytes, salvaged.size());
+                // Reset state
+                currentASTMMessage.setLength(0);
+                astmState = ASTMState.IDLE;
                 buffer.clear();
                 return;
             }
