@@ -12,7 +12,8 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -51,7 +52,6 @@ class HapiMLLPListenerTest {
         testPort = PORT_COUNTER.getAndIncrement();
         config = new MLLPConfig();
         config.setPort(testPort);
-        config.setTimeout(TEST_TIMEOUT);
         config.setEnabled(true);
     }
 
@@ -439,7 +439,6 @@ class HapiMLLPListenerTest {
             MLLPConfig defaultConfig = new MLLPConfig();
 
             assertEquals(2575, defaultConfig.getPort(), "Default port should be 2575");
-            assertEquals(30000, defaultConfig.getTimeout(), "Default timeout should be 30000ms");
             assertFalse(defaultConfig.isEnabled(), "Should be disabled by default");
         }
     }
@@ -545,14 +544,14 @@ class HapiMLLPListenerTest {
     private static class TestMessageRouter implements MessageRouter {
         private final AtomicReference<MessageEnvelope> lastEnvelope = new AtomicReference<>();
         private final AtomicInteger messageCount = new AtomicInteger(0);
-        private final CountDownLatch messageLatch = new CountDownLatch(1);
+        private final BlockingQueue<MessageEnvelope> messageQueue = new LinkedBlockingQueue<>();
         private volatile boolean alwaysFail = false;
 
         @Override
         public boolean route(MessageEnvelope envelope) {
             lastEnvelope.set(envelope);
             messageCount.incrementAndGet();
-            messageLatch.countDown();
+            messageQueue.offer(envelope);
             return !alwaysFail;
         }
 
@@ -568,8 +567,9 @@ class HapiMLLPListenerTest {
             return messageCount.get();
         }
 
+        /** Waits for a message to arrive. Works correctly for every call, not just the first. */
         boolean awaitMessage(long timeout, TimeUnit unit) throws InterruptedException {
-            return messageLatch.await(timeout, unit);
+            return messageQueue.poll(timeout, unit) != null;
         }
     }
 }

@@ -30,11 +30,4 @@ public class MLLPConfig {
      * Default is 2575 (standard HL7 MLLP port).
      */
     private int port = 2575;
-
-    /**
-     * Socket timeout in milliseconds for reading from connections.
-     * Default is 30000ms (30 seconds).
-     * Note: HAPI SimpleServer manages timeouts internally; this value is for reference/documentation.
-     */
-    private int timeout = 30000;
 }

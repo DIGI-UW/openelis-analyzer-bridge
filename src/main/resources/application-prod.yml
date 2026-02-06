@@ -15,4 +15,3 @@ logging:
 org.itech.ahb.mllp:
   enabled: ${MLLP_ENABLED:false}
   port: ${MLLP_PORT:2575}
-  timeout: ${MLLP_TIMEOUT:30000}  # Note: HAPI manages timeouts internally; this is for reference

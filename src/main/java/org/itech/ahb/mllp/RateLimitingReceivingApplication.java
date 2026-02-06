@@ -59,7 +59,7 @@ public class RateLimitingReceivingApplication implements ReceivingApplication<Me
 
         cleanupExecutor.scheduleAtFixedRate(
             this::cleanupOldEntries,
-            CLEANUP_INTERVAL_MS,
+            0,
             CLEANUP_INTERVAL_MS,
             TimeUnit.MILLISECONDS
         );

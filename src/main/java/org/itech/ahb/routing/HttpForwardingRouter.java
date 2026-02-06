@@ -6,6 +6,10 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
@@ -205,9 +209,9 @@ public class HttpForwardingRouter implements MessageRouter {
     /**
      * Adds HTTP Basic authentication to the request.
      * <p>
-     * FIX: PR Review Comment #4 - Avoid String conversion of password to prevent
-     * it from staying in the String pool. Directly convert char[] to bytes and
-     * clear sensitive data immediately after use.
+     * Uses CharsetEncoder to convert the password char[] directly to bytes
+     * without creating an intermediate String (which would be interned in the
+     * String pool and cannot be reliably cleared from memory).
      * </p>
      *
      * @param builder the HTTP request builder
@@ -223,14 +227,19 @@ public class HttpForwardingRouter implements MessageRouter {
         byte[] usernameBytes = username.getBytes(StandardCharsets.UTF_8);
         byte[] colonBytes = ":".getBytes(StandardCharsets.UTF_8);
 
-        // Convert char[] to UTF-8 bytes properly (supporting non-ASCII characters)
-        // We create a temporary String but explicitly clear it afterward
-        String passwordString = new String(password);
-        byte[] passwordBytes = passwordString.getBytes(StandardCharsets.UTF_8);
-
-        // Attempt to clear the temporary String from memory (best effort)
-        // Note: JVM may optimize this away, but we try to minimize exposure
-        passwordString = null;
+        // Convert char[] to UTF-8 bytes via CharsetEncoder (avoids String pool exposure)
+        byte[] passwordBytes;
+        try {
+            CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
+            ByteBuffer byteBuffer = encoder.encode(CharBuffer.wrap(password));
+            passwordBytes = new byte[byteBuffer.remaining()];
+            byteBuffer.get(passwordBytes);
+        } catch (Exception e) {
+            log.error("Failed to encode password bytes", e);
+            return;
+        }
 
         // Combine username:password
         byte[] authBytes = new byte[usernameBytes.length + colonBytes.length + passwordBytes.length];
