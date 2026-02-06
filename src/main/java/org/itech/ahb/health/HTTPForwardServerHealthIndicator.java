@@ -4,13 +4,22 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.Builder;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Base64;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.springframework.boot.actuate.autoconfigure.health.ConditionalOnEnabledHealthIndicator;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,14 +38,25 @@ import org.springframework.stereotype.Component;
 public class HTTPForwardServerHealthIndicator implements HealthIndicator {
 
   private final HTTPForwardServerConfigurationProperties properties;
+  private final int connectTimeoutSeconds;
+  private final int readTimeoutSeconds;
 
   /**
    * Constructor for HTTPForwardServerHealthIndicator.
    *
    * @param properties the HTTP forward server configuration properties
    */
-  public HTTPForwardServerHealthIndicator(HTTPForwardServerConfigurationProperties properties) {
+  public HTTPForwardServerHealthIndicator(
+    HTTPForwardServerConfigurationProperties properties,
+    @Autowired(required = false) OpenELISConfig openelisConfig
+  ) {
     this.properties = properties;
+    this.connectTimeoutSeconds = openelisConfig != null
+      ? openelisConfig.getConnectTimeoutSeconds()
+      : 30;
+    this.readTimeoutSeconds = openelisConfig != null
+      ? openelisConfig.getReadTimeoutSeconds()
+      : 30;
   }
 
   /**
@@ -49,24 +69,22 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
     if (properties.getHealthUri() == null) {
       return Health.unknown().build();
     }
-    HttpClient client = HttpClient.newHttpClient();
+    HttpClient client = HttpClient.newBuilder()
+      .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+      .build();
     log.debug("creating request to test forward http server at " + properties.getHealthUri().toString());
     Builder requestBuilder = HttpRequest.newBuilder()
       .method(properties.getHealthMethod().toString(), HttpRequest.BodyPublishers.ofString(properties.getHealthBody()))
-      .uri(properties.getHealthUri());
+      .uri(properties.getHealthUri())
+      .timeout(Duration.ofSeconds(readTimeoutSeconds));
     if (!(properties.getUsername() == null || properties.getUsername().equals(""))) {
       log.debug(
         "using username '" +
         properties.getUsername() +
         "' to test forward http server at " +
-        properties.getUri().toString().toString()
+        properties.getUri().toString()
       );
-      requestBuilder.header(
-        "Authorization",
-        "Basic " +
-        Base64.getEncoder()
-          .encodeToString((properties.getUsername() + ":" + new String(properties.getPassword())).getBytes())
-      );
+      addBasicAuth(requestBuilder, properties.getUsername(), properties.getPassword());
     }
     HttpRequest request = requestBuilder.build();
 
@@ -82,5 +100,40 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
     }
     log.debug("testing forward http server at " + properties.getHealthUri().toString() + " failure");
     return Health.down().build();
+  }
+
+  private void addBasicAuth(Builder requestBuilder, String username, char[] password) {
+    if (password == null || password.length == 0) {
+      log.warn("Password is null or empty, skipping Basic auth");
+      return;
+    }
+
+    byte[] usernameBytes = username.getBytes(StandardCharsets.UTF_8);
+    byte[] colonBytes = ":".getBytes(StandardCharsets.UTF_8);
+
+    byte[] passwordBytes;
+    try {
+      CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
+        .onMalformedInput(CodingErrorAction.REPLACE)
+        .onUnmappableCharacter(CodingErrorAction.REPLACE);
+      ByteBuffer byteBuffer = encoder.encode(CharBuffer.wrap(password));
+      passwordBytes = new byte[byteBuffer.remaining()];
+      byteBuffer.get(passwordBytes);
+    } catch (Exception e) {
+      log.error("Failed to encode password bytes", e);
+      return;
+    }
+
+    byte[] authBytes = new byte[usernameBytes.length + colonBytes.length + passwordBytes.length];
+    System.arraycopy(usernameBytes, 0, authBytes, 0, usernameBytes.length);
+    System.arraycopy(colonBytes, 0, authBytes, usernameBytes.length, colonBytes.length);
+    System.arraycopy(passwordBytes, 0, authBytes, usernameBytes.length + colonBytes.length,
+      passwordBytes.length);
+
+    String encodedAuth = Base64.getEncoder().encodeToString(authBytes);
+    requestBuilder.header("Authorization", "Basic " + encodedAuth);
+
+    Arrays.fill(passwordBytes, (byte) 0);
+    Arrays.fill(authBytes, (byte) 0);
   }
 }

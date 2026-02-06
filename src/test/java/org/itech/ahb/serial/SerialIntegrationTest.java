@@ -16,6 +16,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.config.properties.SerialConfigurationProperties;
+import org.itech.ahb.normalizer.AnalyzerIdentifier;
+import org.itech.ahb.normalizer.MessageNormalizer;
+import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.config.properties.SerialConfigurationProperties.Parity;
 import org.itech.ahb.config.properties.SerialConfigurationProperties.ProtocolMode;
 import org.itech.ahb.config.properties.SerialConfigurationProperties.SerialPortConfig;
@@ -77,11 +80,12 @@ class SerialIntegrationTest {
         serverPort = httpServer.getAddress().getPort();
 
         // Set up handler to capture messages
+        // HttpForwardingRouter sends to /api/OpenELIS-Global/analyzer/{protocol}
         httpServer.createContext("/api/OpenELIS-Global/analyzer/", exchange -> {
             String path = exchange.getRequestURI().getPath();
             String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-            String sourceId = exchange.getRequestHeaders().getFirst(SerialMessageHandler.SOURCE_ID_HEADER);
-            String transport = exchange.getRequestHeaders().getFirst(SerialMessageHandler.TRANSPORT_HEADER);
+            String sourceId = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_ID);
+            String transport = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_TRANSPORT);
 
             String body;
             try (InputStream is = exchange.getRequestBody()) {
@@ -156,12 +160,15 @@ class SerialIntegrationTest {
 
             config.getPorts().add(portConfig);
 
-            // Create HTTP config
+            // Create HTTP config and wire M7 pipeline: HttpForwardingRouter -> MessageNormalizer -> SerialMessageHandler
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort));
+            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            // Create and start listener
-            SerialMessageHandler handler = new SerialMessageHandler(httpConfig);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
+            AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            SerialMessageHandler handler = new SerialMessageHandler(normalizer);
+
             listener = new SerialPortListener(config, handler);
             listener.start();
 
@@ -202,9 +209,13 @@ class SerialIntegrationTest {
             config.getPorts().add(portConfig);
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort));
+            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            SerialMessageHandler handler = new SerialMessageHandler(httpConfig);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
+            AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            SerialMessageHandler handler = new SerialMessageHandler(normalizer);
+
             listener = new SerialPortListener(config, handler);
             listener.start();
 
@@ -239,9 +250,13 @@ class SerialIntegrationTest {
             config.getPorts().add(portConfig);
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort));
+            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            SerialMessageHandler handler = new SerialMessageHandler(httpConfig);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
+            AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            SerialMessageHandler handler = new SerialMessageHandler(normalizer);
+
             listener = new SerialPortListener(config, handler);
             listener.start();
 
@@ -370,9 +385,13 @@ class SerialIntegrationTest {
             config.setPorts(ports);
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort));
+            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            SerialMessageHandler handler = new SerialMessageHandler(httpConfig);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
+            AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            SerialMessageHandler handler = new SerialMessageHandler(normalizer);
+
             SerialPortListener listener = new SerialPortListener(config, handler);
 
             // Start should not throw
@@ -393,9 +412,13 @@ class SerialIntegrationTest {
             config.setEnabled(true);
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort));
+            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            SerialMessageHandler handler = new SerialMessageHandler(httpConfig);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
+            AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            SerialMessageHandler handler = new SerialMessageHandler(normalizer);
+
             SerialPortListener listener = new SerialPortListener(config, handler);
             listener.start();
 

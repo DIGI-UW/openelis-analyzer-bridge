@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
  * HTTP input endpoint for analyzers with REST API capabilities.
  * <p>
  * This controller accepts raw analyzer messages (ASTM, HL7, or CSV) over HTTP POST
- * and creates a MessageEnvelope for downstream processing by the message normalizer.
+ * and routes them via {@link org.itech.ahb.normalizer.MessageNormalizer} to OpenELIS.
  * </p>
  * <p>
  * Protocol detection:
@@ -36,6 +36,13 @@ import org.springframework.web.bind.annotation.RestController;
  * infrastructure level (API gateway, firewall). IP headers (X-Forwarded-For, X-Real-IP)
  * are trusted for logging; do not use for security decisions without proxy validation.
  * </p>
+ * <p>
+ * Part of M7: Message Normalizer milestone — all transport handlers delegate to
+ * the normalizer for unified routing logic, retry/backoff, and audit logging.
+ * </p>
+ *
+ * @see org.itech.ahb.normalizer.MessageNormalizer
+ * @see MessageEnvelope
  */
 @RestController
 @RequestMapping("/input")
@@ -47,6 +54,17 @@ public class AnalyzerInputController {
      */
     private static final String CONTENT_TYPE_HL7_V2 = "application/hl7-v2";
     private static final String CONTENT_TYPE_HL7_V2_ALT = "x-application/hl7-v2";
+
+    private final org.itech.ahb.normalizer.MessageNormalizer normalizer;
+
+    /**
+     * Constructs a new AnalyzerInputController.
+     *
+     * @param normalizer the message normalizer for routing
+     */
+    public AnalyzerInputController(org.itech.ahb.normalizer.MessageNormalizer normalizer) {
+        this.normalizer = normalizer;
+    }
 
     /**
      * Receives analyzer messages over HTTP POST.
@@ -88,11 +106,8 @@ public class AnalyzerInputController {
             Protocol protocol = detectProtocol(contentType, requestBody);
             log.debug("Detected protocol: {}", protocol);
 
-            // Reject UNKNOWN protocol
             if (protocol == Protocol.UNKNOWN) {
-                log.warn("Unable to detect protocol for message from {}", sourceIp);
-                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                        .body(new InputResponse(false, "Unable to detect message protocol", sourceIp, null, null));
+                log.warn("Unable to detect protocol for message from {}, routing as raw", sourceIp);
             }
 
             // Create MessageEnvelope
@@ -106,12 +121,18 @@ public class AnalyzerInputController {
             log.info("Created MessageEnvelope: protocol={}, transport={}, sourceId={}",
                     envelope.getProtocol(), envelope.getTransport(), envelope.getSourceId());
 
-            // TODO: Forward to MessageNormalizer for routing once M7 integration is available
-            // For now, return success with envelope details
+            // Route via MessageNormalizer
+            boolean success = normalizer.process(envelope);
+
+            if (!success) {
+                log.error("Failed to route {} message from {}", protocol, sourceIp);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new InputResponse(false, "Message routing failed", sourceIp, protocol.name(), null));
+            }
 
             return ResponseEntity.ok(new InputResponse(
                     true,
-                    "Message received successfully",
+                    "Message routed successfully",
                     sourceIp,
                     protocol.name(),
                     envelope.getReceivedAt().toString()));

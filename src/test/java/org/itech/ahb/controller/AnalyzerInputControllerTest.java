@@ -2,6 +2,8 @@ package org.itech.ahb.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.itech.ahb.model.Protocol;
+import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.normalizer.MessageNormalizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,11 +17,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for AnalyzerInputController.
+ * <p>
  * Tests HTTP input endpoint for ASTM, HL7, and CSV messages.
+ * After M7 refactoring, this controller delegates to MessageNormalizer for routing.
+ * </p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -29,6 +35,9 @@ class AnalyzerInputControllerTest {
 
     @Mock
     private HttpServletRequest mockRequest;
+
+    @Mock
+    private MessageNormalizer mockNormalizer;
 
     // Sample messages
     private static final String SAMPLE_ASTM_MESSAGE = "H|\\^&|||HOST^NAME|||||||LIS2-A2|20260205120000\r" +
@@ -49,8 +58,10 @@ class AnalyzerInputControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new AnalyzerInputController();
+        controller = new AnalyzerInputController(mockNormalizer);
         lenient().when(mockRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+        // Default: normalizer returns success
+        lenient().when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
     }
 
     @Nested
@@ -306,16 +317,16 @@ class AnalyzerInputControllerTest {
         }
 
         @Test
-        @DisplayName("Should return 422 for unrecognized protocol")
-        void shouldRejectUnknownProtocol() {
+        @DisplayName("Should route unknown protocol as raw")
+        void shouldRouteUnknownProtocol() {
             String unknownMessage = "This is not a valid ASTM, HL7, or CSV message";
             ResponseEntity<AnalyzerInputController.InputResponse> response =
                     controller.receiveAnalyzerMessage(unknownMessage, "text/plain", null, mockRequest);
 
-            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.getStatusCode());
+            assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
-            assertFalse(response.getBody().success());
-            assertEquals("Unable to detect message protocol", response.getBody().message());
+            assertTrue(response.getBody().success());
+            assertEquals("UNKNOWN", response.getBody().protocol());
         }
     }
 
@@ -345,7 +356,7 @@ class AnalyzerInputControllerTest {
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
             assertTrue(response.getBody().success());
-            assertEquals("Message received successfully", response.getBody().message());
+            assertEquals("Message routed successfully", response.getBody().message());
             assertEquals("192.168.1.50", response.getBody().sourceIp());
             assertEquals("HL7", response.getBody().protocol());
             assertNotNull(response.getBody().receivedAt());
@@ -416,6 +427,91 @@ class AnalyzerInputControllerTest {
                     controller.extractSourceIp("", mockRequest));
             assertEquals("127.0.0.1",
                     controller.extractSourceIp("   ", mockRequest));
+        }
+    }
+
+    @Nested
+    @DisplayName("Message Normalizer Integration Tests (M7)")
+    class NormalizerIntegrationTests {
+
+        @Test
+        @DisplayName("Should call normalizer.process() for valid ASTM message")
+        void shouldCallNormalizerForValidASTM() {
+            ResponseEntity<AnalyzerInputController.InputResponse> response =
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, mockRequest);
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            verify(mockNormalizer).process(any(MessageEnvelope.class));
+        }
+
+        @Test
+        @DisplayName("Should call normalizer.process() for valid HL7 message")
+        void shouldCallNormalizerForValidHL7() {
+            ResponseEntity<AnalyzerInputController.InputResponse> response =
+                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2", null, mockRequest);
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            verify(mockNormalizer).process(any(MessageEnvelope.class));
+        }
+
+        @Test
+        @DisplayName("Should call normalizer.process() for valid CSV message")
+        void shouldCallNormalizerForValidCSV() {
+            ResponseEntity<AnalyzerInputController.InputResponse> response =
+                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/csv", null, mockRequest);
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            verify(mockNormalizer).process(any(MessageEnvelope.class));
+        }
+
+        @Test
+        @DisplayName("Should return 500 when normalizer returns false")
+        void shouldReturn500WhenNormalizerFails() {
+            when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(false);
+
+            ResponseEntity<AnalyzerInputController.InputResponse> response =
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, mockRequest);
+
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertFalse(response.getBody().success());
+            assertEquals("Message routing failed", response.getBody().message());
+        }
+
+        @Test
+        @DisplayName("Should return success message when normalizer returns true")
+        void shouldReturnSuccessWhenNormalizerSucceeds() {
+            when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
+
+            ResponseEntity<AnalyzerInputController.InputResponse> response =
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, mockRequest);
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertTrue(response.getBody().success());
+            assertEquals("Message routed successfully", response.getBody().message());
+        }
+
+        @Test
+        @DisplayName("Should not call normalizer for empty message")
+        void shouldNotCallNormalizerForEmptyMessage() {
+            ResponseEntity<AnalyzerInputController.InputResponse> response =
+                    controller.receiveAnalyzerMessage("", null, null, mockRequest);
+
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            verify(mockNormalizer, never()).process(any());
+        }
+
+        @Test
+        @DisplayName("Should call normalizer for unknown protocol")
+        void shouldCallNormalizerForUnknownProtocol() {
+            String unknownMessage = "This is some random text that doesnt match any protocol";
+
+            ResponseEntity<AnalyzerInputController.InputResponse> response =
+                    controller.receiveAnalyzerMessage(unknownMessage, null, null, mockRequest);
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            verify(mockNormalizer, times(1)).process(any());
         }
     }
 }

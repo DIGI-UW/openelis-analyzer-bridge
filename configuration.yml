@@ -22,6 +22,10 @@
 # Bridge Configuration (NEW FORMAT - v2.0+)
 bridge:
   # OpenELIS connection settings
+  # NOTE: This 'url' property was used by FileMessageHandler's direct forwarding (pre-M7).
+  #       After M7 (Message Normalizer), all routing uses HttpForwardingRouter, which reads
+  #       from org.itech.ahb.forward-http-server.uri (legacy format).
+  #       Future: Consolidate to bridge.openelis.url once legacy format is fully migrated.
   openelis:
     url: http://localhost:8443
     connectTimeoutSeconds: 30
@@ -29,6 +33,35 @@ bridge:
     retry:
       maxAttempts: 3
       backoffMs: 1000
+
+  # Analyzer identification registry (M7: Message Normalizer)
+  # Maps source identifiers (IP addresses, serial ports, file paths) to analyzer IDs.
+  # The AnalyzerIdentifier service uses these mappings to identify analyzers before routing.
+  # If no match is found, OpenELIS will identify the analyzer from message content (e.g., MSH-3/MSH-4 for HL7).
+  #
+  # Key types:
+  #   - IP addresses: Exact match (e.g., "192.168.1.10")
+  #   - Serial port paths: Exact match (e.g., "/dev/ttyUSB0")
+  #   - Glob patterns: Wildcard match for file paths (e.g., "quantstudio-*" matches "quantstudio-20260205.csv")
+  analyzers: {}
+  # Example configuration (uncomment and modify as needed):
+  #   "192.168.1.10":
+  #     id: MINDRAY-BC5380-001
+  #     name: "Mindray BC-5380"
+  #     expectedProtocol: ASTM
+  #   "192.168.1.11":
+  #     id: SYSMEX-XN-001
+  #     name: "Sysmex XN-1000"
+  #     expectedProtocol: HL7
+  #   "/dev/ttyUSB0":
+  #     id: HORIBA-PENTRA60-001
+  #     name: "Horiba Pentra 60"
+  #     expectedProtocol: ASTM
+  #   "quantstudio-*":
+  #     id: QUANTSTUDIO-001
+  #     name: "QuantStudio 7 Flex"
+  #     expectedProtocol: CSV
+  #     filePattern: ".*/quantstudio-.*\\.csv"
 
   # File watcher configuration (M4)
   file:
@@ -57,12 +90,18 @@ bridge:
         flags: 5
 
 # Legacy configuration (still supported)
+# NOTE: This org.itech.ahb.* format is from Bridge v1.x. After M7 (Message Normalizer),
+#       HttpForwardingRouter reads from this URI for ALL transport types (ASTM, MLLP, Serial, File, HTTP).
+#       It routes to protocol-specific endpoints automatically (/analyzer/astm, /analyzer/hl7, /analyzer/csv).
+#       Future: Migrate to bridge.openelis.url once legacy format is fully deprecated.
 org:
   itech:
     ahb:
       forward-http-server:
-        # URI of the OpenELIS ASTM endpoint (or http-capture for testing)
-        uri: http://localhost:8080/api/analyzer/astm
+        # URI of the OpenELIS base endpoint (HttpForwardingRouter appends protocol paths)
+        # Base path only - router appends /astm, /hl7, /csv, /raw per message protocol
+        # Example: http://localhost:8080/api/OpenELIS-Global/analyzer → /analyzer/astm, /analyzer/hl7, etc.
+        uri: http://localhost:8080/api/OpenELIS-Global/analyzer
 
       # ASTM LIS1-A Server - Listens for ASTM messages from analyzers
       listen-astm-server:
