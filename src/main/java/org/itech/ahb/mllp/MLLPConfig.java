@@ -34,12 +34,7 @@ public class MLLPConfig {
     /**
      * Socket timeout in milliseconds for reading from connections.
      * Default is 30000ms (30 seconds).
+     * Note: HAPI SimpleServer manages timeouts internally; this value is for reference/documentation.
      */
     private int timeout = 30000;
-
-    /**
-     * Maximum message size in bytes.
-     * Default is 1MB (1048576 bytes).
-     */
-    private int maxMessageSize = 1048576;
 }

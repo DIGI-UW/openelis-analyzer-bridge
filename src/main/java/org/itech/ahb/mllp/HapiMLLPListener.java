@@ -74,11 +74,13 @@ public class HapiMLLPListener {
      */
     @PostConstruct
     public void start() {
-        log.info("Starting HAPI MLLP listener on port {} (timeout={}ms)",
+        log.info("Starting HAPI MLLP listener on port {} (configured timeout={}ms; note: HAPI manages timeouts internally)",
             config.getPort(), config.getTimeout());
 
         try {
             // Create HAPI SimpleServer
+            // Note: The SimpleServer(port, tls) constructor doesn't accept socket timeout configuration.
+            // HAPI manages socket timeouts internally. The timeout from MLLPConfig is for reference only.
             server = new SimpleServer(config.getPort(), false);
 
             // Create receiving application chain

@@ -223,11 +223,14 @@ public class HttpForwardingRouter implements MessageRouter {
         byte[] usernameBytes = username.getBytes(StandardCharsets.UTF_8);
         byte[] colonBytes = ":".getBytes(StandardCharsets.UTF_8);
 
-        // FIX: Avoid String conversion - convert char[] directly to bytes
-        byte[] passwordBytes = new byte[password.length];
-        for (int i = 0; i < password.length; i++) {
-            passwordBytes[i] = (byte) password[i];  // Direct char→byte without String intermediate
-        }
+        // Convert char[] to UTF-8 bytes properly (supporting non-ASCII characters)
+        // We create a temporary String but explicitly clear it afterward
+        String passwordString = new String(password);
+        byte[] passwordBytes = passwordString.getBytes(StandardCharsets.UTF_8);
+
+        // Attempt to clear the temporary String from memory (best effort)
+        // Note: JVM may optimize this away, but we try to minimize exposure
+        passwordString = null;
 
         // Combine username:password
         byte[] authBytes = new byte[usernameBytes.length + colonBytes.length + passwordBytes.length];

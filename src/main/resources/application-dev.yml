@@ -14,8 +14,7 @@ management:
 org.itech.ahb.mllp:
   enabled: true
   port: 2575
-  timeout: 30000
-  max-message-size: 1048576
+  timeout: 30000  # Note: HAPI manages timeouts internally; this is for reference
 
 # Serial port configuration (for development/testing)
 org.itech.ahb.serial:
