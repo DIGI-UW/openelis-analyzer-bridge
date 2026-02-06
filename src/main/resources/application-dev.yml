@@ -10,6 +10,11 @@ management:
 #    key-store: ${server.ssl.keyStorePath}
 #    key-store-password: ${server.ssl.keyStorePassword}
 
+# MLLP Server Configuration (HL7 v2.x transport)
+org.itech.ahb.mllp:
+  enabled: true
+  port: 2575
+
 # Serial port configuration (for development/testing)
 org.itech.ahb.serial:
   enabled: false  # Set to true to enable serial port listening
