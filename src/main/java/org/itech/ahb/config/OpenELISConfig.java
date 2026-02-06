@@ -14,7 +14,6 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @ConfigurationProperties(prefix = "bridge.openelis")
-@ConditionalOnProperty(prefix = "bridge.file", name = "enabled", havingValue = "true")
 @Data
 public class OpenELISConfig {
 

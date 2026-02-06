@@ -1,6 +1,5 @@
 package org.itech.ahb.config;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,34 +12,20 @@ import java.time.Duration;
  * <p>
  * Configures RestTemplate beans for HTTP communication with OpenELIS and other services.
  * </p>
+ * <p>
+ * NOTE: After M7 (Message Normalizer) refactoring, file watcher no longer uses RestTemplate
+ * (delegates to MessageNormalizer → HttpForwardingRouter which uses java.net.http.HttpClient).
+ * The fileWatcherRestTemplate bean was removed as it has no consumers.
+ * </p>
  */
 @Configuration
 public class HttpClientConfig {
 
     /**
-     * RestTemplate bean for file watcher HTTP forwarding.
-     * <p>
-     * Only created when file watcher is enabled.
-     * Configured with timeouts from OpenELISConfig.
-     * </p>
-     *
-     * @param builder Spring-provided RestTemplate builder
-     * @param openelisConfig OpenELIS configuration with timeout settings
-     * @return configured RestTemplate instance
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "bridge.file", name = "enabled", havingValue = "true")
-    public RestTemplate fileWatcherRestTemplate(RestTemplateBuilder builder, OpenELISConfig openelisConfig) {
-        return builder
-                .setConnectTimeout(Duration.ofSeconds(openelisConfig.getConnectTimeoutSeconds()))
-                .setReadTimeout(Duration.ofSeconds(openelisConfig.getReadTimeoutSeconds()))
-                .build();
-    }
-
-    /**
      * General-purpose RestTemplate bean for bridge HTTP operations.
      * <p>
      * Used by components that need HTTP client but aren't file-watcher-specific.
+     * May be used in future for non-analyzer HTTP operations.
      * </p>
      *
      * @param builder Spring-provided RestTemplate builder

@@ -6,15 +6,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.YamlPropertySourceFactory;
 import org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties;
 import org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties;
-import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.lib.astm.handling.ASTMHandler;
 import org.itech.ahb.lib.astm.handling.ASTMHandlerService;
 import org.itech.ahb.lib.astm.handling.ASTMHandlerService.Mode;
-import org.itech.ahb.lib.astm.handling.DefaultForwardingASTMToHTTPHandler;
 import org.itech.ahb.lib.astm.interpretation.ASTMInterpreterFactory;
 import org.itech.ahb.lib.astm.interpretation.DefaultASTMInterpreterFactory;
 import org.itech.ahb.lib.astm.servlet.ASTMServlet;
 import org.itech.ahb.lib.astm.servlet.ASTMServlet.ASTMVersion;
+import org.itech.ahb.normalizer.ASTMBridgeAdapter;
+import org.itech.ahb.normalizer.MessageNormalizer;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -58,42 +58,43 @@ public class AstmHttpBridgeApplication {
 
   /**
    * Bean for creating an ASTM handler service.
+   * <p>
+   * After M7 (Message Normalizer) refactoring, the handler service uses
+   * {@link ASTMBridgeAdapter} instead of {@code DefaultForwardingASTMToHTTPHandler}.
+   * The adapter delegates to {@link MessageNormalizer} for unified routing,
+   * retry/backoff, and audit logging.
+   * </p>
    *
-   * @param httpForwardConfig the HTTP forward server configuration properties
+   * @param normalizer the message normalizer for routing
    * @return the ASTM handler service
    */
   @Bean
-  public ASTMHandlerService astmHandlerService(HTTPForwardServerConfigurationProperties httpForwardConfig) {
-    List<ASTMHandler> astmHandlers;
-    if (StringUtils.hasText(httpForwardConfig.getUsername())) {
-      astmHandlers = Arrays.asList(
-        new DefaultForwardingASTMToHTTPHandler(
-          httpForwardConfig.getUri(),
-          httpForwardConfig.getUsername(),
-          httpForwardConfig.getPassword()
-        )
-      );
-    } else {
-      astmHandlers = Arrays.asList(new DefaultForwardingASTMToHTTPHandler(httpForwardConfig.getUri()));
-    }
+  public ASTMHandlerService astmHandlerService(MessageNormalizer normalizer) {
+    List<ASTMHandler> astmHandlers = Arrays.asList(
+      new ASTMBridgeAdapter(normalizer)
+    );
     return new ASTMHandlerService(astmHandlers, Mode.FIRST);
   }
 
   /**
    * Bean for creating an ASTM servlet for LIS1-A.
+   * <p>
+   * After M7 refactoring, the servlet receives {@link ASTMHandlerService} via dependency
+   * injection instead of calling the method directly.
+   * </p>
    *
    * @param astmListenConfig the ASTM listen server configuration properties
-   * @param httpForwardConfig the HTTP forward server configuration properties
+   * @param astmHandlerService the ASTM handler service (injected)
    * @return the ASTM servlet
    */
   @Bean
   public ASTMServlet astmLIS01AServlet(
     ASTMLIS1AListenServerConfigurationProperties astmListenConfig,
-    HTTPForwardServerConfigurationProperties httpForwardConfig
+    ASTMHandlerService astmHandlerService
   ) {
     log.info("creating astm server bean to handle incoming astm LIS1-A requests on port " + astmListenConfig.getPort());
     return new ASTMServlet(
-      astmHandlerService(httpForwardConfig),
+      astmHandlerService,
       astmInterpreterFactory(),
       astmListenConfig.getPort(),
       ASTMVersion.LIS01_A
@@ -102,21 +103,25 @@ public class AstmHttpBridgeApplication {
 
   /**
    * Bean for creating an ASTM servlet for E1381-95.
+   * <p>
+   * After M7 refactoring, the servlet receives {@link ASTMHandlerService} via dependency
+   * injection instead of calling the method directly.
+   * </p>
    *
    * @param astmListenConfig the ASTM listen server configuration properties
-   * @param httpForwardConfig the HTTP forward server configuration properties
+   * @param astmHandlerService the ASTM handler service (injected)
    * @return the ASTM servlet
    */
   @Bean
   public ASTMServlet astmE138195Servlet(
     ASTME138195ListenServerConfigurationProperties astmListenConfig,
-    HTTPForwardServerConfigurationProperties httpForwardConfig
+    ASTMHandlerService astmHandlerService
   ) {
     log.info(
       "creating astm 1381-95 server bean to handle incoming astm 1381-95 requests on port " + astmListenConfig.getPort()
     );
     return new ASTMServlet(
-      astmHandlerService(httpForwardConfig),
+      astmHandlerService,
       astmInterpreterFactory(),
       astmListenConfig.getPort(),
       ASTMVersion.E1381_95

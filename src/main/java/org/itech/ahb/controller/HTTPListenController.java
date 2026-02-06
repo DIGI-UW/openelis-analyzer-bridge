@@ -78,7 +78,7 @@ public class HTTPListenController {
     HttpServletResponse response
   ) {
     log.debug("received http request to handle");
-    log.trace("requestBody: " + requestBody);
+    log.trace("requestBody length: " + (requestBody != null ? requestBody.length() : 0));
     log.trace("forwardAddress: " + forwardAddress);
     log.trace("forwardPort: " + forwardPort);
     log.trace("forwardAstmVersion: " + forwardAstmVersion);

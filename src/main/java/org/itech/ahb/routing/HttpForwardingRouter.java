@@ -14,9 +14,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -66,62 +69,158 @@ public class HttpForwardingRouter implements MessageRouter {
     /** HTTP header for source analyzer IP (for backward compatibility with ASTM) */
     public static final String HEADER_SOURCE_ANALYZER_IP = "X-Source-Analyzer-IP";
 
+    private static final Pattern IPV4_PATTERN =
+        Pattern.compile("^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.|$)){4}$");
+    private static final Pattern IPV6_PATTERN =
+        Pattern.compile("^[0-9a-fA-F:]+$");
+
     private final HTTPForwardServerConfigurationProperties httpConfig;
+    private final OpenELISConfig.RetryConfig retryConfig;
+    private final int connectTimeoutSeconds;
+    private final int readTimeoutSeconds;
     private final HttpClient httpClient;
 
     /**
      * Constructs a new HttpForwardingRouter with the specified configuration.
      *
      * @param httpConfig the HTTP forwarding server configuration
+     * @param openelisConfig the OpenELIS configuration (optional, for retry settings)
      */
-    public HttpForwardingRouter(HTTPForwardServerConfigurationProperties httpConfig) {
+    public HttpForwardingRouter(
+            HTTPForwardServerConfigurationProperties httpConfig,
+            @Autowired(required = false) OpenELISConfig openelisConfig) {
         this.httpConfig = httpConfig;
+        this.retryConfig = openelisConfig != null ? openelisConfig.getRetry() : null;
+        this.connectTimeoutSeconds = openelisConfig != null
+            ? openelisConfig.getConnectTimeoutSeconds()
+            : 30;
+        this.readTimeoutSeconds = openelisConfig != null
+            ? openelisConfig.getReadTimeoutSeconds()
+            : 30;
         this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(30))
+            .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
             .build();
+
+        if (retryConfig != null) {
+            log.info("HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
+                retryConfig.getMaxAttempts(), retryConfig.getBackoffMs());
+        } else {
+            log.info("HttpForwardingRouter configured without retry (single attempt)");
+        }
+        log.info("HttpForwardingRouter timeouts: connect={}s read={}s",
+            connectTimeoutSeconds, readTimeoutSeconds);
     }
 
     /**
      * Routes a message envelope to the appropriate HTTP endpoint.
+     * <p>
+     * Implements retry with exponential backoff if configured via {@link OpenELISConfig.RetryConfig}.
+     * Retries are attempted for:
+     * <ul>
+     *   <li>5xx server errors (may be transient)</li>
+     *   <li>Network/IO errors (connection failures, timeouts)</li>
+     * </ul>
+     * </p>
+     * <p>
+     * Non-retryable failures:
+     * <ul>
+     *   <li>4xx client errors (bad request, authentication failure, etc.)</li>
+     *   <li>Thread interruption</li>
+     * </ul>
+     * </p>
      *
      * @param envelope the message with transport metadata
      * @return true if routing succeeded (HTTP 2xx response), false otherwise
      */
     @Override
     public boolean route(MessageEnvelope envelope) {
+        if (envelope == null) {
+            log.error("Cannot route null MessageEnvelope");
+            return false;
+        }
+        if (envelope.getProtocol() == null || envelope.getTransport() == null) {
+            log.error("MessageEnvelope missing protocol or transport");
+            return false;
+        }
+        if (envelope.getSourceId() == null || envelope.getSourceId().trim().isEmpty()) {
+            log.error("MessageEnvelope missing sourceId");
+            return false;
+        }
+        if (envelope.getRawMessage() == null || envelope.getRawMessage().trim().isEmpty()) {
+            log.error("MessageEnvelope missing rawMessage");
+            return false;
+        }
+
         log.debug("Routing {} message from {} via {}",
             envelope.getProtocol(), envelope.getSourceId(), envelope.getTransport());
 
-        try {
-            // Determine endpoint based on protocol
-            URI targetUri = buildTargetUri(envelope);
+        int maxAttempts = retryConfig != null ? retryConfig.getMaxAttempts() : 1;
+        long backoffMs = retryConfig != null ? retryConfig.getBackoffMs() : 1000;
 
-            // Build HTTP request with envelope metadata as headers
-            HttpRequest request = buildRequest(envelope, targetUri);
+        // Determine endpoint based on protocol
+        URI targetUri = buildTargetUri(envelope);
 
-            // Forward to HTTP endpoint
-            HttpResponse<String> response = httpClient.send(
-                request, HttpResponse.BodyHandlers.ofString());
+        // Retry loop with exponential backoff
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                // Build HTTP request with envelope metadata as headers
+                HttpRequest request = buildRequest(envelope, targetUri);
 
-            int statusCode = response.statusCode();
-            log.debug("HTTP forward response: {} {}", statusCode, response.body());
+                // Forward to HTTP endpoint
+                HttpResponse<String> response = httpClient.send(
+                    request, HttpResponse.BodyHandlers.ofString());
 
-            if (statusCode >= 200 && statusCode < 300) {
-                log.info("Successfully routed {} message from {} to {}",
-                    envelope.getProtocol(), envelope.getSourceId(), targetUri);
-                return true;
-            } else {
-                log.error("HTTP forward failed with status {}: {}", statusCode, response.body());
+                int statusCode = response.statusCode();
+                log.debug("HTTP forward response (attempt {}/{}): {}",
+                    attempt, maxAttempts, statusCode);
+
+                // Success (2xx)
+                if (statusCode >= 200 && statusCode < 300) {
+                    if (attempt > 1) {
+                        log.info("Successfully routed {} message from {} to {} after {} attempts",
+                            envelope.getProtocol(), envelope.getSourceId(), targetUri, attempt);
+                    } else {
+                        log.info("Successfully routed {} message from {} to {}",
+                            envelope.getProtocol(), envelope.getSourceId(), targetUri);
+                    }
+                    return true;
+                }
+
+                // Non-retryable client errors (4xx) — fail immediately
+                if (statusCode >= 400 && statusCode < 500) {
+                    log.error("Non-retryable HTTP error {}", statusCode);
+                    return false;
+                }
+
+                // Server errors (5xx) — retry if attempts remaining
+                log.warn("Server error {} on attempt {}/{}",
+                    statusCode, attempt, maxAttempts);
+
+            } catch (IOException e) {
+                log.warn("IO error on attempt {}/{}: {}", attempt, maxAttempts, e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("Interrupted while routing message");
                 return false;
             }
 
-        } catch (IOException | InterruptedException e) {
-            log.error("Error routing {} message to HTTP endpoint", envelope.getProtocol(), e);
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+            // Retry with exponential backoff if attempts remaining
+            if (attempt < maxAttempts) {
+                long waitMs = backoffMs * (1L << (attempt - 1)); // exponential: backoff * 2^(attempt-1)
+                log.info("Retrying in {}ms (attempt {}/{})", waitMs, attempt + 1, maxAttempts);
+                try {
+                    Thread.sleep(waitMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("Interrupted during backoff");
+                    return false;
+                }
             }
-            return false;
         }
+
+        log.error("All {} attempts failed for {} message from {}",
+            maxAttempts, envelope.getProtocol(), envelope.getSourceId());
+        return false;
     }
 
     /**
@@ -154,9 +253,10 @@ public class HttpForwardingRouter implements MessageRouter {
             case HL7 -> "/hl7";
             case ASTM -> "/astm";
             case CSV -> "/csv";
+            case UNKNOWN -> "/raw";
             default -> {
-                log.warn("Unknown protocol {}, using base path", envelope.getProtocol());
-                yield "";
+                log.warn("Unknown protocol {}, using raw endpoint", envelope.getProtocol());
+                yield "/raw";
             }
         };
 
@@ -190,12 +290,17 @@ public class HttpForwardingRouter implements MessageRouter {
             .header(HEADER_SOURCE_PROTOCOL, envelope.getProtocol().name())
             .header(HEADER_SOURCE_TRANSPORT, envelope.getTransport().name())
             .header(HEADER_SOURCE_ID, envelope.getSourceId())
-            .header(HEADER_SOURCE_ANALYZER_IP, envelope.getSourceId())  // Backward compat
+            .timeout(Duration.ofSeconds(readTimeoutSeconds))
             .POST(HttpRequest.BodyPublishers.ofString(envelope.getRawMessage()));
 
         // Add analyzer ID header if available
         if (envelope.getAnalyzerId() != null && !envelope.getAnalyzerId().isEmpty()) {
             builder.header(HEADER_ANALYZER_ID, envelope.getAnalyzerId());
+        }
+
+        // Backward compatibility: only set when sourceId looks like an IP address
+        if (isIpAddress(envelope.getSourceId())) {
+            builder.header(HEADER_SOURCE_ANALYZER_IP, envelope.getSourceId());
         }
 
         // Add Basic authentication if configured
@@ -204,6 +309,17 @@ public class HttpForwardingRouter implements MessageRouter {
         }
 
         return builder.build();
+    }
+
+    private boolean isIpAddress(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return false;
+        }
+        String trimmed = value.trim();
+        if (IPV4_PATTERN.matcher(trimmed).matches()) {
+            return true;
+        }
+        return trimmed.contains(":") && IPV6_PATTERN.matcher(trimmed).matches();
     }
 
     /**

@@ -1,20 +1,13 @@
 package org.itech.ahb.file;
 
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.normalizer.MessageNormalizer;
 import org.itech.ahb.util.ProtocolDetector;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -23,14 +16,16 @@ import java.nio.file.Path;
 /**
  * Handles file-based analyzer messages.
  * <p>
- * Reads file content, detects protocol format, and forwards to appropriate
- * OpenELIS endpoint based on protocol type (ASTM, HL7, CSV).
+ * Reads file content, detects protocol format, and delegates to
+ * {@link MessageNormalizer} for routing to OpenELIS.
  * </p>
  * <p>
- * NOTE: This component currently forwards directly to OpenELIS endpoints.
- * When M7 (Message Normalizer) is implemented, refactor to route through
- * the centralized normalizer for consistent audit logging and analyzer identification.
+ * Part of M7: Message Normalizer milestone — all transport handlers delegate to
+ * the normalizer for unified routing logic, retry/backoff, and audit logging.
  * </p>
+ *
+ * @see MessageNormalizer
+ * @see MessageEnvelope
  */
 @Component
 @ConditionalOnProperty(prefix = "bridge.file", name = "enabled", havingValue = "true")
@@ -38,26 +33,34 @@ import java.nio.file.Path;
 public class FileMessageHandler {
 
     private final CSVParser csvParser;
-    private final RestTemplate restTemplate;
+    private final MessageNormalizer normalizer;
     private final FileConfig fileConfig;
-    private final OpenELISConfig openelisConfig;
 
     // Maximum file size to process (10MB default)
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
+    /**
+     * Creates a new FileMessageHandler.
+     *
+     * @param csvParser the CSV parser for validation
+     * @param fileConfig the file watcher configuration
+     * @param normalizer the message normalizer for routing
+     */
     public FileMessageHandler(
             CSVParser csvParser,
             FileConfig fileConfig,
-            OpenELISConfig openelisConfig,
-            @Qualifier("fileWatcherRestTemplate") RestTemplate restTemplate) {
+            MessageNormalizer normalizer) {
         this.csvParser = csvParser;
         this.fileConfig = fileConfig;
-        this.openelisConfig = openelisConfig;
-        this.restTemplate = restTemplate;
+        this.normalizer = normalizer;
     }
 
     /**
-     * Process a file and forward to OpenELIS.
+     * Process a file and forward to OpenELIS via MessageNormalizer.
+     * <p>
+     * Reads the file, detects protocol, validates content, creates a MessageEnvelope,
+     * and delegates to the {@link MessageNormalizer} for routing to OpenELIS.
+     * </p>
      *
      * @param filePath   the file path to process
      * @param analyzerId optional analyzer identifier (for CSV mapping lookup)
@@ -89,11 +92,8 @@ public class FileMessageHandler {
         log.debug("Detected protocol: {} for file: {}", protocol, filePath.getFileName());
 
         if (protocol == Protocol.UNKNOWN) {
-            throw new FileProcessingException("Unable to detect protocol for file: " + filePath);
-        }
-
-        // Validate file content for detected protocol
-        if (!validateFileContent(filePath, protocol)) {
+            log.warn("Unable to detect protocol for file {}, routing as raw", filePath.getFileName());
+        } else if (!validateFileContent(filePath, protocol)) {
             throw new FileProcessingException("Invalid " + protocol + " content in file: " + filePath);
         }
 
@@ -106,74 +106,13 @@ public class FileMessageHandler {
                 .analyzerId(analyzerId)
                 .build();
 
-        // Forward to appropriate endpoint
-        forwardToOpenELIS(envelope);
+        // Delegate to normalizer for routing
+        boolean success = normalizer.process(envelope);
+        if (!success) {
+            throw new FileProcessingException("Failed to route message for file: " + filePath);
+        }
 
         return envelope;
-    }
-
-    /**
-     * Forward message envelope to OpenELIS endpoint based on protocol.
-     *
-     * @param envelope the message envelope to forward
-     * @throws FileProcessingException if HTTP forwarding fails
-     */
-    private void forwardToOpenELIS(MessageEnvelope envelope) throws FileProcessingException {
-        String endpoint = getEndpointForProtocol(envelope.getProtocol());
-        String fullUrl = openelisConfig.getUrl() + endpoint;
-
-        log.debug("Forwarding {} message to: {}", envelope.getProtocol(), fullUrl);
-
-        try {
-            // Build headers
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("X-Source-Analyzer-IP", envelope.getSourceId());
-            headers.set("X-Message-Transport", Transport.FILE.name());
-
-            if (envelope.getAnalyzerId() != null) {
-                headers.set("X-Analyzer-ID", envelope.getAnalyzerId());
-            }
-
-            // Set content type based on protocol
-            if (envelope.getProtocol() == Protocol.CSV) {
-                headers.setContentType(MediaType.parseMediaType("text/csv"));
-            } else {
-                headers.setContentType(MediaType.TEXT_PLAIN);
-            }
-
-            // Create request
-            HttpEntity<String> request = new HttpEntity<>(envelope.getRawMessage(), headers);
-
-            // Send POST request
-            ResponseEntity<String> response = restTemplate.postForEntity(fullUrl, request, String.class);
-
-            if (response.getStatusCode() != HttpStatus.OK) {
-                throw new FileProcessingException(
-                        "OpenELIS returned non-OK status: " + response.getStatusCode() +
-                                " for protocol: " + envelope.getProtocol());
-            }
-
-            log.info("Successfully forwarded {} message to OpenELIS", envelope.getProtocol());
-
-        } catch (Exception e) {
-            log.error("Failed to forward message to OpenELIS: {}", e.getMessage(), e);
-            throw new FileProcessingException("Failed to forward to OpenELIS: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Get OpenELIS endpoint path based on protocol.
-     *
-     * @param protocol the message protocol
-     * @return endpoint path (e.g., "/api/analyzer/csv")
-     */
-    private String getEndpointForProtocol(Protocol protocol) {
-        return switch (protocol) {
-            case CSV -> "/api/OpenELIS-Global/analyzer/csv";
-            case HL7 -> "/api/OpenELIS-Global/analyzer/hl7";
-            case ASTM -> "/api/OpenELIS-Global/analyzer/astm";
-            default -> throw new IllegalArgumentException("Unsupported protocol: " + protocol);
-        };
     }
 
     /**
