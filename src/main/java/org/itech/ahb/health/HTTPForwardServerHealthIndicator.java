@@ -82,7 +82,7 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
         "using username '" +
         properties.getUsername() +
         "' to test forward http server at " +
-        properties.getUri().toString().toString()
+        properties.getUri().toString()
       );
       addBasicAuth(requestBuilder, properties.getUsername(), properties.getPassword());
     }

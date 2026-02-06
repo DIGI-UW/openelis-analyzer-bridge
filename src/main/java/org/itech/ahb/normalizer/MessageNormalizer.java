@@ -98,7 +98,9 @@ public class MessageNormalizer implements MessageRouter {
             return false;
         }
         if (envelope.getProtocol() == null || envelope.getTransport() == null) {
-            log.error("MessageEnvelope missing protocol or transport: {}", envelope);
+            log.error("MessageEnvelope missing protocol or transport: protocol={}, transport={}, sourceId={}, analyzerId={}",
+                envelope.getProtocol(), envelope.getTransport(),
+                envelope.getSourceId(), envelope.getAnalyzerId());
             return false;
         }
         if (envelope.getSourceId() == null || envelope.getSourceId().trim().isEmpty()) {

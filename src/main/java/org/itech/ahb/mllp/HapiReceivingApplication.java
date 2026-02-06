@@ -84,7 +84,7 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
             String analyzerId = extractAnalyzerId(message, sourceIp);
 
             log.debug("Processing HL7 message from {} (analyzer: {}), {} bytes",
-                sourceIp, analyzerId, rawMessage.length());
+                sourceIp, analyzerId, rawMessage != null ? rawMessage.length() : 0);
             log.trace("HL7 message received ({} bytes)", rawMessage != null ? rawMessage.length() : 0);
 
             // Create MessageEnvelope for routing

@@ -70,9 +70,12 @@ public class HttpForwardingRouter implements MessageRouter {
     public static final String HEADER_SOURCE_ANALYZER_IP = "X-Source-Analyzer-IP";
 
     private static final Pattern IPV4_PATTERN =
-        Pattern.compile("^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.|$)){4}$");
+        Pattern.compile("^(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$");
     private static final Pattern IPV6_PATTERN =
         Pattern.compile("^[0-9a-fA-F:]+$");
+
+    /** Maximum backoff wait time in milliseconds (1 minute cap to prevent overflow) */
+    private static final long MAX_BACKOFF_MS = 60_000;
 
     private final HTTPForwardServerConfigurationProperties httpConfig;
     private final OpenELISConfig.RetryConfig retryConfig;
@@ -206,7 +209,8 @@ public class HttpForwardingRouter implements MessageRouter {
 
             // Retry with exponential backoff if attempts remaining
             if (attempt < maxAttempts) {
-                long waitMs = backoffMs * (1L << (attempt - 1)); // exponential: backoff * 2^(attempt-1)
+                long uncappedWaitMs = backoffMs * (1L << (attempt - 1)); // exponential: backoff * 2^(attempt-1)
+                long waitMs = Math.min(uncappedWaitMs, MAX_BACKOFF_MS); // Cap to prevent overflow
                 log.info("Retrying in {}ms (attempt {}/{})", waitMs, attempt + 1, maxAttempts);
                 try {
                     Thread.sleep(waitMs);

@@ -30,9 +30,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.*;
 
@@ -47,6 +48,7 @@ import ca.uhn.hl7v2.parser.PipeParser;
  * correct path and headers for each listener type.
  * </p>
  */
+@ExtendWith(MockitoExtension.class)
 @DisplayName("Unified Routing Integration Tests (M7)")
 class UnifiedRoutingTest {
 
@@ -70,7 +72,6 @@ class UnifiedRoutingTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        MockitoAnnotations.openMocks(this);
         lastRequest = new AtomicReference<>();
         requestLatch = new CountDownLatch(1);
 
@@ -96,8 +97,12 @@ class UnifiedRoutingTest {
                 path, body, sourceProtocol, sourceTransport, sourceId, analyzerId, sourceAnalyzerIp));
             requestLatch.countDown();
 
-            exchange.sendResponseHeaders(200, 2);
-            exchange.getResponseBody().write("OK".getBytes());
+            try {
+                exchange.sendResponseHeaders(200, 2);
+                exchange.getResponseBody().write("OK".getBytes());
+            } finally {
+                exchange.close();
+            }
         });
         httpServer.start();
 
@@ -224,7 +229,6 @@ class UnifiedRoutingTest {
         void httpAstmRoutesCorrectly() throws Exception {
             resetLatch();
             when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.10");
-            when(mockHttpRequest.getHeader("X-Forwarded-For")).thenReturn(null);
             when(mockHttpRequest.getHeader("X-Real-IP")).thenReturn(null);
 
             String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";

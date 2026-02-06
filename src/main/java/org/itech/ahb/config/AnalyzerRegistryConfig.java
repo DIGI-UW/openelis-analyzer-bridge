@@ -5,7 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -119,22 +121,18 @@ public class AnalyzerRegistryConfig {
      */
     private boolean matchesGlob(String sourceId, String globPattern) {
         try {
-            // Convert glob to regex
-            String regex = globPattern
-                .replace(".", "\\.")  // Escape dots
-                .replace("*", ".*")   // * matches any characters
-                .replace("?", ".");   // ? matches single character
-            if (sourceId.matches(regex)) {
+            PathMatcher matcher = FileSystems.getDefault()
+                .getPathMatcher("glob:" + globPattern);
+
+            // Try full path match first
+            if (matcher.matches(Paths.get(sourceId))) {
                 return true;
             }
 
             // If sourceId looks like a path, also check against the file name
             Path path = Paths.get(sourceId);
             Path fileName = path.getFileName();
-            return fileName != null && fileName.toString().matches(regex);
-        } catch (PatternSyntaxException e) {
-            log.warn("Invalid glob pattern '{}': {}", globPattern, e.getMessage());
-            return false;
+            return fileName != null && matcher.matches(fileName);
         } catch (Exception e) {
             log.debug("Failed to evaluate glob pattern '{}' against source '{}': {}",
                 globPattern, sourceId, e.getMessage());
