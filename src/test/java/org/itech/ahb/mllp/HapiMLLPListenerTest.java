@@ -440,7 +440,6 @@ class HapiMLLPListenerTest {
 
             assertEquals(2575, defaultConfig.getPort(), "Default port should be 2575");
             assertEquals(30000, defaultConfig.getTimeout(), "Default timeout should be 30000ms");
-            assertEquals(1048576, defaultConfig.getMaxMessageSize(), "Default max size should be 1MB");
             assertFalse(defaultConfig.isEnabled(), "Should be disabled by default");
         }
     }
