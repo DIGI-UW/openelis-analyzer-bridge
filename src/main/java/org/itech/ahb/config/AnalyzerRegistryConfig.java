@@ -37,7 +37,7 @@ import java.util.regex.PatternSyntaxException;
  *       id: QUANTSTUDIO-001
  *       name: "QuantStudio 7 Flex"
  *       expectedProtocol: CSV
- *       filePattern: ".* /quantstudio-.*\\.csv"
+ *       filePattern: ".*\\/quantstudio-.*\\.csv"
  * </pre>
  * </p>
  * <p>
