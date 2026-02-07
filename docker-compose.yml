@@ -12,10 +12,18 @@ services:
     image: itechuw/openelis-analyzer-bridge:latest
     pull_policy: always
     ports:
-      - "8442:8443"
-      - "12000:12001"
+      - "8442:8443"     # HTTP API endpoint (HTTPS when TLS is configured)
+      - "12000:12001"   # ASTM LIS1-A listener
+      - "12010:12011"   # ASTM E1381-95 listener
+      - "2575:2575"     # MLLP HL7 listener (concurrent connections via HAPI SimpleServer)
     volumes:
       - ./configuration.yml:/app/configuration.yml
+      # File watcher directories (uncomment if bridge.file.enabled=true)
+      # - /path/to/analyzer-import:/mnt/analyzer-import:ro
+      # - /path/to/analyzer-archive:/mnt/analyzer-archive
+    # Serial device passthrough (uncomment if org.itech.ahb.serial.enabled=true)
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
     environment:
       LOGGING_LEVEL_ORG_ITECH: INFO
     logging: *local-logging

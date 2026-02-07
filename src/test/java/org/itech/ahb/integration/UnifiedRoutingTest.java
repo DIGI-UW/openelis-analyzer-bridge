@@ -112,7 +112,7 @@ class UnifiedRoutingTest {
 
         HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
         AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-        normalizer = new MessageNormalizer(forwardingRouter, identifier);
+        normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
 
         serialHandler = new SerialMessageHandler(normalizer);
 

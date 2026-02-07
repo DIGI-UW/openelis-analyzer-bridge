@@ -158,7 +158,7 @@ class SerialIntegrationTest {
             portConfig.setProtocol(ProtocolMode.ASTM);
             portConfig.setAnalyzerId("TEST-ANALYZER");
 
-            config.getPorts().add(portConfig);
+            config.setPorts(List.of(portConfig));
 
             // Create HTTP config and wire M7 pipeline: HttpForwardingRouter -> MessageNormalizer -> SerialMessageHandler
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
@@ -166,7 +166,7 @@ class SerialIntegrationTest {
 
             HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
 
             listener = new SerialPortListener(config, handler);
@@ -206,14 +206,14 @@ class SerialIntegrationTest {
             portConfig.setBaudRate(9600);
             portConfig.setProtocol(ProtocolMode.HL7);
 
-            config.getPorts().add(portConfig);
+            config.setPorts(List.of(portConfig));
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
             HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
 
             listener = new SerialPortListener(config, handler);
@@ -247,14 +247,14 @@ class SerialIntegrationTest {
             portConfig.setBaudRate(9600);
             portConfig.setProtocol(ProtocolMode.AUTO);
 
-            config.getPorts().add(portConfig);
+            config.setPorts(List.of(portConfig));
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
             HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
 
             listener = new SerialPortListener(config, handler);
@@ -389,7 +389,7 @@ class SerialIntegrationTest {
 
             HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
 
             SerialPortListener listener = new SerialPortListener(config, handler);
@@ -416,7 +416,7 @@ class SerialIntegrationTest {
 
             HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier);
+            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
 
             SerialPortListener listener = new SerialPortListener(config, handler);

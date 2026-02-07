@@ -36,7 +36,7 @@ class MessageNormalizerTest {
 
     @BeforeEach
     void setUp() {
-        normalizer = new MessageNormalizer(mockForwardingRouter, mockIdentifier);
+        normalizer = new MessageNormalizer(mockForwardingRouter, mockIdentifier, null);
         // Lenient: some tests override these stubs
         lenient().when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
         lenient().when(mockIdentifier.identify(any(MessageEnvelope.class))).thenReturn(null);

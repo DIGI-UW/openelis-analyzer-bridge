@@ -29,6 +29,8 @@ RUN --mount=type=cache,target=/root/.m2,sharing=locked \
 #
 FROM eclipse-temurin:21-jre-alpine
 
+RUN apk add --no-cache curl gcompat
+
 RUN addgroup -S astm --gid 9257 && adduser -S astm -s /bin/bash -u 9257 -G astm
 RUN mkdir /app
 RUN chown astm:astm /app

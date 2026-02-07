@@ -11,7 +11,7 @@
 	</parent>
 	<groupId>org.itech</groupId>
 	<artifactId>astm-http-bridge</artifactId>
-	<version>2.3.5</version>
+	<version>3.0.0</version>
 	<name>openelis-analyzer-bridge</name>
 	<description>OpenELIS Analyzer Bridge: transports/protocol mediation (ASTM, HL7/MLLP, serial, file) forwarding analyzer messages to OpenELIS via HTTP.</description>
 	<url>https://github.com/DIGI-UW/openelis-analyzer-bridge</url>
@@ -31,11 +31,15 @@
 		<dependency>
 			<groupId>org.itech</groupId>
 			<artifactId>astm-http-lib</artifactId>
-			<version>2.3.5</version>
+			<version>3.0.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

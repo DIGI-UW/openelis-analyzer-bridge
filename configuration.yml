@@ -119,6 +119,22 @@ org:
         host-name: localhost
         port: 5000
 
+      # MLLP (HL7 v2.x) Listener - Concurrent connections on single port
+      mllp:
+        enabled: false  # Set to true to enable MLLP listener
+        port: 2575      # Standard HL7 MLLP port (IANA registered)
+        # Rate limiting: per source IP, prevents flooding
+        # rateLimit:
+        #   messagesPerSecond: 10
+
+      # Serial port listener (RS-232/RS-485)
+      serial:
+        enabled: false  # Set to true to enable serial transport
+        # ports:
+        #   - path: /dev/ttyUSB0
+        #     baudRate: 9600
+        #     protocol: ASTM
+
 # Server configuration
 server:
   port: 8443
@@ -129,13 +145,24 @@ logging:
     root: INFO
     org.itech: DEBUG
 
-# Actuator endpoints for health monitoring
+# Actuator endpoints for health monitoring and metrics
+# NOTE: These endpoints should be network-restricted in production (e.g., firewall or reverse proxy).
+# The bridge does not include Spring Security — any caller who can reach the port can access these.
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
-
+      show-details: never  # Set to 'always' for debugging; restrict network access in production
+  health:
+    # Health indicators for each transport (disable if transport not in use)
+    mllp:
+      enabled: true
+    serial:
+      enabled: true
+    filewatcher:
+      enabled: true
+    httpforward:
+      enabled: true

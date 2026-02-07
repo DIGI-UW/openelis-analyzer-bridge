@@ -1,21 +1,26 @@
 version: '3.8'
 
-# Test environment for bi-directional ASTM workflow verification
-# Uses ASTM Mock Server to simulate analyzers with different IP addresses
+# E2E test environment for Universal Analyzer Bridge
+# Exercises all transport types: ASTM TCP, MLLP, File, HTTP
+# Uses WireMock as capture server for request verification
 
 services:
-  # ASTM-HTTP Bridge
+  # ASTM-HTTP Bridge (under test)
   astm-http-bridge:
     build: .
     ports:
-      - "12001:12001"  # ASTM LIS1-A listener
-      - "12011:12011"  # ASTM E1381-95 listener  
-      - "8443:8443"    # HTTP listener
+      - "12001:12001"   # ASTM LIS1-A listener
+      - "12011:12011"   # ASTM E1381-95 listener
+      - "2575:2575"     # MLLP HL7 listener
+      - "8443:8443"     # HTTP /input endpoint + actuator
     environment:
       LOGGING_LEVEL_ORG_ITECH: DEBUG
       LOGGING_LEVEL_ROOT: INFO
     volumes:
-      - ./configuration.yml:/app/configuration.yml:ro
+      - ./configuration.test.yml:/app/configuration.yml:ro
+      - ./test-data/file-input:/mnt/analyzer-import
+      - ./test-data/file-archive:/mnt/analyzer-archive
+      - ./test-data/file-error:/mnt/analyzer-error
     networks:
       astm-test-net:
         ipv4_address: 172.28.0.100
@@ -23,81 +28,34 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8443/actuator/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 30s
+    depends_on:
+      wiremock:
+        condition: service_healthy
 
-  # HTTP endpoint to capture forwarded messages (for testing)
-  http-capture:
-    image: python:3.11-slim
-    command: >
-      python -c "
-      from http.server import HTTPServer, BaseHTTPRequestHandler
-      import json
-
-      class Handler(BaseHTTPRequestHandler):
-          def do_POST(self):
-              content_length = int(self.headers.get('Content-Length', 0))
-              body = self.rfile.read(content_length).decode('utf-8')
-              print('=' * 60)
-              print('RECEIVED REQUEST')
-              print('=' * 60)
-              print(f'Path: {self.path}')
-              print('Headers:')
-              for key, value in self.headers.items():
-                  print(f'  {key}: {value}')
-              print(f'Body: {body[:200]}...' if len(body) > 200 else f'Body: {body}')
-              print('=' * 60)
-              self.send_response(200)
-              self.send_header('Content-Type', 'text/plain')
-              self.end_headers()
-              self.wfile.write(b'OK')
-
-      print('Starting HTTP capture server on port 8080...')
-      HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
-      "
+  # WireMock — captures forwarded messages for verification
+  # Query API: GET http://localhost:8080/__admin/requests
+  # Reset:     DELETE http://localhost:8080/__admin/requests
+  wiremock:
+    image: wiremock/wiremock:3.3.1
+    container_name: wiremock-capture
     ports:
       - "8080:8080"
+    command:
+      - --port=8080
+      - --verbose
+      - --global-response-templating
+    volumes:
+      - ./test-data/wiremock:/home/wiremock
     networks:
       astm-test-net:
         ipv4_address: 172.28.0.200
-
-  # Mock Analyzer 1 - Hematology
-  mock-analyzer-1:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./tools/astm-mock-server:/app:ro
-    command: ["python", "server.py", "--port", "5000", "--verbose"]
-    networks:
-      astm-test-net:
-        ipv4_address: 172.28.0.10
-    depends_on:
-      - astm-http-bridge
-
-  # Mock Analyzer 2 - Chemistry
-  mock-analyzer-2:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./tools/astm-mock-server:/app:ro
-    command: ["python", "server.py", "--port", "5000", "--verbose"]
-    networks:
-      astm-test-net:
-        ipv4_address: 172.28.0.11
-    depends_on:
-      - astm-http-bridge
-
-  # Mock Analyzer 3 - Immunology  
-  mock-analyzer-3:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./tools/astm-mock-server:/app:ro
-    command: ["python", "server.py", "--port", "5000", "--verbose"]
-    networks:
-      astm-test-net:
-        ipv4_address: 172.28.0.12
-    depends_on:
-      - astm-http-bridge
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 networks:
   astm-test-net:
@@ -105,4 +63,3 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/24
-
