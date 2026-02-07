@@ -109,6 +109,10 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.file.watchDirectories` | Directories to watch | [] |
 | `bridge.file.archiveDirectory` | Processed files archive | Required if enabled |
 | `bridge.file.pollIntervalMs` | Poll interval | 5000 |
+| **Security (M7.1)** | | |
+| `bridge.security.enabled` | Enable HTTP Basic auth on /input | true |
+| `bridge.security.username` | HTTP Basic username | bridge |
+| `bridge.security.password` | HTTP Basic password (use env var) | changeme |
 | **Server** | | |
 | `server.port` | HTTP server port | 8443 |
 
@@ -203,6 +207,60 @@ readinessProbe:
     port: 8443
   initialDelaySeconds: 30
   periodSeconds: 10
+```
+
+## Security
+
+The `/input` HTTP endpoint is protected with HTTP Basic authentication (M7.1).
+Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
+
+### Configuration
+
+```yaml
+bridge:
+  security:
+    enabled: true                               # false to disable (not recommended)
+    username: bridge
+    password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via environment variable
+```
+
+### Usage
+
+```bash
+# Authenticated request to /input
+curl -u bridge:changeme -X POST http://localhost:8442/input \
+  -H "Content-Type: application/hl7-v2" \
+  -d "MSH|^~\&|ANALYZER|LAB|..."
+
+# Unauthenticated returns 401
+curl -X POST http://localhost:8442/input -d "test"
+# → 401 Unauthorized
+```
+
+### Production Setup
+
+Set the password via environment variable:
+
+```bash
+export BRIDGE_AUTH_PASSWORD=your-secure-password
+docker compose up -d
+```
+
+Or in Docker Compose:
+
+```yaml
+environment:
+  BRIDGE_AUTH_PASSWORD: your-secure-password
+```
+
+### Disabling Security
+
+For development only:
+
+```yaml
+bridge:
+  security:
+    enabled: false
 ```
 
 ## HTTP Behavior (ASTM Stable Path)
