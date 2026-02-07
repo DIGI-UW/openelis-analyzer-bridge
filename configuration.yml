@@ -146,6 +146,8 @@ logging:
     org.itech: DEBUG
 
 # Actuator endpoints for health monitoring and metrics
+# NOTE: These endpoints should be network-restricted in production (e.g., firewall or reverse proxy).
+# The bridge does not include Spring Security — any caller who can reach the port can access these.
 management:
   endpoints:
     web:
@@ -153,7 +155,7 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: never  # Set to 'always' for debugging; restrict network access in production
   health:
     # Health indicators for each transport (disable if transport not in use)
     mllp:

@@ -54,7 +54,7 @@ public class MessageNormalizer implements MessageRouter {
      *
      * @param forwardingRouter the HTTP forwarding router for sending to OpenELIS
      * @param identifier the analyzer identification service
-     * @param metricsService optional metrics service (null if Micrometer not on classpath)
+     * @param metricsService optional metrics service (null if MetricsService bean is not created)
      */
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
