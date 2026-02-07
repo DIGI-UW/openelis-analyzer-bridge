@@ -47,6 +47,10 @@ public class FileWatcher {
 
     private volatile boolean running = false;
 
+    public boolean isRunning() {
+        return running;
+    }
+
     public FileWatcher(FileConfig fileConfig, FileMessageHandler messageHandler) {
         this.fileConfig = fileConfig;
         this.messageHandler = messageHandler;

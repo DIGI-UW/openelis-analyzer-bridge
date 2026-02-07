@@ -1,8 +1,11 @@
 package org.itech.ahb.normalizer;
 
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.routing.MessageRouter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -40,6 +43,7 @@ public class MessageNormalizer implements MessageRouter {
 
     private final HttpForwardingRouter forwardingRouter;  // Inject by CONCRETE TYPE
     private final AnalyzerIdentifier identifier;
+    private final MetricsService metricsService;  // nullable — optional dependency
 
     /**
      * Constructs a new MessageNormalizer.
@@ -50,12 +54,15 @@ public class MessageNormalizer implements MessageRouter {
      *
      * @param forwardingRouter the HTTP forwarding router for sending to OpenELIS
      * @param identifier the analyzer identification service
+     * @param metricsService optional metrics service (null if Micrometer not on classpath)
      */
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
-            AnalyzerIdentifier identifier) {
+            AnalyzerIdentifier identifier,
+            @Autowired(required = false) MetricsService metricsService) {
         this.forwardingRouter = forwardingRouter;
         this.identifier = identifier;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -112,6 +119,17 @@ public class MessageNormalizer implements MessageRouter {
             return false;
         }
 
+        String protocol = envelope.getProtocol().name();
+        String transport = envelope.getTransport().name();
+
+        // Start timing
+        Timer.Sample sample = metricsService != null ? metricsService.startRouting() : null;
+
+        // Record message received
+        if (metricsService != null) {
+            metricsService.recordReceived(protocol, transport);
+        }
+
         // 1. If analyzerId not set, try to identify via AnalyzerIdentifier
         String analyzerId = envelope.getAnalyzerId();
         if (analyzerId == null || analyzerId.isEmpty()) {
@@ -137,6 +155,11 @@ public class MessageNormalizer implements MessageRouter {
 
         // 4. Route via HttpForwardingRouter (NOT via this.route() — that would recurse!)
         boolean success = forwardingRouter.route(enriched);
+
+        // Record routing result and duration
+        if (metricsService != null) {
+            metricsService.recordRouted(sample, protocol, transport, success);
+        }
 
         if (!success) {
             log.error("Failed to route message: protocol={}, source={}",
