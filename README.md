@@ -2,7 +2,7 @@
 
 Middleware that receives analyzer messages over multiple **protocols/transports** and forwards them to **OpenELIS via HTTP**.
 
-This repository was previously named **ASTM-HTTP Bridge**. For **backward compatibility**, some technical identifiers (Maven `artifactId`, jar filename, and some Docker/Compose service naming) still use `astm-http-bridge`.
+This repository was previously named **ASTM-HTTP Bridge**. The internal rename to `openelis-analyzer-bridge` is complete across Maven, Docker, and scripts. The Docker Hub image `itechuw/astm-http-bridge` is still published as a legacy alias via CI.
 
 ## Architecture
 
@@ -41,7 +41,7 @@ git clone https://github.com/DIGI-UW/openelis-analyzer-bridge.git
 cd openelis-analyzer-bridge
 
 docker compose up -d --build
-docker logs --follow astm-http-bridge
+docker logs --follow openelis-analyzer-bridge
 ```
 
 ### Building from Source
@@ -53,7 +53,7 @@ mvn clean install
 cd ..
 mvn clean package
 
-java -jar target/astm-http-bridge-*.jar --spring.config.location=configuration.yml
+java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configuration.yml
 ```
 
 ## Docker Deployment

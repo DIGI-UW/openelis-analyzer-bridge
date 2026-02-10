@@ -35,7 +35,7 @@ main() {
 
     # Step 1: Build the bridge
     log_info "Step 1: Building ASTM-HTTP Bridge..."
-    docker compose -f docker-compose.test.yml build astm-http-bridge
+    docker compose -f docker-compose.test.yml build openelis-analyzer-bridge
     
     # Step 2: Start test environment
     log_info "Step 2: Starting test environment..."
@@ -47,11 +47,11 @@ main() {
     
     # Step 3: Verify bridge is running
     log_info "Step 3: Verifying bridge health..."
-    if docker compose -f docker-compose.test.yml exec -T astm-http-bridge wget -q -O - http://localhost:8443/actuator/health | grep -q "UP"; then
+    if docker compose -f docker-compose.test.yml exec -T openelis-analyzer-bridge wget -q -O - http://localhost:8443/actuator/health | grep -q "UP"; then
         log_info "Bridge is healthy"
     else
         log_error "Bridge health check failed"
-        docker compose -f docker-compose.test.yml logs astm-http-bridge
+        docker compose -f docker-compose.test.yml logs openelis-analyzer-bridge
         exit 1
     fi
     
@@ -89,7 +89,7 @@ main() {
     
     # Step 5: View logs
     log_info "Step 5: Bridge logs (last 20 lines):"
-    docker compose -f docker-compose.test.yml logs --tail=20 astm-http-bridge
+    docker compose -f docker-compose.test.yml logs --tail=20 openelis-analyzer-bridge
     
     echo ""
     log_info "=== Integration Tests Complete ==="

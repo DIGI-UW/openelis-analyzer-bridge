@@ -37,14 +37,14 @@ RUN chown astm:astm /app
 
 
 #Deploy the jar into java image
-COPY --from=build /build/target/*.jar /app/astm-http-bridge.jar
+COPY --from=build /build/target/*.jar /app/openelis-analyzer-bridge.jar
 
 ADD healthcheck.sh /app/healthcheck.sh
 ADD docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chown astm:astm /app/docker-entrypoint.sh; \
   chmod 770 /app/docker-entrypoint.sh;  \
-  chown astm:astm /app/astm-http-bridge.jar; \
-  chmod 770 /app/astm-http-bridge.jar; \
+  chown astm:astm /app/openelis-analyzer-bridge.jar; \
+  chmod 770 /app/openelis-analyzer-bridge.jar; \
   chown astm:astm /app/healthcheck.sh; \
   chmod 770 /app/healthcheck.sh;
 
