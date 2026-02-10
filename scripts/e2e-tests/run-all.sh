@@ -24,7 +24,7 @@ TIMEOUT=60
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
     if docker compose -f docker-compose.test.yml ps --format json 2>/dev/null | \
-       jq -e 'select(.Service == "astm-http-bridge" and .Health == "healthy")' > /dev/null 2>&1; then
+       jq -e 'select(.Service == "openelis-analyzer-bridge" and .Health == "healthy")' > /dev/null 2>&1; then
         echo "Bridge is healthy!"
         break
     fi
@@ -35,7 +35,7 @@ done
 
 if [ $ELAPSED -ge $TIMEOUT ]; then
     echo "ERROR: Bridge did not become healthy within ${TIMEOUT}s"
-    docker compose -f docker-compose.test.yml logs astm-http-bridge | tail -30
+    docker compose -f docker-compose.test.yml logs openelis-analyzer-bridge | tail -30
     docker compose -f docker-compose.test.yml down
     exit 1
 fi

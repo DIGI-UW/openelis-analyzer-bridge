@@ -5,8 +5,8 @@ version: '3.8'
 # Uses WireMock as capture server for request verification
 
 services:
-  # ASTM-HTTP Bridge (under test)
-  astm-http-bridge:
+  # OpenELIS Analyzer Bridge (under test)
+  openelis-analyzer-bridge:
     build: .
     ports:
       - "12001:12001"   # ASTM LIS1-A listener

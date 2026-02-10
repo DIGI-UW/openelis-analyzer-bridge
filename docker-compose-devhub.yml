@@ -7,8 +7,8 @@ x-logging: &local-logging
     max-file: "50"
 
 services:
-  astm-http-bridge:
-    container_name: astm-http-bridge
+  openelis-analyzer-bridge:
+    container_name: openelis-analyzer-bridge
     image: itechuw/openelis-analyzer-bridge:develop
     pull_policy: always
     ports:

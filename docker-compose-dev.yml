@@ -26,12 +26,12 @@ x-loki-logging:
               - swarm_stack
 
 services:
-  astm-http-bridge:
-    container_name: astm-http-bridge
+  openelis-analyzer-bridge:
+    container_name: openelis-analyzer-bridge
     build:
       context: .
       dockerfile: ./Dockerfile.dev
-    image: astm-http-bridge
+    image: openelis-analyzer-bridge
     ports:
       - "8442:8443"
       - "12000:12001"
