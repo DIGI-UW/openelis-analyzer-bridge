@@ -662,7 +662,7 @@ public class GeneralASTMCommunicator implements Communicator {
     return new Callable<Character>() {
       @Override
       public Character call() throws IOException, InterruptedException {
-        socket.setSoTimeout(ESTABLISHMENT_SEND_TIMEOUT);
+        socket.setSoTimeout(ESTABLISHMENT_SEND_TIMEOUT * 1000);
         log.trace("sending: '" + LogUtil.convertForDisplay(ENQ) + "' as establishment signal");
         writer.append(ENQ);
         writer.flush();
