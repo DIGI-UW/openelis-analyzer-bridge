@@ -173,8 +173,19 @@ public class DefaultForwardingHTTPToASTMHandler implements HTTPHandler {
     ASTMReceiveThread receiveThread = new ASTMReceiveThread(communicator, socket, astmHandlerService, true);
     receiveThread.run();
     log.debug("waiting after line contention to see if sender has a message that needs to be received...");
-    TimeUnit.SECONDS.sleep(LINE_CONTENTION_REATTEMPT_TIMEOUT);
-    if (receiveThread.didReceiveEstablishmentSucceed()) {
+    // Poll for establishment success instead of sleeping the full timeout.
+    // Per CLSI LIS1-A §8.2.7.1, instruments re-send ENQ after >= 1 second.
+    // Most respond within 1-2s; poll every 500ms to return quickly.
+    boolean established = false;
+    for (int waited = 0; waited < LINE_CONTENTION_REATTEMPT_TIMEOUT; waited++) {
+      TimeUnit.MILLISECONDS.sleep(500);
+      if (receiveThread.didReceiveEstablishmentSucceed()) {
+        established = true;
+        log.debug("received establishment after ~{}ms of contention wait", waited * 500 + 500);
+        break;
+      }
+    }
+    if (established) {
       log.debug("received an establishment after the line was in contention before the timeout");
     } else {
       log.error("a timeout occured waiting for the sender to reattempt establishment after the line was contested.");

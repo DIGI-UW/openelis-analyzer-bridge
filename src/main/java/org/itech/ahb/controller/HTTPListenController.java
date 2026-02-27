@@ -2,11 +2,13 @@ package org.itech.ahb.controller;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.properties.ASTMForwardServerConfigurationProperties;
 import org.itech.ahb.lib.astm.concept.ASTMMessage;
+import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
 import org.itech.ahb.lib.astm.handling.ASTMHandlerService;
 import org.itech.ahb.lib.astm.interpretation.ASTMInterpreterFactory;
 import org.itech.ahb.lib.astm.servlet.ASTMServlet.ASTMVersion;
@@ -82,9 +84,16 @@ public class HTTPListenController {
     log.trace("forwardAddress: " + forwardAddress);
     log.trace("forwardPort: " + forwardPort);
     log.trace("forwardAstmVersion: " + forwardAstmVersion);
-    ASTMMessage message = interpreterFactory
-      .createInterpreterForText(requestBody)
-      .interpretASTMTextToMessage(requestBody);
+    // Null/empty body = ping/test-connection; create empty message so
+    // handleLineContention treats contention as success (CLSI LIS1-A §8.2.7.1)
+    ASTMMessage message;
+    if (requestBody == null || requestBody.isBlank()) {
+      message = new DefaultASTMMessage(Collections.emptyList());
+    } else {
+      message = interpreterFactory
+        .createInterpreterForText(requestBody)
+        .interpretASTMTextToMessage(requestBody);
+    }
     HTTPForwardingHandlerInfo handlerInfo = new HTTPForwardingHandlerInfo();
     handlerInfo.setForwardAddress(forwardAddress);
     handlerInfo.setForwardPort(forwardPort);
