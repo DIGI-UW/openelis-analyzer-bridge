@@ -43,4 +43,12 @@ public class HTTPForwardServerConfigurationProperties {
    * The body of the health check request.
    */
   private String healthBody = "";
+
+  /**
+   * Disable TLS certificate and hostname verification for HTTPS forwarding.
+   * <p>
+   * Development-only option for self-signed local environments.
+   * </p>
+   */
+  private boolean insecureTls = false;
 }
