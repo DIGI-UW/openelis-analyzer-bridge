@@ -69,6 +69,9 @@ public class HttpForwardingRouter implements MessageRouter {
     /** HTTP header for source analyzer IP (for backward compatibility with ASTM) */
     public static final String HEADER_SOURCE_ANALYZER_IP = "X-Source-Analyzer-IP";
 
+    /** HTTP header for source port number */
+    public static final String HEADER_SOURCE_PORT = "X-Source-Port";
+
     private static final Pattern IPV4_PATTERN =
         Pattern.compile("^(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$");
     private static final Pattern IPV6_PATTERN =
@@ -300,6 +303,11 @@ public class HttpForwardingRouter implements MessageRouter {
         // Add analyzer ID header if available
         if (envelope.getAnalyzerId() != null && !envelope.getAnalyzerId().isEmpty()) {
             builder.header(HEADER_ANALYZER_ID, envelope.getAnalyzerId());
+        }
+
+        // Add source port header if available
+        if (envelope.getSourcePort() != null) {
+            builder.header(HEADER_SOURCE_PORT, String.valueOf(envelope.getSourcePort()));
         }
 
         // Backward compatibility: only set when sourceId looks like an IP address

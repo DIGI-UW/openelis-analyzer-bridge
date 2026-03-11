@@ -87,11 +87,15 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
                 sourceIp, analyzerId, rawMessage != null ? rawMessage.length() : 0);
             log.trace("HL7 message received ({} bytes)", rawMessage != null ? rawMessage.length() : 0);
 
+            // Extract source port from HAPI metadata
+            Integer sourcePort = extractSourcePort(metadata);
+
             // Create MessageEnvelope for routing
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.HL7)
                 .transport(Transport.MLLP)
                 .sourceId(sourceIp)
+                .sourcePort(sourcePort)
                 .rawMessage(rawMessage)
                 .receivedAt(Instant.now())
                 .analyzerId(analyzerId)
@@ -143,6 +147,27 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
 
         log.warn("Could not extract source IP from HAPI metadata (keys: {})", metadata.keySet());
         return "unknown";
+    }
+
+    /**
+     * Extracts the source port number from HAPI connection metadata.
+     *
+     * @param metadata the HAPI metadata map
+     * @return the source port, or null if not available
+     */
+    Integer extractSourcePort(Map<String, Object> metadata) {
+        Object sendingPort = metadata.get(META_SENDING_PORT);
+        if (sendingPort instanceof Integer) {
+            return (Integer) sendingPort;
+        }
+        if (sendingPort != null) {
+            try {
+                return Integer.parseInt(sendingPort.toString());
+            } catch (NumberFormatException e) {
+                log.debug("Could not parse SENDING_PORT: {}", sendingPort);
+            }
+        }
+        return null;
     }
 
     /**

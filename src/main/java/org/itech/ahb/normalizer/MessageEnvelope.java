@@ -56,4 +56,13 @@ public class MessageEnvelope {
      * Optional analyzer identifier (if pre-configured or detected from message headers)
      */
     private final String analyzerId;
+
+    /**
+     * Source port number (TCP/MLLP: remote port from connection metadata; HTTP: remote port from request)
+     * <p>
+     * Forwarded to OpenELIS as {@code X-Source-Port} for deterministic analyzer identification
+     * when combined with sourceId (IP address).
+     * </p>
+     */
+    private final Integer sourcePort;
 }

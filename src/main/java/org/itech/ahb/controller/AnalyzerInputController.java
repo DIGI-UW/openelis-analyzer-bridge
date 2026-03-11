@@ -110,11 +110,15 @@ public class AnalyzerInputController {
                 log.warn("Unable to detect protocol for message from {}, routing as raw", sourceIp);
             }
 
+            // Extract source port from HTTP request
+            int sourcePort = request.getRemotePort();
+
             // Create MessageEnvelope
             MessageEnvelope envelope = MessageEnvelope.builder()
                     .protocol(protocol)
                     .transport(Transport.HTTP)
                     .sourceId(sourceIp)
+                    .sourcePort(sourcePort)
                     .rawMessage(requestBody)
                     .build();
 
