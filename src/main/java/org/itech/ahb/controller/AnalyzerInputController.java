@@ -235,7 +235,12 @@ public class AnalyzerInputController {
         }
 
         // Direct connection: the TCP remote port is the analyzer's port
-        return request.getRemotePort();
+        int remotePort = request.getRemotePort();
+        if (remotePort >= 1 && remotePort <= 65_535) {
+            return remotePort;
+        }
+        log.warn("Out-of-range remote port from direct connection: {}", remotePort);
+        return null;
     }
 
     /**
