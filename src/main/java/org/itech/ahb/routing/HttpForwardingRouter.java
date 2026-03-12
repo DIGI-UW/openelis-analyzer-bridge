@@ -39,6 +39,7 @@ import org.springframework.stereotype.Component;
  *   <li>X-Source-Protocol: From envelope.protocol</li>
  *   <li>X-Source-Transport: From envelope.transport</li>
  *   <li>X-Source-Id: From envelope.sourceId</li>
+ *   <li>X-Source-Port: From envelope.sourcePort (when available)</li>
  *   <li>X-Source-Analyzer-IP: From envelope.sourceId (backward compatibility)</li>
  * </ul>
  * </p>
@@ -68,6 +69,9 @@ public class HttpForwardingRouter implements MessageRouter {
 
     /** HTTP header for source analyzer IP (for backward compatibility with ASTM) */
     public static final String HEADER_SOURCE_ANALYZER_IP = "X-Source-Analyzer-IP";
+
+    /** HTTP header for source port number */
+    public static final String HEADER_SOURCE_PORT = "X-Source-Port";
 
     private static final Pattern IPV4_PATTERN =
         Pattern.compile("^(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$");
@@ -300,6 +304,11 @@ public class HttpForwardingRouter implements MessageRouter {
         // Add analyzer ID header if available
         if (envelope.getAnalyzerId() != null && !envelope.getAnalyzerId().isEmpty()) {
             builder.header(HEADER_ANALYZER_ID, envelope.getAnalyzerId());
+        }
+
+        // Add source port header if available
+        if (envelope.getSourcePort() != null) {
+            builder.header(HEADER_SOURCE_PORT, String.valueOf(envelope.getSourcePort()));
         }
 
         // Backward compatibility: only set when sourceId looks like an IP address

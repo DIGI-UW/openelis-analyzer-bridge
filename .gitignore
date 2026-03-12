@@ -37,6 +37,7 @@ build/
 .classpath
 bin
 node_modules
+/id_file
 
 # Test tools (cloned separately)
 tools/astm-mock-server/
