@@ -142,6 +142,7 @@ public class MessageNormalizer implements MessageRouter {
                 .protocol(envelope.getProtocol())
                 .transport(envelope.getTransport())
                 .sourceId(envelope.getSourceId())
+                .sourcePort(envelope.getSourcePort())
                 .rawMessage(envelope.getRawMessage())
                 .receivedAt(envelope.getReceivedAt())
                 .analyzerId(analyzerId)

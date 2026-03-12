@@ -72,7 +72,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should detect HL7 from application/hl7-v2 Content-Type")
         void shouldDetectHL7FromContentType() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -84,7 +84,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should detect HL7 from x-application/hl7-v2 Content-Type")
         void shouldDetectHL7FromAltContentType() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "x-application/hl7-v2", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "x-application/hl7-v2", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -95,7 +95,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should detect CSV from text/csv Content-Type")
         void shouldDetectCSVFromContentType() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/csv", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/csv", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -106,7 +106,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should detect CSV from application/csv Content-Type")
         void shouldDetectCSVFromApplicationCsvContentType() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "application/csv", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "application/csv", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -117,7 +117,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should handle Content-Type with charset parameter")
         void shouldHandleContentTypeWithCharset() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2; charset=utf-8", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2; charset=utf-8", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -128,7 +128,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should detect ASTM from astm content type")
         void shouldDetectASTMFromContentType() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "application/x-astm", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "application/x-astm", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -144,7 +144,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should auto-detect ASTM from message content")
         void shouldAutoDetectASTM() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -155,7 +155,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should auto-detect HL7 from message content (text/plain)")
         void shouldAutoDetectHL7() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -166,7 +166,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should auto-detect CSV from message content (text/plain)")
         void shouldAutoDetectCSV() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -178,7 +178,7 @@ class AnalyzerInputControllerTest {
         void shouldAutoDetectASTMWithSTX() {
             String astmWithSTX = "\u0002" + SAMPLE_ASTM_MESSAGE;
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(astmWithSTX, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(astmWithSTX, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -189,7 +189,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should auto-detect when Content-Type is null")
         void shouldAutoDetectWithNullContentType() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, null, null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, null, null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -205,7 +205,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should extract source IP from X-Forwarded-For header")
         void shouldExtractFromXForwardedFor() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", "192.168.1.100", mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", "192.168.1.100", null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -217,7 +217,7 @@ class AnalyzerInputControllerTest {
         void shouldExtractFirstIPFromChain() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
                     controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain",
-                            "192.168.1.100, 10.0.0.1, 172.16.0.1", mockRequest);
+                            "192.168.1.100, 10.0.0.1, 172.16.0.1", null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -230,7 +230,7 @@ class AnalyzerInputControllerTest {
             when(mockRequest.getHeader("X-Real-IP")).thenReturn("10.20.30.40");
 
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -244,7 +244,7 @@ class AnalyzerInputControllerTest {
 
             ResponseEntity<AnalyzerInputController.InputResponse> response =
                     controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain",
-                            "192.168.1.100", mockRequest);
+                            "192.168.1.100", null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -255,7 +255,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should fall back to remote address when headers are missing")
         void shouldFallBackToRemoteAddress() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -268,7 +268,7 @@ class AnalyzerInputControllerTest {
             when(mockRequest.getRemoteAddr()).thenReturn(null);
 
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -284,7 +284,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should return 400 for null request body")
         void shouldRejectNullBody() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(null, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(null, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -296,7 +296,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should return 400 for empty request body")
         void shouldRejectEmptyBody() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage("", "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage("", "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -308,7 +308,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should return 400 for whitespace-only request body")
         void shouldRejectWhitespaceBody() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage("   \n\t  ", "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage("   \n\t  ", "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -321,7 +321,7 @@ class AnalyzerInputControllerTest {
         void shouldRouteUnknownProtocol() {
             String unknownMessage = "This is not a valid ASTM, HL7, or CSV message";
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(unknownMessage, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(unknownMessage, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -338,7 +338,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should include receivedAt timestamp in response")
         void shouldIncludeTimestamp() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, "text/plain", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -351,7 +351,7 @@ class AnalyzerInputControllerTest {
         void shouldReturnCompleteSuccessResponse() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
                     controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2",
-                            "192.168.1.50", mockRequest);
+                            "192.168.1.50", null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -428,6 +428,34 @@ class AnalyzerInputControllerTest {
             assertEquals("127.0.0.1",
                     controller.extractSourceIp("   ", mockRequest));
         }
+
+        @Test
+        @DisplayName("extractSourcePort should return remote port for direct connection")
+        void extractSourcePortDirectConnection() {
+            when(mockRequest.getRemotePort()).thenReturn(12345);
+            assertEquals(12345, controller.extractSourcePort(null, null, mockRequest));
+            assertEquals(12345, controller.extractSourcePort("", null, mockRequest));
+        }
+
+        @Test
+        @DisplayName("extractSourcePort should use X-Forwarded-Port when proxied")
+        void extractSourcePortProxied() {
+            assertEquals(54321,
+                    controller.extractSourcePort("192.168.1.10", "54321", mockRequest));
+        }
+
+        @Test
+        @DisplayName("extractSourcePort should return null when proxied without X-Forwarded-Port")
+        void extractSourcePortProxiedWithoutForwardedPort() {
+            assertNull(controller.extractSourcePort("192.168.1.10", null, mockRequest));
+            assertNull(controller.extractSourcePort("192.168.1.10", "", mockRequest));
+        }
+
+        @Test
+        @DisplayName("extractSourcePort should return null for invalid X-Forwarded-Port")
+        void extractSourcePortInvalidForwardedPort() {
+            assertNull(controller.extractSourcePort("192.168.1.10", "not-a-number", mockRequest));
+        }
     }
 
     @Nested
@@ -438,7 +466,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should call normalizer.process() for valid ASTM message")
         void shouldCallNormalizerForValidASTM() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             verify(mockNormalizer).process(any(MessageEnvelope.class));
@@ -448,7 +476,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should call normalizer.process() for valid HL7 message")
         void shouldCallNormalizerForValidHL7() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_HL7_MESSAGE, "application/hl7-v2", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             verify(mockNormalizer).process(any(MessageEnvelope.class));
@@ -458,7 +486,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should call normalizer.process() for valid CSV message")
         void shouldCallNormalizerForValidCSV() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/csv", null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/csv", null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             verify(mockNormalizer).process(any(MessageEnvelope.class));
@@ -470,7 +498,7 @@ class AnalyzerInputControllerTest {
             when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(false);
 
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, null, mockRequest);
 
             assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -484,7 +512,7 @@ class AnalyzerInputControllerTest {
             when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
 
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, mockRequest);
+                    controller.receiveAnalyzerMessage(SAMPLE_ASTM_MESSAGE, null, null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -496,7 +524,7 @@ class AnalyzerInputControllerTest {
         @DisplayName("Should not call normalizer for empty message")
         void shouldNotCallNormalizerForEmptyMessage() {
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage("", null, null, mockRequest);
+                    controller.receiveAnalyzerMessage("", null, null, null, mockRequest);
 
             assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
             verify(mockNormalizer, never()).process(any());
@@ -508,7 +536,7 @@ class AnalyzerInputControllerTest {
             String unknownMessage = "This is some random text that doesnt match any protocol";
 
             ResponseEntity<AnalyzerInputController.InputResponse> response =
-                    controller.receiveAnalyzerMessage(unknownMessage, null, null, mockRequest);
+                    controller.receiveAnalyzerMessage(unknownMessage, null, null, null, mockRequest);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             verify(mockNormalizer, times(1)).process(any());

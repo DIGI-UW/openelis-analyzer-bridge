@@ -292,5 +292,44 @@ class MessageNormalizerTest {
                 rawMessage.equals(e.getRawMessage())
             ));
         }
+
+        @Test
+        @DisplayName("Should preserve sourcePort in enriched envelope")
+        void shouldPreserveSourcePort() {
+            when(mockIdentifier.identify(any())).thenReturn("ANALYZER-005");
+
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.HL7)
+                .transport(Transport.MLLP)
+                .sourceId("192.168.1.60")
+                .rawMessage("MSH|^~\\&|||")
+                .sourcePort(54321)
+                .build();
+
+            normalizer.process(envelope);
+
+            verify(mockForwardingRouter).route(argThat(e ->
+                Integer.valueOf(54321).equals(e.getSourcePort())
+            ));
+        }
+
+        @Test
+        @DisplayName("Should preserve null sourcePort in enriched envelope")
+        void shouldPreserveNullSourcePort() {
+            when(mockIdentifier.identify(any())).thenReturn("ANALYZER-006");
+
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.ASTM)
+                .transport(Transport.TCP)
+                .sourceId("192.168.1.70")
+                .rawMessage("H|\\^&|||TEST")
+                .build();
+
+            normalizer.process(envelope);
+
+            verify(mockForwardingRouter).route(argThat(e ->
+                e.getSourcePort() == null
+            ));
+        }
     }
 }

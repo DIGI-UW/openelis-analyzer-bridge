@@ -87,6 +87,7 @@ class UnifiedRoutingTest {
             String analyzerId = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_ANALYZER_ID);
             String sourceAnalyzerIp = exchange.getRequestHeaders().getFirst(
                 HttpForwardingRouter.HEADER_SOURCE_ANALYZER_IP);
+            String sourcePort = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_PORT);
 
             String body;
             try (InputStream is = exchange.getRequestBody()) {
@@ -94,7 +95,7 @@ class UnifiedRoutingTest {
             }
 
             lastRequest.set(new CapturedRequest(
-                path, body, sourceProtocol, sourceTransport, sourceId, analyzerId, sourceAnalyzerIp));
+                path, body, sourceProtocol, sourceTransport, sourceId, analyzerId, sourceAnalyzerIp, sourcePort));
             requestLatch.countDown();
 
             try {
@@ -229,11 +230,12 @@ class UnifiedRoutingTest {
         void httpAstmRoutesCorrectly() throws Exception {
             resetLatch();
             when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.10");
+            when(mockHttpRequest.getRemotePort()).thenReturn(0);
             when(mockHttpRequest.getHeader("X-Real-IP")).thenReturn(null);
 
             String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
 
-            var response = httpController.receiveAnalyzerMessage(astmMessage, null, null, mockHttpRequest);
+            var response = httpController.receiveAnalyzerMessage(astmMessage, null, null, null, mockHttpRequest);
 
             assertEquals(200, response.getStatusCode().value());
             CapturedRequest req = awaitRequest();
@@ -249,12 +251,13 @@ class UnifiedRoutingTest {
         void httpHl7RoutesCorrectly() throws Exception {
             resetLatch();
             when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.20");
+            when(mockHttpRequest.getRemotePort()).thenReturn(0);
             when(mockHttpRequest.getHeader(anyString())).thenReturn(null);
 
             String hl7Message = "MSH|^~\\&|TEST|LAB|OPENELIS|LAB|20260205120000||ORU^R01|MSG001|P|2.5.1\r" +
                     "PID|1||12345\rOBX|1|NM|WBC||7.5";
 
-            var response = httpController.receiveAnalyzerMessage(hl7Message, "application/hl7-v2", null, mockHttpRequest);
+            var response = httpController.receiveAnalyzerMessage(hl7Message, "application/hl7-v2", null, null, mockHttpRequest);
 
             assertEquals(200, response.getStatusCode().value());
             CapturedRequest req = awaitRequest();
@@ -268,11 +271,12 @@ class UnifiedRoutingTest {
         void httpCsvRoutesCorrectly() throws Exception {
             resetLatch();
             when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.30");
+            when(mockHttpRequest.getRemotePort()).thenReturn(0);
             when(mockHttpRequest.getHeader(anyString())).thenReturn(null);
 
             String csvMessage = "SampleID,TestCode,Result\n12345,WBC,7.5\n12346,RBC,4.8";
 
-            var response = httpController.receiveAnalyzerMessage(csvMessage, "text/csv", null, mockHttpRequest);
+            var response = httpController.receiveAnalyzerMessage(csvMessage, "text/csv", null, null, mockHttpRequest);
 
             assertEquals(200, response.getStatusCode().value());
             CapturedRequest req = awaitRequest();
@@ -349,6 +353,96 @@ class UnifiedRoutingTest {
             assertNotNull(req.analyzerId());
             assertTrue(req.analyzerId().contains("ANALYZER-APP"), "X-Analyzer-Id should come from MSH-3");
         }
+
+        @Test
+        @DisplayName("MLLP message with SENDING_PORT metadata forwards X-Source-Port")
+        void mllpForwardsSourcePort() throws Exception {
+            resetLatch();
+            String hl7Message = "MSH|^~\\&|ANALYZER-APP|LAB-FAC|OPENELIS|LAB|20260205120000||ORU^R01|MSG002|P|2.5.1\r" +
+                    "PID|1||12345||Doe^John\r" +
+                    "OBX|1|NM|WBC||7.5|10^3/uL||||F";
+
+            Message message = new PipeParser().parse(hl7Message);
+            java.util.Map<String, Object> metadata = new java.util.HashMap<>();
+            metadata.put("SENDING_IP", "192.168.1.51");
+            metadata.put("SENDING_PORT", 54321);
+            metadata.put("raw-message", hl7Message);
+
+            mllpApplication.processMessage(message, metadata);
+
+            CapturedRequest req = awaitRequest();
+            assertEquals("54321", req.sourcePort(), "X-Source-Port should be forwarded from SENDING_PORT");
+        }
+    }
+
+    @Nested
+    @DisplayName("X-Source-Port Header Tests")
+    class SourcePortHeaderTests {
+
+        @Test
+        @DisplayName("HTTP direct connection forwards X-Source-Port")
+        void httpDirectConnectionForwardsSourcePort() throws Exception {
+            resetLatch();
+            when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.10");
+            when(mockHttpRequest.getRemotePort()).thenReturn(12345);
+            when(mockHttpRequest.getHeader(anyString())).thenReturn(null);
+
+            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
+
+            httpController.receiveAnalyzerMessage(astmMessage, null, null, null, mockHttpRequest);
+
+            CapturedRequest req = awaitRequest();
+            assertEquals("12345", req.sourcePort(), "X-Source-Port should be set for direct connections");
+        }
+
+        @Test
+        @DisplayName("HTTP proxied connection uses X-Forwarded-Port when available")
+        void httpProxiedConnectionUsesXForwardedPort() throws Exception {
+            resetLatch();
+
+            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
+
+            httpController.receiveAnalyzerMessage(
+                astmMessage, null, "192.168.1.10", "54321", mockHttpRequest);
+
+            CapturedRequest req = awaitRequest();
+            assertEquals("54321", req.sourcePort(), "X-Source-Port should use X-Forwarded-Port for proxied connections");
+        }
+
+        @Test
+        @DisplayName("HTTP proxied connection without X-Forwarded-Port omits X-Source-Port")
+        void httpProxiedConnectionWithoutForwardedPortOmitsSourcePort() throws Exception {
+            resetLatch();
+
+            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
+
+            httpController.receiveAnalyzerMessage(
+                astmMessage, null, "192.168.1.10", null, mockHttpRequest);
+
+            CapturedRequest req = awaitRequest();
+            assertNull(req.sourcePort(), "X-Source-Port should be absent when proxied without X-Forwarded-Port");
+        }
+
+        @Test
+        @DisplayName("X-Source-Port is preserved through normalizer enrichment when analyzerId is set")
+        void sourcePortPreservedThroughNormalizerEnrichment() throws Exception {
+            resetLatch();
+            when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.60");
+            when(mockHttpRequest.getRemotePort()).thenReturn(9999);
+            when(mockHttpRequest.getHeader(anyString())).thenReturn(null);
+
+            // Use an ASTM message that includes a recognizable sender so the normalizer
+            // may attempt to enrich the envelope with an analyzerId
+            String astmMessage = "H|\\^&|||MINDRAY^BC-5380|||||||P|1|20260205120000\r" +
+                    "P|1||PAT001||DOE^JOHN\r" +
+                    "L|1|N";
+
+            httpController.receiveAnalyzerMessage(astmMessage, null, null, null, mockHttpRequest);
+
+            CapturedRequest req = awaitRequest();
+            // The port must survive any normalizer envelope rebuild
+            assertEquals("9999", req.sourcePort(), "X-Source-Port must be preserved through normalizer enrichment");
+        }
     }
 
     private record CapturedRequest(
@@ -358,6 +452,7 @@ class UnifiedRoutingTest {
             String sourceTransport,
             String sourceId,
             String analyzerId,
-            String sourceAnalyzerIp
+            String sourceAnalyzerIp,
+            String sourcePort
     ) {}
 }
