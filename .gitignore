@@ -40,3 +40,4 @@ node_modules
 
 # Test tools (cloned separately)
 tools/astm-mock-server/
+id_file
