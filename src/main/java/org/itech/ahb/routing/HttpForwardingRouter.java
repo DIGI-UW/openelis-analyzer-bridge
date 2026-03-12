@@ -39,6 +39,7 @@ import org.springframework.stereotype.Component;
  *   <li>X-Source-Protocol: From envelope.protocol</li>
  *   <li>X-Source-Transport: From envelope.transport</li>
  *   <li>X-Source-Id: From envelope.sourceId</li>
+ *   <li>X-Source-Port: From envelope.sourcePort (when available)</li>
  *   <li>X-Source-Analyzer-IP: From envelope.sourceId (backward compatibility)</li>
  * </ul>
  * </p>

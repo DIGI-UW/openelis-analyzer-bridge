@@ -76,7 +76,8 @@ public class AnalyzerInputController {
      * @param requestBody the raw message content (ASTM, HL7, or CSV)
      * @param contentType the Content-Type header (optional, used for protocol hints)
      * @param xForwardedFor the X-Forwarded-For header (optional, for proxy scenarios)
-     * @param request the HTTP servlet request (for extracting remote address)
+     * @param xForwardedPort the X-Forwarded-Port header (optional, for proxy scenarios)
+     * @param request the HTTP servlet request (for extracting remote address and port)
      * @return ResponseEntity with envelope details or error message
      */
     @PostMapping(consumes = MediaType.ALL_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -84,6 +85,7 @@ public class AnalyzerInputController {
             @RequestBody(required = false) String requestBody,
             @RequestHeader(value = "Content-Type", required = false) String contentType,
             @RequestHeader(value = "X-Forwarded-For", required = false) String xForwardedFor,
+            @RequestHeader(value = "X-Forwarded-Port", required = false) String xForwardedPort,
             HttpServletRequest request) {
 
         log.debug("Received HTTP input request");
@@ -110,8 +112,9 @@ public class AnalyzerInputController {
                 log.warn("Unable to detect protocol for message from {}, routing as raw", sourceIp);
             }
 
-            // Extract source port from HTTP request
-            int sourcePort = request.getRemotePort();
+            // Extract source port: prefer X-Forwarded-Port when request is proxied,
+            // fall back to the TCP remote port for direct connections.
+            Integer sourcePort = extractSourcePort(xForwardedFor, xForwardedPort, request);
 
             // Create MessageEnvelope
             MessageEnvelope envelope = MessageEnvelope.builder()
@@ -186,6 +189,53 @@ public class AnalyzerInputController {
         // Fall back to remote address
         String remoteAddr = request.getRemoteAddr();
         return remoteAddr != null ? remoteAddr : "unknown";
+    }
+
+    /**
+     * Extracts the source port for the originating client.
+     * <p>
+     * Priority:
+     * <ol>
+     *   <li>{@code X-Forwarded-Port} header — used when the request is forwarded by a proxy
+     *       (i.e. {@code X-Forwarded-For}, {@code X-Real-IP} or {@code X-Forwarded-Port}
+     *       is present). The proxy's TCP port is not meaningful for analyzer identification,
+     *       so {@code null} is returned when proxied and no port header is present.</li>
+     *   <li>{@code request.getRemotePort()} — used for direct (non-proxied) connections where
+     *       the TCP remote port reliably reflects the analyzer's port.</li>
+     * </ol>
+     * </p>
+     *
+     * @param xForwardedFor the X-Forwarded-For header value
+     * @param xForwardedPort the X-Forwarded-Port header value (original client port set by proxy)
+     * @param request the HTTP servlet request
+     * @return the source port, or {@code null} if proxied and no port header is available
+     */
+    Integer extractSourcePort(String xForwardedFor, String xForwardedPort, HttpServletRequest request) {
+        boolean hasXForwardedFor = xForwardedFor != null && !xForwardedFor.trim().isEmpty();
+        String xRealIp = request.getHeader("X-Real-IP");
+        boolean hasXRealIp = xRealIp != null && !xRealIp.trim().isEmpty();
+        boolean hasXForwardedPort = xForwardedPort != null && !xForwardedPort.trim().isEmpty();
+        boolean isProxied = hasXForwardedFor || hasXRealIp || hasXForwardedPort;
+
+        if (isProxied) {
+            // When proxied, request.getRemotePort() reflects the proxy's TCP port, not the
+            // original client's port. Use X-Forwarded-Port if available; otherwise unknown.
+            if (hasXForwardedPort) {
+                try {
+                    int parsedPort = Integer.parseInt(xForwardedPort.trim());
+                    if (parsedPort >= 1 && parsedPort <= 65_535) {
+                        return parsedPort;
+                    }
+                    log.warn("Out-of-range X-Forwarded-Port value: {}", xForwardedPort);
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid X-Forwarded-Port value: {}", xForwardedPort);
+                }
+            }
+            return null;
+        }
+
+        // Direct connection: the TCP remote port is the analyzer's port
+        return request.getRemotePort();
     }
 
     /**
