@@ -16,6 +16,7 @@ import java.util.Base64;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
+import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.boot.actuate.autoconfigure.health.ConditionalOnEnabledHealthIndicator;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -40,6 +41,7 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
   private final HTTPForwardServerConfigurationProperties properties;
   private final int connectTimeoutSeconds;
   private final int readTimeoutSeconds;
+  private final HttpClient httpClient;
 
   /**
    * Constructor for HTTPForwardServerHealthIndicator.
@@ -57,6 +59,7 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
     this.readTimeoutSeconds = openelisConfig != null
       ? openelisConfig.getReadTimeoutSeconds()
       : 30;
+    this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, properties.isInsecureTls(), "healthcheck");
   }
 
   /**
@@ -69,9 +72,6 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
     if (properties.getHealthUri() == null) {
       return Health.unknown().build();
     }
-    HttpClient client = HttpClient.newBuilder()
-      .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
-      .build();
     log.debug("creating request to test forward http server at " + properties.getHealthUri().toString());
     Builder requestBuilder = HttpRequest.newBuilder()
       .method(properties.getHealthMethod().toString(), HttpRequest.BodyPublishers.ofString(properties.getHealthBody()))
@@ -90,7 +90,7 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
 
     try {
       log.debug("testing forward http server at " + properties.getHealthUri().toString());
-      HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+      HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
       if (response.statusCode() == 200) {
         log.debug("testing forward http server at " + properties.getHealthUri().toString() + " success");
         return Health.up().build();

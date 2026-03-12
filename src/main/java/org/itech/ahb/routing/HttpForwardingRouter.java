@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -104,9 +105,7 @@ public class HttpForwardingRouter implements MessageRouter {
         this.readTimeoutSeconds = openelisConfig != null
             ? openelisConfig.getReadTimeoutSeconds()
             : 30;
-        this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
-            .build();
+        this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
 
         if (retryConfig != null) {
             log.info("HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
