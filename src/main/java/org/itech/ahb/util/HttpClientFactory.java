@@ -64,8 +64,12 @@ public final class HttpClientFactory {
                 builder.sslParameters(sslParameters);
                 log.warn("HTTP {} TLS verification disabled (insecureTls=true)", logContext);
             } catch (Exception e) {
-                log.error("Failed to initialize insecure TLS HTTP client for {}; using default TLS validation",
+                log.error("Failed to initialize insecure TLS HTTP client for {}; insecureTls=true cannot be honored",
                     logContext, e);
+                throw new IllegalStateException(
+                    "Failed to initialize insecure TLS HTTP client for " + logContext
+                        + "; insecureTls=true cannot be honored",
+                    e);
             }
         }
         return builder.build();

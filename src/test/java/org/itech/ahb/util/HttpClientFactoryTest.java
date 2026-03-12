@@ -4,17 +4,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.time.Duration;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -60,7 +63,7 @@ class HttpClientFactoryTest {
         httpsServer = HttpsServer.create(new InetSocketAddress("localhost", 0), 0);
         httpsServer.setHttpsConfigurator(new HttpsConfigurator(serverSslContext));
         httpsServer.createContext("/test", exchange -> {
-            byte[] body = "OK".getBytes();
+            byte[] body = "OK".getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
@@ -90,9 +93,11 @@ class HttpClientFactoryTest {
                 .GET()
                 .build();
 
-            assertThrows(Exception.class,
+            IOException exception = assertThrows(IOException.class,
                 () -> client.send(request, HttpResponse.BodyHandlers.ofString()),
                 "Default HttpClient should reject a self-signed certificate");
+            assertTrue(hasCauseOfType(exception, SSLException.class),
+                "Failure should be TLS-related (SSLException in cause chain)");
         }
     }
 
@@ -114,5 +119,16 @@ class HttpClientFactoryTest {
             assertEquals(200, response.statusCode(),
                 "Insecure TLS client should connect successfully to a self-signed endpoint");
         }
+    }
+
+    private static boolean hasCauseOfType(Throwable throwable, Class<? extends Throwable> expectedType) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (expectedType.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }
