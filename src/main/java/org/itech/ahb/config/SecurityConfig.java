@@ -87,10 +87,10 @@ public class SecurityConfig {
 
     @Bean
     public UserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
-        // If password already has an encoding prefix (e.g. {bcrypt}), use it as-is.
+        // If password already has a known encoding prefix (e.g. {bcrypt}), use it as-is.
         // Otherwise, encode the plaintext password with bcrypt.
         String encodedPassword;
-        if (password.startsWith("{")) {
+        if (password.matches("^\\{(bcrypt|scrypt|argon2|pbkdf2|noop|sha256)}.*")) {
             encodedPassword = password;
         } else {
             encodedPassword = "{bcrypt}" + new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder()
