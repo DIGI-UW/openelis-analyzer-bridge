@@ -103,5 +103,15 @@ class SecurityConfigTest {
             assertTrue(status != 401 && status != 403,
                     "Info endpoint should not require auth, but got " + status);
         }
+
+        @Test
+        @DisplayName("Prometheus endpoint is publicly accessible")
+        void prometheusEndpointNoAuthRequired() throws Exception {
+            // Prometheus may return 404 (not exposed) or 200, but never 401/403
+            int status = mockMvc.perform(get("/actuator/prometheus"))
+                    .andReturn().getResponse().getStatus();
+            assertTrue(status != 401 && status != 403,
+                    "Prometheus endpoint should not require auth, but got " + status);
+        }
     }
 }

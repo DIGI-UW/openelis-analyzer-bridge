@@ -224,6 +224,14 @@ bridge:
     password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via environment variable
 ```
 
+The password can be provided as **plaintext** (encoded with BCrypt in-memory at startup)
+or **pre-hashed** with a `{bcrypt}` prefix (e.g. `{bcrypt}$2a$10$...`). Pre-hashed
+passwords are used as-is and never re-encoded.
+
+> **⚠️ Warning:** If `bridge.security.password` is not set, the default password
+> `changeme` is used. A prominent startup warning is logged. Always override this
+> in production via the `BRIDGE_AUTH_PASSWORD` environment variable.
+
 ### Usage
 
 ```bash

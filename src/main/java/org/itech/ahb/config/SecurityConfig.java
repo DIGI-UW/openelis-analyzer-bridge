@@ -1,5 +1,6 @@
 package org.itech.ahb.config;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -11,7 +12,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
@@ -27,6 +28,11 @@ import org.springframework.security.web.SecurityFilterChain;
  * Enabled by default via {@code bridge.security.enabled=true}. Set to {@code false}
  * to disable authentication (not recommended for production).
  * </p>
+ * <p>
+ * The password can be provided in plaintext or pre-hashed with a
+ * {@code {bcrypt}} prefix (e.g. {@code {bcrypt}$2a$10$...}). Plaintext passwords
+ * are hashed in-memory at startup and never stored in cleartext.
+ * </p>
  *
  * @see org.itech.ahb.controller.AnalyzerInputController
  */
@@ -36,11 +42,24 @@ import org.springframework.security.web.SecurityFilterChain;
 @Slf4j
 public class SecurityConfig {
 
+    private static final String DEFAULT_PASSWORD = "changeme";
+
     @Value("${bridge.security.username:bridge}")
     private String username;
 
-    @Value("${bridge.security.password:changeme}")
+    @Value("${bridge.security.password:" + DEFAULT_PASSWORD + "}")
     private String password;
+
+    @PostConstruct
+    void warnIfDefaultPassword() {
+        if (DEFAULT_PASSWORD.equals(password)) {
+            log.warn("**********************************************************************");
+            log.warn("* WARNING: Bridge security is using the DEFAULT password 'changeme'. *");
+            log.warn("* This is insecure. Set bridge.security.password or                  *");
+            log.warn("* BRIDGE_AUTH_PASSWORD environment variable before deploying.         *");
+            log.warn("**********************************************************************");
+        }
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -51,9 +70,11 @@ public class SecurityConfig {
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Actuator endpoints: health and info are public, others require auth
+                // Actuator endpoints: health, info, prometheus, and metrics are public
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/actuator/prometheus", "/actuator/metrics/**").permitAll()
+                // All other actuator endpoints require authentication
+                .requestMatchers("/actuator/**").authenticated()
                 // The /input endpoint requires authentication
                 .requestMatchers("/input/**").authenticated()
                 // All other endpoints are permitted (ASTM query endpoints, etc.)
@@ -66,9 +87,19 @@ public class SecurityConfig {
 
     @Bean
     public UserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
+        // If password already has an encoding prefix (e.g. {bcrypt}), use it as-is.
+        // Otherwise, encode the plaintext password with bcrypt.
+        String encodedPassword;
+        if (password.startsWith("{")) {
+            encodedPassword = password;
+        } else {
+            encodedPassword = "{bcrypt}" + new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder()
+                    .encode(password);
+        }
+
         var user = User.builder()
                 .username(username)
-                .password(passwordEncoder.encode(password))
+                .password(encodedPassword)
                 .roles("BRIDGE")
                 .build();
 
@@ -78,6 +109,6 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 }
