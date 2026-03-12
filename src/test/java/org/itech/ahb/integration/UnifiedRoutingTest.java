@@ -424,6 +424,35 @@ class UnifiedRoutingTest {
         }
 
         @Test
+        @DisplayName("HTTP X-Real-IP proxy without X-Forwarded-Port omits X-Source-Port")
+        void httpXRealIpProxyWithoutForwardedPortOmitsSourcePort() throws Exception {
+            resetLatch();
+            when(mockHttpRequest.getHeader("X-Real-IP")).thenReturn("192.168.1.10");
+
+            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
+
+            httpController.receiveAnalyzerMessage(
+                astmMessage, null, null, null, mockHttpRequest);
+
+            CapturedRequest req = awaitRequest();
+            assertNull(req.sourcePort(), "X-Source-Port should be absent when X-Real-IP indicates a proxied request without X-Forwarded-Port");
+        }
+
+        @Test
+        @DisplayName("HTTP proxied connection with out-of-range X-Forwarded-Port omits X-Source-Port")
+        void httpProxiedConnectionWithInvalidForwardedPortOmitsSourcePort() throws Exception {
+            resetLatch();
+
+            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
+
+            httpController.receiveAnalyzerMessage(
+                astmMessage, null, "192.168.1.10", "65536", mockHttpRequest);
+
+            CapturedRequest req = awaitRequest();
+            assertNull(req.sourcePort(), "X-Source-Port should be absent when X-Forwarded-Port is out of range");
+        }
+
+        @Test
         @DisplayName("X-Source-Port is preserved through normalizer enrichment when analyzerId is set")
         void sourcePortPreservedThroughNormalizerEnrichment() throws Exception {
             resetLatch();

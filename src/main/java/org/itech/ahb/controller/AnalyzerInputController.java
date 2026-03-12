@@ -197,28 +197,36 @@ public class AnalyzerInputController {
      * Priority:
      * <ol>
      *   <li>{@code X-Forwarded-Port} header — used when the request is forwarded by a proxy
-     *       (i.e. {@code X-Forwarded-For} is present). The proxy's TCP port is not meaningful
-     *       for analyzer identification, so {@code null} is returned when proxied and no port
-     *       header is present.</li>
+     *       (i.e. {@code X-Forwarded-For}, {@code X-Real-IP} or {@code X-Forwarded-Port}
+     *       is present). The proxy's TCP port is not meaningful for analyzer identification,
+     *       so {@code null} is returned when proxied and no port header is present.</li>
      *   <li>{@code request.getRemotePort()} — used for direct (non-proxied) connections where
      *       the TCP remote port reliably reflects the analyzer's port.</li>
      * </ol>
      * </p>
      *
-     * @param xForwardedFor the X-Forwarded-For header value (non-null means request is proxied)
+     * @param xForwardedFor the X-Forwarded-For header value
      * @param xForwardedPort the X-Forwarded-Port header value (original client port set by proxy)
      * @param request the HTTP servlet request
      * @return the source port, or {@code null} if proxied and no port header is available
      */
     Integer extractSourcePort(String xForwardedFor, String xForwardedPort, HttpServletRequest request) {
-        boolean isProxied = xForwardedFor != null && !xForwardedFor.trim().isEmpty();
+        boolean hasXForwardedFor = xForwardedFor != null && !xForwardedFor.trim().isEmpty();
+        String xRealIp = request.getHeader("X-Real-IP");
+        boolean hasXRealIp = xRealIp != null && !xRealIp.trim().isEmpty();
+        boolean hasXForwardedPort = xForwardedPort != null && !xForwardedPort.trim().isEmpty();
+        boolean isProxied = hasXForwardedFor || hasXRealIp || hasXForwardedPort;
 
         if (isProxied) {
             // When proxied, request.getRemotePort() reflects the proxy's TCP port, not the
             // original client's port. Use X-Forwarded-Port if available; otherwise unknown.
-            if (xForwardedPort != null && !xForwardedPort.trim().isEmpty()) {
+            if (hasXForwardedPort) {
                 try {
-                    return Integer.parseInt(xForwardedPort.trim());
+                    int parsedPort = Integer.parseInt(xForwardedPort.trim());
+                    if (parsedPort >= 1 && parsedPort <= 65_535) {
+                        return parsedPort;
+                    }
+                    log.warn("Out-of-range X-Forwarded-Port value: {}", xForwardedPort);
                 } catch (NumberFormatException e) {
                     log.warn("Invalid X-Forwarded-Port value: {}", xForwardedPort);
                 }

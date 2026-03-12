@@ -445,6 +445,16 @@ class AnalyzerInputControllerTest {
         }
 
         @Test
+        @DisplayName("extractSourcePort should treat X-Real-IP as proxied")
+        void extractSourcePortXRealIpProxy() {
+            when(mockRequest.getHeader("X-Real-IP")).thenReturn("192.168.1.10");
+            when(mockRequest.getRemotePort()).thenReturn(12345);
+
+            assertEquals(54321, controller.extractSourcePort(null, "54321", mockRequest));
+            assertNull(controller.extractSourcePort(null, null, mockRequest));
+        }
+
+        @Test
         @DisplayName("extractSourcePort should return null when proxied without X-Forwarded-Port")
         void extractSourcePortProxiedWithoutForwardedPort() {
             assertNull(controller.extractSourcePort("192.168.1.10", null, mockRequest));
@@ -455,6 +465,14 @@ class AnalyzerInputControllerTest {
         @DisplayName("extractSourcePort should return null for invalid X-Forwarded-Port")
         void extractSourcePortInvalidForwardedPort() {
             assertNull(controller.extractSourcePort("192.168.1.10", "not-a-number", mockRequest));
+        }
+
+        @Test
+        @DisplayName("extractSourcePort should return null for out-of-range X-Forwarded-Port")
+        void extractSourcePortOutOfRangeForwardedPort() {
+            assertNull(controller.extractSourcePort("192.168.1.10", "0", mockRequest));
+            assertNull(controller.extractSourcePort("192.168.1.10", "-1", mockRequest));
+            assertNull(controller.extractSourcePort("192.168.1.10", "65536", mockRequest));
         }
     }
 
