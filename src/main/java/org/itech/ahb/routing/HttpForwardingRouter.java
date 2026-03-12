@@ -11,19 +11,15 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.regex.Pattern;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -105,7 +101,7 @@ public class HttpForwardingRouter implements MessageRouter {
         this.readTimeoutSeconds = openelisConfig != null
             ? openelisConfig.getReadTimeoutSeconds()
             : 30;
-        this.httpClient = createHttpClient();
+        this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
 
         if (retryConfig != null) {
             log.info("HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
@@ -115,44 +111,6 @@ public class HttpForwardingRouter implements MessageRouter {
         }
         log.info("HttpForwardingRouter timeouts: connect={}s read={}s",
             connectTimeoutSeconds, readTimeoutSeconds);
-    }
-
-    private HttpClient createHttpClient() {
-        HttpClient.Builder builder = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds));
-
-        if (httpConfig.isInsecureTls()) {
-            try {
-                SSLContext sslContext = SSLContext.getInstance("TLS");
-                TrustManager[] trustAllCerts = new TrustManager[] {
-                    new X509TrustManager() {
-                        @Override
-                        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                            return new java.security.cert.X509Certificate[0];
-                        }
-
-                        @Override
-                        public void checkClientTrusted(
-                                java.security.cert.X509Certificate[] chain, String authType) {
-                        }
-
-                        @Override
-                        public void checkServerTrusted(
-                                java.security.cert.X509Certificate[] chain, String authType) {
-                        }
-                    }
-                };
-                sslContext.init(null, trustAllCerts, new SecureRandom());
-                SSLParameters sslParameters = new SSLParameters();
-                sslParameters.setEndpointIdentificationAlgorithm(null);
-                builder.sslContext(sslContext);
-                builder.sslParameters(sslParameters);
-                log.warn("HTTP forwarding TLS verification disabled (insecureTls=true)");
-            } catch (Exception e) {
-                log.error("Failed to initialize insecure TLS HTTP client; using default TLS validation", e);
-            }
-        }
-        return builder.build();
     }
 
     /**
