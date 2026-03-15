@@ -141,6 +141,44 @@ public class AnalyzerRegistryConfig {
     }
 
     /**
+     * Registers an analyzer by source identifier.
+     * If an entry already exists for the sourceId, it is replaced.
+     *
+     * @param sourceId the source identifier (IP address, serial port, glob pattern)
+     * @param entry    the analyzer entry to register
+     */
+    public void register(String sourceId, AnalyzerEntry entry) {
+        analyzers.put(sourceId, entry);
+        log.info("Registered analyzer '{}' (id={}) for source '{}'",
+                entry.getName(), entry.getId(), sourceId);
+    }
+
+    /**
+     * Unregisters an analyzer by OE analyzer ID.
+     * Removes all source mappings that point to this analyzer.
+     *
+     * @param oeAnalyzerId the OE analyzer ID to unregister
+     * @return true if at least one mapping was removed
+     */
+    public boolean unregisterByAnalyzerId(String oeAnalyzerId) {
+        boolean removed = analyzers.entrySet()
+                .removeIf(e -> oeAnalyzerId.equals(e.getValue().getId()));
+        if (removed) {
+            log.info("Unregistered analyzer with OE ID '{}'", oeAnalyzerId);
+        }
+        return removed;
+    }
+
+    /**
+     * Returns all registered analyzers.
+     *
+     * @return unmodifiable view of the registry
+     */
+    public Map<String, AnalyzerEntry> getRegisteredAnalyzers() {
+        return Map.copyOf(analyzers);
+    }
+
+    /**
      * Analyzer entry with metadata.
      * <p>
      * Contains analyzer identification and configuration information.
