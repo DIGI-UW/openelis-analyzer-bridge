@@ -21,6 +21,14 @@
 
 # Bridge Configuration (NEW FORMAT - v2.0+)
 bridge:
+  # Security configuration for the /input HTTP endpoint (M7.1)
+  # Protects against unauthorized data injection via the HTTP transport.
+  # Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
+  security:
+    enabled: true                               # Set to false to disable auth (not recommended)
+    username: bridge                            # HTTP Basic username
+    password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via env var in production
+
   # OpenELIS connection settings
   # NOTE: This 'url' property was used by FileMessageHandler's direct forwarding (pre-M7).
   #       After M7 (Message Normalizer), all routing uses HttpForwardingRouter, which reads
@@ -146,8 +154,9 @@ logging:
     org.itech: DEBUG
 
 # Actuator endpoints for health monitoring and metrics
-# NOTE: These endpoints should be network-restricted in production (e.g., firewall or reverse proxy).
-# The bridge does not include Spring Security — any caller who can reach the port can access these.
+# NOTE: Health and info endpoints are publicly accessible. Other actuator endpoints
+# are also public by default but can be network-restricted in production.
+# The /input endpoint requires HTTP Basic auth (see bridge.security above).
 management:
   endpoints:
     web:
