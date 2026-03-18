@@ -1,7 +1,10 @@
 package org.itech.ahb.normalizer;
 
+import java.util.List;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.lib.astm.concept.ASTMMessage;
+import org.itech.ahb.lib.astm.concept.ASTMRecord;
 import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
 import org.itech.ahb.lib.astm.handling.ASTMHandler;
 import org.itech.ahb.lib.astm.handling.ASTMHandlerResponse;
@@ -80,12 +83,29 @@ public class ASTMBridgeAdapter implements ASTMHandler {
     public ASTMHandlerResponse handle(ASTMMessage message, String sourceIp) {
         log.debug("ASTMBridgeAdapter handling message from {}", sourceIp);
 
+        // Reconstruct the raw ASTM message text by joining individual segment records
+        // with the ASTM LIS1-A record separator (CR, \r).
+        //
+        // Why not message.getMessage()?
+        //   DefaultASTMMessage.getMessage() joins records with an EMPTY delimiter (""),
+        //   producing a single concatenated line like "H|...P|...O|...R|1|...L|1|N".
+        //   Java's BufferedReader.readLine() (used by OE's ASTMAnalyzerReader) then
+        //   reads the entire message as ONE line and cannot identify individual segments,
+        //   so no results are parsed and stored.
+        //
+        // Why \r?
+        //   ASTM LIS1-A standard uses CR (0x0D) as the record separator within a
+        //   multi-record frame. BufferedReader.readLine() splits on \r, \n, or \r\n,
+        //   so OE's reader will correctly see each segment as a separate line.
+        String rawMessage = reconstructRawMessage(message);
+        log.debug("Reconstructed ASTM message: {} records, {} chars", message.getMessageLength(), rawMessage.length());
+
         // Create MessageEnvelope
         MessageEnvelope envelope = MessageEnvelope.builder()
             .protocol(Protocol.ASTM)
             .transport(Transport.TCP)
             .sourceId(sourceIp != null ? sourceIp : "unknown")
-            .rawMessage(message.getMessage())
+            .rawMessage(rawMessage)
             .build();
 
         // Route via normalizer
@@ -100,6 +120,31 @@ public class ASTMBridgeAdapter implements ASTMHandler {
             false,  // Don't communicate response back to analyzer
             this
         );
+    }
+
+    /**
+     * Reconstructs the raw ASTM message text from individual segment records.
+     * <p>
+     * The ASTM library's {@code ASTMMessage.getMessage()} concatenates records with an
+     * empty delimiter, producing a single unparseable line. This method instead joins
+     * records with the ASTM LIS1-A record separator (CR, {@code \r}), which
+     * {@link java.io.BufferedReader#readLine()} in OE's {@code ASTMAnalyzerReader} will
+     * correctly split back into individual segments (H, P, O, R, L).
+     * </p>
+     *
+     * @param message the ASTM message whose records to reconstruct
+     * @return the ASTM text with records joined by {@code \r}, or the raw message string
+     *         as a fallback if no records are available
+     */
+    private String reconstructRawMessage(ASTMMessage message) {
+        List<ASTMRecord> records = message.getRecords();
+        if (records == null || records.isEmpty()) {
+            log.warn("ASTMMessage has no parsed records; falling back to getMessage()");
+            return message.getMessage();
+        }
+        return records.stream()
+            .map(ASTMRecord::getRecord)
+            .collect(Collectors.joining("\r")) + "\r";
     }
 
     /**
