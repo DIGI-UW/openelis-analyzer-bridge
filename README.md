@@ -112,7 +112,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Security (M7.1)** | | |
 | `bridge.security.enabled` | Enable HTTP Basic auth on /input | true |
 | `bridge.security.username` | HTTP Basic username | bridge |
-| `bridge.security.password` | HTTP Basic password (use env var) | changeme |
+| `bridge.security.password` | HTTP Basic password: plaintext or `{bcrypt}...` (use env var in prod) | changeme |
 | **Server** | | |
 | `server.port` | HTTP server port | 8443 |
 
@@ -239,7 +239,7 @@ curl -X POST http://localhost:8442/input -d "test"
 
 ### Production Setup
 
-Set the password via environment variable:
+**Required:** Set the password via environment variable. The default `changeme` causes startup failure when `spring.profiles.active` is not `dev` or `test`.
 
 ```bash
 export BRIDGE_AUTH_PASSWORD=your-secure-password
@@ -252,6 +252,8 @@ Or in Docker Compose:
 environment:
   BRIDGE_AUTH_PASSWORD: your-secure-password
 ```
+
+Pre-hashed BCrypt passwords are supported: set `bridge.security.password={bcrypt}$2a$10$...` to avoid plaintext in config.
 
 ### Disabling Security
 
