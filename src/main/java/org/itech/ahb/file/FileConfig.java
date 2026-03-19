@@ -5,6 +5,7 @@ import org.itech.ahb.model.Protocol;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -36,14 +37,17 @@ public class FileConfig {
     private List<String> watchDirectories = new ArrayList<>();
 
     /**
-     * Directory where successfully processed files are moved
+     * Directory where successfully processed files are moved.
+     * Default uses the JVM temp directory so tests/local runs work without /mnt.
      */
-    private String archiveDirectory = "/mnt/analyzer-archive";
+    private String archiveDirectory = Paths.get(
+            System.getProperty("java.io.tmpdir"), "openelis-analyzer-bridge", "analyzer-archive").toString();
 
     /**
      * Directory where failed files are moved after max retry attempts
      */
-    private String errorDirectory = "/mnt/analyzer-error";
+    private String errorDirectory = Paths.get(
+            System.getProperty("java.io.tmpdir"), "openelis-analyzer-bridge", "analyzer-error").toString();
 
     /**
      * Polling interval in milliseconds for checking new files

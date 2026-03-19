@@ -4,6 +4,17 @@ Middleware that receives analyzer messages over multiple **protocols/transports*
 
 This repository was previously named **ASTM-HTTP Bridge**. The internal rename to `openelis-analyzer-bridge` is complete across Maven, Docker, and scripts. The Docker Hub image `itechuw/astm-http-bridge` is still published as a legacy alias via CI.
 
+## FILE Ownership Model (014 Remediation)
+
+Bridge and OpenELIS responsibilities are explicitly separated:
+
+- Bridge owns FILE watcher runtime (directory watch/poll, stability checks,
+  archive/error handling, and delivery to OpenELIS).
+- OpenELIS owns analyzer configuration and ingestion/processing logic.
+
+If older sections describe OpenELIS as primary watcher owner, treat this section
+as the active remediation contract.
+
 ## Architecture
 
 ```

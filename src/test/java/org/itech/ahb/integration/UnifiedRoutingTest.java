@@ -34,6 +34,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.Mockito.*;
 
@@ -79,7 +80,7 @@ class UnifiedRoutingTest {
         httpServer = HttpServer.create(new InetSocketAddress(0), 0);
         serverPort = httpServer.getAddress().getPort();
 
-        httpServer.createContext("/api/OpenELIS-Global/analyzer/", exchange -> {
+        var captureHandler = (com.sun.net.httpserver.HttpHandler) exchange -> {
             String path = exchange.getRequestURI().getPath();
             String sourceProtocol = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_PROTOCOL);
             String sourceTransport = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_TRANSPORT);
@@ -104,7 +105,9 @@ class UnifiedRoutingTest {
             } finally {
                 exchange.close();
             }
-        });
+        };
+        httpServer.createContext("/api/OpenELIS-Global/analyzer/", captureHandler);
+        httpServer.createContext("/api/OpenELIS-Global/rest/analyzers/", captureHandler);
         httpServer.start();
 
         // Wire full M7 pipeline
@@ -121,6 +124,8 @@ class UnifiedRoutingTest {
         fileConfig.setEnabled(true);
         CSVParser csvParser = new CSVParser(fileConfig);
         fileHandler = new FileMessageHandler(csvParser, fileConfig, normalizer);
+        ReflectionTestUtils.setField(fileHandler, "openelisBaseUrl",
+                "http://127.0.0.1:" + serverPort + "/api/OpenELIS-Global");
 
         httpController = new AnalyzerInputController(normalizer);
 
@@ -203,7 +208,7 @@ class UnifiedRoutingTest {
     class FileHandlerTests {
 
         @Test
-        @DisplayName("File CSV drop routes to /analyzer/csv with correct headers")
+        @DisplayName("File CSV posts to OpenELIS direct-import REST path (bridge-owned FILE delivery)")
         void fileCsvRoutesCorrectly() throws Exception {
             resetLatch();
             Path csvFile = tempDir.resolve("results.csv");
@@ -213,11 +218,10 @@ class UnifiedRoutingTest {
             fileHandler.processFile(csvFile, "QUANTSTUDIO-001");
 
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/csv"), "Path should end with /csv, got: " + req.path());
-            assertEquals("CSV", req.sourceProtocol());
-            assertEquals("FILE", req.sourceTransport());
-            assertTrue(req.sourceId().contains("results.csv"));
+            assertTrue(req.path().contains("/rest/analyzers/QUANTSTUDIO-001/import"),
+                    "Path should include /rest/analyzers/{id}/import, got: " + req.path());
             assertEquals("QUANTSTUDIO-001", req.analyzerId());
+            assertTrue(req.body().contains("Content-Disposition: form-data"), "Expected multipart body");
         }
     }
 

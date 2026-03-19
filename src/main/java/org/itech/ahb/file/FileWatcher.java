@@ -3,7 +3,6 @@ package org.itech.ahb.file;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -25,8 +24,7 @@ import java.util.stream.Stream;
  * retry logic with exponential backoff.
  * </p>
  */
-@Component
-@ConditionalOnProperty(prefix = "bridge.file", name = "enabled", havingValue = "true")
+@Component("analyzerFileWatcher")
 @Slf4j
 public class FileWatcher {
 
@@ -36,6 +34,10 @@ public class FileWatcher {
     private final Map<Path, FileMetadata> fileStabilityTracker = new ConcurrentHashMap<>();
     private final Set<String> processedFileHashes = ConcurrentHashMap.newKeySet();
     private final Map<Path, RetryInfo> retryTracker = new ConcurrentHashMap<>();
+    private final Map<Path, WatchKey> watchedDirectories = new ConcurrentHashMap<>();
+    private final Map<Path, String> directoryAnalyzerMap = new ConcurrentHashMap<>();
+    /** Per registered directory: glob for {@link #shouldProcessFile(Path)} (runtime FILE registration). */
+    private final Map<Path, String> directoryGlobPatternByDir = new ConcurrentHashMap<>();
 
     // Maximum number of file hashes to keep in memory (prevent unbounded growth)
     private static final int MAX_HASH_CACHE_SIZE = 10000;
@@ -60,9 +62,13 @@ public class FileWatcher {
      * Start file watcher service.
      */
     @PostConstruct
-    public void start() throws IOException {
+    public synchronized void start() throws IOException {
+        if (running) {
+            return;
+        }
+
         if (!fileConfig.isEnabled()) {
-            log.info("File watcher is disabled");
+            log.info("File watcher bootstrap skipped (bridge.file.enabled=false)");
             return;
         }
 
@@ -72,28 +78,18 @@ public class FileWatcher {
         Files.createDirectories(Paths.get(fileConfig.getArchiveDirectory()));
         Files.createDirectories(Paths.get(fileConfig.getErrorDirectory()));
 
-        // Initialize watch service
+        // Initialize watch service and executors
         watchService = FileSystems.getDefault().newWatchService();
-
-        // Register watch directories
-        for (String watchDir : fileConfig.getWatchDirectories()) {
-            Path dirPath = Paths.get(watchDir);
-            if (!Files.exists(dirPath)) {
-                log.warn("Watch directory does not exist, creating: {}", watchDir);
-                Files.createDirectories(dirPath);
-            }
-
-            dirPath.register(watchService, StandardWatchEventKinds.ENTRY_CREATE,
-                    StandardWatchEventKinds.ENTRY_MODIFY);
-            log.info("Registered watch directory: {}", dirPath);
-
-            // Process existing files in directory
-            processExistingFiles(dirPath);
-        }
-
-        // Start watcher thread
         watcherExecutor = Executors.newSingleThreadExecutor();
         processorExecutor = Executors.newFixedThreadPool(2);
+
+        // Register bootstrap directories (if any)
+        for (String watchDir : fileConfig.getWatchDirectories()) {
+            if (watchDir == null || watchDir.isBlank()) {
+                continue;
+            }
+            registerDirectoryInternal(Paths.get(watchDir).normalize(), null, true);
+        }
 
         running = true;
         watcherExecutor.submit(this::watchLoop);
@@ -106,7 +102,82 @@ public class FileWatcher {
                 TimeUnit.MILLISECONDS
         );
 
-        log.info("File watcher service started successfully");
+        log.info("File watcher service started successfully with {} watched directories", watchedDirectories.size());
+    }
+
+    /**
+     * Register a directory for runtime watching.
+     */
+    public synchronized void addWatchDirectory(Path dirPath, String filePattern, String analyzerId) throws IOException {
+        Path normalized = dirPath.normalize();
+        String effectiveGlob = (filePattern == null || filePattern.isBlank()) ? "*" : filePattern;
+        directoryGlobPatternByDir.put(normalized, effectiveGlob);
+        registerDirectoryInternal(normalized, analyzerId, true);
+        if (!fileConfig.getWatchDirectories().contains(normalized.toString())) {
+            List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
+            mutableWatchDirs.add(normalized.toString());
+            fileConfig.setWatchDirectories(mutableWatchDirs);
+        }
+        log.info("Runtime watch directory registered: {} (analyzerId={})", normalized, analyzerId);
+    }
+
+    /**
+     * Remove a directory from runtime watching.
+     */
+    public synchronized boolean removeWatchDirectory(Path dirPath) {
+        Path normalized = dirPath.normalize();
+        WatchKey key = watchedDirectories.remove(normalized);
+        directoryAnalyzerMap.remove(normalized);
+        directoryGlobPatternByDir.remove(normalized);
+        List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
+        mutableWatchDirs.remove(normalized.toString());
+        fileConfig.setWatchDirectories(mutableWatchDirs);
+        if (key != null) {
+            key.cancel();
+            log.info("Runtime watch directory removed: {}", normalized);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Remove all watched directories for a given analyzer ID.
+     */
+    public synchronized int removeWatchDirectoriesByAnalyzerId(String analyzerId) {
+        int removed = 0;
+        for (Map.Entry<Path, String> entry : new ArrayList<>(directoryAnalyzerMap.entrySet())) {
+            if (Objects.equals(entry.getValue(), analyzerId) && removeWatchDirectory(entry.getKey())) {
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    /**
+     * Register a directory with WatchService and optionally process existing files.
+     */
+    private void registerDirectoryInternal(Path dirPath, String analyzerId, boolean processExisting) throws IOException {
+        if (!Files.exists(dirPath)) {
+            log.warn("Watch directory does not exist, creating: {}", dirPath);
+            Files.createDirectories(dirPath);
+        }
+
+        WatchKey oldKey = watchedDirectories.remove(dirPath);
+        if (oldKey != null) {
+            oldKey.cancel();
+        }
+
+        WatchKey key = dirPath.register(watchService, StandardWatchEventKinds.ENTRY_CREATE,
+                StandardWatchEventKinds.ENTRY_MODIFY);
+        watchedDirectories.put(dirPath, key);
+        if (analyzerId != null && !analyzerId.isBlank()) {
+            directoryAnalyzerMap.put(dirPath, analyzerId);
+        }
+
+        log.info("Registered watch directory: {}", dirPath);
+        if (processExisting && processorExecutor != null) {
+            processExistingFiles(dirPath);
+        }
     }
 
     /**
@@ -531,6 +602,14 @@ public class FileWatcher {
         String pathString = filePath.toString();
         String filename = filePath.getFileName().toString();
 
+        Path parent = filePath.getParent();
+        if (parent != null) {
+            String mappedAnalyzerId = directoryAnalyzerMap.get(parent.normalize());
+            if (mappedAnalyzerId != null && !mappedAnalyzerId.isBlank()) {
+                return mappedAnalyzerId;
+            }
+        }
+
         // Check configured analyzer patterns
         for (Map.Entry<String, FileConfig.AnalyzerConfig> entry : fileConfig.getAnalyzers().entrySet()) {
             String pattern = entry.getKey();
@@ -561,7 +640,6 @@ public class FileWatcher {
         }
 
         // Fallback: use parent directory name
-        Path parent = filePath.getParent();
         if (parent != null) {
             String dirName = parent.getFileName().toString().toUpperCase();
             log.debug("No pattern match for file {}, using directory name: {}", filename, dirName);
@@ -585,6 +663,20 @@ public class FileWatcher {
         // Skip hidden files, error detail files, and permanently failed files
         if (filename.startsWith(".") || filename.endsWith(".error") || filename.endsWith(".failed")) {
             return false;
+        }
+
+        Path parent = filePath.getParent();
+        if (parent != null) {
+            String perDirGlob = directoryGlobPatternByDir.get(parent.normalize());
+            if (perDirGlob != null) {
+                try {
+                    PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + perDirGlob);
+                    return matcher.matches(filePath.getFileName());
+                } catch (IllegalArgumentException e) {
+                    log.warn("Invalid per-directory glob '{}' for {}: {}", perDirGlob, parent, e.getMessage());
+                    return false;
+                }
+            }
         }
 
         // Check against configured patterns

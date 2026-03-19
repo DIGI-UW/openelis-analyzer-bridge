@@ -329,4 +329,30 @@ class FileWatcherTest {
         assertTrue(Files.exists(errorDir.resolve("test.csv")));  // Should be in error directory
         assertFalse(Files.exists(testFile));  // Original file should be moved
     }
+    @Test
+    void testRuntimeDirectoryRegistrationLifecycle() throws Exception {
+        fileWatcher.start();
+        Path dynamicDir = tempDir.resolve("dynamic-watch");
+        Files.createDirectories(dynamicDir);
+
+        fileWatcher.addWatchDirectory(dynamicDir, "*.csv", "ANALYZER-123");
+        int removed = fileWatcher.removeWatchDirectoriesByAnalyzerId("ANALYZER-123");
+
+        assertEquals(1, removed);
+    }
+
+    @Test
+    void testDetermineAnalyzerId_UsesRuntimeDirectoryMapping() throws Exception {
+        fileWatcher.start();
+        Path dynamicDir = tempDir.resolve("mapped-watch");
+        Files.createDirectories(dynamicDir);
+        Path payload = dynamicDir.resolve("input.csv");
+        Files.writeString(payload, CSV_CONTENT);
+
+        fileWatcher.addWatchDirectory(dynamicDir, "*.csv", "ANALYZER-MAPPED");
+
+        String analyzerId = (String) ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", payload);
+        assertEquals("ANALYZER-MAPPED", analyzerId);
+    }
+
 }

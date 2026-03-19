@@ -72,8 +72,10 @@ bridge:
   #     filePattern: ".*/quantstudio-.*\\.csv"
 
   # File watcher configuration (M4)
+  # Runtime ownership note (014 remediation): Bridge is the active FILE watcher owner.
+  # OpenELIS app-side poller is fallback-only and disabled by default.
   file:
-    enabled: false  # Set to true to enable file watcher
+    enabled: false  # Bootstrap default; watcher is activated by FILE registration lifecycle during remediation
     watchDirectories:
       - /mnt/analyzer-import/quantstudio
       - /mnt/analyzer-import/hain
