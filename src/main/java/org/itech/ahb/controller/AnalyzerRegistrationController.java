@@ -1,10 +1,13 @@
 package org.itech.ahb.controller;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.file.FileWatcher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,18 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * REST API for dynamic analyzer registration.
- * <p>
- * OpenELIS calls these endpoints when an analyzer is created, updated,
- * or deleted in the dashboard. The bridge uses the registry to tag incoming
- * traffic with the correct OE analyzer ID ({@code X-Analyzer-Id} header)
- * before forwarding to OpenELIS.
- * </p>
- * <p>
- * Registration binds a transport source (IP address, file watch directory,
- * serial port) to an OE analyzer ID. The bridge only needs the minimum
- * transport config — all business logic (test mappings, QC rules, etc.)
- * stays in OpenELIS.
- * </p>
  */
 @RestController
 @RequestMapping("/api/analyzers")
@@ -35,22 +26,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AnalyzerRegistrationController {
 
     private final AnalyzerRegistryConfig registry;
+    private final FileWatcher fileWatcher;
 
-    public AnalyzerRegistrationController(AnalyzerRegistryConfig registry) {
+    public AnalyzerRegistrationController(AnalyzerRegistryConfig registry, FileWatcher fileWatcher) {
         this.registry = registry;
+        this.fileWatcher = fileWatcher;
     }
 
-    /**
-     * Register an analyzer's transport binding.
-     * <p>
-     * Called by OpenELIS when an analyzer is created or updated. The bridge
-     * stores the mapping and uses it to tag all traffic from the registered
-     * source with the OE analyzer ID.
-     * </p>
-     *
-     * @param request registration payload with transport config
-     * @return registration confirmation
-     */
     @PostMapping("/register")
     public ResponseEntity<Map<String, Object>> register(@RequestBody RegistrationRequest request) {
         if (request.oeAnalyzerId == null || request.oeAnalyzerId.isBlank()) {
@@ -72,52 +54,51 @@ public class AnalyzerRegistrationController {
 
         registry.register(request.sourceId, entry);
 
+        boolean fileWatchUpdated = false;
+        if ("FILE".equalsIgnoreCase(request.protocol)) {
+            try {
+                fileWatcher.addWatchDirectory(Path.of(request.sourceId), request.filePattern, request.oeAnalyzerId);
+                fileWatchUpdated = true;
+            } catch (IOException e) {
+                log.error("Failed to add runtime watch directory {} for analyzer {}", request.sourceId, request.oeAnalyzerId,
+                        e);
+                return ResponseEntity.internalServerError().body(Map.of(
+                        "registered", false,
+                        "error", "Bridge failed to register FILE watch directory: " + e.getMessage()));
+            }
+        }
+
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("registered", true);
         response.put("oeAnalyzerId", request.oeAnalyzerId);
         response.put("sourceId", request.sourceId);
         response.put("protocol", request.protocol);
+        response.put("fileWatchUpdated", fileWatchUpdated);
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Unregister an analyzer by OE analyzer ID.
-     * Removes all source mappings that point to this analyzer.
-     */
     @DeleteMapping("/{oeAnalyzerId}")
     public ResponseEntity<Map<String, Object>> unregister(@PathVariable String oeAnalyzerId) {
         boolean removed = registry.unregisterByAnalyzerId(oeAnalyzerId);
+        int removedWatchDirs = fileWatcher.removeWatchDirectoriesByAnalyzerId(oeAnalyzerId);
+
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("removed", removed);
+        response.put("removed", removed || removedWatchDirs > 0);
         response.put("oeAnalyzerId", oeAnalyzerId);
+        response.put("removedWatchDirectories", removedWatchDirs);
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * List all registered analyzers.
-     */
     @GetMapping
     public ResponseEntity<Map<String, AnalyzerEntry>> list() {
         return ResponseEntity.ok(registry.getRegisteredAnalyzers());
     }
 
-    /**
-     * Registration request payload.
-     */
     public static class RegistrationRequest {
-        /** OE analyzer ID (from the analyzer table in OpenELIS) */
         public String oeAnalyzerId;
-
-        /** Source identifier: IP address for TCP, directory path for FILE, serial port for SERIAL */
         public String sourceId;
-
-        /** Human-readable analyzer name */
         public String name;
-
-        /** Expected protocol: ASTM, HL7, CSV */
         public String protocol;
-
-        /** Optional file pattern for FILE transport (glob or regex) */
         public String filePattern;
     }
 }
