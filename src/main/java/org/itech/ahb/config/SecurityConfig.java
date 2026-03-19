@@ -33,9 +33,11 @@ import java.util.Arrays;
  * </p>
  * <p>
  * <strong>Password semantics:</strong> The {@code bridge.security.password} property
- * accepts either plaintext (hashed at runtime with BCrypt) or a pre-hashed value with
- * {@code {bcrypt}} prefix (e.g. {@code {bcrypt}$2a$10$...}). Use plaintext for simple
- * deployments; use pre-hashed for secret managers or when rotating without restarts.
+ * accepts either plaintext (encoded at startup with the configured {@link PasswordEncoder})
+ * or an already-encoded value using the delegating-encoder form {@code {id}encoded} (e.g.
+ * {@code {bcrypt}$2a$10$...}) which is stored as-is. Pre-hashed values suit secret managers
+ * and plaintext-free config files. The bridge uses an in-memory user; changing credentials
+ * still requires an application restart to take effect.
  * </p>
  *
  * @see org.itech.ahb.controller.AnalyzerInputController
@@ -104,14 +106,37 @@ public class SecurityConfig {
 
     @Bean
     public UserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
+        String storedPassword = encodePasswordIfPlaintext(password, passwordEncoder);
         var user = User.builder()
                 .username(username)
-                .password(passwordEncoder.encode(password))
+                .password(storedPassword)
                 .roles("BRIDGE")
                 .build();
 
         log.info("Configured bridge security user: {}", username);
         return new InMemoryUserDetailsManager(user);
+    }
+
+    /**
+     * Delegating-password values ({@code {bcrypt}$2a$...}, etc.) must be kept as-is.
+     * Plaintext is encoded once at startup.
+     */
+    static String encodePasswordIfPlaintext(String rawPassword, PasswordEncoder passwordEncoder) {
+        if (rawPassword == null || rawPassword.isEmpty()) {
+            return passwordEncoder.encode("");
+        }
+        if (isDelegatingEncodedPassword(rawPassword)) {
+            return rawPassword;
+        }
+        return passwordEncoder.encode(rawPassword);
+    }
+
+    private static boolean isDelegatingEncodedPassword(String value) {
+        if (!value.startsWith("{")) {
+            return false;
+        }
+        int close = value.indexOf('}');
+        return close > 1;
     }
 
     @Bean

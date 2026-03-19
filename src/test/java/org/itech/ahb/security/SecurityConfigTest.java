@@ -106,9 +106,17 @@ class SecurityConfigTest {
         }
 
         @Test
-        @DisplayName("Prometheus endpoint is publicly accessible for monitoring")
+        @DisplayName("Prometheus scrape endpoint is publicly accessible for monitoring")
         void prometheusEndpointNoAuthRequired() throws Exception {
-            // Prometheus/metrics are public for monitoring; assert not 401/403
+            int status = mockMvc.perform(get("/actuator/prometheus"))
+                    .andReturn().getResponse().getStatus();
+            assertTrue(status != 401 && status != 403,
+                    "Prometheus endpoint should not require auth, but got " + status);
+        }
+
+        @Test
+        @DisplayName("Metrics endpoint is publicly accessible for monitoring")
+        void metricsEndpointNoAuthRequired() throws Exception {
             int status = mockMvc.perform(get("/actuator/metrics"))
                     .andReturn().getResponse().getStatus();
             assertTrue(status != 401 && status != 403,

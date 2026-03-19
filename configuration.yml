@@ -25,7 +25,8 @@ bridge:
   # Protects against unauthorized data injection via the HTTP transport.
   # Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
   #
-  # Password: Provide plaintext (hashed at runtime) or pre-hashed with {bcrypt} prefix.
+  # Password: Plaintext is BCrypt-encoded once at startup. Values already in delegating form
+  # ({bcrypt}$2a$..., {noop}..., etc.) are stored as-is — do not double-encode.
   # In production, set BRIDGE_AUTH_PASSWORD env var. Default 'changeme' fails startup
   # unless spring.profiles.active includes dev or test.
   security:

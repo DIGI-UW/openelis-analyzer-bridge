@@ -253,7 +253,7 @@ environment:
   BRIDGE_AUTH_PASSWORD: your-secure-password
 ```
 
-Pre-hashed BCrypt passwords are supported: set `bridge.security.password={bcrypt}$2a$10$...` to avoid plaintext in config.
+Pre-encoded passwords are supported using Spring’s delegating form: set `bridge.security.password={bcrypt}$2a$10$...` (or another `{id}...` scheme) and the bridge stores that value as-is. Plaintext values are BCrypt-encoded once at startup—do not double-encode.
 
 ### Disabling Security
 
