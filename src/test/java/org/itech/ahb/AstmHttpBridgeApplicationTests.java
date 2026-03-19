@@ -10,7 +10,12 @@ import org.springframework.boot.test.mock.mockito.MockBean;
  * Uses MockBean to prevent ASTM servers from actually starting during tests,
  * which avoids port binding and shutdown timing issues.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+        "spring.profiles.active=test",
+        "bridge.security.password=test-context-password"
+    })
 class AstmHttpBridgeApplicationTests {
 
   /**

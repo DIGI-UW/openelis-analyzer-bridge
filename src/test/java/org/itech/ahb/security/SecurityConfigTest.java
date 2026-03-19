@@ -33,7 +33,8 @@ import org.springframework.test.web.servlet.MockMvc;
     "bridge.security.password=testpass",
     "org.itech.ahb.mllp.enabled=false",
     "org.itech.ahb.serial.enabled=false",
-    "bridge.file.enabled=false"
+    "bridge.file.enabled=false",
+    "management.endpoints.web.exposure.include=health,info,prometheus,metrics,loggers"
 })
 @AutoConfigureMockMvc
 class SecurityConfigTest {
@@ -102,6 +103,31 @@ class SecurityConfigTest {
                     .andReturn().getResponse().getStatus();
             assertTrue(status != 401 && status != 403,
                     "Info endpoint should not require auth, but got " + status);
+        }
+
+        @Test
+        @DisplayName("Prometheus scrape endpoint is publicly accessible for monitoring")
+        void prometheusEndpointNoAuthRequired() throws Exception {
+            int status = mockMvc.perform(get("/actuator/prometheus"))
+                    .andReturn().getResponse().getStatus();
+            assertTrue(status != 401 && status != 403,
+                    "Prometheus endpoint should not require auth, but got " + status);
+        }
+
+        @Test
+        @DisplayName("Metrics endpoint is publicly accessible for monitoring")
+        void metricsEndpointNoAuthRequired() throws Exception {
+            int status = mockMvc.perform(get("/actuator/metrics"))
+                    .andReturn().getResponse().getStatus();
+            assertTrue(status != 401 && status != 403,
+                    "Metrics endpoint should not require auth, but got " + status);
+        }
+
+        @Test
+        @DisplayName("Sensitive actuator endpoint requires authentication")
+        void loggersEndpointRequiresAuth() throws Exception {
+            mockMvc.perform(get("/actuator/loggers"))
+                    .andExpect(status().isUnauthorized());
         }
     }
 }

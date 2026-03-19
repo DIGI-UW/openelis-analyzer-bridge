@@ -26,6 +26,10 @@ services:
     #   - /dev/ttyUSB0:/dev/ttyUSB0
     environment:
       LOGGING_LEVEL_ORG_ITECH: INFO
+      # Local compose defaults to dev so default password is allowed (prod fails fast on changeme).
+      SPRING_PROFILES_ACTIVE: dev
+      # Production: use profile prod and set BRIDGE_AUTH_PASSWORD (or bridge.security.password).
+      # BRIDGE_AUTH_PASSWORD: ${BRIDGE_AUTH_PASSWORD}
     logging: *local-logging
     healthcheck:
       test: ["CMD", "/app/healthcheck.sh"]
