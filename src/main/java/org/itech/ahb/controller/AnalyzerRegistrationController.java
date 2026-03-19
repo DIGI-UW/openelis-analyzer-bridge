@@ -1,12 +1,14 @@
 package org.itech.ahb.controller;
 
 import java.io.IOException;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.file.FileConfig;
 import org.itech.ahb.file.FileWatcher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,10 +29,12 @@ public class AnalyzerRegistrationController {
 
     private final AnalyzerRegistryConfig registry;
     private final FileWatcher fileWatcher;
+    private final FileConfig fileConfig;
 
-    public AnalyzerRegistrationController(AnalyzerRegistryConfig registry, FileWatcher fileWatcher) {
+    public AnalyzerRegistrationController(AnalyzerRegistryConfig registry, FileWatcher fileWatcher, FileConfig fileConfig) {
         this.registry = registry;
         this.fileWatcher = fileWatcher;
+        this.fileConfig = fileConfig;
     }
 
     @PostMapping("/register")
@@ -55,10 +59,20 @@ public class AnalyzerRegistrationController {
         registry.register(request.sourceId, entry);
 
         boolean fileWatchUpdated = false;
-        if ("FILE".equalsIgnoreCase(request.protocol)) {
+        if (isFileTransport(request.protocol)) {
+            if (!fileConfig.isEnabled()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "registered", false,
+                        "error", "FILE transport requires bridge.file.enabled=true"));
+            }
             try {
                 fileWatcher.addWatchDirectory(Path.of(request.sourceId), request.filePattern, request.oeAnalyzerId);
                 fileWatchUpdated = true;
+            } catch (InvalidPathException e) {
+                log.warn("Invalid FILE sourceId path for analyzer {}: {}", request.oeAnalyzerId, request.sourceId);
+                return ResponseEntity.badRequest().body(Map.of(
+                        "registered", false,
+                        "error", "Invalid directory path for FILE sourceId"));
             } catch (IOException e) {
                 log.error("Failed to add runtime watch directory {} for analyzer {}", request.sourceId, request.oeAnalyzerId,
                         e);
@@ -92,6 +106,14 @@ public class AnalyzerRegistrationController {
     @GetMapping
     public ResponseEntity<Map<String, AnalyzerEntry>> list() {
         return ResponseEntity.ok(registry.getRegisteredAnalyzers());
+    }
+
+    /**
+     * FILE analyzers may register with {@code protocol=FILE} or legacy {@code CSV}.
+     */
+    private static boolean isFileTransport(String protocol) {
+        return protocol != null
+                && ("FILE".equalsIgnoreCase(protocol) || "CSV".equalsIgnoreCase(protocol));
     }
 
     public static class RegistrationRequest {

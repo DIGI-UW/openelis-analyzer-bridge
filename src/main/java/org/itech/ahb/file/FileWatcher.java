@@ -36,6 +36,8 @@ public class FileWatcher {
     private final Map<Path, RetryInfo> retryTracker = new ConcurrentHashMap<>();
     private final Map<Path, WatchKey> watchedDirectories = new ConcurrentHashMap<>();
     private final Map<Path, String> directoryAnalyzerMap = new ConcurrentHashMap<>();
+    /** Per registered directory: glob for {@link #shouldProcessFile(Path)} (runtime FILE registration). */
+    private final Map<Path, String> directoryGlobPatternByDir = new ConcurrentHashMap<>();
 
     // Maximum number of file hashes to keep in memory (prevent unbounded growth)
     private static final int MAX_HASH_CACHE_SIZE = 10000;
@@ -62,6 +64,11 @@ public class FileWatcher {
     @PostConstruct
     public synchronized void start() throws IOException {
         if (running) {
+            return;
+        }
+
+        if (!fileConfig.isEnabled()) {
+            log.info("File watcher bootstrap skipped (bridge.file.enabled=false)");
             return;
         }
 
@@ -103,6 +110,8 @@ public class FileWatcher {
      */
     public synchronized void addWatchDirectory(Path dirPath, String filePattern, String analyzerId) throws IOException {
         Path normalized = dirPath.normalize();
+        String effectiveGlob = (filePattern == null || filePattern.isBlank()) ? "*" : filePattern;
+        directoryGlobPatternByDir.put(normalized, effectiveGlob);
         registerDirectoryInternal(normalized, analyzerId, true);
         if (!fileConfig.getWatchDirectories().contains(normalized.toString())) {
             List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
@@ -119,6 +128,7 @@ public class FileWatcher {
         Path normalized = dirPath.normalize();
         WatchKey key = watchedDirectories.remove(normalized);
         directoryAnalyzerMap.remove(normalized);
+        directoryGlobPatternByDir.remove(normalized);
         List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
         mutableWatchDirs.remove(normalized.toString());
         fileConfig.setWatchDirectories(mutableWatchDirs);
@@ -653,6 +663,20 @@ public class FileWatcher {
         // Skip hidden files, error detail files, and permanently failed files
         if (filename.startsWith(".") || filename.endsWith(".error") || filename.endsWith(".failed")) {
             return false;
+        }
+
+        Path parent = filePath.getParent();
+        if (parent != null) {
+            String perDirGlob = directoryGlobPatternByDir.get(parent.normalize());
+            if (perDirGlob != null) {
+                try {
+                    PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + perDirGlob);
+                    return matcher.matches(filePath.getFileName());
+                } catch (IllegalArgumentException e) {
+                    log.warn("Invalid per-directory glob '{}' for {}: {}", perDirGlob, parent, e.getMessage());
+                    return false;
+                }
+            }
         }
 
         // Check against configured patterns

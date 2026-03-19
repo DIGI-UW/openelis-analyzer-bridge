@@ -8,6 +8,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.model.Protocol;
@@ -29,7 +30,8 @@ import org.springframework.stereotype.Component;
 public class FileMessageHandler {
 
     private final CSVParser csvParser;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    private volatile HttpClient httpClient;
 
     /** Defaults support manual construction in tests; {@code @Value} overrides when Spring creates the bean. */
     @Value("${bridge.openelis.url:http://localhost:8443}")
@@ -41,6 +43,12 @@ public class FileMessageHandler {
     @Value("${bridge.openelis.password:}")
     private String openelisPassword = "";
 
+    @Value("${bridge.openelis.connectTimeoutSeconds:30}")
+    private int connectTimeoutSeconds = 30;
+
+    @Value("${bridge.openelis.readTimeoutSeconds:30}")
+    private int readTimeoutSeconds = 30;
+
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
     @Autowired
@@ -51,6 +59,21 @@ public class FileMessageHandler {
     public FileMessageHandler(CSVParser csvParser, FileConfig ignoredFileConfig,
             org.itech.ahb.normalizer.MessageNormalizer ignoredNormalizer) {
         this.csvParser = csvParser;
+    }
+
+    private HttpClient httpClient() {
+        HttpClient existing = httpClient;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (this) {
+            if (httpClient == null) {
+                httpClient = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+                        .build();
+            }
+            return httpClient;
+        }
     }
 
     public MessageEnvelope processFile(Path filePath, String analyzerId) throws IOException, FileProcessingException {
@@ -85,11 +108,11 @@ public class FileMessageHandler {
     private void postFileToOpenElis(Path filePath, String analyzerId, byte[] content)
             throws IOException, FileProcessingException {
         String boundary = "----OpenElisBridgeBoundary" + System.currentTimeMillis();
-        String filename = filePath.getFileName().toString();
+        String safeFilename = sanitizeMultipartFilename(filePath.getFileName().toString());
 
         byte[] preamble = (
                 "--" + boundary + "\r\n" +
-                "Content-Disposition: form-data; name=\"file\"; filename=\"" + filename + "\"\r\n" +
+                "Content-Disposition: form-data; name=\"file\"; filename=\"" + safeFilename + "\"\r\n" +
                 "Content-Type: application/octet-stream\r\n\r\n"
         ).getBytes(StandardCharsets.UTF_8);
 
@@ -105,6 +128,7 @@ public class FileMessageHandler {
         URI uri = URI.create(base + "/rest/analyzers/" + analyzerId + "/import");
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofSeconds(readTimeoutSeconds))
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .header("X-Analyzer-Id", analyzerId)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body));
@@ -118,7 +142,7 @@ public class FileMessageHandler {
 
         HttpResponse<String> response;
         try {
-            response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            response = httpClient().send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new FileProcessingException("Interrupted while forwarding file to OpenELIS", e);
@@ -130,18 +154,14 @@ public class FileMessageHandler {
                             " with status " + response.statusCode() + ": " + response.body());
         }
 
-        log.info("Forwarded file {} to OpenELIS direct-import endpoint for analyzer {}", filename, analyzerId);
+        log.info("Forwarded file {} to OpenELIS direct-import endpoint for analyzer {}", safeFilename, analyzerId);
     }
 
-    public boolean validateFileContent(Path filePath, Protocol protocol) throws IOException {
-        String content = Files.readString(filePath);
-        if (content == null || content.trim().isEmpty()) {
-            return false;
+    private static String sanitizeMultipartFilename(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "upload.bin";
         }
-        if (protocol == Protocol.CSV) {
-            return csvParser.isValidCSV(content);
-        }
-        return true;
+        return filename.replace("\r", "").replace("\n", "").replace("\"", "");
     }
 
     public static class FileProcessingException extends Exception {

@@ -1,6 +1,7 @@
 package org.itech.ahb.health;
 
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.file.FileConfig;
 import org.itech.ahb.file.FileWatcher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.autoconfigure.health.ConditionalOnEnabledHealthIndicator;
@@ -14,9 +15,11 @@ import org.springframework.stereotype.Component;
 public class FileWatcherHealthIndicator implements HealthIndicator {
 
     private final FileWatcher watcher;
+    private final FileConfig fileConfig;
 
-    public FileWatcherHealthIndicator(@Autowired(required = false) FileWatcher watcher) {
+    public FileWatcherHealthIndicator(@Autowired(required = false) FileWatcher watcher, FileConfig fileConfig) {
         this.watcher = watcher;
+        this.fileConfig = fileConfig;
     }
 
     @Override
@@ -24,6 +27,12 @@ public class FileWatcherHealthIndicator implements HealthIndicator {
         if (watcher == null) {
             return Health.unknown()
                 .withDetail("reason", "File watcher not configured")
+                .build();
+        }
+
+        if (!fileConfig.isEnabled()) {
+            return Health.up()
+                .withDetail("status", "disabled (bridge.file.enabled=false)")
                 .build();
         }
 
