@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -30,17 +31,19 @@ public class FileMessageHandler {
     private final CSVParser csvParser;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
+    /** Defaults support manual construction in tests; {@code @Value} overrides when Spring creates the bean. */
     @Value("${bridge.openelis.url:http://localhost:8443}")
-    private String openelisBaseUrl;
+    private String openelisBaseUrl = "http://localhost:8443";
 
     @Value("${bridge.openelis.username:}")
-    private String openelisUsername;
+    private String openelisUsername = "";
 
     @Value("${bridge.openelis.password:}")
-    private String openelisPassword;
+    private String openelisPassword = "";
 
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
+    @Autowired
     public FileMessageHandler(CSVParser csvParser) {
         this.csvParser = csvParser;
     }

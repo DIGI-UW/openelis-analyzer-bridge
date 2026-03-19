@@ -3,7 +3,6 @@ package org.itech.ahb.file;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import org.apache.commons.csv.CSVPrinter;
@@ -26,7 +25,6 @@ import java.util.Map;
  * </p>
  */
 @Component
-@ConditionalOnProperty(prefix = "bridge.file", name = "enabled", havingValue = "true")
 @Slf4j
 public class CSVParser {
 

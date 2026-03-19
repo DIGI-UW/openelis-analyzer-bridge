@@ -24,7 +24,7 @@ import java.util.stream.Stream;
  * retry logic with exponential backoff.
  * </p>
  */
-@Component
+@Component("analyzerFileWatcher")
 @Slf4j
 public class FileWatcher {
 
