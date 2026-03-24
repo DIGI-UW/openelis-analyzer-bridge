@@ -3,8 +3,13 @@ package org.itech.ahb.file;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.filefilter.IOFileFilter;
+import org.apache.commons.io.monitor.FileAlterationListenerAdaptor;
+import org.apache.commons.io.monitor.FileAlterationMonitor;
+import org.apache.commons.io.monitor.FileAlterationObserver;
 import org.springframework.stereotype.Component;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.*;
@@ -17,11 +22,16 @@ import java.util.concurrent.*;
 import java.util.stream.Stream;
 
 /**
- * File system watcher for analyzer result files.
+ * File system poller for analyzer result files.
  * <p>
- * Monitors configured directories for new files matching specified patterns,
- * implements file stability checking, duplicate detection (hash-based), and
- * retry logic with exponential backoff.
+ * Uses Apache Commons IO {@link FileAlterationMonitor} for reliable polling-based
+ * file detection. This replaces the previous Java NIO {@code WatchService} implementation
+ * which was unreliable in Docker bind-mount environments (macOS, Windows) and on
+ * network filesystems (NFS, CIFS, Kubernetes configmaps).
+ * </p>
+ * <p>
+ * Detection flow: polling discovers new/changed files → stability checker waits for
+ * file to stop changing → processor forwards to OpenELIS via HTTP → archive/retry.
  * </p>
  */
 @Component("analyzerFileWatcher")
@@ -34,7 +44,7 @@ public class FileWatcher {
     private final Map<Path, FileMetadata> fileStabilityTracker = new ConcurrentHashMap<>();
     private final Set<String> processedFileHashes = ConcurrentHashMap.newKeySet();
     private final Map<Path, RetryInfo> retryTracker = new ConcurrentHashMap<>();
-    private final Map<Path, WatchKey> watchedDirectories = new ConcurrentHashMap<>();
+    private final Map<Path, FileAlterationObserver> observersByDirectory = new ConcurrentHashMap<>();
     private final Map<Path, String> directoryAnalyzerMap = new ConcurrentHashMap<>();
     /** Per registered directory: glob for {@link #shouldProcessFile(Path)} (runtime FILE registration). */
     private final Map<Path, String> directoryGlobPatternByDir = new ConcurrentHashMap<>();
@@ -42,8 +52,7 @@ public class FileWatcher {
     // Maximum number of file hashes to keep in memory (prevent unbounded growth)
     private static final int MAX_HASH_CACHE_SIZE = 10000;
 
-    private WatchService watchService;
-    private ExecutorService watcherExecutor;
+    private FileAlterationMonitor monitor;
     private ExecutorService processorExecutor;
     private final ScheduledExecutorService stabilityChecker = Executors.newScheduledThreadPool(1);
 
@@ -59,10 +68,10 @@ public class FileWatcher {
     }
 
     /**
-     * Start file watcher service.
+     * Start file watcher service using polling-based detection.
      */
     @PostConstruct
-    public synchronized void start() throws IOException {
+    public synchronized void start() throws Exception {
         if (running) {
             return;
         }
@@ -72,15 +81,14 @@ public class FileWatcher {
             return;
         }
 
-        log.info("Starting file watcher service...");
+        log.info("Starting file watcher service (polling mode, interval={}ms)...", fileConfig.getPollIntervalMs());
 
         // Create archive and error directories if they don't exist
         Files.createDirectories(Paths.get(fileConfig.getArchiveDirectory()));
         Files.createDirectories(Paths.get(fileConfig.getErrorDirectory()));
 
-        // Initialize watch service and executors
-        watchService = FileSystems.getDefault().newWatchService();
-        watcherExecutor = Executors.newSingleThreadExecutor();
+        // Initialize polling monitor and processor
+        monitor = new FileAlterationMonitor(fileConfig.getPollIntervalMs());
         processorExecutor = Executors.newFixedThreadPool(2);
 
         // Register bootstrap directories (if any)
@@ -92,7 +100,7 @@ public class FileWatcher {
         }
 
         running = true;
-        watcherExecutor.submit(this::watchLoop);
+        monitor.start();
 
         // Start stability checker (runs periodically)
         stabilityChecker.scheduleWithFixedDelay(
@@ -102,7 +110,7 @@ public class FileWatcher {
                 TimeUnit.MILLISECONDS
         );
 
-        log.info("File watcher service started successfully with {} watched directories", watchedDirectories.size());
+        log.info("File watcher service started successfully with {} watched directories", observersByDirectory.size());
     }
 
     /**
@@ -126,14 +134,16 @@ public class FileWatcher {
      */
     public synchronized boolean removeWatchDirectory(Path dirPath) {
         Path normalized = dirPath.normalize();
-        WatchKey key = watchedDirectories.remove(normalized);
+        FileAlterationObserver observer = observersByDirectory.remove(normalized);
         directoryAnalyzerMap.remove(normalized);
         directoryGlobPatternByDir.remove(normalized);
         List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
         mutableWatchDirs.remove(normalized.toString());
         fileConfig.setWatchDirectories(mutableWatchDirs);
-        if (key != null) {
-            key.cancel();
+        if (observer != null) {
+            if (monitor != null) {
+                monitor.removeObserver(observer);
+            }
             log.info("Runtime watch directory removed: {}", normalized);
             return true;
         }
@@ -154,7 +164,11 @@ public class FileWatcher {
     }
 
     /**
-     * Register a directory with WatchService and optionally process existing files.
+     * Register a directory with the polling monitor and optionally process existing files.
+     * <p>
+     * Creates a {@link FileAlterationObserver} with a filter that delegates to
+     * {@link #shouldProcessFile(Path)} for per-directory glob pattern matching.
+     * </p>
      */
     private void registerDirectoryInternal(Path dirPath, String analyzerId, boolean processExisting) throws IOException {
         if (!Files.exists(dirPath)) {
@@ -162,21 +176,80 @@ public class FileWatcher {
             Files.createDirectories(dirPath);
         }
 
-        WatchKey oldKey = watchedDirectories.remove(dirPath);
-        if (oldKey != null) {
-            oldKey.cancel();
+        // Remove existing observer if re-registering
+        FileAlterationObserver oldObserver = observersByDirectory.remove(dirPath);
+        if (oldObserver != null && monitor != null) {
+            monitor.removeObserver(oldObserver);
         }
 
-        WatchKey key = dirPath.register(watchService, StandardWatchEventKinds.ENTRY_CREATE,
-                StandardWatchEventKinds.ENTRY_MODIFY);
-        watchedDirectories.put(dirPath, key);
         if (analyzerId != null && !analyzerId.isBlank()) {
             directoryAnalyzerMap.put(dirPath, analyzerId);
+        }
+
+        // Build a filter that delegates to shouldProcessFile for glob matching
+        IOFileFilter fileFilter = new IOFileFilter() {
+            @Override
+            public boolean accept(File file) {
+                return file.isFile() && shouldProcessFile(file.toPath());
+            }
+
+            @Override
+            public boolean accept(File dir, String name) {
+                return accept(new File(dir, name));
+            }
+        };
+
+        FileAlterationObserver observer = new FileAlterationObserver(dirPath.toFile(), fileFilter);
+        observer.addListener(new FileAlterationListenerAdaptor() {
+            @Override
+            public void onFileCreate(File file) {
+                trackFileForStability(file.toPath());
+            }
+
+            @Override
+            public void onFileChange(File file) {
+                trackFileForStability(file.toPath());
+            }
+        });
+
+        // Initialize observer so its first poll has a baseline snapshot
+        try {
+            observer.initialize();
+        } catch (Exception e) {
+            log.warn("Failed to initialize observer for {}: {}", dirPath, e.getMessage());
+        }
+
+        observersByDirectory.put(dirPath, observer);
+        if (monitor != null) {
+            monitor.addObserver(observer);
         }
 
         log.info("Registered watch directory: {}", dirPath);
         if (processExisting && processorExecutor != null) {
             processExistingFiles(dirPath);
+        }
+    }
+
+    /**
+     * Track a file for stability checking.
+     * <p>
+     * Records the file's current metadata (lastModified, size) so the stability
+     * checker can determine when the file has stopped changing.
+     * </p>
+     */
+    private void trackFileForStability(Path filePath) {
+        if (Files.isDirectory(filePath)) {
+            return;
+        }
+        try {
+            BasicFileAttributes attrs = Files.readAttributes(filePath, BasicFileAttributes.class);
+            fileStabilityTracker.put(filePath, new FileMetadata(
+                    attrs.lastModifiedTime().toInstant(),
+                    attrs.size()
+            ));
+            log.debug("Tracking file for stability: {}", filePath.getFileName());
+        } catch (IOException e) {
+            log.warn("Failed to read file attributes for: {}", filePath, e);
         }
     }
 
@@ -188,13 +261,18 @@ public class FileWatcher {
         log.info("Stopping file watcher service...");
         running = false;
 
+        // Stop polling monitor
+        if (monitor != null) {
+            try {
+                monitor.stop();
+            } catch (Exception e) {
+                log.error("Error stopping file alteration monitor", e);
+            }
+        }
+
         // Shutdown executors gracefully
-        shutdownExecutor(watcherExecutor, "watcher");
         shutdownExecutor(processorExecutor, "processor");
         shutdownExecutor(stabilityChecker, "stability-checker");
-
-        // Close watch service
-        closeWatchService();
 
         log.info("File watcher service stopped");
     }
@@ -225,82 +303,6 @@ public class FileWatcher {
             log.warn("{} executor shutdown interrupted", name);
             executor.shutdownNow();
             Thread.currentThread().interrupt();
-        }
-    }
-
-    /**
-     * Close watch service with error handling.
-     */
-    private void closeWatchService() {
-        try {
-            if (watchService != null) {
-                watchService.close();
-                log.debug("Watch service closed successfully");
-            }
-        } catch (IOException e) {
-            log.error("Error closing watch service", e);
-        }
-    }
-
-    /**
-     * Watch loop - monitors for file system events.
-     */
-    private void watchLoop() {
-        while (running) {
-            try {
-                WatchKey key = watchService.poll(fileConfig.getPollIntervalMs(), TimeUnit.MILLISECONDS);
-                if (key == null) {
-                    continue;
-                }
-
-                for (WatchEvent<?> event : key.pollEvents()) {
-                    WatchEvent.Kind<?> kind = event.kind();
-
-                    if (kind == StandardWatchEventKinds.OVERFLOW) {
-                        log.warn("Watch service overflow - some events may have been lost");
-                        continue;
-                    }
-
-                    @SuppressWarnings("unchecked")
-                    WatchEvent<Path> pathEvent = (WatchEvent<Path>) event;
-                    Path filename = pathEvent.context();
-                    Path directory = (Path) key.watchable();
-                    Path fullPath = directory.resolve(filename);
-
-                    if (shouldProcessFile(fullPath)) {
-                        onFileEvent(fullPath, kind);
-                    }
-                }
-
-                key.reset();
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.info("Watch loop interrupted");
-                break;
-            } catch (Exception e) {
-                log.error("Error in watch loop", e);
-            }
-        }
-    }
-
-    /**
-     * Handle file event (create or modify).
-     */
-    private void onFileEvent(Path filePath, WatchEvent.Kind<?> kind) {
-        log.debug("File event: {} for file: {}", kind.name(), filePath.getFileName());
-
-        // Track file for stability checking
-        if (!Files.isDirectory(filePath)) {
-            try {
-                BasicFileAttributes attrs = Files.readAttributes(filePath, BasicFileAttributes.class);
-                fileStabilityTracker.put(filePath, new FileMetadata(
-                        attrs.lastModifiedTime().toInstant(),
-                        attrs.size()
-                ));
-            } catch (IOException e) {
-                log.warn("Failed to read file attributes for: {}", filePath, e);
-            }
         }
     }
 
