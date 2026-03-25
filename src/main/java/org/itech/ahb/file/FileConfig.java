@@ -27,9 +27,12 @@ import java.util.Map;
 public class FileConfig {
 
     /**
-     * Enable/disable file watcher listener
+     * Enable/disable file watcher listener.
+     * Default: true — directories are registered at runtime via the REST API,
+     * so enabling the watcher has no cost when no directories are registered.
+     * Set to false only if the FILE transport should be completely disabled.
      */
-    private boolean enabled = false;
+    private boolean enabled = true;
 
     /**
      * List of directories to watch for new files

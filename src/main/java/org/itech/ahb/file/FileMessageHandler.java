@@ -49,6 +49,9 @@ public class FileMessageHandler {
     @Value("${bridge.openelis.readTimeoutSeconds:30}")
     private int readTimeoutSeconds = 30;
 
+    @Value("${bridge.openelis.insecureTls:false}")
+    private boolean insecureTls = false;
+
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
     @Autowired
@@ -68,9 +71,8 @@ public class FileMessageHandler {
         }
         synchronized (this) {
             if (httpClient == null) {
-                httpClient = HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
-                        .build();
+                httpClient = org.itech.ahb.util.HttpClientFactory.create(
+                        connectTimeoutSeconds, insecureTls, "file-import");
             }
             return httpClient;
         }
