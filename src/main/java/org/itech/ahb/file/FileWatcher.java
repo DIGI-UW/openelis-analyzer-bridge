@@ -267,7 +267,7 @@ public class FileWatcher {
                     attrs.lastModifiedTime().toInstant(),
                     attrs.size()
             ));
-            log.debug("Tracking file for stability: {}", filePath.getFileName());
+            log.info("Tracking file for stability: {}", filePath.getFileName());
         } catch (IOException e) {
             log.warn("Failed to read file attributes for: {}", filePath, e);
         }
@@ -351,8 +351,12 @@ public class FileWatcher {
                 long timeSinceModification = now.toEpochMilli() - currentLastModified.toEpochMilli();
 
                 if (timeSinceModification >= fileConfig.getFileStabilityTimeoutMs()) {
-                    // File is stable - both timestamp and size match metadata snapshot
-                    if (currentSize == metadata.size && currentLastModified.equals(metadata.lastModified)) {
+                    // File is stable - size matches and timestamp within tolerance.
+                    // Docker bind mounts can have ~1s timestamp granularity difference
+                    // between host write time and container read time.
+                    long timestampDiffMs = Math.abs(
+                            currentLastModified.toEpochMilli() - metadata.lastModified.toEpochMilli());
+                    if (currentSize == metadata.size && timestampDiffMs <= 1000) {
                         stableFiles.add(path);
                     } else {
                         // File changed since last check, update metadata
@@ -390,7 +394,8 @@ public class FileWatcher {
     private void rescanAllDirectories() {
         for (Path dir : observersByDirectory.keySet()) {
             try (Stream<Path> files = Files.list(dir)) {
-                files.filter(Files::isRegularFile)
+                List<Path> candidates = files
+                        .filter(Files::isRegularFile)
                         .filter(this::shouldProcessFile)
                         .filter(file -> !fileStabilityTracker.containsKey(file))
                         .filter(file -> {
@@ -400,7 +405,12 @@ public class FileWatcher {
                                 return true; // process if hash fails
                             }
                         })
-                        .forEach(this::trackFileForStability);
+                        .collect(java.util.stream.Collectors.toList());
+
+                if (!candidates.isEmpty()) {
+                    log.info("Rescan found {} untracked file(s) in {}", candidates.size(), dir);
+                    candidates.forEach(this::trackFileForStability);
+                }
             } catch (IOException e) {
                 // Directory may not exist yet (pre-registration); ignore
             }
