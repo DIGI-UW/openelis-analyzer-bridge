@@ -71,7 +71,7 @@ public class FileWatcher {
      * Start file watcher service using polling-based detection.
      */
     @PostConstruct
-    public synchronized void start() throws Exception {
+    public synchronized void start() throws IOException {
         if (running) {
             return;
         }
@@ -100,7 +100,11 @@ public class FileWatcher {
         }
 
         running = true;
-        monitor.start();
+        try {
+            monitor.start();
+        } catch (Exception e) {
+            throw new IOException("Failed to start file polling monitor", e);
+        }
 
         // Start stability checker (runs periodically)
         stabilityChecker.scheduleWithFixedDelay(
@@ -188,7 +192,9 @@ public class FileWatcher {
             } catch (IOException e) {
                 log.error("Cannot create watch directory {} — volume may not be mounted. "
                         + "Registration will succeed; directory will be watched once it appears.", dirPath);
-                // Store analyzer mapping so it's ready when directory is created later
+                // TODO: store in a pending-registration set so rescanAllDirectories can
+                // create the observer once the directory appears (currently it only iterates
+                // observersByDirectory, so this dir is never retried)
                 if (analyzerId != null && !analyzerId.isBlank()) {
                     directoryAnalyzerMap.put(dirPath, analyzerId);
                 }
@@ -267,7 +273,7 @@ public class FileWatcher {
                     attrs.lastModifiedTime().toInstant(),
                     attrs.size()
             ));
-            log.info("Tracking file for stability: {}", filePath.getFileName());
+            log.debug("Tracking file for stability: {}", filePath.getFileName());
         } catch (IOException e) {
             log.warn("Failed to read file attributes for: {}", filePath, e);
         }
@@ -384,9 +390,6 @@ public class FileWatcher {
     }
 
     /**
-     * Process existing files in directory on startup.
-     */
-    /**
      * Periodic rescan of all registered directories. Safety net for files that
      * the monitor's observer-based polling may miss (e.g., runtime-added observers
      * not yet visible to the polling thread's snapshot).
@@ -398,6 +401,8 @@ public class FileWatcher {
                         .filter(Files::isRegularFile)
                         .filter(this::shouldProcessFile)
                         .filter(file -> !fileStabilityTracker.containsKey(file))
+                        // TODO: replace full-file hash with size/mtime heuristic to reduce IO
+                        // (hash is already computed in processFileWithRetry for dedup)
                         .filter(file -> {
                             try {
                                 return !processedFileHashes.contains(calculateFileHash(file));
