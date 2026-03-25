@@ -110,6 +110,16 @@ public class FileWatcher {
                 TimeUnit.MILLISECONDS
         );
 
+        // Periodic directory rescan — safety net for runtime-registered observers
+        // that the monitor's polling thread may miss due to CopyOnWriteArrayList
+        // snapshot timing. Scans all registered directories for untracked files.
+        stabilityChecker.scheduleWithFixedDelay(
+                this::rescanAllDirectories,
+                fileConfig.getPollIntervalMs() * 2,
+                fileConfig.getPollIntervalMs() * 2,
+                TimeUnit.MILLISECONDS
+        );
+
         log.info("File watcher service started successfully with {} watched directories", observersByDirectory.size());
     }
 
@@ -173,7 +183,17 @@ public class FileWatcher {
     private void registerDirectoryInternal(Path dirPath, String analyzerId, boolean processExisting) throws IOException {
         if (!Files.exists(dirPath)) {
             log.warn("Watch directory does not exist, creating: {}", dirPath);
-            Files.createDirectories(dirPath);
+            try {
+                Files.createDirectories(dirPath);
+            } catch (IOException e) {
+                log.error("Cannot create watch directory {} — volume may not be mounted. "
+                        + "Registration will succeed; directory will be watched once it appears.", dirPath);
+                // Store analyzer mapping so it's ready when directory is created later
+                if (analyzerId != null && !analyzerId.isBlank()) {
+                    directoryAnalyzerMap.put(dirPath, analyzerId);
+                }
+                return;
+            }
         }
 
         // Remove existing observer if re-registering
@@ -362,6 +382,31 @@ public class FileWatcher {
     /**
      * Process existing files in directory on startup.
      */
+    /**
+     * Periodic rescan of all registered directories. Safety net for files that
+     * the monitor's observer-based polling may miss (e.g., runtime-added observers
+     * not yet visible to the polling thread's snapshot).
+     */
+    private void rescanAllDirectories() {
+        for (Path dir : observersByDirectory.keySet()) {
+            try (Stream<Path> files = Files.list(dir)) {
+                files.filter(Files::isRegularFile)
+                        .filter(this::shouldProcessFile)
+                        .filter(file -> !fileStabilityTracker.containsKey(file))
+                        .filter(file -> {
+                            try {
+                                return !processedFileHashes.contains(calculateFileHash(file));
+                            } catch (Exception e) {
+                                return true; // process if hash fails
+                            }
+                        })
+                        .forEach(this::trackFileForStability);
+            } catch (IOException e) {
+                // Directory may not exist yet (pre-registration); ignore
+            }
+        }
+    }
+
     private void processExistingFiles(Path directory) {
         log.info("Processing existing files in: {}", directory);
 
