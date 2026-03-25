@@ -48,6 +48,8 @@ public class FileWatcher {
     private final Map<Path, String> directoryAnalyzerMap = new ConcurrentHashMap<>();
     /** Per registered directory: glob for {@link #shouldProcessFile(Path)} (runtime FILE registration). */
     private final Map<Path, String> directoryGlobPatternByDir = new ConcurrentHashMap<>();
+    /** Directories that failed creation during registration — retried by rescan. */
+    private final Set<Path> pendingDirectories = ConcurrentHashMap.newKeySet();
 
     // Maximum number of file hashes to keep in memory (prevent unbounded growth)
     private static final int MAX_HASH_CACHE_SIZE = 10000;
@@ -191,13 +193,11 @@ public class FileWatcher {
                 Files.createDirectories(dirPath);
             } catch (IOException e) {
                 log.error("Cannot create watch directory {} — volume may not be mounted. "
-                        + "Registration will succeed; directory will be watched once it appears.", dirPath);
-                // TODO: store in a pending-registration set so rescanAllDirectories can
-                // create the observer once the directory appears (currently it only iterates
-                // observersByDirectory, so this dir is never retried)
+                        + "Will retry when directory appears.", dirPath);
                 if (analyzerId != null && !analyzerId.isBlank()) {
                     directoryAnalyzerMap.put(dirPath, analyzerId);
                 }
+                pendingDirectories.add(dirPath);
                 return;
             }
         }
@@ -395,21 +395,26 @@ public class FileWatcher {
      * not yet visible to the polling thread's snapshot).
      */
     private void rescanAllDirectories() {
+        // Retry pending directories that failed creation during registration
+        for (Path pending : new ArrayList<>(pendingDirectories)) {
+            if (Files.exists(pending)) {
+                log.info("Pending directory now exists, registering: {}", pending);
+                pendingDirectories.remove(pending);
+                String analyzerId = directoryAnalyzerMap.get(pending);
+                try {
+                    registerDirectoryInternal(pending, analyzerId, true);
+                } catch (IOException e) {
+                    log.warn("Failed to register pending directory {}: {}", pending, e.getMessage());
+                }
+            }
+        }
+
         for (Path dir : observersByDirectory.keySet()) {
             try (Stream<Path> files = Files.list(dir)) {
                 List<Path> candidates = files
                         .filter(Files::isRegularFile)
                         .filter(this::shouldProcessFile)
                         .filter(file -> !fileStabilityTracker.containsKey(file))
-                        // TODO: replace full-file hash with size/mtime heuristic to reduce IO
-                        // (hash is already computed in processFileWithRetry for dedup)
-                        .filter(file -> {
-                            try {
-                                return !processedFileHashes.contains(calculateFileHash(file));
-                            } catch (Exception e) {
-                                return true; // process if hash fails
-                            }
-                        })
                         .collect(java.util.stream.Collectors.toList());
 
                 if (!candidates.isEmpty()) {
