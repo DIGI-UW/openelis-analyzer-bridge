@@ -170,6 +170,40 @@ public class AnalyzerRegistryConfig {
     }
 
     /**
+     * Replace the entire registry with a new set of registrations.
+     * This is the idempotent full-state sync — OE pushes its complete
+     * analyzer state, and the bridge replaces its in-memory registry.
+     *
+     * @param newRegistry map of sourceId → AnalyzerEntry
+     * @return sync result with counts of added, removed, and unchanged entries
+     */
+    public SyncResult syncAll(Map<String, AnalyzerEntry> newRegistry) {
+        Map<String, AnalyzerEntry> previous = Map.copyOf(analyzers);
+        int previousSize = previous.size();
+
+        analyzers.clear();
+        analyzers.putAll(newRegistry);
+
+        int added = 0;
+        int updated = 0;
+        for (Map.Entry<String, AnalyzerEntry> entry : newRegistry.entrySet()) {
+            if (!previous.containsKey(entry.getKey())) {
+                added++;
+            } else {
+                updated++;
+            }
+        }
+        int removed = previousSize - updated;
+
+        log.info("Registry sync: {} total ({} added, {} updated, {} removed)",
+                analyzers.size(), added, updated, removed);
+        return new SyncResult(analyzers.size(), added, updated, removed);
+    }
+
+    public record SyncResult(int total, int added, int updated, int removed) {
+    }
+
+    /**
      * Returns all registered analyzers.
      *
      * @return unmodifiable view of the registry

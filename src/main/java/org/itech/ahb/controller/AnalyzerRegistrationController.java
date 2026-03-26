@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -106,6 +107,50 @@ public class AnalyzerRegistrationController {
     @GetMapping
     public ResponseEntity<Map<String, AnalyzerEntry>> list() {
         return ResponseEntity.ok(registry.getRegisteredAnalyzers());
+    }
+
+    /**
+     * Full-state sync: OE pushes its complete analyzer registry.
+     * Replaces the bridge's in-memory registry entirely (idempotent).
+     * This handles bridge restarts (next OE sync restores full state)
+     * and OE restarts (startup sync pushes everything).
+     */
+    @PutMapping("/sync")
+    public ResponseEntity<Map<String, Object>> sync(@RequestBody java.util.List<RegistrationRequest> registrations) {
+        Map<String, AnalyzerEntry> newRegistry = new java.util.LinkedHashMap<>();
+        int fileWatchUpdates = 0;
+
+        for (RegistrationRequest req : registrations) {
+            if (req.oeAnalyzerId == null || req.sourceId == null) {
+                continue;
+            }
+            AnalyzerEntry entry = new AnalyzerEntry();
+            entry.setId(req.oeAnalyzerId);
+            entry.setName(req.name);
+            entry.setExpectedProtocol(req.protocol);
+            entry.setFilePattern(req.filePattern);
+            newRegistry.put(req.sourceId, entry);
+
+            // Update file watchers for FILE transport
+            if (isFileTransport(req.protocol) && fileConfig.isEnabled()) {
+                try {
+                    fileWatcher.addWatchDirectory(Path.of(req.sourceId), req.filePattern, req.oeAnalyzerId);
+                    fileWatchUpdates++;
+                } catch (Exception e) {
+                    log.warn("Failed to update file watcher for {} during sync: {}", req.oeAnalyzerId, e.getMessage());
+                }
+            }
+        }
+
+        AnalyzerRegistryConfig.SyncResult result = registry.syncAll(newRegistry);
+
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("synced", result.total());
+        response.put("added", result.added());
+        response.put("updated", result.updated());
+        response.put("removed", result.removed());
+        response.put("fileWatchUpdates", fileWatchUpdates);
+        return ResponseEntity.ok(response);
     }
 
     /**
