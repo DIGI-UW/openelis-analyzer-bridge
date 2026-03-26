@@ -117,11 +117,19 @@ public class AnalyzerRegistrationController {
      */
     @PutMapping("/sync")
     public ResponseEntity<Map<String, Object>> sync(@RequestBody java.util.List<RegistrationRequest> registrations) {
+        // Capture previous analyzer IDs to detect removals for file watcher cleanup
+        java.util.Set<String> previousAnalyzerIds = new java.util.HashSet<>();
+        for (AnalyzerEntry entry : registry.getRegisteredAnalyzers().values()) {
+            previousAnalyzerIds.add(entry.getId());
+        }
+
         Map<String, AnalyzerEntry> newRegistry = new java.util.LinkedHashMap<>();
+        java.util.Set<String> newAnalyzerIds = new java.util.HashSet<>();
         int fileWatchUpdates = 0;
 
         for (RegistrationRequest req : registrations) {
-            if (req.oeAnalyzerId == null || req.sourceId == null) {
+            if (req.oeAnalyzerId == null || req.oeAnalyzerId.isBlank()
+                    || req.sourceId == null || req.sourceId.isBlank()) {
                 continue;
             }
             AnalyzerEntry entry = new AnalyzerEntry();
@@ -130,14 +138,29 @@ public class AnalyzerRegistrationController {
             entry.setExpectedProtocol(req.protocol);
             entry.setFilePattern(req.filePattern);
             newRegistry.put(req.sourceId, entry);
+            newAnalyzerIds.add(req.oeAnalyzerId);
 
             // Update file watchers for FILE transport
             if (isFileTransport(req.protocol) && fileConfig.isEnabled()) {
                 try {
                     fileWatcher.addWatchDirectory(Path.of(req.sourceId), req.filePattern, req.oeAnalyzerId);
                     fileWatchUpdates++;
-                } catch (Exception e) {
+                } catch (InvalidPathException e) {
+                    log.warn("Invalid path for file watcher {} during sync: {}", req.oeAnalyzerId, req.sourceId);
+                } catch (IOException e) {
                     log.warn("Failed to update file watcher for {} during sync: {}", req.oeAnalyzerId, e.getMessage());
+                }
+            }
+        }
+
+        // Remove stale file watchers for analyzers no longer in the registry
+        int removedWatchers = 0;
+        for (String previousId : previousAnalyzerIds) {
+            if (!newAnalyzerIds.contains(previousId)) {
+                int removed = fileWatcher.removeWatchDirectoriesByAnalyzerId(previousId);
+                if (removed > 0) {
+                    removedWatchers += removed;
+                    log.info("Removed {} stale file watcher(s) for analyzer {} during sync", removed, previousId);
                 }
             }
         }
@@ -150,6 +173,7 @@ public class AnalyzerRegistrationController {
         response.put("updated", result.updated());
         response.put("removed", result.removed());
         response.put("fileWatchUpdates", fileWatchUpdates);
+        response.put("removedWatchers", removedWatchers);
         return ResponseEntity.ok(response);
     }
 

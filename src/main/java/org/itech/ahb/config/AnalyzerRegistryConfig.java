@@ -179,21 +179,28 @@ public class AnalyzerRegistryConfig {
      */
     public SyncResult syncAll(Map<String, AnalyzerEntry> newRegistry) {
         Map<String, AnalyzerEntry> previous = Map.copyOf(analyzers);
-        int previousSize = previous.size();
 
-        analyzers.clear();
-        analyzers.putAll(newRegistry);
+        // Atomic swap: build new map, then replace reference (thread-safe vs clear+putAll)
+        Map<String, AnalyzerEntry> replacement = new LinkedHashMap<>(newRegistry);
+        this.analyzers = replacement;
 
         int added = 0;
         int updated = 0;
         for (Map.Entry<String, AnalyzerEntry> entry : newRegistry.entrySet()) {
             if (!previous.containsKey(entry.getKey())) {
                 added++;
-            } else {
+            } else if (!entry.getValue().equals(previous.get(entry.getKey()))) {
                 updated++;
             }
+            // else: unchanged — not counted
         }
-        int removed = previousSize - updated;
+        // Removed = keys in previous that are absent from new registry
+        int removed = 0;
+        for (String key : previous.keySet()) {
+            if (!newRegistry.containsKey(key)) {
+                removed++;
+            }
+        }
 
         log.info("Registry sync: {} total ({} added, {} updated, {} removed)",
                 analyzers.size(), added, updated, removed);

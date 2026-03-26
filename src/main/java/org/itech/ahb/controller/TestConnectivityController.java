@@ -160,6 +160,10 @@ public class TestConnectivityController {
                 response.put("reachable", true);
                 response.put("message", "ASTM handshake succeeded (ENQ→ACK)");
                 log.info("ASTM connectivity test passed for {}:{}", host, port);
+            } else if (responseByte == -1) {
+                response.put("reachable", false);
+                response.put("message", "ASTM handshake failed: connection closed by remote (no response to ENQ)");
+                log.warn("ASTM handshake failed for {}:{}: connection closed", host, port);
             } else {
                 response.put("reachable", false);
                 response.put("message", "ASTM handshake failed: expected ACK (0x06), got 0x"
@@ -192,9 +196,10 @@ public class TestConnectivityController {
                     + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
                     + "||ACK|PING-" + System.currentTimeMillis() + "|P|2.3.1\r";
 
-            byte[] frame = new byte[1 + pingMsg.getBytes().length + 2];
+            byte[] msgBytes = pingMsg.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] frame = new byte[1 + msgBytes.length + 2];
             frame[0] = VT;
-            System.arraycopy(pingMsg.getBytes(), 0, frame, 1, pingMsg.getBytes().length);
+            System.arraycopy(msgBytes, 0, frame, 1, msgBytes.length);
             frame[frame.length - 2] = FS;
             frame[frame.length - 1] = CR;
 

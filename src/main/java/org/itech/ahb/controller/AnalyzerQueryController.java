@@ -47,8 +47,8 @@ public class AnalyzerQueryController {
         if (request.host == null || request.host.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "host is required"));
         }
-        if (request.port == null || request.port < 1) {
-            return ResponseEntity.badRequest().body(Map.of("error", "valid port is required"));
+        if (request.port == null || request.port < 1 || request.port > 65535) {
+            return ResponseEntity.badRequest().body(Map.of("error", "valid port is required (1-65535)"));
         }
 
         int timeoutMs = request.timeoutMs != null && request.timeoutMs > 0
@@ -191,8 +191,8 @@ public class AnalyzerQueryController {
     }
 
     private void sendFrame(OutputStream out, String content, int frameNumber) throws IOException {
-        byte[] fnBytes = String.valueOf(frameNumber).getBytes();
-        byte[] contentBytes = content.getBytes("UTF-8");
+        byte[] fnBytes = String.valueOf(frameNumber).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] contentBytes = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
         int checksum = 0;
         for (byte b : fnBytes) checksum += b & 0xFF;
@@ -204,7 +204,7 @@ public class AnalyzerQueryController {
         out.write(fnBytes);
         out.write(contentBytes);
         out.write(ETX);
-        out.write(String.format("%02X", checksum).getBytes());
+        out.write(String.format("%02X", checksum).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         out.write(CR);
         out.write(LF);
         out.flush();

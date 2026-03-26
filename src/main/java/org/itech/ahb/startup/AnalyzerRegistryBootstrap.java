@@ -121,7 +121,16 @@ public class AnalyzerRegistryBootstrap {
 
             java.util.LinkedHashMap<String, AnalyzerEntry> newRegistry = new java.util.LinkedHashMap<>();
             for (Map<String, Object> analyzer : analyzers) {
-                String id = String.valueOf(analyzer.get("id"));
+                Object idObj = analyzer.get("id");
+                if (idObj == null) {
+                    log.warn("Skipping analyzer with null id: {}", analyzer);
+                    continue;
+                }
+                String id = String.valueOf(idObj);
+                if (id.isBlank() || "null".equals(id)) {
+                    log.warn("Skipping analyzer with invalid id '{}': {}", id, analyzer);
+                    continue;
+                }
                 String name = (String) analyzer.get("name");
                 String ip = (String) analyzer.get("ipAddress");
                 String protocol = (String) analyzer.get("protocolVersion");
@@ -147,6 +156,9 @@ public class AnalyzerRegistryBootstrap {
         } catch (java.net.ConnectException e) {
             log.warn("Cannot reach OE at {} — bridge starting without analyzer registry. "
                     + "OE will push registrations when it starts.", analyzersUrl);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Bootstrap interrupted — bridge starting without analyzer registry");
         } catch (Exception e) {
             log.warn("Failed to pull analyzers from OE: {} — bridge starting without registry. "
                     + "OE will push registrations on next CRUD operation.", e.getMessage());
