@@ -86,6 +86,20 @@ public class FhirBundleBuilder {
                 obs.setValue(new StringType(result.value()));
             }
 
+            // QC/control flag — OE uses this to route to QC queue
+            if (result.isControl()) {
+                obs.getMeta().addTag("http://openelis-global.org/fhir/tags", "QC", "Quality Control");
+            }
+
+            // Analyzer completion timestamp
+            if (result.timestamp() != null && !result.timestamp().isBlank()) {
+                try {
+                    obs.setEffective(new org.hl7.fhir.r4.model.DateTimeType(result.timestamp()));
+                } catch (Exception ignored) {
+                    // Timestamp format not parseable — skip
+                }
+            }
+
             addEntry(bundle, obsUrl, obs, "Observation");
             report.addResult(new Reference(obsUrl));
         }
@@ -113,14 +127,24 @@ public class FhirBundleBuilder {
             String testName,
             String value,
             String units,
-            boolean isNumeric) {
+            boolean isNumeric,
+            boolean isControl,
+            String timestamp) {
 
         public static AnalyzerResult numeric(String testCode, String testName, String value, String units) {
-            return new AnalyzerResult(testCode, testName, value, units, true);
+            return new AnalyzerResult(testCode, testName, value, units, true, false, null);
         }
 
         public static AnalyzerResult text(String testCode, String testName, String value) {
-            return new AnalyzerResult(testCode, testName, value, null, false);
+            return new AnalyzerResult(testCode, testName, value, null, false, false, null);
+        }
+
+        public AnalyzerResult withControl(boolean control) {
+            return new AnalyzerResult(testCode, testName, value, units, isNumeric, control, timestamp);
+        }
+
+        public AnalyzerResult withTimestamp(String ts) {
+            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, ts);
         }
     }
 }

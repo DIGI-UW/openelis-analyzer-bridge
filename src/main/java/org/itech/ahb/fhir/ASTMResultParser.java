@@ -28,6 +28,8 @@ public class ASTMResultParser {
     private static final int R_TEST_ID_FIELD = 2;
     private static final int R_VALUE_FIELD = 3;
     private static final int R_UNITS_FIELD = 4;
+    private static final int R_TIMESTAMP_FIELD = 9;
+    private static final int O_ACTION_CODE_FIELD = 12;
 
     /**
      * Parse ASTM message lines and extract results.
@@ -39,6 +41,8 @@ public class ASTMResultParser {
         if (lines == null || lines.isEmpty()) return null;
 
         String accession = null;
+        boolean isQcSample = false;
+        String currentOrderRecord = null;
         List<AnalyzerResult> results = new ArrayList<>();
 
         for (String line : lines) {
@@ -49,11 +53,16 @@ public class ASTMResultParser {
             switch (segment) {
                 case "O" -> {
                     accession = extractAccessionNumber(line);
+                    currentOrderRecord = line;
+                    isQcSample = isQcSample(line);
                 }
                 case "R" -> {
                     if (accession != null) {
                         AnalyzerResult result = parseResultRecord(line);
                         if (result != null) {
+                            if (isQcSample) {
+                                result = result.withControl(true);
+                            }
                             results.add(result);
                         }
                     }
@@ -124,11 +133,29 @@ public class ASTMResultParser {
         if (value == null || value.isEmpty()) return null;
 
         String units = fields.length > R_UNITS_FIELD ? fields[R_UNITS_FIELD].trim() : "";
+        String timestamp = fields.length > R_TIMESTAMP_FIELD ? fields[R_TIMESTAMP_FIELD].trim() : null;
 
         boolean isNumeric = isNumericValue(value);
-        return isNumeric
+        AnalyzerResult result = isNumeric
                 ? AnalyzerResult.numeric(testCode, testCode, value, units)
                 : AnalyzerResult.text(testCode, testCode, value);
+
+        if (timestamp != null && !timestamp.isEmpty()) {
+            result = result.withTimestamp(timestamp);
+        }
+        return result;
+    }
+
+    /**
+     * Check if O-record indicates a QC sample via Action Code (O.12).
+     * Ported from GenericASTMLineInserter.isQcSample().
+     */
+    private static boolean isQcSample(String orderRecord) {
+        String[] fields = orderRecord.split(Pattern.quote(FIELD_DELIMITER));
+        if (fields.length > O_ACTION_CODE_FIELD) {
+            return "Q".equalsIgnoreCase(fields[O_ACTION_CODE_FIELD].trim());
+        }
+        return false;
     }
 
     /**
