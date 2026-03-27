@@ -56,6 +56,7 @@ public class AnalyzerRegistrationController {
         entry.setName(request.name);
         entry.setExpectedProtocol(request.protocol);
         entry.setFilePattern(request.filePattern);
+        entry.setColumnMappings(request.columnMappings);
 
         registry.register(request.sourceId, entry);
 
@@ -191,5 +192,6 @@ public class AnalyzerRegistrationController {
         public String name;
         public String protocol;
         public String filePattern;
+        public java.util.Map<String, String> columnMappings;
     }
 }

@@ -246,5 +246,12 @@ public class AnalyzerRegistryConfig {
          * Optional file pattern for additional validation (regex)
          */
         private String filePattern;
+
+        /**
+         * Column mappings for FILE protocol (spreadsheet column name → semantic field).
+         * E.g., {"Sample Name": "sampleId", "Target": "testCode", "CT": "result"}
+         * Synced from OE's FileImportConfiguration at registration time.
+         */
+        private java.util.Map<String, String> columnMappings;
     }
 }

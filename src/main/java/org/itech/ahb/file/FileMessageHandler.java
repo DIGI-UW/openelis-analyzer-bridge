@@ -10,7 +10,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.config.FhirRoutingConfig;
+import org.itech.ahb.fhir.FileResultParser;
+import org.itech.ahb.fhir.FhirBundleBuilder;
+import org.itech.ahb.fhir.HL7ResultParser;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
@@ -30,6 +38,8 @@ import org.springframework.stereotype.Component;
 public class FileMessageHandler {
 
     private final CSVParser csvParser;
+    private final FhirRoutingConfig fhirConfig;
+    private final AnalyzerRegistryConfig registry;
 
     private volatile HttpClient httpClient;
 
@@ -55,13 +65,19 @@ public class FileMessageHandler {
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
     @Autowired
-    public FileMessageHandler(CSVParser csvParser) {
+    public FileMessageHandler(CSVParser csvParser,
+            @Autowired(required = false) FhirRoutingConfig fhirConfig,
+            @Autowired(required = false) AnalyzerRegistryConfig registry) {
         this.csvParser = csvParser;
+        this.fhirConfig = fhirConfig;
+        this.registry = registry;
     }
 
     public FileMessageHandler(CSVParser csvParser, FileConfig ignoredFileConfig,
             org.itech.ahb.normalizer.MessageNormalizer ignoredNormalizer) {
         this.csvParser = csvParser;
+        this.fhirConfig = null;
+        this.registry = null;
     }
 
     private HttpClient httpClient() {
@@ -96,7 +112,12 @@ public class FileMessageHandler {
             throw new FileProcessingException("File is empty: " + filePath);
         }
 
-        postFileToOpenElis(filePath, analyzerId, content);
+        // FHIR routing: parse file → FHIR Bundle → POST /analyzer/fhir
+        if (fhirConfig != null && fhirConfig.isUseFhir()) {
+            postFileAsFhir(filePath, analyzerId, content);
+        } else {
+            postFileToOpenElis(filePath, analyzerId, content);
+        }
 
         return MessageEnvelope.builder()
                 .protocol(Protocol.CSV)
@@ -105,6 +126,80 @@ public class FileMessageHandler {
                 .rawMessage(filePath.getFileName().toString())
                 .analyzerId(analyzerId)
                 .build();
+    }
+
+    private void postFileAsFhir(Path filePath, String analyzerId, byte[] content)
+            throws IOException, FileProcessingException {
+        // Get column mappings from registry
+        Map<String, String> columnMappings = null;
+        if (registry != null) {
+            for (Map.Entry<String, AnalyzerEntry> entry : registry.getRegisteredAnalyzers().entrySet()) {
+                if (analyzerId.equals(entry.getValue().getId())) {
+                    columnMappings = entry.getValue().getColumnMappings();
+                    break;
+                }
+            }
+        }
+
+        if (columnMappings == null || columnMappings.isEmpty()) {
+            log.warn("No column mappings for analyzer {} — falling back to legacy file import", analyzerId);
+            postFileToOpenElis(filePath, analyzerId, content);
+            return;
+        }
+
+        // Parse file using column mappings
+        List<HL7ResultParser.ParsedResults> allResults;
+        try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
+            allResults = FileResultParser.parse(bis, columnMappings);
+        }
+
+        if (allResults == null || allResults.isEmpty()) {
+            log.warn("FHIR file parse produced no results for {} — falling back to legacy", filePath);
+            postFileToOpenElis(filePath, analyzerId, content);
+            return;
+        }
+
+        // Build and send FHIR Bundle for each accession group
+        String base = openelisBaseUrl.endsWith("/") ? openelisBaseUrl.substring(0, openelisBaseUrl.length() - 1)
+                : openelisBaseUrl;
+        URI fhirUri = URI.create(base + "/analyzer/fhir");
+
+        int totalResults = 0;
+        for (HL7ResultParser.ParsedResults parsed : allResults) {
+            String fhirJson = FhirBundleBuilder.buildBundle(
+                    parsed.accessionNumber(), analyzerId, parsed.results());
+
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(fhirUri)
+                    .timeout(Duration.ofSeconds(readTimeoutSeconds))
+                    .header("Content-Type", "application/fhir+json")
+                    .header("X-Analyzer-Id", analyzerId)
+                    .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
+
+            if (openelisUsername != null && !openelisUsername.isBlank()) {
+                String token = Base64.getEncoder()
+                        .encodeToString((openelisUsername + ":" + (openelisPassword == null ? "" : openelisPassword))
+                                .getBytes(StandardCharsets.UTF_8));
+                requestBuilder.header("Authorization", "Basic " + token);
+            }
+
+            HttpResponse<String> response;
+            try {
+                response = httpClient().send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new FileProcessingException("Interrupted while sending FHIR Bundle", e);
+            }
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new FileProcessingException(
+                        "OE rejected FHIR Bundle for accession " + parsed.accessionNumber()
+                                + ": HTTP " + response.statusCode() + " " + response.body());
+            }
+            totalResults += parsed.results().size();
+        }
+
+        log.info("FHIR file import: {} results across {} accessions from {}",
+                totalResults, allResults.size(), filePath.getFileName());
     }
 
     private void postFileToOpenElis(Path filePath, String analyzerId, byte[] content)
