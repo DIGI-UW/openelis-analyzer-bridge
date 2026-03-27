@@ -11,10 +11,12 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import java.nio.file.Path;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
 import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
+import org.itech.ahb.file.FileWatcher;
 import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -41,16 +43,20 @@ public class AnalyzerRegistryBootstrap {
     private final AnalyzerRegistryConfig registry;
     private final HTTPForwardServerConfigurationProperties httpConfig;
     private final OpenELISConfig openelisConfig;
+    private final FileWatcher fileWatcher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AnalyzerRegistryBootstrap(
             AnalyzerRegistryConfig registry,
             HTTPForwardServerConfigurationProperties httpConfig,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
-            OpenELISConfig openelisConfig) {
+            OpenELISConfig openelisConfig,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            FileWatcher fileWatcher) {
         this.registry = registry;
         this.httpConfig = httpConfig;
         this.openelisConfig = openelisConfig;
+        this.fileWatcher = fileWatcher;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -120,6 +126,7 @@ public class AnalyzerRegistryBootstrap {
             List<Map<String, Object>> analyzers = (List<Map<String, Object>>) analyzersObj;
 
             java.util.LinkedHashMap<String, AnalyzerEntry> newRegistry = new java.util.LinkedHashMap<>();
+            int fileCount = 0;
             for (Map<String, Object> analyzer : analyzers) {
                 Object idObj = analyzer.get("id");
                 if (idObj == null) {
@@ -136,6 +143,7 @@ public class AnalyzerRegistryBootstrap {
                 String protocol = (String) analyzer.get("protocolVersion");
 
                 if (ip != null && !ip.isBlank()) {
+                    // TCP analyzer (ASTM or HL7)
                     AnalyzerEntry entry = new AnalyzerEntry();
                     entry.setId(id);
                     entry.setName(name);
@@ -143,14 +151,39 @@ public class AnalyzerRegistryBootstrap {
                             protocol != null && protocol.contains("HL7") ? "HL7" : "ASTM");
                     newRegistry.put(ip, entry);
                 }
+
+                // FILE analyzer — register watch directory
+                String importDir = (String) analyzer.get("importDirectory");
+                if (importDir != null && !importDir.isBlank() && fileWatcher != null) {
+                    String filePattern = (String) analyzer.get("filePattern");
+                    AnalyzerEntry entry = new AnalyzerEntry();
+                    entry.setId(id);
+                    entry.setName(name);
+                    entry.setExpectedProtocol("FILE");
+                    if (filePattern != null) {
+                        entry.setFilePattern(filePattern);
+                    }
+                    // Extract column mappings if present
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> colMappings = (Map<String, String>) analyzer.get("columnMappings");
+                    if (colMappings != null) {
+                        entry.setColumnMappings(colMappings);
+                    }
+                    newRegistry.put(importDir, entry);
+                    fileWatcher.addWatchDirectory(
+                            Path.of(importDir),
+                            filePattern != null ? filePattern : "*",
+                            id);
+                    fileCount++;
+                }
             }
 
             if (!newRegistry.isEmpty()) {
                 AnalyzerRegistryConfig.SyncResult result = registry.syncAll(newRegistry);
-                log.info("Bootstrap complete: pulled {} analyzers from OE ({} added, {} updated)",
-                        result.total(), result.added(), result.updated());
+                log.info("Bootstrap complete: pulled {} analyzers from OE ({} added, {} updated, {} FILE watch dirs)",
+                        result.total(), result.added(), result.updated(), fileCount);
             } else {
-                log.info("Bootstrap: no TCP analyzers found in OE — registry empty");
+                log.info("Bootstrap: no analyzers found in OE — registry empty");
             }
 
         } catch (java.net.ConnectException e) {
