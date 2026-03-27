@@ -254,18 +254,20 @@ public class HttpForwardingRouter implements MessageRouter {
         HL7ResultParser.ParsedResults parsed = switch (envelope.getProtocol()) {
             case HL7 -> HL7ResultParser.parseRaw(envelope.getRawMessage());
             case ASTM -> ASTMResultParser.parseRaw(envelope.getRawMessage());
+            case CSV -> ASTMResultParser.parseRaw(envelope.getRawMessage()); // CSV uses same record format
             default -> {
-                log.warn("FHIR routing not supported for protocol {}, falling back to raw",
-                        envelope.getProtocol());
+                log.error("FHIR routing: unsupported protocol {} from {} — cannot parse",
+                        envelope.getProtocol(), envelope.getSourceId());
                 yield null;
             }
         };
 
         if (parsed == null || parsed.results().isEmpty()) {
-            log.warn("FHIR parse produced no results for {} message from {}, falling back to raw routing",
-                    envelope.getProtocol(), envelope.getSourceId());
-            // Fall back to legacy raw routing
-            return routeLegacy(envelope);
+            log.error("FHIR parse produced no results for {} message from {} — check message format. "
+                    + "Raw message length: {} chars",
+                    envelope.getProtocol(), envelope.getSourceId(),
+                    envelope.getRawMessage() != null ? envelope.getRawMessage().length() : 0);
+            return false;
         }
 
         // Build FHIR Bundle
