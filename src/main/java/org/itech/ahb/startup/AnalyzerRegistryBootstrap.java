@@ -61,10 +61,10 @@ public class AnalyzerRegistryBootstrap {
             return;
         }
 
-        // Build the analyzers API URL from the OE base URI
-        // OE base: https://oe:8443/OpenELIS-Global
-        // API:     https://oe:8443/OpenELIS-Global/rest/analyzer/analyzers (via /api/ prefix removed)
-        String baseUrl = oeBaseUri.toString().replaceAll("/+$", "");
+        // Build the analyzers API URL from the OE forward URI
+        // Forward URI is like: https://oe:8443/OpenELIS-Global/analyzer (for ASTM forwarding)
+        // Strip the /analyzer suffix to get the webapp base, then append REST path
+        String baseUrl = oeBaseUri.toString().replaceAll("/+$", "").replaceAll("/analyzer$", "");
         String analyzersUrl = baseUrl + "/rest/analyzer/analyzers";
 
         log.info("Pulling analyzer registry from OE: {}", analyzersUrl);

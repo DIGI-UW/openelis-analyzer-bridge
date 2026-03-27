@@ -80,12 +80,16 @@ public class ASTMBridgeAdapter implements ASTMHandler {
     public ASTMHandlerResponse handle(ASTMMessage message, String sourceIp) {
         log.debug("ASTMBridgeAdapter handling message from {}", sourceIp);
 
+        // Extract sender identifier from ASTM H-record field 4 (e.g., "GENEXPERT^GeneXpert^4.6.0")
+        String analyzerId = extractSenderFromHRecord(message.getMessage());
+
         // Create MessageEnvelope
         MessageEnvelope envelope = MessageEnvelope.builder()
             .protocol(Protocol.ASTM)
             .transport(Transport.TCP)
             .sourceId(sourceIp != null ? sourceIp : "unknown")
             .rawMessage(message.getMessage())
+            .analyzerId(analyzerId)
             .build();
 
         // Route via normalizer
@@ -111,6 +115,29 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * @param message the ASTM message to check
      * @return true if message is a DefaultASTMMessage, false otherwise
      */
+    /**
+     * Extract sender identification from ASTM H-record field 4.
+     * H-record format: H|\^&|msgId|senderInfo|...
+     * Field 4 may contain: "GENEXPERT^GeneXpert^4.6.0" or "MINDRAY"
+     * Returns the first component (before ^) as the identifier.
+     */
+    private String extractSenderFromHRecord(String rawMessage) {
+        if (rawMessage == null) return null;
+        for (String line : rawMessage.split("\r")) {
+            if (line.startsWith("H|")) {
+                String[] fields = line.split("\\|", -1);
+                if (fields.length > 4 && fields[4] != null && !fields[4].isBlank()) {
+                    String sender = fields[4].split("\\^")[0].trim();
+                    if (!sender.isEmpty()) {
+                        log.debug("Extracted ASTM sender identifier: {}", sender);
+                        return sender;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     @Override
     public boolean matches(ASTMMessage message) {
         return message instanceof DefaultASTMMessage;
