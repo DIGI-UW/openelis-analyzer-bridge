@@ -73,6 +73,25 @@
 			<version>2.5.1</version>
 		</dependency>
 
+		<!-- FHIR R4 for normalized result output -->
+		<dependency>
+			<groupId>ca.uhn.hapi.fhir</groupId>
+			<artifactId>hapi-fhir-base</artifactId>
+			<version>7.0.2</version>
+		</dependency>
+		<dependency>
+			<groupId>ca.uhn.hapi.fhir</groupId>
+			<artifactId>hapi-fhir-structures-r4</artifactId>
+			<version>7.0.2</version>
+		</dependency>
+
+		<!-- Excel/xlsx parsing for FILE protocol -->
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.2.5</version>
+		</dependency>
+
 		<!-- Serial communication -->
 		<dependency>
 			<groupId>com.fazecast</groupId>
