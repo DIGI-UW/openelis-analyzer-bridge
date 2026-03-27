@@ -114,7 +114,7 @@ class UnifiedRoutingTest {
         HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-        HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
+        HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
         AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
         normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
 
