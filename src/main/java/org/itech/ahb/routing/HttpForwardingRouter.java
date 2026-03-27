@@ -263,10 +263,13 @@ public class HttpForwardingRouter implements MessageRouter {
         };
 
         if (parsed == null || parsed.results().isEmpty()) {
-            log.error("FHIR parse produced no results for {} message from {} — check message format. "
-                    + "Raw message length: {} chars",
+            String raw = envelope.getRawMessage();
+            String preview = raw != null ? raw.substring(0, Math.min(300, raw.length()))
+                    .replace("\r", "\\r").replace("\n", "\\n") : "null";
+            log.error("FHIR parse produced no results for {} message from {}. "
+                    + "Raw length: {} chars. Preview: [{}]",
                     envelope.getProtocol(), envelope.getSourceId(),
-                    envelope.getRawMessage() != null ? envelope.getRawMessage().length() : 0);
+                    raw != null ? raw.length() : 0, preview);
             return false;
         }
 

@@ -23,12 +23,12 @@ class ASTMResultParserTest {
     // Field indices: O|1[0]|specimen[2]|...[3-11]|actionCode[12]
     //                R|1[0]|seq[1]|testId[2]|value[3]|units[4]|ref[5]|flag[6]|op[7]|status[8]|timestamp[9]
     private static final String VALID_ASTM_MESSAGE =
-            "H|\\^&|||GeneXpert^1.0|||||||LIS2-A2\n"
-            + "P|1\n"
-            + "O|1|SAMPLE001||||||||||P\n"
-            + "R|1|^^^HIV-VL|1520.5|copies/mL|||||20260326120000\n"
-            + "R|2|^^^CT|28.5|cycles|||||20260326120000\n"
-            + "L|1\n";
+            "H|\\^&|||GeneXpert^1.0|||||||LIS2-A2\r"
+            + "P|1\r"
+            + "O|1|SAMPLE001||||||||||P\r"
+            + "R|1|^^^HIV-VL|1520.5|copies/mL|||||20260326120000\r"
+            + "R|2|^^^CT|28.5|cycles|||||20260326120000\r"
+            + "L|1\r";
 
     @Nested
     @DisplayName("parseRaw - valid ASTM message")
@@ -91,11 +91,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("^^^CODE format - component 4 extracted")
         void tripleCaretFormat() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^^^GLUCOSE|95.0|mg/dL\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^GLUCOSE|95.0|mg/dL\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -106,11 +106,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("^CODE format - component 2 extracted")
         void singleCaretFormat() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^GLUCOSE|95.0|mg/dL\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^GLUCOSE|95.0|mg/dL\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -121,11 +121,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Plain CODE format - whole field used")
         void plainFormat() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|GLUCOSE|95.0|mg/dL\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|GLUCOSE|95.0|mg/dL\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -141,11 +141,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Trailing caret stripped: 'NEGATIVE^' -> 'NEGATIVE'")
         void trailingCaretStripped() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^^^TEST|NEGATIVE^||\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|NEGATIVE^||\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -156,11 +156,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Leading caret stripped: '^3.10' -> '3.10'")
         void leadingCaretStripped() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^^^TEST|^3.10|mg/dL\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|^3.10|mg/dL\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -171,11 +171,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Multiple trailing carets stripped: 'POS^^^' -> 'POS'")
         void multipleTrailingCaretsStripped() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^^^TEST|POS^^^||\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|POS^^^||\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -193,11 +193,11 @@ class ASTMResultParserTest {
         void qcSampleDetected() {
             // O-record: O[0]|seq[1]|specimen[2]|...[3-11]|actionCode[12]
             // Need 13 pipe-separated fields so index 12 = "Q"
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|QC_SAMPLE001||||||||||Q\n"
-                    + "R|1|^^^TEST|5.0|units\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|QC_SAMPLE001||||||||||Q\r"
+                    + "R|1|^^^TEST|5.0|units\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -219,11 +219,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("O.12 absent -> result.isControl() = false")
         void missingActionCodeNotQc() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^^^TEST|5.0|units\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|5.0|units\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -248,11 +248,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Missing R.9 timestamp -> null timestamp")
         void missingTimestamp() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^^^TEST|5.0|units\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|5.0|units\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -277,11 +277,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Text value 'NEGATIVE' -> isNumeric = false")
         void textValueDetected() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "R|1|^^^TEST|NEGATIVE||\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|NEGATIVE||\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -315,10 +315,10 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("No R-records -> returns null")
         void noResultRecordsReturnsNull() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "L|1\r";
 
             assertNull(ASTMResultParser.parseRaw(msg));
         }
@@ -326,11 +326,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("R-records before O-record -> results skipped (no accession yet)")
         void resultBeforeOrderSkipped() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "R|1|^^^TEST|5.0|units\n"
-                    + "P|1\n"
-                    + "O|1|ACC001\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "R|1|^^^TEST|5.0|units\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "L|1\r";
 
             assertNull(ASTMResultParser.parseRaw(msg));
         }
@@ -338,11 +338,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("O-record specimen ID with location subcomponent")
         void specimenIdWithLocation() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|SAMPLE123^RACK5\n"
-                    + "R|1|^^^TEST|5.0|units\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|SAMPLE123^RACK5\r"
+                    + "R|1|^^^TEST|5.0|units\r"
+                    + "L|1\r";
 
             ParsedResults parsed = ASTMResultParser.parseRaw(msg);
 
@@ -353,11 +353,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Uses 'ASTM-UNKNOWN' when no O-record accession")
         void unknownWhenNoAccession() {
-            String msg = "H|\\^&|||Analyzer\n"
-                    + "P|1\n"
-                    + "O|1|\n"
-                    + "R|1|^^^TEST|5.0|units\n"
-                    + "L|1\n";
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|\r"
+                    + "R|1|^^^TEST|5.0|units\r"
+                    + "L|1\r";
 
             // O-record has empty specimen ID, accession stays null -> falls back
             // But R-records are only added when accession != null, so...

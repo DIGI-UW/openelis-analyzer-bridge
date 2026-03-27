@@ -81,7 +81,7 @@ public class ASTMResultParser {
     public static HL7ResultParser.ParsedResults parseRaw(String rawAstm) {
         if (rawAstm == null || rawAstm.isBlank()) return null;
         List<String> lines = new ArrayList<>();
-        for (String line : rawAstm.split("\n")) {
+        for (String line : rawAstm.split("\r")) {
             if (!line.isBlank()) lines.add(line.trim());
         }
         return parse(lines);
