@@ -79,6 +79,7 @@ public class ASTMServlet {
         try {
           // Waiting for socket connection
           Socket s = serverSocket.accept();
+          s.setTcpNoDelay(true); // Disable Nagle — ASTM requires immediate ACK/NAK per frame
           new ASTMReceiveThread(
             new GeneralASTMCommunicator(astmInterpreterFactory, s, astmVersion),
             s,

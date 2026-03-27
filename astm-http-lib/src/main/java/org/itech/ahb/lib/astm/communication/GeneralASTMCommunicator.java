@@ -449,15 +449,26 @@ public class GeneralASTMCommunicator implements Communicator {
     char curChar = ThreadUtil.readCharWithInterruptCheck(reader);
 
     int frameSize = 0;
+    int maxTextSize = (astmVersion == ASTMVersion.LIS01_A ? MAX_TEXT_SIZE : MAX_TEXT_SIZE_E138195);
+    boolean sizeExceededLogged = false;
+    boolean illegalCharLogged = false;
     StringBuilder textBuilder = new StringBuilder();
     while (curChar != ETB && curChar != ETX) {
       if (RESTRICTED_CHARACTERS.contains(curChar)) {
         frameErrors.add(FrameError.ILLEGAL_CHAR);
-        log.error("illegal character detected: '" + LogUtil.convertForDisplay(curChar) + "'.");
+        if (!illegalCharLogged) {
+          log.error("illegal character detected at position {}: '{}' (0x{}) — subsequent illegal chars suppressed",
+              frameSize, LogUtil.convertForDisplay(curChar), String.format("%02X", (int) curChar));
+          illegalCharLogged = true;
+        }
       }
-      if ((astmVersion == ASTMVersion.LIS01_A ? MAX_TEXT_SIZE : MAX_TEXT_SIZE_E138195) < frameSize) {
-        frameErrors.add(FrameError.MAX_SIZE_EXCEEDED);
-        log.error("max frame size exceeded character.");
+      if (maxTextSize < frameSize) {
+        if (!sizeExceededLogged) {
+          frameErrors.add(FrameError.MAX_SIZE_EXCEEDED);
+          log.error("frame size exceeded max {} at position {} — continuing to read until ETX/ETB (subsequent size errors suppressed)",
+              maxTextSize, frameSize);
+          sizeExceededLogged = true;
+        }
       }
       textBuilder.append(curChar);
       ++frameSize;
