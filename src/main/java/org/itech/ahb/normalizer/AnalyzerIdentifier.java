@@ -66,13 +66,10 @@ public class AnalyzerIdentifier {
      * @return the identified analyzer ID, or null if identification failed/not configured
      */
     public String identify(MessageEnvelope envelope) {
-        // Strategy 1: Already identified
-        if (envelope.getAnalyzerId() != null && !envelope.getAnalyzerId().isEmpty()) {
-            log.debug("Analyzer already identified: {}", envelope.getAnalyzerId());
-            return envelope.getAnalyzerId();
-        }
-
-        // Strategy 2-4: Registry-based lookup
+        // Registry-based lookup by source IP → OE analyzer ID.
+        // Always runs, even if the protocol handler already set an analyzerId
+        // (e.g., "GENEXPERT" from ASTM H-record), because the OE ID is the
+        // authoritative identifier for routing.
         if (registry == null) {
             log.debug("No analyzer registry configured, returning null");
             return null;

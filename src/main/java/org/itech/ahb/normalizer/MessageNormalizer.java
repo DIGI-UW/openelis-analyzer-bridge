@@ -130,10 +130,14 @@ public class MessageNormalizer implements MessageRouter {
             metricsService.recordReceived(protocol, transport);
         }
 
-        // 1. If analyzerId not set, try to identify via AnalyzerIdentifier
-        String analyzerId = envelope.getAnalyzerId();
+        // 1. Identify analyzer via registry (source IP → OE analyzer ID).
+        // Registry-based ID is authoritative — overrides protocol-level identifier
+        // (e.g., "GENEXPERT" from ASTM H-record) because multiple analyzers can
+        // share the same protocol identifier but have different OE IDs.
+        String analyzerId = identifier.identify(envelope);
         if (analyzerId == null || analyzerId.isEmpty()) {
-            analyzerId = identifier.identify(envelope);
+            // Fall back to protocol-level identifier (from MSH-3/4, H-record, etc.)
+            analyzerId = envelope.getAnalyzerId();
         }
 
         // 2. Rebuild envelope with analyzerId if we found one
