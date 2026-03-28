@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
+import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.routing.HttpForwardingRouter;
@@ -113,8 +114,8 @@ class MessageNormalizerTest {
         }
 
         @Test
-        @DisplayName("Should reject routing when protocol hint conflicts with resolved analyzer")
-        void shouldRejectOnHintConflict() {
+        @DisplayName("Should route when protocol hint conflicts but source registration resolves analyzer")
+        void shouldRouteOnHintConflictWhenSourceRegistrationResolvesAnalyzer() {
             when(mockIdentifier.identify(any())).thenReturn("OE-ANALYZER-001");
 
             MessageEnvelope envelope = MessageEnvelope.builder()
@@ -127,8 +128,45 @@ class MessageNormalizerTest {
 
             boolean result = normalizer.process(envelope);
 
-            assertFalse(result);
-            verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
+            assertTrue(result);
+            verify(mockForwardingRouter).route(argThat(e ->
+                "OE-ANALYZER-001".equals(e.getAnalyzerId()) &&
+                "OE-ANALYZER-001".equals(e.getResolvedAnalyzerId()) &&
+                "GENEXPERT".equals(e.getProtocolAnalyzerHint())
+            ));
+        }
+
+        @Test
+        @DisplayName("Should validate hint against registered analyzer metadata namespace")
+        void shouldValidateHintAgainstRegisteredAnalyzerMetadata() {
+            when(mockIdentifier.identify(any())).thenReturn("44");
+
+            AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            entry.setId("44");
+            entry.setName("Demo: GeneXpert ASTM");
+            entry.setExpectedProtocol("ASTM");
+            registry.register("10.42.59.10", entry);
+
+            MessageNormalizer metadataAwareNormalizer =
+                new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null);
+
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.ASTM)
+                .transport(Transport.TCP)
+                .sourceId("10.42.59.10")
+                .rawMessage("H|\\^&|||GENEXPERT")
+                .protocolAnalyzerHint("GENEXPERT")
+                .build();
+
+            boolean result = metadataAwareNormalizer.process(envelope);
+
+            assertTrue(result);
+            verify(mockForwardingRouter).route(argThat(e ->
+                "44".equals(e.getAnalyzerId()) &&
+                "44".equals(e.getResolvedAnalyzerId()) &&
+                "GENEXPERT".equals(e.getProtocolAnalyzerHint())
+            ));
         }
 
         @Test

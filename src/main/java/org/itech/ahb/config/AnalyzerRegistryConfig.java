@@ -80,6 +80,16 @@ public class AnalyzerRegistryConfig {
      * @return Optional containing the analyzer ID, or empty if no match
      */
     public Optional<String> findAnalyzerId(String sourceId) {
+        return findAnalyzerEntry(sourceId).map(AnalyzerEntry::getId);
+    }
+
+    /**
+     * Finds an analyzer registry entry by source identifier.
+     *
+     * @param sourceId the source identifier (IP address, serial port, file path)
+     * @return Optional containing the analyzer entry, or empty if no match
+     */
+    public Optional<AnalyzerEntry> findAnalyzerEntry(String sourceId) {
         if (sourceId == null || analyzers.isEmpty()) {
             return Optional.empty();
         }
@@ -88,7 +98,7 @@ public class AnalyzerRegistryConfig {
         AnalyzerEntry entry = analyzers.get(sourceId);
         if (entry != null) {
             log.debug("Direct match for source '{}': analyzer '{}'", sourceId, entry.getId());
-            return Optional.of(entry.getId());
+            return Optional.of(entry);
         }
 
         // Strategy 2: Pattern match (file paths with wildcards)
@@ -97,7 +107,7 @@ public class AnalyzerRegistryConfig {
             if (pattern.contains("*") && matchesGlob(sourceId, pattern)) {
                 log.debug("Pattern match for source '{}' using pattern '{}': analyzer '{}'",
                     sourceId, pattern, e.getValue().getId());
-                return Optional.of(e.getValue().getId());
+                return Optional.of(e.getValue());
             }
         }
 

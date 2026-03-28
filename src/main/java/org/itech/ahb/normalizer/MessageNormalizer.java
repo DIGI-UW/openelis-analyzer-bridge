@@ -2,6 +2,7 @@ package org.itech.ahb.normalizer;
 
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.routing.MessageRouter;
@@ -43,6 +44,7 @@ public class MessageNormalizer implements MessageRouter {
 
     private final HttpForwardingRouter forwardingRouter;  // Inject by CONCRETE TYPE
     private final AnalyzerIdentifier identifier;
+    private final AnalyzerRegistryConfig registry;  // optional — for diagnostic validation only
     private final MetricsService metricsService;  // nullable — optional dependency
 
     /**
@@ -60,8 +62,17 @@ public class MessageNormalizer implements MessageRouter {
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
             @Autowired(required = false) MetricsService metricsService) {
+        this(forwardingRouter, identifier, null, metricsService);
+    }
+
+    public MessageNormalizer(
+            HttpForwardingRouter forwardingRouter,
+            AnalyzerIdentifier identifier,
+            @Autowired(required = false) AnalyzerRegistryConfig registry,
+            @Autowired(required = false) MetricsService metricsService) {
         this.forwardingRouter = forwardingRouter;
         this.identifier = identifier;
+        this.registry = registry;
         this.metricsService = metricsService;
     }
 
@@ -144,14 +155,22 @@ public class MessageNormalizer implements MessageRouter {
             return false;
         }
 
-        // Policy: protocol hints are evidence only. Conflicts are explicit non-routing outcomes.
+        AnalyzerRegistryConfig.AnalyzerEntry registryEntry = registry != null
+            ? registry.findAnalyzerEntry(envelope.getSourceId()).orElse(null)
+            : null;
+
+        // Policy: protocol hints are diagnostic evidence only. Routing remains bound to the
+        // source-registered OpenELIS analyzer ID, even when the protocol-level sender token
+        // uses a different namespace (for example, GENEXPERT vs OE analyzer id 44).
         if (protocolHint != null && !protocolHint.equals(resolvedAnalyzerId)) {
-            log.warn("Analyzer identity conflict for source '{}': resolved='{}', protocolHint='{}' — message will not be routed",
-                envelope.getSourceId(), resolvedAnalyzerId, protocolHint);
-            if (metricsService != null) {
-                metricsService.recordRouted(sample, protocol, transport, false);
+            if (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry)) {
+                log.info("Analyzer identity evidence matched registered analyzer for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
+                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint, registryEntry.getName());
+            } else {
+                log.warn("Analyzer identity evidence mismatch for source '{}': resolved='{}', protocolHint='{}', registeredName='{}' — routing will continue with resolved analyzer",
+                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint,
+                    registryEntry != null ? registryEntry.getName() : "unknown");
             }
-            return false;
         }
 
         // Rebuild envelope with explicit canonical ID and protocol hint.
@@ -196,5 +215,31 @@ public class MessageNormalizer implements MessageRouter {
             return second;
         }
         return null;
+    }
+
+    private boolean protocolHintMatchesRegistration(
+            String protocolHint,
+            AnalyzerRegistryConfig.AnalyzerEntry registryEntry) {
+        if (protocolHint == null || protocolHint.isBlank() || registryEntry == null) {
+            return false;
+        }
+
+        String normalizedHint = normalizeIdentityToken(protocolHint);
+        String normalizedName = normalizeIdentityToken(registryEntry.getName());
+        String normalizedId = normalizeIdentityToken(registryEntry.getId());
+
+        if (normalizedHint.isEmpty()) {
+            return false;
+        }
+
+        return (!normalizedName.isEmpty() && normalizedName.contains(normalizedHint))
+            || (!normalizedId.isEmpty() && normalizedId.equals(normalizedHint));
+    }
+
+    private String normalizeIdentityToken(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
     }
 }
