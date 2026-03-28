@@ -40,7 +40,7 @@ import org.springframework.stereotype.Component;
  * <p>
  * Includes envelope metadata as HTTP headers:
  * <ul>
- *   <li>X-Analyzer-Id: From envelope.analyzerId</li>
+ *   <li>X-Analyzer-Id: From canonical resolved analyzer ID in envelope</li>
  *   <li>X-Source-Protocol: From envelope.protocol</li>
  *   <li>X-Source-Transport: From envelope.transport</li>
  *   <li>X-Source-Id: From envelope.sourceId</li>
@@ -274,9 +274,10 @@ public class HttpForwardingRouter implements MessageRouter {
         }
 
         // Build FHIR Bundle
+        String analyzerId = canonicalAnalyzerId(envelope);
         String fhirJson = FhirBundleBuilder.buildBundle(
                 parsed.accessionNumber(),
-                envelope.getAnalyzerId(),
+                analyzerId,
                 parsed.results());
 
         // Build target URI for /analyzer/fhir
@@ -301,8 +302,8 @@ public class HttpForwardingRouter implements MessageRouter {
                         .timeout(Duration.ofSeconds(readTimeoutSeconds))
                         .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
 
-                if (envelope.getAnalyzerId() != null && !envelope.getAnalyzerId().isEmpty()) {
-                    builder.header(HEADER_ANALYZER_ID, envelope.getAnalyzerId());
+                if (analyzerId != null && !analyzerId.isEmpty()) {
+                    builder.header(HEADER_ANALYZER_ID, analyzerId);
                 }
                 if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
                     addBasicAuth(builder, httpConfig.getUsername(), httpConfig.getPassword());
@@ -458,8 +459,9 @@ public class HttpForwardingRouter implements MessageRouter {
             .POST(HttpRequest.BodyPublishers.ofString(envelope.getRawMessage()));
 
         // Add analyzer ID header if available
-        if (envelope.getAnalyzerId() != null && !envelope.getAnalyzerId().isEmpty()) {
-            builder.header(HEADER_ANALYZER_ID, envelope.getAnalyzerId());
+        String analyzerId = canonicalAnalyzerId(envelope);
+        if (analyzerId != null && !analyzerId.isEmpty()) {
+            builder.header(HEADER_ANALYZER_ID, analyzerId);
         }
 
         // Add source port header if available
@@ -489,6 +491,13 @@ public class HttpForwardingRouter implements MessageRouter {
             return true;
         }
         return trimmed.contains(":") && IPV6_PATTERN.matcher(trimmed).matches();
+    }
+
+    private String canonicalAnalyzerId(MessageEnvelope envelope) {
+        if (envelope.getResolvedAnalyzerId() != null && !envelope.getResolvedAnalyzerId().isBlank()) {
+            return envelope.getResolvedAnalyzerId();
+        }
+        return envelope.getAnalyzerId();
     }
 
     /**

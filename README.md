@@ -148,6 +148,21 @@ bridge:
       expectedProtocol: CSV
 ```
 
+#### Resolution Policy (Current Iteration)
+
+Analyzer identification uses three distinct concepts:
+
+- **Source binding**: where a message came from (IP/port, serial port, file directory, HTTP source).
+- **Protocol hint**: what the payload claims (e.g., HL7 sender app/facility, ASTM sender token).
+- **Resolved analyzer ID**: the canonical OpenELIS analyzer ID used for routing.
+
+Policy rules:
+
+- Source binding registration is authoritative for routing.
+- Protocol hints are validation evidence and diagnostics only.
+- Protocol hints alone must not select routing targets.
+- Source/protocol discrepancies must follow an explicit non-routing outcome (warning/error/quarantine path), not silent reroute.
+
 ## Monitoring & Observability
 
 ### Health Checks

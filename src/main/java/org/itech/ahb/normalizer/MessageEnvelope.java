@@ -53,7 +53,28 @@ public class MessageEnvelope {
     private final Instant receivedAt = Instant.now();
 
     /**
-     * Optional analyzer identifier (if pre-configured or detected from message headers)
+     * Optional analyzer identifier observed from protocol payload metadata.
+     * <p>
+     * Examples:
+     * - HL7 sender app/facility
+     * - ASTM H-record sender token
+     * </p>
+     * This value is evidence only and must not be used as the routing authority.
+     */
+    private final String protocolAnalyzerHint;
+
+    /**
+     * Canonical OpenELIS analyzer ID resolved by source-binding registration.
+     * This is the routing authority used for downstream forwarding.
+     */
+    private final String resolvedAnalyzerId;
+
+    /**
+     * Backward-compatible alias for the canonical analyzer ID in downstream routing.
+     * <p>
+     * For new code, prefer {@link #resolvedAnalyzerId} for routing decisions and
+     * {@link #protocolAnalyzerHint} for protocol-level evidence.
+     * </p>
      */
     private final String analyzerId;
 

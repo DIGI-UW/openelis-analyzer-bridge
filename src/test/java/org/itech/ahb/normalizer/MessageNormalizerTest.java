@@ -39,7 +39,7 @@ class MessageNormalizerTest {
         normalizer = new MessageNormalizer(mockForwardingRouter, mockIdentifier, null);
         // Lenient: some tests override these stubs
         lenient().when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
-        lenient().when(mockIdentifier.identify(any(MessageEnvelope.class))).thenReturn(null);
+        lenient().when(mockIdentifier.identify(any(MessageEnvelope.class))).thenReturn("DEFAULT-ANALYZER");
     }
 
     @Nested
@@ -47,22 +47,26 @@ class MessageNormalizerTest {
     class AnalyzerIdentificationTests {
 
         @Test
-        @DisplayName("Should use existing analyzer ID when envelope has one")
-        void shouldUseExistingAnalyzerId() {
+        @DisplayName("Should route when resolved analyzer and protocol hint agree")
+        void shouldRouteWhenResolvedAnalyzerAndHintAgree() {
+            when(mockIdentifier.identify(any())).thenReturn("MINDRAY-001");
+
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
                 .transport(Transport.SERIAL)
                 .sourceId("/dev/ttyUSB0")
                 .rawMessage("H|\\^&|||TEST")
-                .analyzerId("MINDRAY-001")
+                .protocolAnalyzerHint("MINDRAY-001")
                 .build();
 
             boolean result = normalizer.process(envelope);
 
             assertTrue(result);
-            // Verify forwardingRouter is called with original envelope (analyzer ID unchanged)
+            // Verify forwardingRouter is called with canonical resolved analyzer ID.
             verify(mockForwardingRouter).route(argThat(e ->
-                "MINDRAY-001".equals(e.getAnalyzerId())
+                "MINDRAY-001".equals(e.getAnalyzerId()) &&
+                "MINDRAY-001".equals(e.getResolvedAnalyzerId()) &&
+                "MINDRAY-001".equals(e.getProtocolAnalyzerHint())
             ));
         }
 
@@ -84,14 +88,15 @@ class MessageNormalizerTest {
             // Verify forwardingRouter is called with enriched envelope
             verify(mockForwardingRouter).route(argThat(e ->
                 "SYSMEX-001".equals(e.getAnalyzerId()) &&
+                "SYSMEX-001".equals(e.getResolvedAnalyzerId()) &&
                 Protocol.HL7.equals(e.getProtocol()) &&
                 "192.168.1.10".equals(e.getSourceId())
             ));
         }
 
         @Test
-        @DisplayName("Should use original envelope when identifier returns null")
-        void shouldUseOriginalEnvelopeWhenIdentifierReturnsNull() {
+        @DisplayName("Should reject routing when identifier returns null")
+        void shouldRejectWhenIdentifierReturnsNull() {
             when(mockIdentifier.identify(any())).thenReturn(null);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
@@ -103,12 +108,46 @@ class MessageNormalizerTest {
 
             boolean result = normalizer.process(envelope);
 
-            assertTrue(result);
-            // Verify forwardingRouter is called with original envelope
-            verify(mockForwardingRouter).route(argThat(e ->
-                e.getAnalyzerId() == null &&
-                Protocol.CSV.equals(e.getProtocol())
-            ));
+            assertFalse(result);
+            verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
+        }
+
+        @Test
+        @DisplayName("Should reject routing when protocol hint conflicts with resolved analyzer")
+        void shouldRejectOnHintConflict() {
+            when(mockIdentifier.identify(any())).thenReturn("OE-ANALYZER-001");
+
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.HL7)
+                .transport(Transport.MLLP)
+                .sourceId("192.168.1.10")
+                .rawMessage("MSH|^~\\&|||")
+                .protocolAnalyzerHint("GENEXPERT")
+                .build();
+
+            boolean result = normalizer.process(envelope);
+
+            assertFalse(result);
+            verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
+        }
+
+        @Test
+        @DisplayName("Should reject routing when only protocol hint is present")
+        void shouldRejectWhenOnlyProtocolHintPresent() {
+            when(mockIdentifier.identify(any())).thenReturn(null);
+
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.HL7)
+                .transport(Transport.MLLP)
+                .sourceId("192.168.1.10")
+                .rawMessage("MSH|^~\\&|||")
+                .protocolAnalyzerHint("SYSMEX")
+                .build();
+
+            boolean result = normalizer.process(envelope);
+
+            assertFalse(result);
+            verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
         }
     }
 

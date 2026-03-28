@@ -89,7 +89,7 @@ public class ASTMBridgeAdapter implements ASTMHandler {
             .transport(Transport.TCP)
             .sourceId(sourceIp != null ? sourceIp : "unknown")
             .rawMessage(message.getMessage())
-            .analyzerId(analyzerId)
+            .protocolAnalyzerHint(analyzerId)
             .build();
 
         // Route via normalizer

@@ -124,6 +124,7 @@ public class FileMessageHandler {
                 .transport(Transport.FILE)
                 .sourceId(filePath.toString())
                 .rawMessage(filePath.getFileName().toString())
+                .resolvedAnalyzerId(analyzerId)
                 .analyzerId(analyzerId)
                 .build();
     }

@@ -19,7 +19,7 @@ import java.util.Optional;
  * Unit tests for AnalyzerIdentifier.
  * <p>
  * Tests multi-strategy analyzer identification using registry lookups
- * (direct match, pattern match, pre-identified, fallback to null).
+ * (direct match, pattern match, fallback to null).
  * </p>
  */
 class AnalyzerIdentifierTest {
@@ -28,8 +28,8 @@ class AnalyzerIdentifierTest {
     private AnalyzerRegistryConfig mockRegistry;
 
     @Nested
-    @DisplayName("Pre-Identified Strategy Tests")
-    class PreIdentifiedTests {
+    @DisplayName("Protocol Hint Compatibility Tests")
+    class ProtocolHintCompatibilityTests {
 
         @BeforeEach
         void setUp() {
@@ -38,8 +38,10 @@ class AnalyzerIdentifierTest {
         }
 
         @Test
-        @DisplayName("Should return existing analyzer ID from envelope")
-        void shouldReturnExistingAnalyzerId() {
+        @DisplayName("Should prefer registry analyzer ID over envelope analyzerId")
+        void shouldPreferRegistryOverEnvelopeAnalyzerId() {
+            when(mockRegistry.findAnalyzerId("/dev/ttyUSB0")).thenReturn(Optional.of("HORIBA-001"));
+
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
                 .transport(Transport.SERIAL)
@@ -50,14 +52,15 @@ class AnalyzerIdentifierTest {
 
             String result = identifier.identify(envelope);
 
-            assertEquals("MINDRAY-001", result);
-            // Should not call registry when envelope already has analyzer ID
-            verify(mockRegistry, never()).findAnalyzerId(anyString());
+            assertEquals("HORIBA-001", result);
+            verify(mockRegistry).findAnalyzerId("/dev/ttyUSB0");
         }
 
         @Test
-        @DisplayName("Should not lookup registry when envelope has analyzer ID")
-        void shouldNotLookupRegistryWhenPreIdentified() {
+        @DisplayName("Should still lookup registry when envelope has analyzer ID")
+        void shouldLookupRegistryWhenEnvelopeHasAnalyzerId() {
+            when(mockRegistry.findAnalyzerId("192.168.1.10")).thenReturn(Optional.of("SYSMEX-001"));
+
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.HL7)
                 .transport(Transport.MLLP)
@@ -66,10 +69,10 @@ class AnalyzerIdentifierTest {
                 .analyzerId("SYSMEX-001")
                 .build();
 
-            identifier.identify(envelope);
+            String result = identifier.identify(envelope);
 
-            // Constructor calls getAnalyzers() for logging; verify no lookup during identify
-            verify(mockRegistry, never()).findAnalyzerId(anyString());
+            assertEquals("SYSMEX-001", result);
+            verify(mockRegistry).findAnalyzerId("192.168.1.10");
         }
     }
 
@@ -179,8 +182,8 @@ class AnalyzerIdentifierTest {
         }
 
         @Test
-        @DisplayName("Should still return pre-identified analyzer ID even with null registry")
-        void shouldReturnPreIdentifiedIdWithNullRegistry() {
+        @DisplayName("Should return null with null registry even if envelope has analyzerId")
+        void shouldReturnNullWhenRegistryIsNullEvenWithEnvelopeAnalyzerId() {
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
                 .transport(Transport.SERIAL)
@@ -191,7 +194,7 @@ class AnalyzerIdentifierTest {
 
             String result = identifier.identify(envelope);
 
-            assertEquals("MINDRAY-001", result);
+            assertNull(result);
         }
     }
 

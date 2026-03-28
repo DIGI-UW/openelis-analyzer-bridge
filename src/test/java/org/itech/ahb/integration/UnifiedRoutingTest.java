@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +16,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.controller.AnalyzerInputController;
 import org.itech.ahb.file.CSVParser;
 import org.itech.ahb.file.FileConfig;
@@ -115,7 +118,22 @@ class UnifiedRoutingTest {
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
         HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
-        AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
+        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
+        analyzers.put("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
+        analyzers.put("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));
+        analyzers.put("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV"));
+        analyzers.put("192.168.1.10", analyzer("HTTP-001", "ASTM"));
+        analyzers.put("192.168.1.20", analyzer("HTTP-002", "HL7"));
+        analyzers.put("192.168.1.30", analyzer("HTTP-003", "CSV"));
+        analyzers.put("192.168.1.40", analyzer("MINDRAY", "ASTM"));
+        analyzers.put("192.168.1.50", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
+        analyzers.put("192.168.1.51", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
+        analyzers.put("192.168.1.60", analyzer("HTTP-004", "ASTM"));
+        analyzers.put("unknown", analyzer("TEST", "ASTM"));
+        registry.setAnalyzers(analyzers);
+
+        AnalyzerIdentifier identifier = new AnalyzerIdentifier(registry);
         normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
 
         serialHandler = new SerialMessageHandler(normalizer);
@@ -488,4 +506,11 @@ class UnifiedRoutingTest {
             String sourceAnalyzerIp,
             String sourcePort
     ) {}
+
+    private AnalyzerRegistryConfig.AnalyzerEntry analyzer(String id, String expectedProtocol) {
+        AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+        entry.setId(id);
+        entry.setExpectedProtocol(expectedProtocol);
+        return entry;
+    }
 }
