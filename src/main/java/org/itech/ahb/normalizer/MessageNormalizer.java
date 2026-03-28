@@ -61,10 +61,11 @@ public class MessageNormalizer implements MessageRouter {
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
-            @Autowired(required = false) MetricsService metricsService) {
+            MetricsService metricsService) {
         this(forwardingRouter, identifier, null, metricsService);
     }
 
+    @Autowired
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
