@@ -52,4 +52,24 @@ public class HTTPForwardServerConfigurationProperties {
    * </p>
    */
   private boolean insecureTls = false;
+
+  /**
+   * HTTP connection timeout in seconds.
+   */
+  private int connectTimeoutSeconds = 30;
+
+  /**
+   * HTTP read timeout in seconds.
+   */
+  private int readTimeoutSeconds = 30;
+
+  /**
+   * Maximum number of retry attempts for outbound requests.
+   */
+  private int maxAttempts = 3;
+
+  /**
+   * Initial exponential backoff delay in milliseconds.
+   */
+  private long backoffMs = 1000;
 }

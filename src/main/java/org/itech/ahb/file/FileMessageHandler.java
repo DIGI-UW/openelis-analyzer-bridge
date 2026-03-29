@@ -5,10 +5,15 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
 import org.itech.ahb.config.FhirRoutingConfig;
+import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.fhir.FileResultParser;
 import org.itech.ahb.fhir.FhirBundleBuilder;
 import org.itech.ahb.fhir.HL7ResultParser;
@@ -23,15 +29,14 @@ import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
  * Handles file-based analyzer messages.
  *
- * For FILE transport, the bridge sends files directly to OpenELIS direct-import
- * endpoint (`/rest/analyzers/{id}/import`) instead of routing through the
- * message normalizer and legacy `/analyzer/csv` path.
+ * FILE transport now uses the same OpenELIS forwarding configuration as the
+ * other bridge transports. Files are parsed into FHIR and posted to the
+ * shared `/analyzer/fhir` endpoint; there is no separate direct-import path.
  */
 @Component
 @Slf4j
@@ -40,37 +45,21 @@ public class FileMessageHandler {
     private final CSVParser csvParser;
     private final FhirRoutingConfig fhirConfig;
     private final AnalyzerRegistryConfig registry;
+    private final HTTPForwardServerConfigurationProperties httpConfig;
 
     private volatile HttpClient httpClient;
-
-    /** Defaults support manual construction in tests; {@code @Value} overrides when Spring creates the bean. */
-    @Value("${bridge.openelis.url:http://localhost:8443}")
-    private String openelisBaseUrl = "http://localhost:8443";
-
-    @Value("${bridge.openelis.username:}")
-    private String openelisUsername = "";
-
-    @Value("${bridge.openelis.password:}")
-    private String openelisPassword = "";
-
-    @Value("${bridge.openelis.connectTimeoutSeconds:30}")
-    private int connectTimeoutSeconds = 30;
-
-    @Value("${bridge.openelis.readTimeoutSeconds:30}")
-    private int readTimeoutSeconds = 30;
-
-    @Value("${bridge.openelis.insecureTls:false}")
-    private boolean insecureTls = false;
 
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
     @Autowired
     public FileMessageHandler(CSVParser csvParser,
             @Autowired(required = false) FhirRoutingConfig fhirConfig,
-            @Autowired(required = false) AnalyzerRegistryConfig registry) {
+            @Autowired(required = false) AnalyzerRegistryConfig registry,
+            HTTPForwardServerConfigurationProperties httpConfig) {
         this.csvParser = csvParser;
         this.fhirConfig = fhirConfig;
         this.registry = registry;
+        this.httpConfig = httpConfig;
     }
 
     public FileMessageHandler(CSVParser csvParser, FileConfig ignoredFileConfig,
@@ -78,6 +67,7 @@ public class FileMessageHandler {
         this.csvParser = csvParser;
         this.fhirConfig = null;
         this.registry = null;
+        this.httpConfig = new HTTPForwardServerConfigurationProperties();
     }
 
     private HttpClient httpClient() {
@@ -88,7 +78,7 @@ public class FileMessageHandler {
         synchronized (this) {
             if (httpClient == null) {
                 httpClient = org.itech.ahb.util.HttpClientFactory.create(
-                        connectTimeoutSeconds, insecureTls, "file-import");
+                        httpConfig.getConnectTimeoutSeconds(), httpConfig.isInsecureTls(), "file-import");
             }
             return httpClient;
         }
@@ -112,12 +102,12 @@ public class FileMessageHandler {
             throw new FileProcessingException("File is empty: " + filePath);
         }
 
-        // FHIR routing: parse file → FHIR Bundle → POST /analyzer/fhir
-        if (fhirConfig != null && fhirConfig.isUseFhir()) {
-            postFileAsFhir(filePath, analyzerId, content);
-        } else {
-            postFileToOpenElis(filePath, analyzerId, content);
+        if (fhirConfig == null || !fhirConfig.isUseFhir()) {
+            throw new FileProcessingException(
+                    "FILE transport requires bridge.routing.useFhir=true; legacy direct import path has been removed");
         }
+
+        postFileAsFhir(filePath, analyzerId, content);
 
         return MessageEnvelope.builder()
                 .protocol(Protocol.CSV)
@@ -143,9 +133,8 @@ public class FileMessageHandler {
         }
 
         if (columnMappings == null || columnMappings.isEmpty()) {
-            log.warn("No column mappings for analyzer {} — falling back to legacy file import", analyzerId);
-            postFileToOpenElis(filePath, analyzerId, content);
-            return;
+            throw new FileProcessingException(
+                    "No column mappings registered for analyzer " + analyzerId + " — refusing FILE fallback");
         }
 
         // Parse file using column mappings
@@ -155,15 +144,11 @@ public class FileMessageHandler {
         }
 
         if (allResults == null || allResults.isEmpty()) {
-            log.warn("FHIR file parse produced no results for {} — falling back to legacy", filePath);
-            postFileToOpenElis(filePath, analyzerId, content);
-            return;
+            throw new FileProcessingException(
+                    "FHIR file parse produced no results for " + filePath + " — refusing FILE fallback");
         }
 
-        // Build and send FHIR Bundle for each accession group
-        String base = openelisBaseUrl.endsWith("/") ? openelisBaseUrl.substring(0, openelisBaseUrl.length() - 1)
-                : openelisBaseUrl;
-        URI fhirUri = URI.create(base + "/analyzer/fhir");
+        URI fhirUri = buildFhirUri();
 
         int totalResults = 0;
         for (HL7ResultParser.ParsedResults parsed : allResults) {
@@ -171,17 +156,12 @@ public class FileMessageHandler {
                     parsed.accessionNumber(), analyzerId, parsed.results());
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(fhirUri)
-                    .timeout(Duration.ofSeconds(readTimeoutSeconds))
+                    .timeout(Duration.ofSeconds(httpConfig.getReadTimeoutSeconds()))
                     .header("Content-Type", "application/fhir+json")
                     .header("X-Analyzer-Id", analyzerId)
                     .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
 
-            if (openelisUsername != null && !openelisUsername.isBlank()) {
-                String token = Base64.getEncoder()
-                        .encodeToString((openelisUsername + ":" + (openelisPassword == null ? "" : openelisPassword))
-                                .getBytes(StandardCharsets.UTF_8));
-                requestBuilder.header("Authorization", "Basic " + token);
-            }
+            addBasicAuth(requestBuilder);
 
             HttpResponse<String> response;
             try {
@@ -203,63 +183,57 @@ public class FileMessageHandler {
                 totalResults, allResults.size(), filePath.getFileName());
     }
 
-    private void postFileToOpenElis(Path filePath, String analyzerId, byte[] content)
-            throws IOException, FileProcessingException {
-        String boundary = "----OpenElisBridgeBoundary" + System.currentTimeMillis();
-        String safeFilename = sanitizeMultipartFilename(filePath.getFileName().toString());
-
-        byte[] preamble = (
-                "--" + boundary + "\r\n" +
-                "Content-Disposition: form-data; name=\"file\"; filename=\"" + safeFilename + "\"\r\n" +
-                "Content-Type: application/octet-stream\r\n\r\n"
-        ).getBytes(StandardCharsets.UTF_8);
-
-        byte[] closing = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
-
-        byte[] body = new byte[preamble.length + content.length + closing.length];
-        System.arraycopy(preamble, 0, body, 0, preamble.length);
-        System.arraycopy(content, 0, body, preamble.length, content.length);
-        System.arraycopy(closing, 0, body, preamble.length + content.length, closing.length);
-
-        String base = openelisBaseUrl.endsWith("/") ? openelisBaseUrl.substring(0, openelisBaseUrl.length() - 1)
-                : openelisBaseUrl;
-        URI uri = URI.create(base + "/rest/analyzers/" + analyzerId + "/import");
-
-        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(readTimeoutSeconds))
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .header("X-Analyzer-Id", analyzerId)
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body));
-
-        if (openelisUsername != null && !openelisUsername.isBlank()) {
-            String token = Base64.getEncoder()
-                    .encodeToString((openelisUsername + ":" + (openelisPassword == null ? "" : openelisPassword))
-                            .getBytes(StandardCharsets.UTF_8));
-            requestBuilder.header("Authorization", "Basic " + token);
+    private URI buildFhirUri() throws FileProcessingException {
+        URI baseUri = httpConfig.getUri();
+        if (baseUri == null) {
+            throw new FileProcessingException("No forward HTTP server URI configured for FILE transport");
         }
-
-        HttpResponse<String> response;
-        try {
-            response = httpClient().send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new FileProcessingException("Interrupted while forwarding file to OpenELIS", e);
+        String basePath = baseUri.getPath();
+        if (basePath == null || basePath.isEmpty()) {
+            basePath = "/analyzer";
+        } else if (basePath.endsWith("/")) {
+            basePath = basePath.substring(0, basePath.length() - 1);
         }
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new FileProcessingException(
-                    "OpenELIS direct import failed for analyzer " + analyzerId +
-                            " with status " + response.statusCode() + ": " + response.body());
-        }
-
-        log.info("Forwarded file {} to OpenELIS direct-import endpoint for analyzer {}", safeFilename, analyzerId);
+        return URI.create(baseUri.getScheme() + "://" + baseUri.getAuthority() + basePath + "/fhir");
     }
 
-    private static String sanitizeMultipartFilename(String filename) {
-        if (filename == null || filename.isBlank()) {
-            return "upload.bin";
+    private void addBasicAuth(HttpRequest.Builder requestBuilder) {
+        if (httpConfig.getUsername() == null || httpConfig.getUsername().isBlank()) {
+            return;
         }
-        return filename.replace("\r", "").replace("\n", "").replace("\"", "");
+
+        char[] password = httpConfig.getPassword();
+        if (password == null || password.length == 0) {
+            log.warn("Forward HTTP password is null or empty, skipping Basic auth");
+            return;
+        }
+
+        byte[] usernameBytes = httpConfig.getUsername().getBytes(StandardCharsets.UTF_8);
+        byte[] colonBytes = ":".getBytes(StandardCharsets.UTF_8);
+        byte[] passwordBytes;
+        try {
+            CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
+                    .onMalformedInput(CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(CodingErrorAction.REPLACE);
+            ByteBuffer byteBuffer = encoder.encode(CharBuffer.wrap(password));
+            passwordBytes = new byte[byteBuffer.remaining()];
+            byteBuffer.get(passwordBytes);
+        } catch (Exception e) {
+            log.error("Failed to encode forward HTTP password", e);
+            return;
+        }
+
+        byte[] authBytes = new byte[usernameBytes.length + colonBytes.length + passwordBytes.length];
+        System.arraycopy(usernameBytes, 0, authBytes, 0, usernameBytes.length);
+        System.arraycopy(colonBytes, 0, authBytes, usernameBytes.length, colonBytes.length);
+        System.arraycopy(passwordBytes, 0, authBytes, usernameBytes.length + colonBytes.length,
+                passwordBytes.length);
+
+        String token = Base64.getEncoder().encodeToString(authBytes);
+        requestBuilder.header("Authorization", "Basic " + token);
+
+        Arrays.fill(passwordBytes, (byte) 0);
+        Arrays.fill(authBytes, (byte) 0);
     }
 
     public static class FileProcessingException extends Exception {

@@ -14,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.nio.file.Path;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
-import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.file.FileWatcher;
 import org.itech.ahb.util.HttpClientFactory;
@@ -42,7 +41,6 @@ public class AnalyzerRegistryBootstrap {
 
     private final AnalyzerRegistryConfig registry;
     private final HTTPForwardServerConfigurationProperties httpConfig;
-    private final OpenELISConfig openelisConfig;
     private final FileWatcher fileWatcher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -50,12 +48,9 @@ public class AnalyzerRegistryBootstrap {
             AnalyzerRegistryConfig registry,
             HTTPForwardServerConfigurationProperties httpConfig,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
-            OpenELISConfig openelisConfig,
-            @org.springframework.beans.factory.annotation.Autowired(required = false)
             FileWatcher fileWatcher) {
         this.registry = registry;
         this.httpConfig = httpConfig;
-        this.openelisConfig = openelisConfig;
         this.fileWatcher = fileWatcher;
     }
 
@@ -76,10 +71,8 @@ public class AnalyzerRegistryBootstrap {
         log.info("Pulling analyzer registry from OE: {}", analyzersUrl);
 
         try {
-            int connectTimeout = openelisConfig != null
-                    ? openelisConfig.getConnectTimeoutSeconds() : 30;
-            int readTimeout = openelisConfig != null
-                    ? openelisConfig.getReadTimeoutSeconds() : 30;
+            int connectTimeout = httpConfig.getConnectTimeoutSeconds();
+            int readTimeout = httpConfig.getReadTimeoutSeconds();
 
             HttpClient client = HttpClientFactory.create(
                     connectTimeout,

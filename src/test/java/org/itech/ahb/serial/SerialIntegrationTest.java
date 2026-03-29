@@ -164,7 +164,7 @@ class SerialIntegrationTest {
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
             MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
@@ -211,7 +211,7 @@ class SerialIntegrationTest {
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
             MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
@@ -252,7 +252,7 @@ class SerialIntegrationTest {
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
             MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
@@ -387,7 +387,7 @@ class SerialIntegrationTest {
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
             MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);
@@ -414,7 +414,7 @@ class SerialIntegrationTest {
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
             AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
             MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
             SerialMessageHandler handler = new SerialMessageHandler(normalizer);

@@ -17,7 +17,6 @@ import java.util.Base64;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.FhirRoutingConfig;
-import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.fhir.ASTMResultParser;
 import org.itech.ahb.fhir.FhirBundleBuilder;
@@ -87,7 +86,6 @@ public class HttpForwardingRouter implements MessageRouter {
     private static final long MAX_BACKOFF_MS = 60_000;
 
     private final HTTPForwardServerConfigurationProperties httpConfig;
-    private final OpenELISConfig.RetryConfig retryConfig;
     private final FhirRoutingConfig fhirConfig;
     private final int connectTimeoutSeconds;
     private final int readTimeoutSeconds;
@@ -97,30 +95,19 @@ public class HttpForwardingRouter implements MessageRouter {
      * Constructs a new HttpForwardingRouter with the specified configuration.
      *
      * @param httpConfig the HTTP forwarding server configuration
-     * @param openelisConfig the OpenELIS configuration (optional, for retry settings)
      * @param fhirConfig the FHIR routing configuration (optional)
      */
     public HttpForwardingRouter(
             HTTPForwardServerConfigurationProperties httpConfig,
-            @Autowired(required = false) OpenELISConfig openelisConfig,
             @Autowired(required = false) FhirRoutingConfig fhirConfig) {
         this.httpConfig = httpConfig;
         this.fhirConfig = fhirConfig;
-        this.retryConfig = openelisConfig != null ? openelisConfig.getRetry() : null;
-        this.connectTimeoutSeconds = openelisConfig != null
-            ? openelisConfig.getConnectTimeoutSeconds()
-            : 30;
-        this.readTimeoutSeconds = openelisConfig != null
-            ? openelisConfig.getReadTimeoutSeconds()
-            : 30;
+        this.connectTimeoutSeconds = httpConfig.getConnectTimeoutSeconds();
+        this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
         this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
 
-        if (retryConfig != null) {
-            log.info("HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
-                retryConfig.getMaxAttempts(), retryConfig.getBackoffMs());
-        } else {
-            log.info("HttpForwardingRouter configured without retry (single attempt)");
-        }
+        log.info("HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
+            httpConfig.getMaxAttempts(), httpConfig.getBackoffMs());
         log.info("HttpForwardingRouter timeouts: connect={}s read={}s",
             connectTimeoutSeconds, readTimeoutSeconds);
     }
@@ -128,7 +115,8 @@ public class HttpForwardingRouter implements MessageRouter {
     /**
      * Routes a message envelope to the appropriate HTTP endpoint.
      * <p>
-     * Implements retry with exponential backoff if configured via {@link OpenELISConfig.RetryConfig}.
+     * Implements retry with exponential backoff configured via
+     * {@link HTTPForwardServerConfigurationProperties}.
      * Retries are attempted for:
      * <ul>
      *   <li>5xx server errors (may be transient)</li>
@@ -173,8 +161,8 @@ public class HttpForwardingRouter implements MessageRouter {
             return routeAsFhir(envelope);
         }
 
-        int maxAttempts = retryConfig != null ? retryConfig.getMaxAttempts() : 1;
-        long backoffMs = retryConfig != null ? retryConfig.getBackoffMs() : 1000;
+        int maxAttempts = httpConfig.getMaxAttempts();
+        long backoffMs = httpConfig.getBackoffMs();
 
         // Determine endpoint based on protocol
         URI targetUri = buildTargetUri(envelope);
@@ -288,8 +276,8 @@ public class HttpForwardingRouter implements MessageRouter {
                 envelope.getSourceId(), targetUri);
 
         // Send with retry
-        int maxAttempts = retryConfig != null ? retryConfig.getMaxAttempts() : 1;
-        long backoffMs = retryConfig != null ? retryConfig.getBackoffMs() : 1000;
+        int maxAttempts = httpConfig.getMaxAttempts();
+        long backoffMs = httpConfig.getBackoffMs();
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -346,8 +334,8 @@ public class HttpForwardingRouter implements MessageRouter {
      * Legacy raw routing (used when FHIR is disabled or as fallback).
      */
     private boolean routeLegacy(MessageEnvelope envelope) {
-        int maxAttempts = retryConfig != null ? retryConfig.getMaxAttempts() : 1;
-        long backoffMs = retryConfig != null ? retryConfig.getBackoffMs() : 1000;
+        int maxAttempts = httpConfig.getMaxAttempts();
+        long backoffMs = httpConfig.getBackoffMs();
         URI targetUri = buildTargetUri(envelope);
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
