@@ -47,7 +47,7 @@ public class DefaultASTMMessage implements ASTMMessage {
     if (records == null) {
       return "";
     }
-    return records.stream().map(record -> record.getRecord()).collect(Collectors.joining(""));
+    return records.stream().map(record -> record.getRecord()).collect(Collectors.joining("\r"));
   }
 
   @Override

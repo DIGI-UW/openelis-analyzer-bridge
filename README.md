@@ -103,10 +103,15 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 
 | Property | Description | Default |
 |----------|-------------|---------|
-| **OpenELIS Target** | | |
-| `org.itech.ahb.forward-http-server.uri` | OpenELIS endpoint URI | Required |
+| **OpenELIS Forwarding** | | |
+| `org.itech.ahb.forward-http-server.uri` | OpenELIS analyzer endpoint base URI | Required |
 | `org.itech.ahb.forward-http-server.username` | Basic auth username | Optional |
 | `org.itech.ahb.forward-http-server.password` | Basic auth password | Optional |
+| `org.itech.ahb.forward-http-server.insecure-tls` | Disable TLS verification for forwarding and health checks | false |
+| `org.itech.ahb.forward-http-server.connect-timeout-seconds` | HTTP connect timeout | 30 |
+| `org.itech.ahb.forward-http-server.read-timeout-seconds` | HTTP read timeout | 30 |
+| `org.itech.ahb.forward-http-server.max-attempts` | Outbound retry attempts | 3 |
+| `org.itech.ahb.forward-http-server.backoff-ms` | Initial outbound retry backoff in ms | 1000 |
 | **ASTM TCP** | | |
 | `org.itech.ahb.listen-astm-server.port` | ASTM LIS1-A listen port | 12001 |
 | `org.itech.ahb.listen-astm-e1381-95-server.port` | E1381-95 listen port | 12011 |
@@ -147,6 +152,21 @@ bridge:
       name: "QuantStudio 7 Flex"
       expectedProtocol: CSV
 ```
+
+#### Resolution Policy (Current Iteration)
+
+Analyzer identification uses three distinct concepts:
+
+- **Source binding**: where a message came from (IP/port, serial port, file directory, HTTP source).
+- **Protocol hint**: what the payload claims (e.g., HL7 sender app/facility, ASTM sender token).
+- **Resolved analyzer ID**: the canonical OpenELIS analyzer ID used for routing.
+
+Policy rules:
+
+- Source binding registration is authoritative for routing.
+- Protocol hints are validation evidence and diagnostics only.
+- Protocol hints alone must not select routing targets.
+- Source/protocol discrepancies must follow an explicit non-routing outcome (warning/error/quarantine path), not silent reroute.
 
 ## Monitoring & Observability
 

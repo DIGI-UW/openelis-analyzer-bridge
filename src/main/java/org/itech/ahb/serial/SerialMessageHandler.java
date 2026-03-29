@@ -70,7 +70,7 @@ public class SerialMessageHandler {
             .transport(Transport.SERIAL)
             .sourceId(serialPortPath)
             .rawMessage(message)
-            .analyzerId(analyzerId)
+            .protocolAnalyzerHint(analyzerId)
             .build();
 
         // Delegate to normalizer for routing

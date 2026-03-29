@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -55,6 +56,7 @@ public class AnalyzerRegistrationController {
         entry.setName(request.name);
         entry.setExpectedProtocol(request.protocol);
         entry.setFilePattern(request.filePattern);
+        entry.setColumnMappings(request.columnMappings);
 
         registry.register(request.sourceId, entry);
 
@@ -109,6 +111,74 @@ public class AnalyzerRegistrationController {
     }
 
     /**
+     * Full-state sync: OE pushes its complete analyzer registry.
+     * Replaces the bridge's in-memory registry entirely (idempotent).
+     * This handles bridge restarts (next OE sync restores full state)
+     * and OE restarts (startup sync pushes everything).
+     */
+    @PutMapping("/sync")
+    public ResponseEntity<Map<String, Object>> sync(@RequestBody java.util.List<RegistrationRequest> registrations) {
+        // Capture previous analyzer IDs to detect removals for file watcher cleanup
+        java.util.Set<String> previousAnalyzerIds = new java.util.HashSet<>();
+        for (AnalyzerEntry entry : registry.getRegisteredAnalyzers().values()) {
+            previousAnalyzerIds.add(entry.getId());
+        }
+
+        Map<String, AnalyzerEntry> newRegistry = new java.util.LinkedHashMap<>();
+        java.util.Set<String> newAnalyzerIds = new java.util.HashSet<>();
+        int fileWatchUpdates = 0;
+
+        for (RegistrationRequest req : registrations) {
+            if (req.oeAnalyzerId == null || req.oeAnalyzerId.isBlank()
+                    || req.sourceId == null || req.sourceId.isBlank()) {
+                continue;
+            }
+            AnalyzerEntry entry = new AnalyzerEntry();
+            entry.setId(req.oeAnalyzerId);
+            entry.setName(req.name);
+            entry.setExpectedProtocol(req.protocol);
+            entry.setFilePattern(req.filePattern);
+            newRegistry.put(req.sourceId, entry);
+            newAnalyzerIds.add(req.oeAnalyzerId);
+
+            // Update file watchers for FILE transport
+            if (isFileTransport(req.protocol) && fileConfig.isEnabled()) {
+                try {
+                    fileWatcher.addWatchDirectory(Path.of(req.sourceId), req.filePattern, req.oeAnalyzerId);
+                    fileWatchUpdates++;
+                } catch (InvalidPathException e) {
+                    log.warn("Invalid path for file watcher {} during sync: {}", req.oeAnalyzerId, req.sourceId);
+                } catch (IOException e) {
+                    log.warn("Failed to update file watcher for {} during sync: {}", req.oeAnalyzerId, e.getMessage());
+                }
+            }
+        }
+
+        // Remove stale file watchers for analyzers no longer in the registry
+        int removedWatchers = 0;
+        for (String previousId : previousAnalyzerIds) {
+            if (!newAnalyzerIds.contains(previousId)) {
+                int removed = fileWatcher.removeWatchDirectoriesByAnalyzerId(previousId);
+                if (removed > 0) {
+                    removedWatchers += removed;
+                    log.info("Removed {} stale file watcher(s) for analyzer {} during sync", removed, previousId);
+                }
+            }
+        }
+
+        AnalyzerRegistryConfig.SyncResult result = registry.syncAll(newRegistry);
+
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("synced", result.total());
+        response.put("added", result.added());
+        response.put("updated", result.updated());
+        response.put("removed", result.removed());
+        response.put("fileWatchUpdates", fileWatchUpdates);
+        response.put("removedWatchers", removedWatchers);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * FILE analyzers may register with {@code protocol=FILE} or legacy {@code CSV}.
      */
     private static boolean isFileTransport(String protocol) {
@@ -122,5 +192,6 @@ public class AnalyzerRegistrationController {
         public String name;
         public String protocol;
         public String filePattern;
+        public java.util.Map<String, String> columnMappings;
     }
 }

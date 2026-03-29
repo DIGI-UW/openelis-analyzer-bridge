@@ -80,6 +80,16 @@ public class AnalyzerRegistryConfig {
      * @return Optional containing the analyzer ID, or empty if no match
      */
     public Optional<String> findAnalyzerId(String sourceId) {
+        return findAnalyzerEntry(sourceId).map(AnalyzerEntry::getId);
+    }
+
+    /**
+     * Finds an analyzer registry entry by source identifier.
+     *
+     * @param sourceId the source identifier (IP address, serial port, file path)
+     * @return Optional containing the analyzer entry, or empty if no match
+     */
+    public Optional<AnalyzerEntry> findAnalyzerEntry(String sourceId) {
         if (sourceId == null || analyzers.isEmpty()) {
             return Optional.empty();
         }
@@ -88,7 +98,7 @@ public class AnalyzerRegistryConfig {
         AnalyzerEntry entry = analyzers.get(sourceId);
         if (entry != null) {
             log.debug("Direct match for source '{}': analyzer '{}'", sourceId, entry.getId());
-            return Optional.of(entry.getId());
+            return Optional.of(entry);
         }
 
         // Strategy 2: Pattern match (file paths with wildcards)
@@ -97,7 +107,7 @@ public class AnalyzerRegistryConfig {
             if (pattern.contains("*") && matchesGlob(sourceId, pattern)) {
                 log.debug("Pattern match for source '{}' using pattern '{}': analyzer '{}'",
                     sourceId, pattern, e.getValue().getId());
-                return Optional.of(e.getValue().getId());
+                return Optional.of(e.getValue());
             }
         }
 
@@ -170,6 +180,47 @@ public class AnalyzerRegistryConfig {
     }
 
     /**
+     * Replace the entire registry with a new set of registrations.
+     * This is the idempotent full-state sync — OE pushes its complete
+     * analyzer state, and the bridge replaces its in-memory registry.
+     *
+     * @param newRegistry map of sourceId → AnalyzerEntry
+     * @return sync result with counts of added, removed, and unchanged entries
+     */
+    public SyncResult syncAll(Map<String, AnalyzerEntry> newRegistry) {
+        Map<String, AnalyzerEntry> previous = Map.copyOf(analyzers);
+
+        // Atomic swap: build new map, then replace reference (thread-safe vs clear+putAll)
+        Map<String, AnalyzerEntry> replacement = new LinkedHashMap<>(newRegistry);
+        this.analyzers = replacement;
+
+        int added = 0;
+        int updated = 0;
+        for (Map.Entry<String, AnalyzerEntry> entry : newRegistry.entrySet()) {
+            if (!previous.containsKey(entry.getKey())) {
+                added++;
+            } else if (!entry.getValue().equals(previous.get(entry.getKey()))) {
+                updated++;
+            }
+            // else: unchanged — not counted
+        }
+        // Removed = keys in previous that are absent from new registry
+        int removed = 0;
+        for (String key : previous.keySet()) {
+            if (!newRegistry.containsKey(key)) {
+                removed++;
+            }
+        }
+
+        log.info("Registry sync: {} total ({} added, {} updated, {} removed)",
+                analyzers.size(), added, updated, removed);
+        return new SyncResult(analyzers.size(), added, updated, removed);
+    }
+
+    public record SyncResult(int total, int added, int updated, int removed) {
+    }
+
+    /**
      * Returns all registered analyzers.
      *
      * @return unmodifiable view of the registry
@@ -205,5 +256,12 @@ public class AnalyzerRegistryConfig {
          * Optional file pattern for additional validation (regex)
          */
         private String filePattern;
+
+        /**
+         * Column mappings for FILE protocol (spreadsheet column name → semantic field).
+         * E.g., {"Sample Name": "sampleId", "Target": "testCode", "CT": "result"}
+         * Synced from OE's FileImportConfiguration at registration time.
+         */
+        private java.util.Map<String, String> columnMappings;
     }
 }

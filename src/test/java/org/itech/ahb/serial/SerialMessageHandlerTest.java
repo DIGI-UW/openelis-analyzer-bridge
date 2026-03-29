@@ -143,25 +143,27 @@ class SerialMessageHandlerTest {
         }
 
         @Test
-        @DisplayName("Should include analyzer ID in envelope when provided")
-        void shouldIncludeAnalyzerIdInEnvelope() {
+        @DisplayName("Should include protocol analyzer hint in envelope when provided")
+        void shouldIncludeProtocolAnalyzerHintInEnvelope() {
             String message = "H|\\^&|||TEST";
 
             handler.handleMessage(message, "/dev/ttyUSB0", "ANALYZER-001");
 
             verify(mockNormalizer).process(argThat(envelope ->
-                "ANALYZER-001".equals(envelope.getAnalyzerId())
+                "ANALYZER-001".equals(envelope.getProtocolAnalyzerHint()) &&
+                envelope.getAnalyzerId() == null
             ));
         }
 
         @Test
-        @DisplayName("Should have null analyzer ID when not provided")
-        void shouldHaveNullAnalyzerIdWhenNotProvided() {
+        @DisplayName("Should have null protocol analyzer hint when not provided")
+        void shouldHaveNullProtocolAnalyzerHintWhenNotProvided() {
             String message = "H|\\^&|||TEST";
 
             handler.handleMessage(message, "/dev/ttyUSB0", null);
 
             verify(mockNormalizer).process(argThat(envelope ->
+                envelope.getProtocolAnalyzerHint() == null &&
                 envelope.getAnalyzerId() == null
             ));
         }
@@ -239,7 +241,7 @@ class SerialMessageHandlerTest {
             assertTrue(result.success());
             verify(mockNormalizer).process(argThat(envelope ->
                 astmMessage.equals(envelope.getRawMessage()) &&
-                "MINDRAY-001".equals(envelope.getAnalyzerId())
+                "MINDRAY-001".equals(envelope.getProtocolAnalyzerHint())
             ));
         }
 

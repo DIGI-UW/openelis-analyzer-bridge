@@ -5,18 +5,14 @@
 #
 # CONFIGURATION FORMATS:
 #
-# 1. NEW FORMAT (bridge.*) - Universal Bridge v2.0+ [RECOMMENDED]
-#    Unified structure for all transport types (ASTM, MLLP, Serial, File, HTTP).
-#    Used by: File watcher (M4), future MLLP/Serial listeners.
-#    Properties: bridge.file.*, bridge.openelis.*, bridge.mllp.* (future)
+# 1. Bridge runtime settings (bridge.*)
+#    Used by: security, analyzer registry, file watcher.
+#    Properties: bridge.file.*, bridge.analyzers.*, bridge.security.*
 #
-# 2. LEGACY FORMAT (org.itech.ahb.*) - Original Bridge v1.x [DEPRECATED]
-#    Used by: Existing ASTM TCP listener only.
-#    Properties: org.itech.ahb.forward-http-server.*, etc.
-#    Will be migrated to new format in future releases.
-#
-# PRECEDENCE: New format takes precedence when both are defined.
-# MIGRATION: New deployments should use bridge.* format exclusively.
+# 2. OpenELIS forwarding settings (org.itech.ahb.forward-http-server.*)
+#    Used by: HttpForwardingRouter, FILE FHIR forwarding, registry bootstrap,
+#    and forward-server health checks.
+#    This is the single bridge → OE forwarding configuration path.
 # ============================================================================
 
 # Bridge Configuration (NEW FORMAT - v2.0+)
@@ -33,19 +29,6 @@ bridge:
     enabled: true                               # Set to false to disable auth (not recommended)
     username: bridge                            # HTTP Basic username
     password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via env var in production
-
-  # OpenELIS connection settings
-  # NOTE: This 'url' property was used by FileMessageHandler's direct forwarding (pre-M7).
-  #       After M7 (Message Normalizer), all routing uses HttpForwardingRouter, which reads
-  #       from org.itech.ahb.forward-http-server.uri (legacy format).
-  #       Future: Consolidate to bridge.openelis.url once legacy format is fully migrated.
-  openelis:
-    url: http://localhost:8443
-    connectTimeoutSeconds: 30
-    readTimeoutSeconds: 30
-    retry:
-      maxAttempts: 3
-      backoffMs: 1000
 
   # Analyzer identification registry (M7: Message Normalizer)
   # Maps source identifiers (IP addresses, serial ports, file paths) to analyzer IDs.
@@ -104,19 +87,24 @@ bridge:
         timestamp: 4
         flags: 5
 
-# Legacy configuration (still supported)
-# NOTE: This org.itech.ahb.* format is from Bridge v1.x. After M7 (Message Normalizer),
-#       HttpForwardingRouter reads from this URI for ALL transport types (ASTM, MLLP, Serial, File, HTTP).
-#       It routes to protocol-specific endpoints automatically (/analyzer/astm, /analyzer/hl7, /analyzer/csv).
-#       Future: Migrate to bridge.openelis.url once legacy format is fully deprecated.
+# OpenELIS forwarding configuration
+# NOTE: All bridge → OpenELIS transport forwarding uses this single configuration path.
 org:
   itech:
     ahb:
       forward-http-server:
         # URI of the OpenELIS base endpoint (HttpForwardingRouter appends protocol paths)
         # Base path only - router appends /astm, /hl7, /csv, /raw per message protocol
-        # Example: http://localhost:8080/api/OpenELIS-Global/analyzer → /analyzer/astm, /analyzer/hl7, etc.
+        # FILE forwarding also derives /analyzer/fhir from this same base path.
+        # Example: http://localhost:8080/api/OpenELIS-Global/analyzer → /analyzer/astm, /analyzer/hl7, /analyzer/fhir
         uri: http://localhost:8080/api/OpenELIS-Global/analyzer
+        username:
+        password:
+        insecure-tls: false
+        connect-timeout-seconds: 30
+        read-timeout-seconds: 30
+        max-attempts: 3
+        backoff-ms: 1000
 
       # ASTM LIS1-A Server - Listens for ASTM messages from analyzers
       listen-astm-server:

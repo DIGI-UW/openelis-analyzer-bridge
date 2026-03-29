@@ -2,6 +2,7 @@ package org.itech.ahb.normalizer;
 
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.routing.MessageRouter;
@@ -20,8 +21,8 @@ import org.springframework.stereotype.Component;
  * <p>
  * The normalizer orchestrates:
  * <ul>
- *   <li>Analyzer identification via {@link AnalyzerIdentifier} (multi-strategy)</li>
- *   <li>Message enrichment (adding analyzer ID if identified)</li>
+ *   <li>Analyzer identification via {@link AnalyzerIdentifier} (source binding)</li>
+ *   <li>Message enrichment with canonical analyzer ID and protocol hint metadata</li>
  *   <li>Routing to OpenELIS via {@link HttpForwardingRouter}</li>
  *   <li>Audit logging of all message flows</li>
  * </ul>
@@ -43,6 +44,7 @@ public class MessageNormalizer implements MessageRouter {
 
     private final HttpForwardingRouter forwardingRouter;  // Inject by CONCRETE TYPE
     private final AnalyzerIdentifier identifier;
+    private final AnalyzerRegistryConfig registry;  // optional — for diagnostic validation only
     private final MetricsService metricsService;  // nullable — optional dependency
 
     /**
@@ -59,9 +61,19 @@ public class MessageNormalizer implements MessageRouter {
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
+            MetricsService metricsService) {
+        this(forwardingRouter, identifier, null, metricsService);
+    }
+
+    @Autowired
+    public MessageNormalizer(
+            HttpForwardingRouter forwardingRouter,
+            AnalyzerIdentifier identifier,
+            @Autowired(required = false) AnalyzerRegistryConfig registry,
             @Autowired(required = false) MetricsService metricsService) {
         this.forwardingRouter = forwardingRouter;
         this.identifier = identifier;
+        this.registry = registry;
         this.metricsService = metricsService;
     }
 
@@ -84,13 +96,14 @@ public class MessageNormalizer implements MessageRouter {
     }
 
     /**
-     * Process a message envelope: identify analyzer, enrich envelope, route to OpenELIS.
+     * Process a message envelope: resolve analyzer identity, enrich envelope, route to OpenELIS.
      * <p>
      * Called directly by Serial/File/HTTP/ASTM handlers, or via {@link #route(MessageEnvelope)}
      * by MLLP. This method:
      * <ol>
-     *   <li>Attempts to identify the analyzer if not already set in envelope</li>
-     *   <li>Enriches the envelope with the identified analyzer ID</li>
+     *   <li>Resolves canonical analyzer ID from source binding</li>
+     *   <li>Validates protocol hint consistency (if provided)</li>
+     *   <li>Enriches the envelope with canonical resolved analyzer metadata</li>
      *   <li>Logs the routing operation for audit purposes</li>
      *   <li>Routes to OpenELIS via {@link HttpForwardingRouter}</li>
      * </ol>
@@ -130,29 +143,54 @@ public class MessageNormalizer implements MessageRouter {
             metricsService.recordReceived(protocol, transport);
         }
 
-        // 1. If analyzerId not set, try to identify via AnalyzerIdentifier
-        String analyzerId = envelope.getAnalyzerId();
-        if (analyzerId == null || analyzerId.isEmpty()) {
-            analyzerId = identifier.identify(envelope);
+        String protocolHint = firstNonBlank(envelope.getProtocolAnalyzerHint(), envelope.getAnalyzerId());
+        String resolvedAnalyzerId = identifier.identify(envelope);
+
+        // Policy: source-binding registration is authoritative for routing.
+        if (resolvedAnalyzerId == null || resolvedAnalyzerId.isBlank()) {
+            log.warn("No registered analyzer for source '{}'; protocolHint='{}' — message will not be routed",
+                envelope.getSourceId(), protocolHint);
+            if (metricsService != null) {
+                metricsService.recordRouted(sample, protocol, transport, false);
+            }
+            return false;
         }
 
-        // 2. Rebuild envelope with analyzerId if we found one
-        MessageEnvelope enriched = (analyzerId != null && !analyzerId.equals(envelope.getAnalyzerId()))
-            ? MessageEnvelope.builder()
-                .protocol(envelope.getProtocol())
-                .transport(envelope.getTransport())
-                .sourceId(envelope.getSourceId())
-                .sourcePort(envelope.getSourcePort())
-                .rawMessage(envelope.getRawMessage())
-                .receivedAt(envelope.getReceivedAt())
-                .analyzerId(analyzerId)
-                .build()
-            : envelope;
+        AnalyzerRegistryConfig.AnalyzerEntry registryEntry = registry != null
+            ? registry.findAnalyzerEntry(envelope.getSourceId()).orElse(null)
+            : null;
+
+        // Policy: protocol hints are diagnostic evidence only. Routing remains bound to the
+        // source-registered OpenELIS analyzer ID, even when the protocol-level sender token
+        // uses a different namespace (for example, GENEXPERT vs OE analyzer id 44).
+        if (protocolHint != null && !protocolHint.equals(resolvedAnalyzerId)) {
+            if (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry)) {
+                log.info("Analyzer identity evidence matched registered analyzer for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
+                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint, registryEntry.getName());
+            } else {
+                log.warn("Analyzer identity evidence mismatch for source '{}': resolved='{}', protocolHint='{}', registeredName='{}' — routing will continue with resolved analyzer",
+                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint,
+                    registryEntry != null ? registryEntry.getName() : "unknown");
+            }
+        }
+
+        // Rebuild envelope with explicit canonical ID and protocol hint.
+        MessageEnvelope enriched = MessageEnvelope.builder()
+            .protocol(envelope.getProtocol())
+            .transport(envelope.getTransport())
+            .sourceId(envelope.getSourceId())
+            .sourcePort(envelope.getSourcePort())
+            .rawMessage(envelope.getRawMessage())
+            .receivedAt(envelope.getReceivedAt())
+            .protocolAnalyzerHint(protocolHint)
+            .resolvedAnalyzerId(resolvedAnalyzerId)
+            .analyzerId(resolvedAnalyzerId)
+            .build();
 
         // 3. Audit log
-        log.info("Normalizer processing: protocol={}, transport={}, source={}, analyzer={}",
+        log.info("Normalizer processing: protocol={}, transport={}, source={}, resolvedAnalyzer={}, protocolHint={}",
             enriched.getProtocol(), enriched.getTransport(),
-            enriched.getSourceId(), enriched.getAnalyzerId());
+            enriched.getSourceId(), enriched.getResolvedAnalyzerId(), enriched.getProtocolAnalyzerHint());
 
         // 4. Route via HttpForwardingRouter (NOT via this.route() — that would recurse!)
         boolean success = forwardingRouter.route(enriched);
@@ -168,5 +206,41 @@ public class MessageNormalizer implements MessageRouter {
         }
 
         return success;
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return null;
+    }
+
+    private boolean protocolHintMatchesRegistration(
+            String protocolHint,
+            AnalyzerRegistryConfig.AnalyzerEntry registryEntry) {
+        if (protocolHint == null || protocolHint.isBlank() || registryEntry == null) {
+            return false;
+        }
+
+        String normalizedHint = normalizeIdentityToken(protocolHint);
+        String normalizedName = normalizeIdentityToken(registryEntry.getName());
+        String normalizedId = normalizeIdentityToken(registryEntry.getId());
+
+        if (normalizedHint.isEmpty()) {
+            return false;
+        }
+
+        return (!normalizedName.isEmpty() && normalizedName.contains(normalizedHint))
+            || (!normalizedId.isEmpty() && normalizedId.equals(normalizedHint));
+    }
+
+    private String normalizeIdentityToken(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
     }
 }

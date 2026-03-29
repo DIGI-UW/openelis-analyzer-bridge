@@ -16,8 +16,11 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.OpenELISConfig;
+import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
+import org.itech.ahb.fhir.ASTMResultParser;
+import org.itech.ahb.fhir.FhirBundleBuilder;
+import org.itech.ahb.fhir.HL7ResultParser;
 import org.itech.ahb.normalizer.MessageEnvelope;
 import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +39,7 @@ import org.springframework.stereotype.Component;
  * <p>
  * Includes envelope metadata as HTTP headers:
  * <ul>
- *   <li>X-Analyzer-Id: From envelope.analyzerId</li>
+ *   <li>X-Analyzer-Id: From canonical resolved analyzer ID in envelope</li>
  *   <li>X-Source-Protocol: From envelope.protocol</li>
  *   <li>X-Source-Transport: From envelope.transport</li>
  *   <li>X-Source-Id: From envelope.sourceId</li>
@@ -83,7 +86,7 @@ public class HttpForwardingRouter implements MessageRouter {
     private static final long MAX_BACKOFF_MS = 60_000;
 
     private final HTTPForwardServerConfigurationProperties httpConfig;
-    private final OpenELISConfig.RetryConfig retryConfig;
+    private final FhirRoutingConfig fhirConfig;
     private final int connectTimeoutSeconds;
     private final int readTimeoutSeconds;
     private final HttpClient httpClient;
@@ -92,27 +95,19 @@ public class HttpForwardingRouter implements MessageRouter {
      * Constructs a new HttpForwardingRouter with the specified configuration.
      *
      * @param httpConfig the HTTP forwarding server configuration
-     * @param openelisConfig the OpenELIS configuration (optional, for retry settings)
+     * @param fhirConfig the FHIR routing configuration (optional)
      */
     public HttpForwardingRouter(
             HTTPForwardServerConfigurationProperties httpConfig,
-            @Autowired(required = false) OpenELISConfig openelisConfig) {
+            @Autowired(required = false) FhirRoutingConfig fhirConfig) {
         this.httpConfig = httpConfig;
-        this.retryConfig = openelisConfig != null ? openelisConfig.getRetry() : null;
-        this.connectTimeoutSeconds = openelisConfig != null
-            ? openelisConfig.getConnectTimeoutSeconds()
-            : 30;
-        this.readTimeoutSeconds = openelisConfig != null
-            ? openelisConfig.getReadTimeoutSeconds()
-            : 30;
+        this.fhirConfig = fhirConfig;
+        this.connectTimeoutSeconds = httpConfig.getConnectTimeoutSeconds();
+        this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
         this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
 
-        if (retryConfig != null) {
-            log.info("HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
-                retryConfig.getMaxAttempts(), retryConfig.getBackoffMs());
-        } else {
-            log.info("HttpForwardingRouter configured without retry (single attempt)");
-        }
+        log.info("HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
+            httpConfig.getMaxAttempts(), httpConfig.getBackoffMs());
         log.info("HttpForwardingRouter timeouts: connect={}s read={}s",
             connectTimeoutSeconds, readTimeoutSeconds);
     }
@@ -120,7 +115,8 @@ public class HttpForwardingRouter implements MessageRouter {
     /**
      * Routes a message envelope to the appropriate HTTP endpoint.
      * <p>
-     * Implements retry with exponential backoff if configured via {@link OpenELISConfig.RetryConfig}.
+     * Implements retry with exponential backoff configured via
+     * {@link HTTPForwardServerConfigurationProperties}.
      * Retries are attempted for:
      * <ul>
      *   <li>5xx server errors (may be transient)</li>
@@ -160,8 +156,13 @@ public class HttpForwardingRouter implements MessageRouter {
         log.debug("Routing {} message from {} via {}",
             envelope.getProtocol(), envelope.getSourceId(), envelope.getTransport());
 
-        int maxAttempts = retryConfig != null ? retryConfig.getMaxAttempts() : 1;
-        long backoffMs = retryConfig != null ? retryConfig.getBackoffMs() : 1000;
+        // If FHIR routing enabled, transform to FHIR Bundle
+        if (fhirConfig != null && fhirConfig.isUseFhir()) {
+            return routeAsFhir(envelope);
+        }
+
+        int maxAttempts = httpConfig.getMaxAttempts();
+        long backoffMs = httpConfig.getBackoffMs();
 
         // Determine endpoint based on protocol
         URI targetUri = buildTargetUri(envelope);
@@ -228,6 +229,151 @@ public class HttpForwardingRouter implements MessageRouter {
         log.error("All {} attempts failed for {} message from {}",
             maxAttempts, envelope.getProtocol(), envelope.getSourceId());
         return false;
+    }
+
+    /**
+     * Route a message as a FHIR R4 transaction Bundle.
+     *
+     * <p>Parses the raw message using the protocol-specific parser, builds a FHIR
+     * Bundle, and POSTs to OE's {@code /analyzer/fhir} endpoint.
+     */
+    private boolean routeAsFhir(MessageEnvelope envelope) {
+        // Parse raw message to extract results
+        HL7ResultParser.ParsedResults parsed = switch (envelope.getProtocol()) {
+            case HL7 -> HL7ResultParser.parseRaw(envelope.getRawMessage());
+            case ASTM -> ASTMResultParser.parseRaw(envelope.getRawMessage());
+            case CSV -> ASTMResultParser.parseRaw(envelope.getRawMessage()); // CSV uses same record format
+            default -> {
+                log.error("FHIR routing: unsupported protocol {} from {} — cannot parse",
+                        envelope.getProtocol(), envelope.getSourceId());
+                yield null;
+            }
+        };
+
+        if (parsed == null || parsed.results().isEmpty()) {
+            String raw = envelope.getRawMessage();
+            String preview = raw != null ? raw.substring(0, Math.min(300, raw.length()))
+                    .replace("\r", "\\r").replace("\n", "\\n") : "null";
+            log.error("FHIR parse produced no results for {} message from {}. "
+                    + "Raw length: {} chars. Preview: [{}]",
+                    envelope.getProtocol(), envelope.getSourceId(),
+                    raw != null ? raw.length() : 0, preview);
+            return false;
+        }
+
+        // Build FHIR Bundle
+        String analyzerId = canonicalAnalyzerId(envelope);
+        String fhirJson = FhirBundleBuilder.buildBundle(
+                parsed.accessionNumber(),
+                analyzerId,
+                parsed.results());
+
+        // Build target URI for /analyzer/fhir
+        URI targetUri = buildFhirTargetUri();
+
+        log.info("FHIR routing {} results for accession {} from {} to {}",
+                parsed.results().size(), parsed.accessionNumber(),
+                envelope.getSourceId(), targetUri);
+
+        // Send with retry
+        int maxAttempts = httpConfig.getMaxAttempts();
+        long backoffMs = httpConfig.getBackoffMs();
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                HttpRequest.Builder builder = HttpRequest.newBuilder()
+                        .uri(targetUri)
+                        .header("Content-Type", "application/fhir+json")
+                        .header(HEADER_SOURCE_PROTOCOL, envelope.getProtocol().name())
+                        .header(HEADER_SOURCE_TRANSPORT, envelope.getTransport().name())
+                        .header(HEADER_SOURCE_ID, envelope.getSourceId())
+                        .timeout(Duration.ofSeconds(readTimeoutSeconds))
+                        .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
+
+                if (analyzerId != null && !analyzerId.isEmpty()) {
+                    builder.header(HEADER_ANALYZER_ID, analyzerId);
+                }
+                if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
+                    addBasicAuth(builder, httpConfig.getUsername(), httpConfig.getPassword());
+                }
+
+                HttpResponse<String> response = httpClient.send(
+                        builder.build(), HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    log.info("FHIR Bundle accepted by OE ({} results)", parsed.results().size());
+                    return true;
+                }
+                if (response.statusCode() >= 400 && response.statusCode() < 500) {
+                    log.error("OE rejected FHIR Bundle (HTTP {}): {}",
+                            response.statusCode(), response.body());
+                    return false;
+                }
+                log.warn("OE returned {} for FHIR Bundle, attempt {}/{}",
+                        response.statusCode(), attempt, maxAttempts);
+            } catch (IOException e) {
+                log.warn("IO error sending FHIR Bundle, attempt {}/{}: {}",
+                        attempt, maxAttempts, e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+
+            if (attempt < maxAttempts) {
+                long waitMs = Math.min(backoffMs * (1L << (attempt - 1)), MAX_BACKOFF_MS);
+                try { Thread.sleep(waitMs); } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Legacy raw routing (used when FHIR is disabled or as fallback).
+     */
+    private boolean routeLegacy(MessageEnvelope envelope) {
+        int maxAttempts = httpConfig.getMaxAttempts();
+        long backoffMs = httpConfig.getBackoffMs();
+        URI targetUri = buildTargetUri(envelope);
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                HttpRequest request = buildRequest(envelope, targetUri);
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                int statusCode = response.statusCode();
+                if (statusCode >= 200 && statusCode < 300) return true;
+                if (statusCode >= 400 && statusCode < 500) return false;
+            } catch (IOException e) {
+                log.warn("IO error on legacy route attempt {}/{}", attempt, maxAttempts);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            if (attempt < maxAttempts) {
+                long waitMs = Math.min(backoffMs * (1L << (attempt - 1)), MAX_BACKOFF_MS);
+                try { Thread.sleep(waitMs); } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    private URI buildFhirTargetUri() {
+        URI baseUri = httpConfig.getUri();
+        String basePath = baseUri.getPath();
+        if (basePath == null || basePath.isEmpty()) basePath = "/analyzer";
+        else if (basePath.endsWith("/")) basePath = basePath.substring(0, basePath.length() - 1);
+        try {
+            return new URI(baseUri.getScheme(), baseUri.getUserInfo(), baseUri.getHost(),
+                    baseUri.getPort(), basePath + "/fhir", baseUri.getQuery(), baseUri.getFragment());
+        } catch (URISyntaxException e) {
+            log.error("Failed to build FHIR target URI", e);
+            return baseUri;
+        }
     }
 
     /**
@@ -301,8 +447,9 @@ public class HttpForwardingRouter implements MessageRouter {
             .POST(HttpRequest.BodyPublishers.ofString(envelope.getRawMessage()));
 
         // Add analyzer ID header if available
-        if (envelope.getAnalyzerId() != null && !envelope.getAnalyzerId().isEmpty()) {
-            builder.header(HEADER_ANALYZER_ID, envelope.getAnalyzerId());
+        String analyzerId = canonicalAnalyzerId(envelope);
+        if (analyzerId != null && !analyzerId.isEmpty()) {
+            builder.header(HEADER_ANALYZER_ID, analyzerId);
         }
 
         // Add source port header if available
@@ -332,6 +479,13 @@ public class HttpForwardingRouter implements MessageRouter {
             return true;
         }
         return trimmed.contains(":") && IPV6_PATTERN.matcher(trimmed).matches();
+    }
+
+    private String canonicalAnalyzerId(MessageEnvelope envelope) {
+        if (envelope.getResolvedAnalyzerId() != null && !envelope.getResolvedAnalyzerId().isBlank()) {
+            return envelope.getResolvedAnalyzerId();
+        }
+        return envelope.getAnalyzerId();
     }
 
     /**

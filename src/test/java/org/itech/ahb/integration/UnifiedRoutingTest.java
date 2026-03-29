@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +16,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.controller.AnalyzerInputController;
 import org.itech.ahb.file.CSVParser;
 import org.itech.ahb.file.FileConfig;
@@ -34,16 +38,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.Mockito.*;
 
 import ca.uhn.hl7v2.model.Message;
 import ca.uhn.hl7v2.parser.PipeParser;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Integration tests verifying all 5 transport listeners route through MessageNormalizer
- * to HttpForwardingRouter (M7: Message Normalizer milestone).
+ * Integration tests verifying all transport listeners route through the same
+ * bridge -> OpenELIS forwarding path, with source registration as the
+ * authoritative analyzer identity contract.
  * <p>
  * Uses com.sun.net.httpserver.HttpServer to capture forwarded HTTP requests and verify
  * correct path and headers for each listener type.
@@ -110,12 +117,29 @@ class UnifiedRoutingTest {
         httpServer.createContext("/api/OpenELIS-Global/rest/analyzers/", captureHandler);
         httpServer.start();
 
-        // Wire full M7 pipeline
+        // Wire the authoritative routing pipeline:
+        // source registration -> AnalyzerIdentifier -> MessageNormalizer -> single forward router.
         HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
         HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null);
-        AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
+        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
+        analyzers.put("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
+        analyzers.put("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));
+        analyzers.put("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV"));
+        analyzers.put("192.168.1.10", analyzer("HTTP-001", "ASTM"));
+        analyzers.put("192.168.1.20", analyzer("HTTP-002", "HL7"));
+        analyzers.put("192.168.1.30", analyzer("HTTP-003", "CSV"));
+        analyzers.put("192.168.1.40", analyzer("MINDRAY", "ASTM"));
+        analyzers.put("192.168.1.50", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
+        analyzers.put("192.168.1.51", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
+        analyzers.put("192.168.1.60", analyzer("HTTP-004", "ASTM"));
+        analyzers.put("unknown", analyzer("TEST", "ASTM"));
+        analyzers.put("/tmp/quantstudio", fileAnalyzer("QUANTSTUDIO-001"));
+        registry.setAnalyzers(analyzers);
+
+        AnalyzerIdentifier identifier = new AnalyzerIdentifier(registry);
         normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
 
         serialHandler = new SerialMessageHandler(normalizer);
@@ -123,9 +147,9 @@ class UnifiedRoutingTest {
         FileConfig fileConfig = new FileConfig();
         fileConfig.setEnabled(true);
         CSVParser csvParser = new CSVParser(fileConfig);
-        fileHandler = new FileMessageHandler(csvParser, fileConfig, normalizer);
-        ReflectionTestUtils.setField(fileHandler, "openelisBaseUrl",
-                "http://127.0.0.1:" + serverPort + "/api/OpenELIS-Global");
+        FhirRoutingConfig fhirRoutingConfig = new FhirRoutingConfig();
+        fhirRoutingConfig.setUseFhir(true);
+        fileHandler = new FileMessageHandler(csvParser, fhirRoutingConfig, registry, httpConfig);
 
         httpController = new AnalyzerInputController(normalizer);
 
@@ -208,20 +232,24 @@ class UnifiedRoutingTest {
     class FileHandlerTests {
 
         @Test
-        @DisplayName("File CSV posts to OpenELIS direct-import REST path (bridge-owned FILE delivery)")
+        @DisplayName("FILE delivery uses the same unified /analyzer/fhir forwarding path")
         void fileCsvRoutesCorrectly() throws Exception {
             resetLatch();
-            Path csvFile = tempDir.resolve("results.csv");
-            String csvContent = "SampleID,TestCode,Result,Units\n12345,WBC,7.5,10^3/uL\n12346,RBC,4.8,10^6/uL";
-            Files.writeString(csvFile, csvContent);
+            Path workbookFile = createFileWorkbook(
+                    tempDir.resolve("results.xlsx"),
+                    new String[]{"Sample Name", "Target", "CT", "Units"},
+                    new String[][]{
+                        {"12345", "WBC", "7.5", "10^3/uL"},
+                        {"12345", "RBC", "4.8", "10^6/uL"}
+                    });
 
-            fileHandler.processFile(csvFile, "QUANTSTUDIO-001");
+            fileHandler.processFile(workbookFile, "QUANTSTUDIO-001");
 
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().contains("/rest/analyzers/QUANTSTUDIO-001/import"),
-                    "Path should include /rest/analyzers/{id}/import, got: " + req.path());
+            assertTrue(req.path().endsWith("/analyzer/fhir"),
+                    "Path should end with /analyzer/fhir, got: " + req.path());
             assertEquals("QUANTSTUDIO-001", req.analyzerId());
-            assertTrue(req.body().contains("Content-Disposition: form-data"), "Expected multipart body");
+            assertTrue(req.body().contains("\"resourceType\":\"Bundle\""), "Expected FHIR bundle body");
         }
     }
 
@@ -230,7 +258,7 @@ class UnifiedRoutingTest {
     class HttpInputControllerTests {
 
         @Test
-        @DisplayName("HTTP POST ASTM routes to /analyzer/astm")
+        @DisplayName("HTTP ASTM uses source registration as authoritative analyzer identity")
         void httpAstmRoutesCorrectly() throws Exception {
             resetLatch();
             when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.10");
@@ -248,6 +276,7 @@ class UnifiedRoutingTest {
             assertEquals("HTTP", req.sourceTransport());
             assertEquals("192.168.1.10", req.sourceId());
             assertEquals("192.168.1.10", req.sourceAnalyzerIp());
+            assertEquals("HTTP-001", req.analyzerId(), "Registered source should determine analyzer identity");
         }
 
         @Test
@@ -488,4 +517,41 @@ class UnifiedRoutingTest {
             String sourceAnalyzerIp,
             String sourcePort
     ) {}
+
+    private AnalyzerRegistryConfig.AnalyzerEntry analyzer(String id, String expectedProtocol) {
+        AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+        entry.setId(id);
+        entry.setExpectedProtocol(expectedProtocol);
+        return entry;
+    }
+
+    private AnalyzerRegistryConfig.AnalyzerEntry fileAnalyzer(String id) {
+        AnalyzerRegistryConfig.AnalyzerEntry entry = analyzer(id, "FILE");
+        entry.setColumnMappings(Map.of(
+                "Sample Name", "sampleId",
+                "Target", "testCode",
+                "CT", "result",
+                "Units", "units"));
+        return entry;
+    }
+
+    private Path createFileWorkbook(Path file, String[] headers, String[][] rows) throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Results");
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                header.createCell(i).setCellValue(headers[i]);
+            }
+            for (int rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                Row row = sheet.createRow(rowIdx + 1);
+                for (int colIdx = 0; colIdx < rows[rowIdx].length; colIdx++) {
+                    row.createCell(colIdx).setCellValue(rows[rowIdx][colIdx]);
+                }
+            }
+            try (var out = Files.newOutputStream(file)) {
+                workbook.write(out);
+            }
+        }
+        return file;
+    }
 }

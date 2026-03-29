@@ -98,7 +98,7 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
                 .sourcePort(sourcePort)
                 .rawMessage(rawMessage)
                 .receivedAt(Instant.now())
-                .analyzerId(analyzerId)
+                .protocolAnalyzerHint(analyzerId)
                 .build();
 
             // Route the message via MessageRouter

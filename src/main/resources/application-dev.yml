@@ -1,14 +1,14 @@
 server:
   port: 8443
+  ssl:
+    enabled: true
+    key-store-type: PKCS12
+    key-store: /etc/openelis-global/keystore
+    key-store-password: kspass
 management:
   endpoint:
     health:
       show-details: always
-#  ssl:
-#    enabled: true
-#    keyStoreType: ${server.ssl.keyStoreType}
-#    key-store: ${server.ssl.keyStorePath}
-#    key-store-password: ${server.ssl.keyStorePassword}
 
 # MLLP Server Configuration (HL7 v2.x transport)
 org.itech.ahb.mllp:

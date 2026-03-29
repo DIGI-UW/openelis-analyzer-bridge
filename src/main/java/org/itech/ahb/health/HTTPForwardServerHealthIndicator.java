@@ -14,7 +14,6 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.OpenELISConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.boot.actuate.autoconfigure.health.ConditionalOnEnabledHealthIndicator;
@@ -49,16 +48,11 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
    * @param properties the HTTP forward server configuration properties
    */
   public HTTPForwardServerHealthIndicator(
-    HTTPForwardServerConfigurationProperties properties,
-    @Autowired(required = false) OpenELISConfig openelisConfig
+    HTTPForwardServerConfigurationProperties properties
   ) {
     this.properties = properties;
-    this.connectTimeoutSeconds = openelisConfig != null
-      ? openelisConfig.getConnectTimeoutSeconds()
-      : 30;
-    this.readTimeoutSeconds = openelisConfig != null
-      ? openelisConfig.getReadTimeoutSeconds()
-      : 30;
+    this.connectTimeoutSeconds = properties.getConnectTimeoutSeconds();
+    this.readTimeoutSeconds = properties.getReadTimeoutSeconds();
     this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, properties.isInsecureTls(), "healthcheck");
   }
 
