@@ -3,6 +3,7 @@ package org.itech.ahb.fhir;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +29,9 @@ import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
  */
 @Slf4j
 public class FileResultParser {
+
+    private static final List<String> QUANTSTUDIO_CONTROL_PREFIXES = Arrays.asList(
+            "CNEG", "CPOS", "NTC", "PTC");
 
     /**
      * Parse an Excel file and extract results using column mappings.
@@ -83,6 +87,7 @@ public class FileResultParser {
                 String result = getCellValue(row, fieldIndex.get("result"), formatter);
                 String units = getCellValue(row, fieldIndex.get("units"), formatter);
                 String interpretation = getCellValue(row, fieldIndex.get("interpretation"), formatter);
+                String qcTask = getCellValue(row, fieldIndex.get("qcTask"), formatter);
 
                 if (sampleId == null || sampleId.isBlank()) continue;
                 if (testCode == null || testCode.isBlank()) continue;
@@ -95,6 +100,7 @@ public class FileResultParser {
                 AnalyzerResult ar = isNumeric
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
+                ar = ar.withControl(isControlRow(sampleId, qcTask));
 
                 resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
             }
@@ -187,5 +193,17 @@ public class FileResultParser {
         } catch (NumberFormatException e) {
             return false;
         }
+    }
+
+    private static boolean isControlRow(String sampleId, String qcTask) {
+        if (qcTask != null && "CONTROL".equalsIgnoreCase(qcTask.trim())) {
+            return true;
+        }
+        if (sampleId == null) {
+            return false;
+        }
+        String normalizedSampleId = sampleId.trim().toUpperCase();
+        return QUANTSTUDIO_CONTROL_PREFIXES.stream()
+                .anyMatch(normalizedSampleId::startsWith);
     }
 }
