@@ -357,4 +357,56 @@ class FileResultParserTest {
             assertEquals("Positive", results.get(0).results().get(0).value());
         }
     }
+
+    @Nested
+    @DisplayName("QC classification")
+    class QcClassification {
+
+        @Test
+        @DisplayName("QuantStudio control accession is flagged as QC")
+        void quantStudioControlAccessionFlaggedAsQc() {
+            InputStream xlsx = buildXlsx("Results",
+                    new String[]{"Well", "Sample Name", "Target Name", "Quantity Mean", "Task"},
+                    new Object[][]{
+                            {"A1", "CNEG", "VIH-1", "1520.5", "Control"},
+                    });
+
+            Map<String, String> mappings = Map.of(
+                    "Sample Name", "sampleId",
+                    "Target Name", "testCode",
+                    "Quantity Mean", "result",
+                    "Task", "qcTask");
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings);
+
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            assertEquals("CNEG", results.get(0).accessionNumber());
+            assertTrue(results.get(0).results().get(0).isControl(),
+                    "QuantStudio control accession should be flagged as QC");
+        }
+
+        @Test
+        @DisplayName("QuantStudio patient accession remains non-QC")
+        void quantStudioPatientAccessionRemainsNonQc() {
+            InputStream xlsx = buildXlsx("Results",
+                    new String[]{"Well", "Sample Name", "Target Name", "Quantity Mean", "Task"},
+                    new Object[][]{
+                            {"A1", "HARN-QS7-2026-00001", "VIH-1", "1520.5", "UNKNOWN"},
+                    });
+
+            Map<String, String> mappings = Map.of(
+                    "Sample Name", "sampleId",
+                    "Target Name", "testCode",
+                    "Quantity Mean", "result",
+                    "Task", "qcTask");
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings);
+
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            assertFalse(results.get(0).results().get(0).isControl(),
+                    "Patient accession should not be flagged as QC");
+        }
+    }
 }
