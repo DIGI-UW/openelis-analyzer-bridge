@@ -10,6 +10,13 @@ management:
     health:
       show-details: always
 
+# File watcher — faster polling for dev/CI (files are written atomically).
+# Production keeps FileConfig.java defaults (5000ms poll, 3000ms stability).
+bridge:
+  file:
+    poll-interval-ms: 1000
+    file-stability-timeout-ms: 500
+
 # MLLP Server Configuration (HL7 v2.x transport)
 org.itech.ahb.mllp:
   enabled: true
