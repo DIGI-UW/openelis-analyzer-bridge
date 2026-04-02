@@ -452,7 +452,8 @@ class MessageNormalizerTest {
             boolean result = normalizerWithDlq.process(envelope);
 
             assertFalse(result, "Unknown source should not route");
-            verify(mockOeApiClient).post(eq("/rest/analyzer/discovered-sources"), argThat(body ->
+            // OE call is async — use timeout to wait for CompletableFuture
+            verify(mockOeApiClient, timeout(2000)).post(eq("/rest/analyzer/discovered-sources"), argThat(body ->
                 "10.0.0.50".equals(body.get("sourceId"))
                     && "ASTM".equals(body.get("protocol"))
                     && "TCP".equals(body.get("transport"))
