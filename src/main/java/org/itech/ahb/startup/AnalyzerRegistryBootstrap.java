@@ -2,21 +2,15 @@ package org.itech.ahb.startup;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import java.nio.file.Path;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
-import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.file.FileWatcher;
-import org.itech.ahb.util.HttpClientFactory;
+import org.itech.ahb.util.OeApiClient;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -40,73 +34,38 @@ import org.springframework.stereotype.Component;
 public class AnalyzerRegistryBootstrap {
 
     private final AnalyzerRegistryConfig registry;
-    private final HTTPForwardServerConfigurationProperties httpConfig;
+    private final OeApiClient oeApiClient;
     private final FileWatcher fileWatcher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AnalyzerRegistryBootstrap(
             AnalyzerRegistryConfig registry,
-            HTTPForwardServerConfigurationProperties httpConfig,
+            OeApiClient oeApiClient,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
             FileWatcher fileWatcher) {
         this.registry = registry;
-        this.httpConfig = httpConfig;
+        this.oeApiClient = oeApiClient;
         this.fileWatcher = fileWatcher;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void pullAnalyzersFromOE() {
-        URI oeBaseUri = httpConfig.getUri();
-        if (oeBaseUri == null) {
+        if (!oeApiClient.isConfigured()) {
             log.warn("No OpenELIS URI configured — skipping analyzer registry bootstrap");
             return;
         }
 
-        // Build the analyzers API URL from the OE forward URI
-        // Forward URI is like: https://oe:8443/OpenELIS-Global/analyzer (for ASTM forwarding)
-        // Strip the /analyzer suffix to get the webapp base, then append REST path
-        String baseUrl = oeBaseUri.toString().replaceAll("/+$", "").replaceAll("/analyzer$", "");
-        String analyzersUrl = baseUrl + "/rest/analyzer/analyzers";
-
-        log.info("Pulling analyzer registry from OE: {}", analyzersUrl);
+        log.info("Pulling analyzer registry from OE...");
 
         try {
-            int connectTimeout = httpConfig.getConnectTimeoutSeconds();
-            int readTimeout = httpConfig.getReadTimeoutSeconds();
-
-            HttpClient client = HttpClientFactory.create(
-                    connectTimeout,
-                    httpConfig.isInsecureTls(),
-                    "registry-bootstrap");
-
-            HttpRequest.Builder builder = HttpRequest.newBuilder()
-                    .uri(URI.create(analyzersUrl))
-                    .GET()
-                    .timeout(java.time.Duration.ofSeconds(readTimeout))
-                    .header("Accept", "application/json");
-
-            // Add Basic auth
-            if (httpConfig.getUsername() != null && httpConfig.getPassword() != null) {
-                String credentials = httpConfig.getUsername() + ":"
-                        + new String(httpConfig.getPassword());
-                String encoded = Base64.getEncoder().encodeToString(
-                        credentials.getBytes(StandardCharsets.UTF_8));
-                builder.header("Authorization", "Basic " + encoded);
-            }
-
-            HttpResponse<String> response = client.send(
-                    builder.build(),
-                    HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                log.warn("OE returned {} for analyzer pull — registry not bootstrapped",
-                        response.statusCode());
+            String responseBody = oeApiClient.getString("/rest/analyzer/analyzers");
+            if (responseBody == null) {
+                log.warn("Failed to pull analyzers from OE — registry not bootstrapped");
                 return;
             }
 
-            // Parse response: {"analyzers": [...]}
             Map<String, Object> body = objectMapper.readValue(
-                    response.body(), new TypeReference<>() {
+                    responseBody, new TypeReference<>() {
                     });
 
             Object analyzersObj = body.get("analyzers");
@@ -118,7 +77,7 @@ public class AnalyzerRegistryBootstrap {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> analyzers = (List<Map<String, Object>>) analyzersObj;
 
-            java.util.LinkedHashMap<String, AnalyzerEntry> newRegistry = new java.util.LinkedHashMap<>();
+            LinkedHashMap<String, AnalyzerEntry> newRegistry = new LinkedHashMap<>();
             int fileCount = 0;
             for (Map<String, Object> analyzer : analyzers) {
                 Object idObj = analyzer.get("id");
@@ -136,7 +95,6 @@ public class AnalyzerRegistryBootstrap {
                 String protocol = (String) analyzer.get("protocolVersion");
 
                 if (ip != null && !ip.isBlank()) {
-                    // TCP analyzer (ASTM or HL7)
                     AnalyzerEntry entry = new AnalyzerEntry();
                     entry.setId(id);
                     entry.setName(name);
@@ -145,7 +103,6 @@ public class AnalyzerRegistryBootstrap {
                     newRegistry.put(ip, entry);
                 }
 
-                // FILE analyzer — register watch directory
                 String importDir = (String) analyzer.get("importDirectory");
                 if (importDir != null && !importDir.isBlank() && fileWatcher != null) {
                     String filePattern = (String) analyzer.get("filePattern");
@@ -156,7 +113,6 @@ public class AnalyzerRegistryBootstrap {
                     if (filePattern != null) {
                         entry.setFilePattern(filePattern);
                     }
-                    // Extract column mappings if present
                     @SuppressWarnings("unchecked")
                     Map<String, String> colMappings = (Map<String, String>) analyzer.get("columnMappings");
                     if (colMappings != null) {
@@ -180,11 +136,8 @@ public class AnalyzerRegistryBootstrap {
             }
 
         } catch (java.net.ConnectException e) {
-            log.warn("Cannot reach OE at {} — bridge starting without analyzer registry. "
-                    + "OE will push registrations when it starts.", analyzersUrl);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Bootstrap interrupted — bridge starting without analyzer registry");
+            log.warn("Cannot reach OE — bridge starting without analyzer registry. "
+                    + "OE will push registrations when it starts.");
         } catch (Exception e) {
             log.warn("Failed to pull analyzers from OE: {} — bridge starting without registry. "
                     + "OE will push registrations on next CRUD operation.", e.getMessage());
