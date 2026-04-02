@@ -5,10 +5,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
+import java.util.Map;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.routing.HttpForwardingRouter;
+import org.itech.ahb.util.DeadLetterWriter;
+import org.itech.ahb.util.OeApiClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -149,7 +152,7 @@ class MessageNormalizerTest {
             registry.register("10.42.59.10", entry);
 
             MessageNormalizer metadataAwareNormalizer =
-                new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null);
+                new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null, null, null);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
@@ -407,6 +410,87 @@ class MessageNormalizerTest {
             verify(mockForwardingRouter).route(argThat(e ->
                 e.getSourcePort() == null
             ));
+        }
+    }
+
+    // === OGC-526: Unknown source discovery + DLQ tests ===
+
+    @Nested
+    @DisplayName("Unknown Source Handling Tests")
+    class UnknownSourceHandlingTests {
+
+        @Mock
+        private OeApiClient mockOeApiClient;
+
+        @Mock
+        private DeadLetterWriter mockDeadLetterWriter;
+
+        private MessageNormalizer normalizerWithDlq;
+
+        @BeforeEach
+        void setUpDlqNormalizer() {
+            AnalyzerIdentifier rejectingIdentifier = mock(AnalyzerIdentifier.class);
+            when(rejectingIdentifier.identify(any())).thenReturn(null);
+
+            normalizerWithDlq = new MessageNormalizer(
+                mockForwardingRouter, rejectingIdentifier,
+                null, null, mockOeApiClient, mockDeadLetterWriter);
+        }
+
+        @Test
+        @DisplayName("Should report unknown source to OE via discovered-sources endpoint")
+        void shouldReportUnknownSourceToOe() {
+            when(mockOeApiClient.post(any(), any())).thenReturn(Map.of("analyzerId", "99"));
+
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.ASTM)
+                .transport(Transport.TCP)
+                .sourceId("10.0.0.50")
+                .rawMessage("H|\\^&|||UNKNOWN-DEVICE")
+                .build();
+
+            boolean result = normalizerWithDlq.process(envelope);
+
+            assertFalse(result, "Unknown source should not route");
+            verify(mockOeApiClient).post(eq("/rest/analyzer/discovered-sources"), argThat(body ->
+                "10.0.0.50".equals(body.get("sourceId"))
+                    && "ASTM".equals(body.get("protocol"))
+                    && "TCP".equals(body.get("transport"))
+            ));
+        }
+
+        @Test
+        @DisplayName("Should write message to dead letter on unknown source")
+        void shouldWriteDeadLetterOnUnknownSource() {
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.HL7)
+                .transport(Transport.MLLP)
+                .sourceId("192.168.1.99")
+                .rawMessage("MSH|^~\\&|UNKNOWN")
+                .build();
+
+            normalizerWithDlq.process(envelope);
+
+            verify(mockDeadLetterWriter).write(eq(envelope), eq("UNREGISTERED_SOURCE"));
+        }
+
+        @Test
+        @DisplayName("Should survive OE API failure gracefully")
+        void shouldSurviveOeApiFailure() {
+            when(mockOeApiClient.post(any(), any())).thenThrow(new RuntimeException("OE unreachable"));
+
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.ASTM)
+                .transport(Transport.TCP)
+                .sourceId("10.0.0.99")
+                .rawMessage("H|\\^&|||TEST")
+                .build();
+
+            boolean result = normalizerWithDlq.process(envelope);
+
+            assertFalse(result);
+            // DLQ should still be written even if OE call fails
+            verify(mockDeadLetterWriter).write(eq(envelope), eq("UNREGISTERED_SOURCE"));
         }
     }
 }
