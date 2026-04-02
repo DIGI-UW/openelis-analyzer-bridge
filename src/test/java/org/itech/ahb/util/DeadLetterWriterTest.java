@@ -22,9 +22,10 @@ class DeadLetterWriterTest {
     private DeadLetterWriter writer;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         writer = new DeadLetterWriter();
         ReflectionTestUtils.setField(writer, "deadLetterDirectory", tempDir.toString());
+        writer.init();
     }
 
     @Test

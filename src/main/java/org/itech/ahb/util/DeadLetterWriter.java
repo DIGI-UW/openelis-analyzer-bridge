@@ -1,8 +1,11 @@
 package org.itech.ahb.util;
 
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -26,6 +29,14 @@ public class DeadLetterWriter {
     @Value("${bridge.deadLetter.directory:${java.io.tmpdir}/openelis-analyzer-bridge/dead-letters}")
     private String deadLetterDirectory;
 
+    private Path dlqPath;
+
+    @PostConstruct
+    void init() throws IOException {
+        dlqPath = Path.of(deadLetterDirectory);
+        Files.createDirectories(dlqPath);
+    }
+
     /**
      * Write a message to the dead-letter directory with a metadata sidecar.
      *
@@ -33,21 +44,24 @@ public class DeadLetterWriter {
      */
     public boolean write(MessageEnvelope envelope, String reason) {
         try {
-            Path dir = Path.of(deadLetterDirectory);
-            Files.createDirectories(dir);
-
             String timestamp = TS_FORMAT.format(
                     envelope.getReceivedAt() != null ? envelope.getReceivedAt() : Instant.now());
             String sourceSlug = sanitize(envelope.getSourceId());
-            String baseName = String.format("%s_%s_%s",
-                    timestamp, envelope.getProtocol(), sourceSlug);
+            String baseName = String.format("%s_%s_%s_%d",
+                    timestamp, envelope.getProtocol(), sourceSlug, System.nanoTime() % 100000);
 
-            // Payload
-            Path payloadFile = dir.resolve(baseName + ".msg");
-            Files.writeString(payloadFile, envelope.getRawMessage());
+            // Payload — CREATE_NEW to detect collisions
+            Path payloadFile = dlqPath.resolve(baseName + ".msg");
+            try {
+                Files.writeString(payloadFile, envelope.getRawMessage(), StandardOpenOption.CREATE_NEW);
+            } catch (FileAlreadyExistsException e) {
+                baseName = baseName + "_" + System.nanoTime();
+                payloadFile = dlqPath.resolve(baseName + ".msg");
+                Files.writeString(payloadFile, envelope.getRawMessage());
+            }
 
             // Metadata sidecar
-            Path metaFile = dir.resolve(baseName + ".meta");
+            Path metaFile = dlqPath.resolve(baseName + ".meta");
             String meta = String.join("\n",
                     "sourceId=" + envelope.getSourceId(),
                     "protocol=" + envelope.getProtocol(),

@@ -26,9 +26,14 @@ public class OeApiClient {
 
     private final HTTPForwardServerConfigurationProperties httpConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient httpClient;
 
     public OeApiClient(HTTPForwardServerConfigurationProperties httpConfig) {
         this.httpConfig = httpConfig;
+        this.httpClient = HttpClientFactory.create(
+                httpConfig.getConnectTimeoutSeconds(),
+                httpConfig.isInsecureTls(),
+                "oe-api-client");
     }
 
     /** Returns true if the OE base URL is configured. */
@@ -49,7 +54,7 @@ public class OeApiClient {
         String url = baseUrl + restPath;
         try {
             HttpRequest request = newRequestBuilder(url).GET().build();
-            HttpResponse<String> response = newClient().send(request,
+            HttpResponse<String> response = httpClient.send(request,
                     HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 return response.body();
@@ -84,7 +89,7 @@ public class OeApiClient {
                     .header("Content-Type", "application/json")
                     .build();
 
-            HttpResponse<String> response = newClient().send(request,
+            HttpResponse<String> response = httpClient.send(request,
                     HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
@@ -102,13 +107,6 @@ public class OeApiClient {
             log.warn("Failed to POST to OE {}: {}", url, e.getMessage());
             return null;
         }
-    }
-
-    private HttpClient newClient() {
-        return HttpClientFactory.create(
-                httpConfig.getConnectTimeoutSeconds(),
-                httpConfig.isInsecureTls(),
-                "oe-api-client");
     }
 
     private HttpRequest.Builder newRequestBuilder(String url) {

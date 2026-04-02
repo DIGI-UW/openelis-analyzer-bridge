@@ -220,26 +220,30 @@ public class MessageNormalizer implements MessageRouter {
     }
 
     private void handleUnknownSource(MessageEnvelope envelope, String protocolHint) {
-        // Report discovered source to OE (creates PENDING_REGISTRATION stub)
+        // Report discovered source to OE asynchronously (don't block message processing)
         if (oeApiClient != null) {
-            try {
-                Map<String, String> body = new LinkedHashMap<>();
-                body.put("sourceId", envelope.getSourceId());
-                body.put("protocol", envelope.getProtocol() != null ? envelope.getProtocol().name() : null);
-                body.put("protocolHint", protocolHint);
-                body.put("transport", envelope.getTransport() != null ? envelope.getTransport().name() : null);
-                Map<String, Object> result = oeApiClient.post("/rest/analyzer/discovered-sources", body);
-                if (result != null) {
-                    log.info("Reported unknown source '{}' to OE: analyzerId={}, alreadyExists={}",
-                        envelope.getSourceId(), result.get("analyzerId"), result.get("alreadyExists"));
+            final String sourceId = envelope.getSourceId();
+            final String protocolName = envelope.getProtocol() != null ? envelope.getProtocol().name() : null;
+            final String transportName = envelope.getTransport() != null ? envelope.getTransport().name() : null;
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    Map<String, String> body = new LinkedHashMap<>();
+                    body.put("sourceId", sourceId);
+                    body.put("protocol", protocolName);
+                    body.put("protocolHint", protocolHint);
+                    body.put("transport", transportName);
+                    Map<String, Object> result = oeApiClient.post("/rest/analyzer/discovered-sources", body);
+                    if (result != null) {
+                        log.info("Reported unknown source '{}' to OE: analyzerId={}, alreadyExists={}",
+                            sourceId, result.get("analyzerId"), result.get("alreadyExists"));
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to report unknown source '{}' to OE: {}", sourceId, e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("Failed to report unknown source '{}' to OE: {}",
-                    envelope.getSourceId(), e.getMessage());
-            }
+            });
         }
 
-        // Write message to dead-letter directory
+        // DLQ write stays synchronous — local filesystem, fast
         if (deadLetterWriter != null) {
             deadLetterWriter.write(envelope, "UNREGISTERED_SOURCE");
         }
