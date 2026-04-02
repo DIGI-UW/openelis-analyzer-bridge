@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
@@ -42,19 +43,21 @@ class DeadLetterWriterTest {
 
         assertTrue(result);
 
-        // Verify exactly 2 files written (payload + meta)
-        long fileCount = Files.list(tempDir).count();
-        assertEquals(2, fileCount, "Should produce payload + metadata files");
+        // Collect once — closes the directory stream properly
+        List<Path> files;
+        try (var stream = Files.list(tempDir)) {
+            files = stream.toList();
+        }
 
-        // Verify payload file contains raw message
-        Path msgFile = Files.list(tempDir)
+        assertEquals(2, files.size(), "Should produce payload + metadata files");
+
+        Path msgFile = files.stream()
                 .filter(p -> p.toString().endsWith(".msg"))
                 .findFirst()
                 .orElseThrow();
         assertEquals("H|\\^&|||TEST-DATA", Files.readString(msgFile));
 
-        // Verify metadata sidecar
-        Path metaFile = Files.list(tempDir)
+        Path metaFile = files.stream()
                 .filter(p -> p.toString().endsWith(".meta"))
                 .findFirst()
                 .orElseThrow();
@@ -78,8 +81,12 @@ class DeadLetterWriterTest {
         boolean result = writer.write(envelope, "TEST_REASON");
 
         assertTrue(result);
-        // Filename should not contain slashes
-        Files.list(tempDir).forEach(p -> assertFalse(
+
+        List<Path> files;
+        try (var stream = Files.list(tempDir)) {
+            files = stream.toList();
+        }
+        files.forEach(p -> assertFalse(
                 p.getFileName().toString().contains("/"),
                 "Filename should not contain path separators"));
     }

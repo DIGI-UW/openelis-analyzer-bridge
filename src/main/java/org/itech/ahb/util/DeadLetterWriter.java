@@ -2,13 +2,13 @@ package org.itech.ahb.util;
 
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.normalizer.MessageEnvelope;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,20 +47,14 @@ public class DeadLetterWriter {
             String timestamp = TS_FORMAT.format(
                     envelope.getReceivedAt() != null ? envelope.getReceivedAt() : Instant.now());
             String sourceSlug = sanitize(envelope.getSourceId());
-            String baseName = String.format("%s_%s_%s_%d",
-                    timestamp, envelope.getProtocol(), sourceSlug, System.nanoTime() % 100000);
+            String uniqueId = UUID.randomUUID().toString().substring(0, 8);
+            String baseName = String.format("%s_%s_%s_%s",
+                    timestamp, envelope.getProtocol(), sourceSlug, uniqueId);
 
-            // Payload — CREATE_NEW to detect collisions
+            // Payload + metadata — CREATE_NEW guarantees no overwrites
             Path payloadFile = dlqPath.resolve(baseName + ".msg");
-            try {
-                Files.writeString(payloadFile, envelope.getRawMessage(), StandardOpenOption.CREATE_NEW);
-            } catch (FileAlreadyExistsException e) {
-                baseName = baseName + "_" + System.nanoTime();
-                payloadFile = dlqPath.resolve(baseName + ".msg");
-                Files.writeString(payloadFile, envelope.getRawMessage());
-            }
+            Files.writeString(payloadFile, envelope.getRawMessage(), StandardOpenOption.CREATE_NEW);
 
-            // Metadata sidecar
             Path metaFile = dlqPath.resolve(baseName + ".meta");
             String meta = String.join("\n",
                     "sourceId=" + envelope.getSourceId(),
@@ -70,7 +64,7 @@ public class DeadLetterWriter {
                     "sourcePort=" + (envelope.getSourcePort() != null ? envelope.getSourcePort() : ""),
                     "receivedAt=" + timestamp,
                     "reason=" + reason);
-            Files.writeString(metaFile, meta);
+            Files.writeString(metaFile, meta, StandardOpenOption.CREATE_NEW);
 
             log.info("Dead-lettered message: {} (reason: {})", payloadFile, reason);
             return true;
