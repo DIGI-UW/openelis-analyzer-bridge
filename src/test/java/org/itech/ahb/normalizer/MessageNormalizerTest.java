@@ -432,9 +432,10 @@ class MessageNormalizerTest {
             AnalyzerIdentifier rejectingIdentifier = mock(AnalyzerIdentifier.class);
             when(rejectingIdentifier.identify(any())).thenReturn(null);
 
+            // Runnable::run executes on the calling thread — deterministic, no timeout needed
             normalizerWithDlq = new MessageNormalizer(
                 mockForwardingRouter, rejectingIdentifier,
-                null, null, mockOeApiClient, mockDeadLetterWriter);
+                null, null, mockOeApiClient, mockDeadLetterWriter, Runnable::run);
         }
 
         @Test
@@ -452,8 +453,7 @@ class MessageNormalizerTest {
             boolean result = normalizerWithDlq.process(envelope);
 
             assertFalse(result, "Unknown source should not route");
-            // OE call is async — use timeout to wait for CompletableFuture
-            verify(mockOeApiClient, timeout(2000)).post(eq("/rest/analyzer/discovered-sources"), argThat(body ->
+            verify(mockOeApiClient).post(eq("/rest/analyzer/discovered-sources"), argThat(body ->
                 "10.0.0.50".equals(body.get("sourceId"))
                     && "ASTM".equals(body.get("protocol"))
                     && "TCP".equals(body.get("transport"))
