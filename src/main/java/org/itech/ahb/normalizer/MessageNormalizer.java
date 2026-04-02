@@ -2,10 +2,14 @@ package org.itech.ahb.normalizer;
 
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.routing.MessageRouter;
+import org.itech.ahb.util.DeadLetterWriter;
+import org.itech.ahb.util.OeApiClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -46,23 +50,18 @@ public class MessageNormalizer implements MessageRouter {
     private final AnalyzerIdentifier identifier;
     private final AnalyzerRegistryConfig registry;  // optional — for diagnostic validation only
     private final MetricsService metricsService;  // nullable — optional dependency
+    private final OeApiClient oeApiClient;  // nullable — for discovered-source reporting
+    private final DeadLetterWriter deadLetterWriter;  // nullable — for DLQ on unknown sources
+    private final java.util.concurrent.Executor asyncExecutor;
 
     /**
-     * Constructs a new MessageNormalizer.
-     * <p>
-     * Injects {@link HttpForwardingRouter} by concrete type (not MessageRouter interface)
-     * to avoid circular injection ambiguity, since this class also implements MessageRouter.
-     * </p>
-     *
-     * @param forwardingRouter the HTTP forwarding router for sending to OpenELIS
-     * @param identifier the analyzer identification service
-     * @param metricsService optional metrics service (null if MetricsService bean is not created)
+     * Minimal constructor for tests and non-discovery use cases.
      */
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
             MetricsService metricsService) {
-        this(forwardingRouter, identifier, null, metricsService);
+        this(forwardingRouter, identifier, null, metricsService, null, null);
     }
 
     @Autowired
@@ -70,11 +69,29 @@ public class MessageNormalizer implements MessageRouter {
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
             @Autowired(required = false) AnalyzerRegistryConfig registry,
-            @Autowired(required = false) MetricsService metricsService) {
+            @Autowired(required = false) MetricsService metricsService,
+            @Autowired(required = false) OeApiClient oeApiClient,
+            @Autowired(required = false) DeadLetterWriter deadLetterWriter) {
+        this(forwardingRouter, identifier, registry, metricsService, oeApiClient, deadLetterWriter,
+                java.util.concurrent.ForkJoinPool.commonPool());
+    }
+
+    /** Test constructor — accepts a custom executor for deterministic async verification. */
+    public MessageNormalizer(
+            HttpForwardingRouter forwardingRouter,
+            AnalyzerIdentifier identifier,
+            AnalyzerRegistryConfig registry,
+            MetricsService metricsService,
+            OeApiClient oeApiClient,
+            DeadLetterWriter deadLetterWriter,
+            java.util.concurrent.Executor asyncExecutor) {
         this.forwardingRouter = forwardingRouter;
         this.identifier = identifier;
         this.registry = registry;
         this.metricsService = metricsService;
+        this.oeApiClient = oeApiClient;
+        this.deadLetterWriter = deadLetterWriter;
+        this.asyncExecutor = asyncExecutor;
     }
 
     /**
@@ -150,6 +167,7 @@ public class MessageNormalizer implements MessageRouter {
         if (resolvedAnalyzerId == null || resolvedAnalyzerId.isBlank()) {
             log.warn("No registered analyzer for source '{}'; protocolHint='{}' — message will not be routed",
                 envelope.getSourceId(), protocolHint);
+            handleUnknownSource(envelope, protocolHint);
             if (metricsService != null) {
                 metricsService.recordRouted(sample, protocol, transport, false);
             }
@@ -206,6 +224,36 @@ public class MessageNormalizer implements MessageRouter {
         }
 
         return success;
+    }
+
+    private void handleUnknownSource(MessageEnvelope envelope, String protocolHint) {
+        // Report discovered source to OE asynchronously (don't block message processing)
+        if (oeApiClient != null) {
+            final String sourceId = envelope.getSourceId();
+            final String protocolName = envelope.getProtocol() != null ? envelope.getProtocol().name() : null;
+            final String transportName = envelope.getTransport() != null ? envelope.getTransport().name() : null;
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    Map<String, String> body = new LinkedHashMap<>();
+                    body.put("sourceId", sourceId);
+                    body.put("protocol", protocolName);
+                    body.put("protocolHint", protocolHint);
+                    body.put("transport", transportName);
+                    Map<String, Object> result = oeApiClient.post("/rest/analyzer/discovered-sources", body);
+                    if (result != null) {
+                        log.info("Reported unknown source '{}' to OE: analyzerId={}, alreadyExists={}",
+                            sourceId, result.get("analyzerId"), result.get("alreadyExists"));
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to report unknown source '{}' to OE: {}", sourceId, e.getMessage());
+                }
+            }, asyncExecutor);
+        }
+
+        // DLQ write stays synchronous — local filesystem, fast
+        if (deadLetterWriter != null) {
+            deadLetterWriter.write(envelope, "UNREGISTERED_SOURCE");
+        }
     }
 
     private String firstNonBlank(String first, String second) {
