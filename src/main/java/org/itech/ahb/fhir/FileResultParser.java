@@ -88,6 +88,7 @@ public class FileResultParser {
                 String units = getCellValue(row, fieldIndex.get("units"), formatter);
                 String interpretation = getCellValue(row, fieldIndex.get("interpretation"), formatter);
                 String qcTask = getCellValue(row, fieldIndex.get("qcTask"), formatter);
+                String testDate = getCellValue(row, fieldIndex.get("testDate"), formatter);
 
                 if (sampleId == null || sampleId.isBlank()) continue;
                 if (testCode == null || testCode.isBlank()) continue;
@@ -101,6 +102,9 @@ public class FileResultParser {
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
                 ar = ar.withControl(isControlRow(sampleId, qcTask));
+                if (testDate != null && !testDate.isBlank()) {
+                    ar = ar.withTimestamp(testDate);
+                }
 
                 resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
             }
