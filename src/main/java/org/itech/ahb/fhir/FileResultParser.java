@@ -2,12 +2,16 @@ package org.itech.ahb.fhir;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVRecord;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
@@ -124,6 +128,126 @@ public class FileResultParser {
             log.error("FileResultParser: failed to read Excel file: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    /**
+     * Parse a CSV/TSV text file and extract results using column mappings.
+     *
+     * @param content       raw file bytes (UTF-8 expected, BOM stripped automatically)
+     * @param columnMappings map of CSV header name → semantic field
+     * @param delimiter     CSV delimiter character (e.g., "," or ";")
+     * @param skipRows      number of metadata rows to skip before header
+     * @return list of parsed results grouped by accession, or null on failure
+     */
+    public static List<HL7ResultParser.ParsedResults> parseCsv(
+            byte[] content, Map<String, String> columnMappings,
+            String delimiter, int skipRows) {
+
+        if (content == null || content.length == 0 || columnMappings == null || columnMappings.isEmpty()) {
+            log.warn("FileResultParser.parseCsv: null/empty input or column mappings");
+            return null;
+        }
+
+        String text = new String(content, StandardCharsets.UTF_8);
+        // Strip UTF-8 BOM if present
+        if (text.startsWith("\uFEFF")) {
+            text = text.substring(1);
+        }
+
+        // Split into lines and skip metadata rows
+        String[] allLines = text.split("\\r?\\n");
+        if (allLines.length <= skipRows) {
+            log.warn("FileResultParser.parseCsv: file has {} lines but skipRows={}", allLines.length, skipRows);
+            return null;
+        }
+
+        StringBuilder csvContent = new StringBuilder();
+        for (int i = skipRows; i < allLines.length; i++) {
+            csvContent.append(allLines[i]).append("\n");
+        }
+
+        char delimChar = (delimiter != null && !delimiter.isEmpty()) ? delimiter.charAt(0) : ',';
+
+        try {
+            CSVFormat format = CSVFormat.DEFAULT.builder()
+                    .setDelimiter(delimChar)
+                    .setHeader()
+                    .setSkipHeaderRecord(true)
+                    .setIgnoreEmptyLines(true)
+                    .setTrim(true)
+                    .build();
+
+            Map<String, List<AnalyzerResult>> resultsByAccession = new HashMap<>();
+
+            try (StringReader reader = new StringReader(csvContent.toString())) {
+                for (CSVRecord record : format.parse(reader)) {
+                    String sampleId = getMappedValue(record, columnMappings, "sampleId");
+                    String testCode = getMappedValue(record, columnMappings, "testCode");
+                    String result = getMappedValue(record, columnMappings, "result");
+                    String units = getMappedValue(record, columnMappings, "units");
+                    String interpretation = getMappedValue(record, columnMappings, "interpretation");
+                    String qcTask = getMappedValue(record, columnMappings, "qcTask");
+                    String testDate = getMappedValue(record, columnMappings, "testDate");
+                    String dateTime = getMappedValue(record, columnMappings, "dateTime");
+
+                    if (sampleId == null || sampleId.isBlank()) continue;
+                    if (testCode == null || testCode.isBlank()) continue;
+
+                    String value = (result != null && !result.isBlank()) ? result : interpretation;
+                    if (value == null || value.isBlank()) continue;
+
+                    boolean isNumeric = isNumericValue(value);
+                    AnalyzerResult ar = isNumeric
+                            ? AnalyzerResult.numeric(testCode, testCode, value, units)
+                            : AnalyzerResult.text(testCode, testCode, value);
+                    ar = ar.withControl(isControlRow(sampleId, qcTask));
+
+                    // Use testDate or dateTime
+                    String ts = testDate != null ? testDate : dateTime;
+                    if (ts != null && !ts.isBlank()) {
+                        ar = ar.withTimestamp(ts);
+                    }
+
+                    resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
+                }
+            }
+
+            if (resultsByAccession.isEmpty()) {
+                log.warn("FileResultParser.parseCsv: no results extracted from CSV");
+                return null;
+            }
+
+            List<HL7ResultParser.ParsedResults> allResults = new ArrayList<>();
+            for (Map.Entry<String, List<AnalyzerResult>> entry : resultsByAccession.entrySet()) {
+                allResults.add(new HL7ResultParser.ParsedResults(entry.getKey(), entry.getValue()));
+            }
+
+            log.info("FileResultParser.parseCsv: extracted {} accessions from CSV", allResults.size());
+            return allResults;
+
+        } catch (IOException e) {
+            log.error("FileResultParser.parseCsv: failed to parse CSV: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Get a mapped value from a CSV record. Looks up which CSV column maps to the
+     * given semantic field, then reads that column from the record.
+     */
+    private static String getMappedValue(CSVRecord record, Map<String, String> columnMappings, String fieldName) {
+        for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
+            if (fieldName.equals(mapping.getValue())) {
+                try {
+                    String value = record.get(mapping.getKey());
+                    return (value != null && !value.isBlank()) ? value.trim() : null;
+                } catch (IllegalArgumentException e) {
+                    // Column not found in this record — not an error, just unmapped
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     /**

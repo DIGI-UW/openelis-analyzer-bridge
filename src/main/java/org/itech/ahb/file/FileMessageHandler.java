@@ -121,31 +121,47 @@ public class FileMessageHandler {
 
     private void postFileAsFhir(Path filePath, String analyzerId, byte[] content)
             throws IOException, FileProcessingException {
-        // Get column mappings from registry
-        Map<String, String> columnMappings = null;
+        // Resolve analyzer entry from registry
+        AnalyzerEntry analyzerEntry = null;
         if (registry != null) {
             for (Map.Entry<String, AnalyzerEntry> entry : registry.getRegisteredAnalyzers().entrySet()) {
                 if (analyzerId.equals(entry.getValue().getId())) {
-                    columnMappings = entry.getValue().getColumnMappings();
+                    analyzerEntry = entry.getValue();
                     break;
                 }
             }
         }
 
+        Map<String, String> columnMappings = analyzerEntry != null ? analyzerEntry.getColumnMappings() : null;
         if (columnMappings == null || columnMappings.isEmpty()) {
             throw new FileProcessingException(
                     "No column mappings registered for analyzer " + analyzerId + " — refusing FILE fallback");
         }
 
-        // Parse file using column mappings
+        // Dispatch by file extension: CSV/TSV/TXT → CSV parser, XLS/XLSX → Excel parser
+        String ext = getFileExtension(filePath);
         List<HL7ResultParser.ParsedResults> allResults;
-        try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-            allResults = FileResultParser.parse(bis, columnMappings);
+
+        if (".csv".equals(ext) || ".tsv".equals(ext) || ".txt".equals(ext)) {
+            String delimiter = analyzerEntry.getDelimiter();
+            int skipRows = analyzerEntry.getSkipRows();
+            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}) for analyzer {}",
+                    filePath.getFileName(), delimiter, skipRows, analyzerId);
+            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows);
+        } else if (".xls".equals(ext) || ".xlsx".equals(ext)) {
+            log.info("Parsing Excel file {} for analyzer {}", filePath.getFileName(), analyzerId);
+            try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
+                allResults = FileResultParser.parse(bis, columnMappings);
+            }
+        } else {
+            throw new FileProcessingException(
+                    "Unsupported file extension '" + ext + "' for " + filePath
+                            + " — expected one of: .csv, .tsv, .txt, .xls, .xlsx");
         }
 
         if (allResults == null || allResults.isEmpty()) {
             throw new FileProcessingException(
-                    "FHIR file parse produced no results for " + filePath + " — refusing FILE fallback");
+                    "FHIR file parse produced no results for " + filePath);
         }
 
         URI fhirUri = buildFhirUri();
@@ -234,6 +250,12 @@ public class FileMessageHandler {
 
         Arrays.fill(passwordBytes, (byte) 0);
         Arrays.fill(authBytes, (byte) 0);
+    }
+
+    private static String getFileExtension(Path filePath) {
+        String name = filePath.getFileName().toString().toLowerCase();
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 ? name.substring(dot) : "";
     }
 
     public static class FileProcessingException extends Exception {
