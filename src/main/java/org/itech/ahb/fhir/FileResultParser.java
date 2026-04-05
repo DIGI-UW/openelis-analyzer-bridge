@@ -34,8 +34,11 @@ import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 @Slf4j
 public class FileResultParser {
 
-    private static final List<String> QUANTSTUDIO_CONTROL_PREFIXES = Arrays.asList(
-            "CNEG", "CPOS", "NTC", "PTC");
+    private static final List<String> CONTROL_PREFIXES = Arrays.asList(
+            // Molecular (QuantStudio, FluoroCycler)
+            "CNEG", "CPOS", "NTC", "PTC",
+            // ELISA plate readers (Tecan, Multiskan)
+            "NEG", "POS", "NC", "PC", "BLANC", "BLANK");
 
     /**
      * Parse an Excel file and extract results using column mappings.
@@ -315,8 +318,17 @@ public class FileResultParser {
     }
 
     private static boolean isNumericValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        // Values with comparison operators (<2, >100, <=5) are stored as text —
+        // they represent qualitative assertions, not pure numbers, and cannot be
+        // parsed as BigDecimal by FhirBundleBuilder.
+        if (value.startsWith("<") || value.startsWith(">") || value.startsWith("≤") || value.startsWith("≥")) {
+            return false;
+        }
         try {
-            Double.parseDouble(value.replaceAll("[<>]", ""));
+            Double.parseDouble(value);
             return true;
         } catch (NumberFormatException e) {
             return false;
@@ -331,7 +343,7 @@ public class FileResultParser {
             return false;
         }
         String normalizedSampleId = sampleId.trim().toUpperCase();
-        return QUANTSTUDIO_CONTROL_PREFIXES.stream()
+        return CONTROL_PREFIXES.stream()
                 .anyMatch(normalizedSampleId::startsWith);
     }
 }

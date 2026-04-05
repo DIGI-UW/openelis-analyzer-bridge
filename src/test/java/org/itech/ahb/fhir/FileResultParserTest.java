@@ -557,5 +557,42 @@ class FileResultParserTest {
             assertEquals("3.45", first.results().get(0).value());
             assertEquals("TSH", first.results().get(0).testCode());
         }
+
+        @Test
+        @DisplayName("ELISA control prefixes (NEG, POS, NC, PC, Blanc) flagged as controls")
+        void elisaControlPrefixesFlagged() {
+            Map<String, String> mappings = Map.of(
+                    "SampleID", "sampleId",
+                    "TestCode", "testCode",
+                    "Result", "result");
+
+            String csv = "SampleID,TestCode,Result\n"
+                    + "DEV01265100000000001,HIV ELISA,2.345\n"
+                    + "NEG,HIV ELISA,0.045\n"
+                    + "POS,HIV ELISA,2.401\n"
+                    + "NC,HIV ELISA,0.038\n"
+                    + "PC,HIV ELISA,2.510\n"
+                    + "Blanc,HIV ELISA,0.012\n"
+                    + "BLANK,HIV ELISA,0.008\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), mappings, ",", 0);
+
+            assertNotNull(results);
+
+            // Patient sample should NOT be control
+            ParsedResults patient = results.stream()
+                    .filter(r -> r.accessionNumber().startsWith("DEV")).findFirst().orElseThrow();
+            assertFalse(patient.results().get(0).isControl(), "Patient sample should not be control");
+
+            // All QC rows should be flagged as controls
+            for (String controlId : List.of("NEG", "POS", "NC", "PC", "Blanc", "BLANK")) {
+                ParsedResults qc = results.stream()
+                        .filter(r -> r.accessionNumber().equalsIgnoreCase(controlId)).findFirst()
+                        .orElseThrow(() -> new AssertionError("Missing QC row: " + controlId));
+                assertTrue(qc.results().get(0).isControl(),
+                        controlId + " should be flagged as control");
+            }
+        }
     }
 }
