@@ -1,9 +1,11 @@
 package org.itech.ahb.fhir;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import org.apache.commons.io.input.BOMInputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -151,10 +153,16 @@ public class FileResultParser {
             return null;
         }
 
-        String text = new String(content, StandardCharsets.UTF_8);
-        // Strip UTF-8 BOM if present
-        if (text.startsWith("\uFEFF")) {
-            text = text.substring(1);
+        // Strip BOM (UTF-8, UTF-16LE/BE, UTF-32) using Apache Commons IO
+        String text;
+        try (BOMInputStream bomIn = BOMInputStream.builder()
+                .setInputStream(new ByteArrayInputStream(content))
+                .setInclude(false)
+                .get()) {
+            text = new String(bomIn.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.warn("FileResultParser.parseCsv: BOM stripping failed, falling back to raw", e);
+            text = new String(content, StandardCharsets.UTF_8);
         }
 
         // Split into lines and skip metadata rows
