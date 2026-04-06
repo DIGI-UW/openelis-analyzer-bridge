@@ -50,6 +50,8 @@ public class FileWatcher {
     private final Map<Path, String> directoryGlobPatternByDir = new ConcurrentHashMap<>();
     /** Directories that failed creation during registration — retried by rescan. */
     private final Set<Path> pendingDirectories = ConcurrentHashMap.newKeySet();
+    /** Files currently being processed — prevents two threads from processing the same file. */
+    private final Set<Path> processingFiles = ConcurrentHashMap.newKeySet();
 
     // Maximum number of file hashes to keep in memory (prevent unbounded growth)
     private static final int MAX_HASH_CACHE_SIZE = 10000;
@@ -446,32 +448,61 @@ public class FileWatcher {
      * Process file with retry logic.
      */
     private void processFileWithRetry(Path filePath) {
+        // File-level lock: prevent two threads from processing the same file
+        if (!processingFiles.add(filePath)) {
+            log.debug("File already being processed by another thread: {}", filePath.getFileName());
+            return;
+        }
         try {
-            // Check for duplicate
+            // Check for duplicate (already processed in this bridge session)
             String fileHash = calculateFileHash(filePath);
             if (processedFileHashes.contains(fileHash)) {
                 log.info("Skipping duplicate file (hash match): {}", filePath.getFileName());
-                archiveFile(filePath, "duplicate");
+                bestEffortCleanup(filePath, "duplicate");
                 return;
             }
 
             // Determine analyzer ID from file path/pattern
             String analyzerId = determineAnalyzerId(filePath);
 
-            // Process file
+            // Process file — FHIR POST to OpenELIS
             log.info("Processing file: {} for analyzer: {}", filePath.getFileName(), analyzerId);
             messageHandler.processFile(filePath, analyzerId);
 
-            // Success - archive file and remember hash
+            // FHIR succeeded — mark as processed BEFORE archive attempt.
+            // Archive failure must NOT trigger retry of the FHIR POST.
             processedFileHashes.add(fileHash);
-            archiveFile(filePath, null);
             retryTracker.remove(filePath);
-
             log.info("Successfully processed file: {}", filePath.getFileName());
+
+            // Archive is best-effort cleanup — does not affect processing success
+            bestEffortCleanup(filePath, null);
 
         } catch (Exception e) {
             handleProcessingFailure(filePath, e);
+        } finally {
+            processingFiles.remove(filePath);
         }
+    }
+
+    /**
+     * Best-effort file cleanup after successful processing. Tries to delete
+     * first (simplest), then archive as fallback. Failure is logged but does
+     * NOT trigger retry — the FHIR import already succeeded and the hash is
+     * cached.
+     */
+    private void bestEffortCleanup(Path filePath, String archiveSubdir) {
+        // Try delete first — cleanest outcome for a successfully processed file
+        try {
+            if (Files.deleteIfExists(filePath)) {
+                log.debug("Deleted processed file: {}", filePath.getFileName());
+                return;
+            }
+        } catch (IOException deleteErr) {
+            log.debug("Delete failed, trying archive: {} - {}", filePath.getFileName(), deleteErr.getMessage());
+        }
+        // Fallback: try archive (may also fail on permission, but has error-dir fallback)
+        archiveFile(filePath, archiveSubdir);
     }
 
     /**
