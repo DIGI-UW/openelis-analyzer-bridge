@@ -307,7 +307,9 @@ class FileWatcherTest {
 
         // Assert
         verify(mockMessageHandler, times(3)).processFile(any(), any());
-        assertTrue(Files.exists(archiveDir.resolve("test.csv")));  // Should be archived after success
+        // bestEffortCleanup deletes first, archives only if delete fails.
+        // After success the file should be removed from incoming (deleted or archived).
+        assertFalse(Files.exists(testFile), "File should be removed from incoming after successful processing");
     }
 
     @Test
