@@ -479,7 +479,7 @@ class FileResultParserTest {
             assertNotNull(results);
             ParsedResults s1 = results.stream()
                     .filter(r -> "S001".equals(r.accessionNumber())).findFirst().orElseThrow();
-            // <2 is numeric (after stripping operator) per isNumericValue()
+            // <2 is treated as text (not numeric) — isNumericValue() returns false for comparison operators
             assertEquals("<2", s1.results().get(0).value());
 
             ParsedResults s2 = results.stream()

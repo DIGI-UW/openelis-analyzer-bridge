@@ -213,8 +213,8 @@ public class FileResultParser {
                             : AnalyzerResult.text(testCode, testCode, value);
                     ar = ar.withControl(isControlRow(sampleId, qcTask));
 
-                    // Use testDate or dateTime
-                    String ts = testDate != null ? testDate : dateTime;
+                    // Use testDate or dateTime — fall back to dateTime if testDate is null or blank
+                    String ts = (testDate != null && !testDate.isBlank()) ? testDate : dateTime;
                     if (ts != null && !ts.isBlank()) {
                         ar = ar.withTimestamp(ts);
                     }
