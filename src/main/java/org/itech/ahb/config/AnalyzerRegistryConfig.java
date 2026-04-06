@@ -260,8 +260,20 @@ public class AnalyzerRegistryConfig {
         /**
          * Column mappings for FILE protocol (spreadsheet column name → semantic field).
          * E.g., {"Sample Name": "sampleId", "Target": "testCode", "CT": "result"}
-         * Synced from OE's FileImportConfiguration at registration time.
+         * Synced from OE's Analyzer entity at registration time.
          */
         private java.util.Map<String, String> columnMappings;
+
+        /**
+         * File format (CSV, EXCEL, TSV). Determines which parser to use.
+         * Extension-based detection is the primary dispatch; this is metadata.
+         */
+        private String fileFormat;
+
+        /** CSV delimiter character (default ","). Used for CSV parsing. */
+        private String delimiter;
+
+        /** Number of metadata rows to skip before header detection (default 0). */
+        private int skipRows;
     }
 }

@@ -57,6 +57,9 @@ public class AnalyzerRegistrationController {
         entry.setExpectedProtocol(request.protocol);
         entry.setFilePattern(request.filePattern);
         entry.setColumnMappings(request.columnMappings);
+        entry.setFileFormat(request.fileFormat);
+        entry.setDelimiter(request.delimiter != null ? request.delimiter : ",");
+        entry.setSkipRows(request.skipRows != null ? request.skipRows : 0);
 
         registry.register(request.sourceId, entry);
 
@@ -193,5 +196,8 @@ public class AnalyzerRegistrationController {
         public String protocol;
         public String filePattern;
         public java.util.Map<String, String> columnMappings;
+        public String fileFormat;
+        public String delimiter;
+        public Integer skipRows;
     }
 }

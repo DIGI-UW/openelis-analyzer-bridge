@@ -118,6 +118,18 @@ public class AnalyzerRegistryBootstrap {
                     if (colMappings != null) {
                         entry.setColumnMappings(colMappings);
                     }
+                    String fileFormat = (String) analyzer.get("fileFormat");
+                    if (fileFormat != null) {
+                        entry.setFileFormat(fileFormat);
+                    }
+                    String delimiter = (String) analyzer.get("delimiter");
+                    if (delimiter != null) {
+                        entry.setDelimiter(delimiter);
+                    }
+                    Object skipRowsObj = analyzer.get("skipRows");
+                    if (skipRowsObj instanceof Number) {
+                        entry.setSkipRows(((Number) skipRowsObj).intValue());
+                    }
                     newRegistry.put(importDir, entry);
                     fileWatcher.addWatchDirectory(
                             Path.of(importDir),

@@ -409,4 +409,190 @@ class FileResultParserTest {
                     "Patient accession should not be flagged as QC");
         }
     }
+
+    // ── CSV Parsing Tests ───────────────────────────────────────────
+
+    @Nested
+    @DisplayName("CSV parsing (parseCsv)")
+    class CsvParsing {
+
+        private static final Map<String, String> CSV_MAPPINGS = Map.of(
+                "Sample Number", "sampleId",
+                "Test Name", "testCode",
+                "Result", "result",
+                "Unit", "units");
+
+        @Test
+        @DisplayName("Flat CSV with headers → extracts results")
+        void flatCsvExtractsResults() {
+            String csv = "Sample Number,Test Name,Result,Unit\n"
+                    + "S001,TSH,3.45,mIU/L\n"
+                    + "S002,TSH,0.57,mIU/L\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), CSV_MAPPINGS, ",", 0);
+
+            assertNotNull(results);
+            assertEquals(2, results.size());
+        }
+
+        @Test
+        @DisplayName("skipRows skips metadata lines before header")
+        void skipRowsSkipsMetadata() {
+            String csv = "Finecare FIA Meter III Plus,FS-205,SN001\n"
+                    + "Sample Number,Test Name,Result,Unit\n"
+                    + "S001,TSH,3.45,mIU/L\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), CSV_MAPPINGS, ",", 1);
+
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            assertEquals("S001", results.get(0).accessionNumber());
+        }
+
+        @Test
+        @DisplayName("Semicolon delimiter (French locale) → parses correctly")
+        void semicolonDelimiterParses() {
+            String csv = "Sample Number;Test Name;Result;Unit\n"
+                    + "S001;HIV ELISA;2.345;OD\n"
+                    + "S002;HIV ELISA;0.048;OD\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), CSV_MAPPINGS, ";", 0);
+
+            assertNotNull(results);
+            assertEquals(2, results.size());
+            assertEquals("2.345", results.get(0).results().get(0).value());
+        }
+
+        @Test
+        @DisplayName("Comparison operators (<2, >100) preserved as string")
+        void comparisonOperatorsPreserved() {
+            String csv = "Sample Number,Test Name,Result,Unit\n"
+                    + "S001,TSH,<2,mIU/L\n"
+                    + "S002,hCG,>100,mIU/mL\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), CSV_MAPPINGS, ",", 0);
+
+            assertNotNull(results);
+            ParsedResults s1 = results.stream()
+                    .filter(r -> "S001".equals(r.accessionNumber())).findFirst().orElseThrow();
+            // <2 is treated as text (not numeric) — isNumericValue() returns false for comparison operators
+            assertEquals("<2", s1.results().get(0).value());
+
+            ParsedResults s2 = results.stream()
+                    .filter(r -> "S002".equals(r.accessionNumber())).findFirst().orElseThrow();
+            assertEquals(">100", s2.results().get(0).value());
+        }
+
+        @Test
+        @DisplayName("BOM at start of file is stripped")
+        void bomStripped() {
+            String csv = "\uFEFFSample Number,Test Name,Result,Unit\n"
+                    + "S001,TSH,3.45,mIU/L\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), CSV_MAPPINGS, ",", 0);
+
+            assertNotNull(results);
+            assertEquals(1, results.size());
+        }
+
+        @Test
+        @DisplayName("Empty content → returns null")
+        void emptyContentReturnsNull() {
+            assertNull(FileResultParser.parseCsv(new byte[0], CSV_MAPPINGS, ",", 0));
+        }
+
+        @Test
+        @DisplayName("Null content → returns null")
+        void nullContentReturnsNull() {
+            assertNull(FileResultParser.parseCsv(null, CSV_MAPPINGS, ",", 0));
+        }
+
+        @Test
+        @DisplayName("Tab-delimited well-per-row → parses correctly")
+        void tabDelimitedParses() {
+            Map<String, String> tabMappings = Map.of(
+                    "WellPosition", "sampleId",
+                    "TestCode", "testCode",
+                    "OD_450", "result");
+
+            String tsv = "WellPosition\tTestCode\tOD_450\n"
+                    + "A1\tHIV ELISA\t2.345\n"
+                    + "A2\tHIV ELISA\t0.048\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    tsv.getBytes(), tabMappings, "\t", 0);
+
+            assertNotNull(results);
+            assertEquals(2, results.size());
+        }
+
+        @Test
+        @DisplayName("Wondfo-style 40-column CSV with skipRows")
+        void wondfoStyleCsv() {
+            Map<String, String> wondfoMappings = Map.of(
+                    "Serial Number", "deviceSerialNumber",
+                    "Sample Number", "sampleId",
+                    "Test Name", "testCode",
+                    "Result", "result",
+                    "Unit", "units");
+
+            String csv = "Finecare FIA,FS-205,SN001,,\n"
+                    + "Serial Number,Sample Number,Sample Type,Test Name,Result,Unit\n"
+                    + "SN001,10H,Serum,TSH,3.45,mIU/L\n"
+                    + "SN002,10J,Serum,TSH,<2,mIU/L\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), wondfoMappings, ",", 1);
+
+            assertNotNull(results);
+            assertEquals(2, results.size());
+
+            ParsedResults first = results.stream()
+                    .filter(r -> "10H".equals(r.accessionNumber())).findFirst().orElseThrow();
+            assertEquals("3.45", first.results().get(0).value());
+            assertEquals("TSH", first.results().get(0).testCode());
+        }
+
+        @Test
+        @DisplayName("ELISA control prefixes (NEG, POS, NC, PC, Blanc) flagged as controls")
+        void elisaControlPrefixesFlagged() {
+            Map<String, String> mappings = Map.of(
+                    "SampleID", "sampleId",
+                    "TestCode", "testCode",
+                    "Result", "result");
+
+            String csv = "SampleID,TestCode,Result\n"
+                    + "DEV01265100000000001,HIV ELISA,2.345\n"
+                    + "NEG,HIV ELISA,0.045\n"
+                    + "POS,HIV ELISA,2.401\n"
+                    + "NC,HIV ELISA,0.038\n"
+                    + "PC,HIV ELISA,2.510\n"
+                    + "Blanc,HIV ELISA,0.012\n"
+                    + "BLANK,HIV ELISA,0.008\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), mappings, ",", 0);
+
+            assertNotNull(results);
+
+            // Patient sample should NOT be control
+            ParsedResults patient = results.stream()
+                    .filter(r -> r.accessionNumber().startsWith("DEV")).findFirst().orElseThrow();
+            assertFalse(patient.results().get(0).isControl(), "Patient sample should not be control");
+
+            // All QC rows should be flagged as controls
+            for (String controlId : List.of("NEG", "POS", "NC", "PC", "Blanc", "BLANK")) {
+                ParsedResults qc = results.stream()
+                        .filter(r -> r.accessionNumber().equalsIgnoreCase(controlId)).findFirst()
+                        .orElseThrow(() -> new AssertionError("Missing QC row: " + controlId));
+                assertTrue(qc.results().get(0).isControl(),
+                        controlId + " should be flagged as control");
+            }
+        }
+    }
 }
