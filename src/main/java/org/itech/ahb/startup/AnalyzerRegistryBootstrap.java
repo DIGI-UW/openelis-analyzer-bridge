@@ -123,13 +123,9 @@ public class AnalyzerRegistryBootstrap {
                         entry.setFileFormat(fileFormat);
                     }
                     String delimiter = (String) analyzer.get("delimiter");
-                    if (delimiter != null) {
-                        entry.setDelimiter(delimiter);
-                    }
+                    entry.setDelimiter(delimiter != null ? delimiter : ",");
                     Object skipRowsObj = analyzer.get("skipRows");
-                    if (skipRowsObj instanceof Number) {
-                        entry.setSkipRows(((Number) skipRowsObj).intValue());
-                    }
+                    entry.setSkipRows(skipRowsObj instanceof Number ? ((Number) skipRowsObj).intValue() : 0);
                     newRegistry.put(importDir, entry);
                     fileWatcher.addWatchDirectory(
                             Path.of(importDir),
