@@ -193,7 +193,16 @@ public class FileResultParser {
             try (StringReader reader = new StringReader(csvContent.toString())) {
                 for (CSVRecord record : format.parse(reader)) {
                     String sampleId = getMappedValue(record, columnMappings, "sampleId");
+                    if (sampleId == null || sampleId.isBlank()) {
+                        // Some FILE profiles omit explicit sample mapping aliases.
+                        sampleId = getFirstPresentValue(record,
+                                "SampleID", "Sample ID", "SampleNumber", "Sample Number", "Sample Name");
+                    }
                     String testCode = getMappedValue(record, columnMappings, "testCode");
+                    if (testCode == null || testCode.isBlank()) {
+                        // Some FILE profiles omit explicit testCode mapping for single-test analyzers.
+                        testCode = getFirstPresentValue(record, "TestCode", "Test Code", "Target", "Test Name");
+                    }
                     String result = getMappedValue(record, columnMappings, "result");
                     String units = getMappedValue(record, columnMappings, "units");
                     String interpretation = getMappedValue(record, columnMappings, "interpretation");
@@ -253,9 +262,22 @@ public class FileResultParser {
                     String value = record.get(mapping.getKey());
                     return (value != null && !value.isBlank()) ? value.trim() : null;
                 } catch (IllegalArgumentException e) {
-                    // Column not found in this record — not an error, just unmapped
-                    return null;
+                    // Column not found for this alias; try the next alias for the same semantic field.
                 }
+            }
+        }
+        return null;
+    }
+
+    private static String getFirstPresentValue(CSVRecord record, String... headers) {
+        for (String header : headers) {
+            try {
+                String value = record.get(header);
+                if (value != null && !value.isBlank()) {
+                    return value.trim();
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Header alias not present in this record.
             }
         }
         return null;
