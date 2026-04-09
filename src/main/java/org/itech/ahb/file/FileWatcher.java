@@ -52,6 +52,8 @@ public class FileWatcher {
     private final Set<Path> pendingDirectories = ConcurrentHashMap.newKeySet();
     /** Files currently being processed — prevents two threads from processing the same file. */
     private final Set<Path> processingFiles = ConcurrentHashMap.newKeySet();
+    /** Files that cannot be moved/deleted; skip to avoid infinite reprocessing loops. */
+    private final Set<Path> permanentlySkippedFiles = ConcurrentHashMap.newKeySet();
 
     // Maximum number of file hashes to keep in memory (prevent unbounded growth)
     private static final int MAX_HASH_CACHE_SIZE = 10000;
@@ -454,16 +456,17 @@ public class FileWatcher {
             return;
         }
         try {
-            // Check for duplicate (already processed in this bridge session)
+            // Determine analyzer ID from file path/pattern
+            String analyzerId = determineAnalyzerId(filePath);
+            // Check for duplicate (already processed in this bridge session).
+            // Scope by analyzer so identical payloads can still be replayed across runs.
             String fileHash = calculateFileHash(filePath);
-            if (processedFileHashes.contains(fileHash)) {
+            String dedupeKey = analyzerId + ":" + fileHash;
+            if (processedFileHashes.contains(dedupeKey)) {
                 log.info("Skipping duplicate file (hash match): {}", filePath.getFileName());
                 bestEffortCleanup(filePath, "duplicate");
                 return;
             }
-
-            // Determine analyzer ID from file path/pattern
-            String analyzerId = determineAnalyzerId(filePath);
 
             // Process file — FHIR POST to OpenELIS
             log.info("Processing file: {} for analyzer: {}", filePath.getFileName(), analyzerId);
@@ -471,7 +474,7 @@ public class FileWatcher {
 
             // FHIR succeeded — mark as processed BEFORE archive attempt.
             // Archive failure must NOT trigger retry of the FHIR POST.
-            processedFileHashes.add(fileHash);
+            processedFileHashes.add(dedupeKey);
             retryTracker.remove(filePath);
             log.info("Successfully processed file: {}", filePath.getFileName());
 
@@ -641,9 +644,11 @@ public class FileWatcher {
 
             // Try to delete original file
             Files.deleteIfExists(filePath);
+            permanentlySkippedFiles.add(filePath.normalize());
             log.warn("Marked file as permanently failed in watch directory: {}", failedPath);
 
         } catch (IOException ex) {
+            permanentlySkippedFiles.add(filePath.normalize());
             log.error("Failed to mark file as permanently failed: {}, manual intervention required", filePath, ex);
         }
     }
@@ -753,6 +758,9 @@ public class FileWatcher {
      */
     private boolean shouldProcessFile(Path filePath) {
         if (!Files.isRegularFile(filePath)) {
+            return false;
+        }
+        if (permanentlySkippedFiles.contains(filePath.normalize())) {
             return false;
         }
 

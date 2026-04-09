@@ -559,6 +559,67 @@ class FileResultParserTest {
         }
 
         @Test
+        @DisplayName("CSV alias mappings continue when first alias is missing")
+        void csvAliasFallbackWhenFirstColumnMissing() {
+            Map<String, String> aliasMappings = new java.util.LinkedHashMap<>();
+            aliasMappings.put("Sample ID", "sampleId"); // Missing in CSV header
+            aliasMappings.put("Sample Number", "sampleId"); // Present in CSV header
+            aliasMappings.put("Test Name", "testCode");
+            aliasMappings.put("Result", "result");
+
+            String csv = "Serial Number;Sample Number;Test Name;Result\n"
+                    + "SN001;DEV01265000000000101;TSH;3.45\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), aliasMappings, ";", 0);
+
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            assertEquals("DEV01265000000000101", results.get(0).accessionNumber());
+            assertEquals("TSH", results.get(0).results().get(0).testCode());
+            assertEquals("3.45", results.get(0).results().get(0).value());
+        }
+
+        @Test
+        @DisplayName("Tecan-style CSV parses even when testCode mapping is absent")
+        void tecanStyleCsvWithoutTestCodeMapping() {
+            Map<String, String> tecanMappings = Map.of(
+                    "SampleID", "sampleId",
+                    "OD_450", "result");
+
+            String csv = "WellPosition;SampleID;OD_450;TestCode\n"
+                    + "A1;DEV01265100000000101;2.345;HIV ELISA\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), tecanMappings, ";", 0);
+
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            assertEquals("DEV01265100000000101", results.get(0).accessionNumber());
+            assertEquals("HIV ELISA", results.get(0).results().get(0).testCode());
+            assertEquals("2.345", results.get(0).results().get(0).value());
+        }
+
+        @Test
+        @DisplayName("Multiskan-style CSV parses even when sample/test mappings are absent")
+        void multiskanStyleCsvWithoutSampleAndTestMappings() {
+            Map<String, String> multiskanMappings = Map.of(
+                    "Abs", "result");
+
+            String csv = "WellPosition;SampleID;Abs;TestCode\n"
+                    + "A1;DEV01265200000000101;2.345;HIV ELISA\n";
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), multiskanMappings, ";", 0);
+
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            assertEquals("DEV01265200000000101", results.get(0).accessionNumber());
+            assertEquals("HIV ELISA", results.get(0).results().get(0).testCode());
+            assertEquals("2.345", results.get(0).results().get(0).value());
+        }
+
+        @Test
         @DisplayName("ELISA control prefixes (NEG, POS, NC, PC, Blanc) flagged as controls")
         void elisaControlPrefixesFlagged() {
             Map<String, String> mappings = Map.of(
