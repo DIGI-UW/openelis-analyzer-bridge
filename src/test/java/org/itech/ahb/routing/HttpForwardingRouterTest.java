@@ -65,7 +65,7 @@ class HttpForwardingRouterTest {
     @Test
     void fourHundredOne_persistsRejectedBundleWithHttpStatusAndPayload() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore);
+        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore, null);
 
         statusCodeToReturn.set(401);
         MessageEnvelope env = envelope("100.127.144.150", "H|... raw astm payload ...");
@@ -89,7 +89,7 @@ class HttpForwardingRouterTest {
     @Test
     void fiveHundred_exhaustedRetries_persistsWithStatusZero() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore);
+        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore, null);
 
         statusCodeToReturn.set(500);
         boolean result = router.route(envelope("10.0.0.5", "raw body"));
@@ -106,7 +106,7 @@ class HttpForwardingRouterTest {
     @Test
     void twoHundred_doesNotPersistAnything() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore);
+        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore, null);
 
         statusCodeToReturn.set(200);
         boolean result = router.route(envelope("10.0.0.6", "body"));
@@ -119,7 +119,7 @@ class HttpForwardingRouterTest {
     @Test
     void nullStateStore_rejectsPayloadLogsOnly_noThrow() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, null);
+        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, null, null);
 
         statusCodeToReturn.set(401);
         // Must not throw; router must still return false; the log line is the

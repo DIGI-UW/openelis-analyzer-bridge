@@ -27,6 +27,8 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
+import org.itech.ahb.qc.QcRule;
+import org.itech.ahb.qc.QcRuleEvaluator;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -66,18 +68,33 @@ public class FileResultParser {
      */
     public static List<HL7ResultParser.ParsedResults> parse(
             InputStream inputStream, Map<String, String> columnMappings) {
-        return parse(inputStream, columnMappings, null);
+        return parse(inputStream, columnMappings, null, java.util.Collections.emptyList());
     }
 
     /**
-     * Parse an Excel file with an optional file-wide test code applied to
-     * rows that yield no per-row testCode from the column mapping.
-     *
-     * @param perFileTestCode event-scoped fallback test code; null or
-     *        blank drops rows with no per-row identity
+     * 3-arg overload preserved for callers that only need the file-wide
+     * test-code fallback (e.g. {@code FileMessageHandler}). Forwards to the
+     * 4-arg canonical with an empty QC-rule list — the bridge's legacy
+     * hardcoded QC detection still applies inside {@code isControlRow}
+     * when no rules are configured.
      */
     public static List<HL7ResultParser.ParsedResults> parse(
             InputStream inputStream, Map<String, String> columnMappings, String perFileTestCode) {
+        return parse(inputStream, columnMappings, perFileTestCode, java.util.Collections.emptyList());
+    }
+
+    /**
+     * Parse an Excel file with an optional file-wide test code and
+     * configurable QC identification rules pulled from OE.
+     *
+     * @param perFileTestCode event-scoped fallback test code; null or
+     *        blank drops rows with no per-row identity
+     * @param qcRules         QC identification rules (FR-15); empty list
+     *        defers to legacy hardcoded QC detection in {@code isControlRow}
+     */
+    public static List<HL7ResultParser.ParsedResults> parse(
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, List<QcRule> qcRules) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser: null input or empty column mappings");
@@ -152,7 +169,7 @@ public class FileResultParser {
                 AnalyzerResult ar = isNumeric
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
-                ar = ar.withControl(isControlRow(sampleId, qcTask));
+                ar = ar.withControl(isControlRow(sampleId, qcTask, qcRules));
                 if (testDate != null && !testDate.isBlank()) {
                     ar = ar.withTimestamp(testDate);
                 }
@@ -417,13 +434,23 @@ public class FileResultParser {
     public static List<HL7ResultParser.ParsedResults> parseCsv(
             byte[] content, Map<String, String> columnMappings,
             String delimiter, int skipRows) {
-        return parseCsv(content, columnMappings, delimiter, skipRows, null);
+        return parseCsv(content, columnMappings, delimiter, skipRows, null, java.util.Collections.emptyList());
     }
 
-    /** See {@link #parse(InputStream, Map, String)} for {@code perFileTestCode} semantics. */
+    /** See {@link #parse(InputStream, Map, String, List)} for {@code perFileTestCode} semantics. */
     public static List<HL7ResultParser.ParsedResults> parseCsv(
             byte[] content, Map<String, String> columnMappings,
             String delimiter, int skipRows, String perFileTestCode) {
+        return parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, java.util.Collections.emptyList());
+    }
+
+    /**
+     * Parse a CSV file with an optional file-wide test code and configurable
+     * QC identification rules.
+     */
+    public static List<HL7ResultParser.ParsedResults> parseCsv(
+            byte[] content, Map<String, String> columnMappings,
+            String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules) {
 
         if (content == null || content.length == 0 || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseCsv: null/empty input or column mappings");
@@ -503,7 +530,7 @@ public class FileResultParser {
                     AnalyzerResult ar = isNumeric
                             ? AnalyzerResult.numeric(testCode, testCode, value, units)
                             : AnalyzerResult.text(testCode, testCode, value);
-                    ar = ar.withControl(isControlRow(sampleId, qcTask));
+                    ar = ar.withControl(isControlRow(sampleId, qcTask, qcRules));
 
                     // Use testDate or dateTime — fall back to dateTime if testDate is null or blank
                     String ts = (testDate != null && !testDate.isBlank()) ? testDate : dateTime;
@@ -656,6 +683,20 @@ public class FileResultParser {
         } catch (NumberFormatException e) {
             return false;
         }
+    }
+
+    /**
+     * FR-15: rule-based QC detection with fallback to hardcoded logic.
+     */
+    static boolean isControlRow(String sampleId, String qcTask, List<QcRule> qcRules) {
+        if (qcRules != null && !qcRules.isEmpty()) {
+            Map<String, String> fieldValues = new HashMap<>();
+            if (qcTask != null) {
+                fieldValues.put("QC_TASK", qcTask);
+            }
+            return QcRuleEvaluator.isQcSample(qcRules, sampleId, fieldValues);
+        }
+        return isControlRow(sampleId, qcTask);
     }
 
     private static boolean isControlRow(String sampleId, String qcTask) {
