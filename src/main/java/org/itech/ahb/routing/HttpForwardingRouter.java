@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.fhir.ASTMResultParser;
@@ -89,6 +90,7 @@ public class HttpForwardingRouter implements MessageRouter {
     private final HTTPForwardServerConfigurationProperties httpConfig;
     private final FhirRoutingConfig fhirConfig;
     private final SqliteFileStateStore stateStore;
+    private final AnalyzerRegistryConfig registry;
     private final int connectTimeoutSeconds;
     private final int readTimeoutSeconds;
     private final HttpClient httpClient;
@@ -101,14 +103,17 @@ public class HttpForwardingRouter implements MessageRouter {
      * @param stateStore shared SQLite state store (optional — when absent the
      *                   router logs rejections without persisting them, same
      *                   as the pre-B1 behavior)
+     * @param registry   the analyzer registry for QC rule lookup (optional)
      */
     public HttpForwardingRouter(
             HTTPForwardServerConfigurationProperties httpConfig,
             @Autowired(required = false) FhirRoutingConfig fhirConfig,
-            @Autowired(required = false) SqliteFileStateStore stateStore) {
+            @Autowired(required = false) SqliteFileStateStore stateStore,
+            @Autowired(required = false) AnalyzerRegistryConfig registry) {
         this.httpConfig = httpConfig;
         this.fhirConfig = fhirConfig;
         this.stateStore = stateStore;
+        this.registry = registry;
         this.connectTimeoutSeconds = httpConfig.getConnectTimeoutSeconds();
         this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
         this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
@@ -254,11 +259,47 @@ public class HttpForwardingRouter implements MessageRouter {
      * Bundle, and POSTs to OE's {@code /analyzer/fhir} endpoint.
      */
     private boolean routeAsFhir(MessageEnvelope envelope) {
-        // Parse raw message to extract results
+        // FR-15: look up QC rules from analyzer registry by source ID
+        java.util.List<org.itech.ahb.qc.QcRule> qcRules = java.util.List.of();
+        if (registry != null && envelope.getSourceId() != null) {
+            var entry = registry.findAnalyzerEntry(envelope.getSourceId());
+            if (entry.isPresent() && entry.get().getQcRules() != null) {
+                qcRules = entry.get().getQcRules();
+            }
+        }
+
+        // Parse raw message to extract results, passing QC rules to parsers
+        java.util.List<org.itech.ahb.qc.QcRule> rules = qcRules;
         HL7ResultParser.ParsedResults parsed = switch (envelope.getProtocol()) {
-            case HL7 -> HL7ResultParser.parseRaw(envelope.getRawMessage());
-            case ASTM -> ASTMResultParser.parseRaw(envelope.getRawMessage());
-            case CSV -> ASTMResultParser.parseRaw(envelope.getRawMessage()); // CSV uses same record format
+            case HL7 -> {
+                String raw = envelope.getRawMessage();
+                if (raw == null || raw.isBlank()) yield null;
+                String normalized = raw.replace("\r\n", "\r").replace("\n", "\r");
+                java.util.List<String> segments = new java.util.ArrayList<>();
+                for (String seg : normalized.split("\r")) {
+                    if (!seg.isBlank()) segments.add(seg);
+                }
+                yield HL7ResultParser.parse(segments, rules);
+            }
+            case ASTM -> {
+                String raw = envelope.getRawMessage();
+                if (raw == null || raw.isBlank()) yield null;
+                java.util.List<String> lines = new java.util.ArrayList<>();
+                for (String l : raw.split("[\\r\\n]+")) {
+                    if (!l.isBlank()) lines.add(l);
+                }
+                yield ASTMResultParser.parse(lines, rules);
+            }
+            case CSV -> {
+                // CSV over HTTP/TCP uses same ASTM record format
+                String raw = envelope.getRawMessage();
+                if (raw == null || raw.isBlank()) yield null;
+                java.util.List<String> lines = new java.util.ArrayList<>();
+                for (String l : raw.split("[\\r\\n]+")) {
+                    if (!l.isBlank()) lines.add(l);
+                }
+                yield ASTMResultParser.parse(lines, rules);
+            }
             default -> {
                 log.error("FHIR routing: unsupported protocol {} from {} — cannot parse",
                         envelope.getProtocol(), envelope.getSourceId());

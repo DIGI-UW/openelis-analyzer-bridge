@@ -1,10 +1,14 @@
 package org.itech.ahb.fhir;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
+import org.itech.ahb.qc.QcRule;
+import org.itech.ahb.qc.QcRuleEvaluator;
 
 /**
  * Extracts lab results from ASTM LIS2-A2 messages.
@@ -38,11 +42,22 @@ public class ASTMResultParser {
      * @return parsed results with accession, or null if no results found
      */
     public static HL7ResultParser.ParsedResults parse(List<String> lines) {
+        return parse(lines, null);
+    }
+
+    /**
+     * Parse ASTM message lines with configurable QC rules.
+     * Falls back to hardcoded O.12=="Q" when qcRules is null or empty.
+     *
+     * @param lines   ASTM message lines
+     * @param qcRules FR-15 QC identification rules (null = use hardcoded fallback)
+     * @return parsed results with accession, or null if no results found
+     */
+    public static HL7ResultParser.ParsedResults parse(List<String> lines, List<QcRule> qcRules) {
         if (lines == null || lines.isEmpty()) return null;
 
         String accession = null;
         boolean isQcSample = false;
-        String currentOrderRecord = null;
         List<AnalyzerResult> results = new ArrayList<>();
 
         for (String line : lines) {
@@ -53,8 +68,18 @@ public class ASTMResultParser {
             switch (segment) {
                 case "O" -> {
                     accession = extractAccessionNumber(line);
-                    currentOrderRecord = line;
-                    isQcSample = isQcSample(line);
+                    if (qcRules != null && !qcRules.isEmpty()) {
+                        // FR-15: rule-based QC detection
+                        String[] fields = line.split(Pattern.quote(FIELD_DELIMITER));
+                        Map<String, String> fieldValues = new HashMap<>();
+                        for (int i = 0; i < fields.length; i++) {
+                            fieldValues.put("O." + i, fields[i].trim());
+                        }
+                        isQcSample = QcRuleEvaluator.isQcSample(qcRules, accession, fieldValues);
+                    } else {
+                        // Fallback: hardcoded O.12 == "Q"
+                        isQcSample = isQcSample(line);
+                    }
                 }
                 case "R" -> {
                     if (accession != null) {

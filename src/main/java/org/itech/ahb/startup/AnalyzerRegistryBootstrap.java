@@ -3,6 +3,7 @@ package org.itech.ahb.startup;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
 import org.itech.ahb.file.FileWatcher;
+import org.itech.ahb.qc.QcRule;
 import org.itech.ahb.util.OeApiClient;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -108,6 +110,7 @@ public class AnalyzerRegistryBootstrap {
                     entry.setExpectedProtocol(
                             protocol != null && protocol.contains("HL7") ? "HL7" : "ASTM");
                     entry.setMappedTestCodes(mappedTestCodes);
+                    entry.setQcRules(parseQcRules(analyzer));
                     newRegistry.put(ip, entry);
                 }
 
@@ -146,6 +149,7 @@ public class AnalyzerRegistryBootstrap {
                             entry.setScannerSynonyms(fallback);
                         }
                     }
+                    entry.setQcRules(parseQcRules(analyzer));
                     newRegistry.put(importDir, entry);
                     fileWatcher.addWatchDirectory(
                             Path.of(importDir),
@@ -164,6 +168,7 @@ public class AnalyzerRegistryBootstrap {
             }
 
         } catch (java.net.ConnectException e) {
+
             log.warn("Cannot reach OE — bridge starting without analyzer registry. "
                     + "OE will push registrations when it starts.");
         } catch (Exception e) {
@@ -191,5 +196,24 @@ public class AnalyzerRegistryBootstrap {
             return syn;
         }
         return java.util.Collections.emptyMap();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<QcRule> parseQcRules(Map<String, Object> analyzer) {
+        Object qcRulesObj = analyzer.get("qcRules");
+        if (!(qcRulesObj instanceof List<?>)) {
+            return new ArrayList<>();
+        }
+        List<Map<String, Object>> rawRules = (List<Map<String, Object>>) qcRulesObj;
+        List<QcRule> rules = new ArrayList<>(rawRules.size());
+        for (Map<String, Object> ruleMap : rawRules) {
+            String ruleType = (String) ruleMap.get("ruleType");
+            String targetField = (String) ruleMap.get("targetField");
+            String operand = (String) ruleMap.get("operand");
+            if (ruleType != null && operand != null) {
+                rules.add(new QcRule(ruleType, targetField, operand));
+            }
+        }
+        return rules;
     }
 }

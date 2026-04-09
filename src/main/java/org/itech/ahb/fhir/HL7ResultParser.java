@@ -1,9 +1,13 @@
 package org.itech.ahb.fhir;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
+import org.itech.ahb.qc.QcRule;
+import org.itech.ahb.qc.QcRuleEvaluator;
 
 /**
  * Extracts lab results from HL7 v2 ORU^R01 messages.
@@ -26,11 +30,24 @@ public class HL7ResultParser {
      * @return parsed results with accession, or null if no results found
      */
     public static ParsedResults parse(List<String> segmentLines) {
+        return parse(segmentLines, null);
+    }
+
+    /**
+     * Parse HL7 v2 segment lines with configurable QC rules.
+     * HL7 had no QC detection before FR-15 — rules enable it.
+     *
+     * @param segmentLines list of HL7 segment strings
+     * @param qcRules      FR-15 QC identification rules (null = no QC detection)
+     * @return parsed results with accession, or null if no results found
+     */
+    public static ParsedResults parse(List<String> segmentLines, List<QcRule> qcRules) {
         if (segmentLines == null || segmentLines.isEmpty()) {
             return null;
         }
 
         String accession = null;
+        Map<String, String> fieldValues = new HashMap<>();
         List<AnalyzerResult> results = new ArrayList<>();
 
         for (String line : segmentLines) {
@@ -38,6 +55,19 @@ public class HL7ResultParser {
 
             if (line.startsWith("OBR|")) {
                 accession = parseAccessionFromOBR(line);
+                // Extract OBR fields for rule evaluation
+                String[] fields = line.split("\\|", -1);
+                for (int i = 0; i < fields.length; i++) {
+                    fieldValues.put("OBR." + i, fields[i].trim());
+                }
+            }
+
+            if (line.startsWith("PID|")) {
+                // Extract PID fields for rule evaluation
+                String[] fields = line.split("\\|", -1);
+                for (int i = 0; i < fields.length; i++) {
+                    fieldValues.put("PID." + i, fields[i].trim());
+                }
             }
 
             if (line.startsWith("OBX|")) {
@@ -50,14 +80,19 @@ public class HL7ResultParser {
 
         if (accession == null || accession.isBlank()) {
             // Fallback: try PID-3 patient ID
-            for (String line : segmentLines) {
-                if (line != null && line.startsWith("PID|")) {
-                    String[] fields = line.split("\\|", -1);
-                    if (fields.length > 3 && !fields[3].isBlank()) {
-                        accession = fields[3].split("\\^")[0].trim();
-                        break;
-                    }
-                }
+            String pid3 = fieldValues.get("PID.3");
+            if (pid3 != null && !pid3.isBlank()) {
+                accession = pid3.split("\\^")[0].trim();
+            }
+        }
+
+        // FR-15: evaluate QC rules against collected fields
+        if (qcRules != null && !qcRules.isEmpty() && accession != null) {
+            boolean isQcSample = QcRuleEvaluator.isQcSample(qcRules, accession, fieldValues);
+            if (isQcSample) {
+                results = results.stream()
+                        .map(r -> r.withControl(true))
+                        .toList();
             }
         }
 

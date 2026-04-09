@@ -122,8 +122,8 @@ class UnifiedRoutingTest {
         HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-        HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null);
         AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null, registry);
         Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
         analyzers.put("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
         analyzers.put("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));

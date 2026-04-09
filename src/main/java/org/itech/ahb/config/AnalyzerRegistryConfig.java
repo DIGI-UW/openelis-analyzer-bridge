@@ -288,5 +288,8 @@ public class AnalyzerRegistryConfig {
 
         /** OE test codes this analyzer is allowed to emit (whitelist, not a default). */
         private Set<String> mappedTestCodes = Collections.emptySet();
+
+        /** FR-15: QC identification rules pulled from OE. Evaluated by parsers. */
+        private java.util.List<org.itech.ahb.qc.QcRule> qcRules = new java.util.ArrayList<>();
     }
 }
