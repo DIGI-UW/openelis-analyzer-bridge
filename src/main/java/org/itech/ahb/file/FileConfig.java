@@ -40,17 +40,25 @@ public class FileConfig {
     private List<String> watchDirectories = new ArrayList<>();
 
     /**
-     * Directory where successfully processed files are moved.
-     * Default uses the JVM temp directory so tests/local runs work without /mnt.
+     * Path to the SQLite database that holds per-file processing state
+     * (see {@link FileStateStore}). This database is the ONLY place the
+     * bridge persists information about which files have been processed
+     * vs. failed — the watched directories themselves are strictly
+     * read-only from the bridge's point of view, so no archive, error,
+     * or .failed sidecar files are ever created.
+     * <p>
+     * Default uses the JVM temp directory so tests and local runs work
+     * without a pre-configured volume. Production deployments should
+     * override this to a persistent path (e.g.
+     * {@code /data/openelis-analyzer-bridge/state.db}).
+     * </p>
+     * <p>
+     * <b>Invariant:</b> one bridge JVM per state.db. Blue/green deploys
+     * must not run two bridges against the same file.
+     * </p>
      */
-    private String archiveDirectory = Paths.get(
-            System.getProperty("java.io.tmpdir"), "openelis-analyzer-bridge", "analyzer-archive").toString();
-
-    /**
-     * Directory where failed files are moved after max retry attempts
-     */
-    private String errorDirectory = Paths.get(
-            System.getProperty("java.io.tmpdir"), "openelis-analyzer-bridge", "analyzer-error").toString();
+    private String stateStorePath = Paths.get(
+            System.getProperty("java.io.tmpdir"), "openelis-analyzer-bridge", "state.db").toString();
 
     /**
      * Polling interval in milliseconds for checking new files

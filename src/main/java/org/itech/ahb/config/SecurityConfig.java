@@ -96,6 +96,10 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/**").authenticated()
                 // The /input endpoint requires authentication
                 .requestMatchers("/input/**").authenticated()
+                // Admin endpoints (file-state inspection, future diagnostics)
+                // require authentication — they expose internal paths and
+                // error messages that must not be publicly readable.
+                .requestMatchers("/admin/**").authenticated()
                 // All other endpoints (ASTM query forwarding, etc.) are permitted
                 .anyRequest().permitAll()
             )

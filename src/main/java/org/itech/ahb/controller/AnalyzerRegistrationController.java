@@ -60,6 +60,9 @@ public class AnalyzerRegistrationController {
         entry.setFileFormat(request.fileFormat);
         entry.setDelimiter(request.delimiter != null ? request.delimiter : ",");
         entry.setSkipRows(request.skipRows != null ? request.skipRows : 0);
+        if (request.testMappings != null && !request.testMappings.isEmpty()) {
+            entry.setMappedTestCodes(new java.util.LinkedHashSet<>(request.testMappings));
+        }
 
         registry.register(request.sourceId, entry);
 
@@ -141,6 +144,9 @@ public class AnalyzerRegistrationController {
             entry.setName(req.name);
             entry.setExpectedProtocol(req.protocol);
             entry.setFilePattern(req.filePattern);
+            if (req.testMappings != null && !req.testMappings.isEmpty()) {
+                entry.setMappedTestCodes(new java.util.LinkedHashSet<>(req.testMappings));
+            }
             newRegistry.put(req.sourceId, entry);
             newAnalyzerIds.add(req.oeAnalyzerId);
 
@@ -199,5 +205,6 @@ public class AnalyzerRegistrationController {
         public String fileFormat;
         public String delimiter;
         public Integer skipRows;
+        public java.util.List<String> testMappings;
     }
 }

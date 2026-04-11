@@ -7,6 +7,7 @@ import org.apache.commons.io.filefilter.IOFileFilter;
 import org.apache.commons.io.monitor.FileAlterationListenerAdaptor;
 import org.apache.commons.io.monitor.FileAlterationMonitor;
 import org.apache.commons.io.monitor.FileAlterationObserver;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -30,8 +31,17 @@ import java.util.stream.Stream;
  * network filesystems (NFS, CIFS, Kubernetes configmaps).
  * </p>
  * <p>
- * Detection flow: polling discovers new/changed files → stability checker waits for
- * file to stop changing → processor forwards to OpenELIS via HTTP → archive/retry.
+ * Detection flow: polling discovers new/changed files → stability checker waits
+ * for file to stop changing → processor forwards to OpenELIS via HTTP → results
+ * are recorded in {@link FileStateStore} as metadata. <b>The bridge never deletes
+ * or moves files from the watched directory.</b> Operators clean up their own
+ * source directories; the bridge's job is strictly to observe and record.
+ * </p>
+ * <p>
+ * State store transitions: new observation → RETRYING → PROCESSED (success) or
+ * FAILED_NEEDS_HANDLING (max retries exhausted). The latter is a terminal state
+ * with no further automatic retries — the file remains in place for human
+ * inspection and a future notifier hook reads from the state store.
  * </p>
  */
 @Component("analyzerFileWatcher")
@@ -42,25 +52,51 @@ public class FileWatcher {
     private final FileMessageHandler messageHandler;
 
     private final Map<Path, FileMetadata> fileStabilityTracker = new ConcurrentHashMap<>();
-    private final Set<String> processedFileHashes = ConcurrentHashMap.newKeySet();
-    private final Map<Path, RetryInfo> retryTracker = new ConcurrentHashMap<>();
-    private final Map<Path, FileAlterationObserver> observersByDirectory = new ConcurrentHashMap<>();
-    private final Map<Path, String> directoryAnalyzerMap = new ConcurrentHashMap<>();
-    /** Per registered directory: glob for {@link #shouldProcessFile(Path)} (runtime FILE registration). */
-    private final Map<Path, String> directoryGlobPatternByDir = new ConcurrentHashMap<>();
+    /**
+     * Registrations for each watched directory. A single directory may host
+     * multiple analyzer registrations, each with its own glob pattern and its
+     * own {@link FileAlterationObserver}. This is the refactor that unblocks
+     * Madagascar's Fluorocycler XT workflow where one physical folder hosts
+     * both HIV VL ({@code HIV*.xlsx}) and Arbovirus ({@code ARBO*.xlsx}) runs
+     * under different analyzer instances. Apache Commons IO's
+     * {@link FileAlterationMonitor} supports multiple observers per directory
+     * natively (internal {@code CopyOnWriteArrayList}); the prior single-
+     * entry-per-path maps were an artificial constraint.
+     * <p>
+     * Access is serialized through {@code synchronized} methods on the outer
+     * class; the map stores {@link CopyOnWriteArrayList} so iteration during
+     * processing is safe even when registrations mutate.
+     */
+    private final Map<Path, List<WatchRegistration>> registrationsByDirectory = new ConcurrentHashMap<>();
     /** Directories that failed creation during registration — retried by rescan. */
     private final Set<Path> pendingDirectories = ConcurrentHashMap.newKeySet();
-    /** Files currently being processed — prevents two threads from processing the same file. */
-    private final Set<Path> processingFiles = ConcurrentHashMap.newKeySet();
-    /** Files that cannot be moved/deleted; skip to avoid infinite reprocessing loops. */
-    private final Set<Path> permanentlySkippedFiles = ConcurrentHashMap.newKeySet();
 
-    // Maximum number of file hashes to keep in memory (prevent unbounded growth)
-    private static final int MAX_HASH_CACHE_SIZE = 10000;
+    /**
+     * A single analyzer's watch registration for a given directory. Holds the
+     * analyzer id, its configured glob pattern (used by {@link #shouldProcessFile}
+     * and {@link #determineAnalyzerId}), and the Commons IO observer that feeds
+     * events into our listener. Multiple registrations may share the same
+     * directory path; each has its own observer so file events propagate to
+     * all relevant analyzers.
+     */
+    private record WatchRegistration(String analyzerId, String globPattern, FileAlterationObserver observer) {
+    }
+    /**
+     * In-process lock: prevents two threads from processing the same path
+     * concurrently within one JVM. Not persistent — a crash clears it and the
+     * state store's RETRYING/next_attempt_at fields carry the scheduling forward.
+     */
+    private final Set<Path> processingFiles = ConcurrentHashMap.newKeySet();
 
     private FileAlterationMonitor monitor;
     private ExecutorService processorExecutor;
     private final ScheduledExecutorService stabilityChecker = Executors.newScheduledThreadPool(1);
+    /**
+     * Durable per-file processing state. Replaces the former in-memory
+     * {@code processedFileHashes} / {@code retryTracker} / {@code permanentlySkippedFiles}
+     * sets. Initialized in {@link #start()}; closed in {@link #stop()}.
+     */
+    private FileStateStore stateStore;
 
     private volatile boolean running = false;
 
@@ -89,9 +125,10 @@ public class FileWatcher {
 
         log.info("Starting file watcher service (polling mode, interval={}ms)...", fileConfig.getPollIntervalMs());
 
-        // Create archive and error directories if they don't exist
-        Files.createDirectories(Paths.get(fileConfig.getArchiveDirectory()));
-        Files.createDirectories(Paths.get(fileConfig.getErrorDirectory()));
+        // Initialize the durable state store. This is the ONLY place the
+        // bridge persists per-file processing information; the watched
+        // directories themselves remain strictly read-only.
+        this.stateStore = new SqliteFileStateStore(Paths.get(fileConfig.getStateStorePath()));
 
         // Initialize polling monitor and processor
         monitor = new FileAlterationMonitor(fileConfig.getPollIntervalMs());
@@ -130,53 +167,107 @@ public class FileWatcher {
                 TimeUnit.MILLISECONDS
         );
 
-        log.info("File watcher service started successfully with {} watched directories", observersByDirectory.size());
+        log.info("File watcher service started successfully with {} watched directories",
+                registrationsByDirectory.size());
     }
 
     /**
-     * Register a directory for runtime watching.
+     * Register a directory for runtime watching on behalf of a specific
+     * analyzer. Multiple analyzers may share the same physical directory as
+     * long as their {@code filePattern} values distinguish the files they
+     * each claim. Each call appends a new {@link WatchRegistration} unless
+     * an existing registration already matches {@code (dirPath, analyzerId)},
+     * in which case it is replaced in-place (glob + observer refreshed).
      */
     public synchronized void addWatchDirectory(Path dirPath, String filePattern, String analyzerId) throws IOException {
         Path normalized = dirPath.normalize();
         String effectiveGlob = (filePattern == null || filePattern.isBlank()) ? "*" : filePattern;
-        directoryGlobPatternByDir.put(normalized, effectiveGlob);
-        registerDirectoryInternal(normalized, analyzerId, true);
+        registerDirectoryInternal(normalized, analyzerId, effectiveGlob, true);
         if (!fileConfig.getWatchDirectories().contains(normalized.toString())) {
             List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
             mutableWatchDirs.add(normalized.toString());
             fileConfig.setWatchDirectories(mutableWatchDirs);
         }
-        log.info("Runtime watch directory registered: {} (analyzerId={})", normalized, analyzerId);
+        log.info("Runtime watch directory registered: {} (analyzerId={}, glob={})", normalized, analyzerId,
+                effectiveGlob);
     }
 
     /**
-     * Remove a directory from runtime watching.
+     * Remove ALL analyzer registrations for the given directory. Used during
+     * shutdown and programmatic tear-down where the entire path should stop
+     * being watched. To remove a single analyzer's registration while leaving
+     * others alive, use {@link #removeWatchRegistration(Path, String)}.
      */
     public synchronized boolean removeWatchDirectory(Path dirPath) {
         Path normalized = dirPath.normalize();
-        FileAlterationObserver observer = observersByDirectory.remove(normalized);
-        directoryAnalyzerMap.remove(normalized);
-        directoryGlobPatternByDir.remove(normalized);
+        List<WatchRegistration> registrations = registrationsByDirectory.remove(normalized);
+        if (registrations == null || registrations.isEmpty()) {
+            return false;
+        }
+        if (monitor != null) {
+            for (WatchRegistration reg : registrations) {
+                if (reg.observer() != null) {
+                    monitor.removeObserver(reg.observer());
+                }
+            }
+        }
+        pendingDirectories.remove(normalized);
         List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
         mutableWatchDirs.remove(normalized.toString());
         fileConfig.setWatchDirectories(mutableWatchDirs);
-        if (observer != null) {
-            if (monitor != null) {
-                monitor.removeObserver(observer);
-            }
-            log.info("Runtime watch directory removed: {}", normalized);
-            return true;
-        }
-        return false;
+        log.info("Runtime watch directory removed: {} ({} registration(s))", normalized, registrations.size());
+        return true;
     }
 
     /**
-     * Remove all watched directories for a given analyzer ID.
+     * Remove a single analyzer's registration for the given directory,
+     * leaving other registrations at the same path untouched. Returns
+     * {@code true} iff a registration was actually removed.
+     * <p>
+     * Preserves the directory entry in {@link #fileConfig}'s watch list
+     * unless the last registration was removed — in which case the
+     * filesystem entry is also removed (same semantics as removing the
+     * whole directory).
+     */
+    public synchronized boolean removeWatchRegistration(Path dirPath, String analyzerId) {
+        Path normalized = dirPath.normalize();
+        List<WatchRegistration> registrations = registrationsByDirectory.get(normalized);
+        if (registrations == null || registrations.isEmpty()) {
+            return false;
+        }
+        WatchRegistration match = null;
+        for (WatchRegistration reg : registrations) {
+            if (Objects.equals(reg.analyzerId(), analyzerId)) {
+                match = reg;
+                break;
+            }
+        }
+        if (match == null) {
+            return false;
+        }
+        registrations.remove(match);
+        if (monitor != null && match.observer() != null) {
+            monitor.removeObserver(match.observer());
+        }
+        if (registrations.isEmpty()) {
+            registrationsByDirectory.remove(normalized);
+            pendingDirectories.remove(normalized);
+            List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
+            mutableWatchDirs.remove(normalized.toString());
+            fileConfig.setWatchDirectories(mutableWatchDirs);
+        }
+        log.info("Removed watch registration for analyzer {} at {}", analyzerId, normalized);
+        return true;
+    }
+
+    /**
+     * Remove all registrations owned by the given analyzer ID across every
+     * watched directory.
      */
     public synchronized int removeWatchDirectoriesByAnalyzerId(String analyzerId) {
         int removed = 0;
-        for (Map.Entry<Path, String> entry : new ArrayList<>(directoryAnalyzerMap.entrySet())) {
-            if (Objects.equals(entry.getValue(), analyzerId) && removeWatchDirectory(entry.getKey())) {
+        for (Path dirPath : new ArrayList<>(registrationsByDirectory.keySet())) {
+            if (removeWatchRegistration(dirPath, analyzerId)) {
                 removed++;
             }
         }
@@ -184,13 +275,36 @@ public class FileWatcher {
     }
 
     /**
-     * Register a directory with the polling monitor and optionally process existing files.
-     * <p>
-     * Creates a {@link FileAlterationObserver} with a filter that delegates to
-     * {@link #shouldProcessFile(Path)} for per-directory glob pattern matching.
-     * </p>
+     * Bootstrap overload used by {@link #start()} when registering directories
+     * from {@link FileConfig#getWatchDirectories()}. Bootstrap registrations
+     * do not carry a per-analyzer glob — the directory is watched with a
+     * catch-all glob and filtering falls back to the legacy
+     * {@link FileConfig#getFilePatterns()} list evaluated in
+     * {@link #shouldProcessFile}.
      */
-    private void registerDirectoryInternal(Path dirPath, String analyzerId, boolean processExisting) throws IOException {
+    private void registerDirectoryInternal(Path dirPath, String analyzerId, boolean processExisting)
+            throws IOException {
+        registerDirectoryInternal(dirPath, analyzerId, "*", processExisting);
+    }
+
+    /**
+     * Register (or re-register) a directory with the polling monitor on
+     * behalf of one analyzer. Appends a new {@link WatchRegistration} to the
+     * list keyed on {@code dirPath}, allowing multiple analyzers to share the
+     * same physical directory. If a registration for {@code (dirPath,
+     * analyzerId)} already exists, its observer is removed and replaced in
+     * place so the glob + filter refresh.
+     * <p>
+     * The observer's {@link IOFileFilter} captures this registration's own
+     * glob in the closure — that is the source of truth for "does this file
+     * belong to this analyzer" so the Commons IO monitor only fires events
+     * for files that match the registration's own pattern, independent of
+     * other registrations at the same path.
+     */
+    private void registerDirectoryInternal(Path dirPath, String analyzerId, String globPattern,
+            boolean processExisting) throws IOException {
+        String effectiveGlob = (globPattern == null || globPattern.isBlank()) ? "*" : globPattern;
+
         if (!Files.exists(dirPath)) {
             log.warn("Watch directory does not exist, creating: {}", dirPath);
             try {
@@ -199,28 +313,59 @@ public class FileWatcher {
                 log.error("Cannot create watch directory {} — volume may not be mounted. "
                         + "Will retry when directory appears.", dirPath);
                 if (analyzerId != null && !analyzerId.isBlank()) {
-                    directoryAnalyzerMap.put(dirPath, analyzerId);
+                    // Record the intended registration as a placeholder so
+                    // rescan can materialize it when the directory appears.
+                    List<WatchRegistration> list = registrationsByDirectory
+                            .computeIfAbsent(dirPath, k -> new CopyOnWriteArrayList<>());
+                    list.removeIf(reg -> Objects.equals(reg.analyzerId(), analyzerId));
+                    list.add(new WatchRegistration(analyzerId, effectiveGlob, null));
                 }
                 pendingDirectories.add(dirPath);
                 return;
             }
         }
 
-        // Remove existing observer if re-registering
-        FileAlterationObserver oldObserver = observersByDirectory.remove(dirPath);
-        if (oldObserver != null && monitor != null) {
-            monitor.removeObserver(oldObserver);
+        List<WatchRegistration> list = registrationsByDirectory.computeIfAbsent(dirPath,
+                k -> new CopyOnWriteArrayList<>());
+
+        // If a prior registration for this analyzer exists, remove its
+        // observer so we don't leak observers across replace calls.
+        WatchRegistration existing = null;
+        for (WatchRegistration reg : list) {
+            if (Objects.equals(reg.analyzerId(), analyzerId)) {
+                existing = reg;
+                break;
+            }
+        }
+        if (existing != null) {
+            list.remove(existing);
+            if (existing.observer() != null && monitor != null) {
+                monitor.removeObserver(existing.observer());
+            }
         }
 
-        if (analyzerId != null && !analyzerId.isBlank()) {
-            directoryAnalyzerMap.put(dirPath, analyzerId);
+        // Build a filter that only accepts files matching THIS registration's
+        // glob. The closure captures effectiveGlob, so two observers at the
+        // same dir with different globs do not cross-fire events.
+        PathMatcher matcher;
+        try {
+            matcher = FileSystems.getDefault().getPathMatcher("glob:" + effectiveGlob);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid glob pattern '{}' for {} — falling back to catch-all", effectiveGlob, dirPath);
+            matcher = FileSystems.getDefault().getPathMatcher("glob:*");
         }
-
-        // Build a filter that delegates to shouldProcessFile for glob matching
+        final PathMatcher finalMatcher = matcher;
         IOFileFilter fileFilter = new IOFileFilter() {
             @Override
             public boolean accept(File file) {
-                return file.isFile() && shouldProcessFile(file.toPath());
+                if (!file.isFile()) {
+                    return false;
+                }
+                Path filePath = file.toPath();
+                if (!matchesBaseFilter(filePath)) {
+                    return false;
+                }
+                return finalMatcher.matches(filePath.getFileName());
             }
 
             @Override
@@ -249,15 +394,30 @@ public class FileWatcher {
             log.warn("Failed to initialize observer for {}: {}", dirPath, e.getMessage());
         }
 
-        observersByDirectory.put(dirPath, observer);
+        list.add(new WatchRegistration(analyzerId, effectiveGlob, observer));
         if (monitor != null) {
             monitor.addObserver(observer);
         }
 
-        log.info("Registered watch directory: {}", dirPath);
+        log.info("Registered watch directory: {} (analyzerId={}, glob={})", dirPath, analyzerId, effectiveGlob);
         if (processExisting && processorExecutor != null) {
             processExistingFiles(dirPath);
         }
+    }
+
+    /**
+     * Base-level file filter applied by every observer: skips hidden files
+     * and legacy {@code .error} / {@code .failed} sidecars. The non-
+     * destructive bridge never writes these, but a previous bridge version
+     * may have left them behind. Per-registration glob matching runs AFTER
+     * this base filter.
+     */
+    private boolean matchesBaseFilter(Path filePath) {
+        String filename = filePath.getFileName().toString();
+        if (filename.startsWith(".") || filename.endsWith(".error") || filename.endsWith(".failed")) {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -304,6 +464,12 @@ public class FileWatcher {
         shutdownExecutor(processorExecutor, "processor");
         shutdownExecutor(stabilityChecker, "stability-checker");
 
+        // Close the state store (best-effort — a leaked connection won't
+        // corrupt WAL-mode SQLite but clean close is still preferred).
+        if (stateStore instanceof SqliteFileStateStore sqlite) {
+            sqlite.close();
+        }
+
         log.info("File watcher service stopped");
     }
 
@@ -338,15 +504,14 @@ public class FileWatcher {
 
     /**
      * Check for stable files and process them.
-     * Also performs periodic cleanup of hash cache to prevent memory leaks.
+     * <p>
+     * Stability is determined by watching a file's size + lastModifiedTime stay
+     * unchanged for {@link FileConfig#getFileStabilityTimeoutMs()} milliseconds.
+     * Stable files are submitted to {@link #processFileWithRetry(Path)} which
+     * consults the state store to decide whether to actually process them.
+     * </p>
      */
     private void checkStableFiles() {
-        // Periodic cleanup of hash cache to prevent unbounded growth
-        if (processedFileHashes.size() > MAX_HASH_CACHE_SIZE) {
-            log.warn("Processed file hash cache exceeded {} entries, clearing cache", MAX_HASH_CACHE_SIZE);
-            processedFileHashes.clear();
-        }
-
         List<Path> stableFiles = new ArrayList<>();
         Instant now = Instant.now();
 
@@ -397,23 +562,43 @@ public class FileWatcher {
      * Periodic rescan of all registered directories. Safety net for files that
      * the monitor's observer-based polling may miss (e.g., runtime-added observers
      * not yet visible to the polling thread's snapshot).
+     * <p>
+     * Also materializes "placeholder" {@link WatchRegistration} entries whose
+     * observer is null because the target directory did not exist at
+     * registration time — a common case in Docker bind-mount deployments
+     * where {@code /mnt/...} appears after the bridge container starts.
      */
     private void rescanAllDirectories() {
-        // Retry pending directories that failed creation during registration
+        // Retry pending directories that failed creation during registration.
+        // A pending dir has one or more placeholder registrations
+        // (observer=null) that we need to materialize now that the path is
+        // accessible.
         for (Path pending : new ArrayList<>(pendingDirectories)) {
-            if (Files.exists(pending)) {
-                log.info("Pending directory now exists, registering: {}", pending);
-                pendingDirectories.remove(pending);
-                String analyzerId = directoryAnalyzerMap.get(pending);
+            if (!Files.exists(pending)) {
+                continue;
+            }
+            log.info("Pending directory now exists, registering: {}", pending);
+            pendingDirectories.remove(pending);
+            List<WatchRegistration> placeholders = registrationsByDirectory.get(pending);
+            if (placeholders == null) {
+                continue;
+            }
+            // Snapshot placeholders so we can iterate safely while replacing.
+            List<WatchRegistration> snapshot = new ArrayList<>(placeholders);
+            for (WatchRegistration placeholder : snapshot) {
+                if (placeholder.observer() != null) {
+                    continue;
+                }
                 try {
-                    registerDirectoryInternal(pending, analyzerId, true);
+                    registerDirectoryInternal(pending, placeholder.analyzerId(), placeholder.globPattern(), true);
                 } catch (IOException e) {
-                    log.warn("Failed to register pending directory {}: {}", pending, e.getMessage());
+                    log.warn("Failed to register pending directory {} for analyzer {}: {}", pending,
+                            placeholder.analyzerId(), e.getMessage());
                 }
             }
         }
 
-        for (Path dir : observersByDirectory.keySet()) {
+        for (Path dir : registrationsByDirectory.keySet()) {
             try (Stream<Path> files = Files.list(dir)) {
                 List<Path> candidates = files
                         .filter(Files::isRegularFile)
@@ -447,210 +632,131 @@ public class FileWatcher {
     }
 
     /**
-     * Process file with retry logic.
+     * Process a file, consulting the {@link FileStateStore} for dedupe / retry
+     * decisions. The bridge NEVER deletes or moves files — all outcomes are
+     * recorded as state store metadata.
+     * <p>
+     * Flow:
+     * <ol>
+     *   <li>Acquire in-process lock (prevents two threads racing on the same path)</li>
+     *   <li>Determine analyzerId; hash file content (SHA-256, streaming)</li>
+     *   <li>Look up {@code (analyzerId, hash)} in the state store:
+     *     <ul>
+     *       <li>{@code PROCESSED} — touch last_seen, return (idempotent re-drop)</li>
+     *       <li>{@code FAILED_NEEDS_HANDLING} — touch last_seen, return (terminal)</li>
+     *       <li>{@code RETRYING} with future {@code next_attempt_at} — return (backoff)</li>
+     *       <li>otherwise — upsertRetrying and proceed</li>
+     *     </ul>
+     *   </li>
+     *   <li>Forward to {@code messageHandler.processFile()} (FHIR POST)</li>
+     *   <li>On success: {@code markProcessed}. On exception: {@code handleProcessingFailure}.</li>
+     * </ol>
      */
     private void processFileWithRetry(Path filePath) {
-        // File-level lock: prevent two threads from processing the same file
+        // In-process lock: prevent two threads in this JVM from processing
+        // the same path concurrently. Persistent retry scheduling is handled
+        // by the state store's next_attempt_at; this set is purely for
+        // intra-JVM races (e.g. rescan vs. scheduled retry firing near-simultaneously).
         if (!processingFiles.add(filePath)) {
             log.debug("File already being processed by another thread: {}", filePath.getFileName());
             return;
         }
+
+        String analyzerId = null;
+        String fileHash = null;
         try {
-            // Determine analyzer ID from file path/pattern
-            String analyzerId = determineAnalyzerId(filePath);
-            // Check for duplicate (already processed in this bridge session).
-            // Scope by analyzer so identical payloads can still be replayed across runs.
-            String fileHash = calculateFileHash(filePath);
-            String dedupeKey = analyzerId + ":" + fileHash;
-            if (processedFileHashes.contains(dedupeKey)) {
-                log.info("Skipping duplicate file (hash match): {}", filePath.getFileName());
-                bestEffortCleanup(filePath, "duplicate");
+            analyzerId = determineAnalyzerId(filePath);
+            if (analyzerId == null) {
+                log.warn("Could not determine analyzer for file {}; skipping", filePath);
                 return;
             }
 
-            // Process file — FHIR POST to OpenELIS
+            fileHash = calculateFileHash(filePath);
+            MDC.put("analyzerId", analyzerId);
+            MDC.put("contentHash", fileHash);
+            MDC.put("path", filePath.toString());
+
+            // Consult the state store for dedupe / backoff decisions.
+            var existing = stateStore.get(analyzerId, fileHash);
+            if (existing.isPresent()) {
+                FileProcessingState state = existing.get();
+                switch (state.status()) {
+                    case PROCESSED -> {
+                        stateStore.touchLastSeen(analyzerId, fileHash, filePath);
+                        log.info("Skipping already-processed file (hash match): {}", filePath.getFileName());
+                        return;
+                    }
+                    case FAILED_NEEDS_HANDLING -> {
+                        stateStore.touchLastSeen(analyzerId, fileHash, filePath);
+                        log.debug("Skipping file in FAILED_NEEDS_HANDLING: {} (last error: {})",
+                                filePath.getFileName(), state.lastError());
+                        return;
+                    }
+                    case RETRYING -> {
+                        Instant nextAt = state.nextAttemptAt();
+                        if (nextAt != null && Instant.now().isBefore(nextAt)) {
+                            log.debug("Retry backoff not elapsed for {} (next at {})",
+                                    filePath.getFileName(), nextAt);
+                            return;
+                        }
+                        // Backoff elapsed (or null) — proceed with retry
+                    }
+                }
+            }
+
+            stateStore.upsertRetrying(analyzerId, fileHash, filePath);
+
             log.info("Processing file: {} for analyzer: {}", filePath.getFileName(), analyzerId);
             messageHandler.processFile(filePath, analyzerId);
 
-            // FHIR succeeded — mark as processed BEFORE archive attempt.
-            // Archive failure must NOT trigger retry of the FHIR POST.
-            processedFileHashes.add(dedupeKey);
-            retryTracker.remove(filePath);
+            stateStore.markProcessed(analyzerId, fileHash, filePath);
             log.info("Successfully processed file: {}", filePath.getFileName());
 
-            // Archive is best-effort cleanup — does not affect processing success
-            bestEffortCleanup(filePath, null);
-
         } catch (Exception e) {
-            handleProcessingFailure(filePath, e);
+            if (analyzerId != null && fileHash != null) {
+                handleProcessingFailure(filePath, analyzerId, fileHash, e);
+            } else {
+                log.error("File processing failed before state store keying was possible for {}: {}",
+                        filePath, e.getMessage(), e);
+            }
         } finally {
             processingFiles.remove(filePath);
+            MDC.remove("analyzerId");
+            MDC.remove("contentHash");
+            MDC.remove("path");
         }
     }
 
     /**
-     * Best-effort file cleanup after successful processing. Tries to delete
-     * first (simplest), then archive as fallback. Failure is logged but does
-     * NOT trigger retry — the FHIR import already succeeded and the hash is
-     * cached.
+     * Record a processing failure in the state store and either schedule a
+     * backoff retry or transition the row to {@code FAILED_NEEDS_HANDLING}.
+     * <p>
+     * Never touches the file. On max retries the structured audit line
+     * {@code ANALYZER_FILE_FAILED_NEEDS_HANDLING} is logged for future
+     * notifier / alerting hooks to consume.
+     * </p>
      */
-    private void bestEffortCleanup(Path filePath, String archiveSubdir) {
-        // Try delete first — cleanest outcome for a successfully processed file
-        try {
-            if (Files.deleteIfExists(filePath)) {
-                log.debug("Deleted processed file: {}", filePath.getFileName());
-                return;
-            }
-        } catch (IOException deleteErr) {
-            log.debug("Delete failed, trying archive: {} - {}", filePath.getFileName(), deleteErr.getMessage());
-        }
-        // Fallback: try archive (may also fail on permission, but has error-dir fallback)
-        archiveFile(filePath, archiveSubdir);
-    }
-
-    /**
-     * Handle processing failure with retry logic.
-     */
-    private void handleProcessingFailure(Path filePath, Exception error) {
-        RetryInfo retryInfo = retryTracker.computeIfAbsent(filePath, k -> new RetryInfo());
-
-        retryInfo.attemptCount++;
+    private void handleProcessingFailure(Path filePath, String analyzerId, String fileHash, Exception error) {
+        int attempts = stateStore.incrementAttempts(analyzerId, fileHash, error.getMessage());
+        int max = fileConfig.getMaxRetryAttempts();
         log.warn("File processing failed (attempt {}/{}): {} - {}",
-                retryInfo.attemptCount, fileConfig.getMaxRetryAttempts(),
-                filePath.getFileName(), error.getMessage());
+                attempts, max, filePath.getFileName(), error.getMessage());
 
-        if (retryInfo.attemptCount >= fileConfig.getMaxRetryAttempts()) {
-            // Max retries exceeded - move to error directory
-            log.error("Max retries exceeded for file: {}, moving to error directory", filePath.getFileName());
-            moveToErrorDirectory(filePath, error);
-            retryTracker.remove(filePath);
-        } else {
-            // Schedule retry with exponential backoff
-            long delay = fileConfig.getRetryDelayMs() * (long) Math.pow(2, retryInfo.attemptCount - 1);
-            log.info("Scheduling retry for file: {} in {}ms", filePath.getFileName(), delay);
-
-            stabilityChecker.schedule(() -> processFileWithRetry(filePath), delay, TimeUnit.MILLISECONDS);
+        if (attempts >= max) {
+            stateStore.markFailedNeedsHandling(analyzerId, fileHash, filePath, error.getMessage());
+            // Grep-friendly audit line. A future notifier can watch the bridge
+            // logs for this token and open tickets / send Slack messages.
+            log.error("ANALYZER_FILE_FAILED_NEEDS_HANDLING analyzerId={} contentHash={} path={} attempts={} error={}",
+                    analyzerId, fileHash, filePath, attempts, error.getMessage());
+            return;
         }
-    }
 
-    /**
-     * Archive successfully processed file with path traversal protection.
-     * <p>
-     * If archiving fails, moves file to error directory to prevent reprocessing.
-     * </p>
-     */
-    private void archiveFile(Path filePath, String subdirectory) {
-        try {
-            Path baseArchiveDir = Paths.get(fileConfig.getArchiveDirectory()).normalize();
-            Path archiveDir = baseArchiveDir;
-
-            if (subdirectory != null) {
-                archiveDir = baseArchiveDir.resolve(subdirectory).normalize();
-                // Validate subdirectory doesn't escape base archive directory
-                if (!archiveDir.startsWith(baseArchiveDir)) {
-                    log.error("Invalid subdirectory (path traversal): {}", subdirectory);
-                    archiveDir = baseArchiveDir;
-                }
-            }
-
-            Files.createDirectories(archiveDir);
-
-            Path targetPath = archiveDir.resolve(filePath.getFileName()).normalize();
-
-            // Validate final path stays within base archive directory (defense-in-depth)
-            if (!targetPath.startsWith(baseArchiveDir)) {
-                log.error("Path traversal detected in archive operation: {}", targetPath);
-                moveToErrorDirectory(filePath, new SecurityException("Path traversal detected"));
-                return;
-            }
-
-            // Handle name collision
-            int counter = 1;
-            while (Files.exists(targetPath)) {
-                String filename = filePath.getFileName().toString();
-                int dotIndex = filename.lastIndexOf('.');
-                String name = (dotIndex > 0) ? filename.substring(0, dotIndex) : filename;
-                String ext = (dotIndex > 0) ? filename.substring(dotIndex) : "";
-                targetPath = archiveDir.resolve(name + "_" + counter + ext).normalize();
-                counter++;
-
-                if (counter > 1000) {
-                    log.error("Too many archive collisions for file: {}", filePath.getFileName());
-                    break;
-                }
-            }
-
-            Files.move(filePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            log.debug("Archived file to: {}", targetPath);
-
-        } catch (IOException e) {
-            log.error("Failed to archive file: {}, moving to error directory", filePath, e);
-            moveToErrorDirectory(filePath, e);
-        }
-    }
-
-    /**
-     * Move failed file to error directory with path traversal protection.
-     * <p>
-     * If moving to error directory fails, uses fail-safe mechanism to mark file
-     * as permanently failed in the watch directory to prevent infinite retries.
-     * </p>
-     */
-    private void moveToErrorDirectory(Path filePath, Exception error) {
-        try {
-            Path errorDir = Paths.get(fileConfig.getErrorDirectory()).normalize();
-            Files.createDirectories(errorDir);
-
-            Path targetPath = errorDir.resolve(filePath.getFileName()).normalize();
-
-            // Validate path stays within error directory (prevent traversal attacks)
-            if (!targetPath.startsWith(errorDir)) {
-                log.error("Path traversal detected in error directory operation: {}", targetPath);
-                markAsFailedInPlace(filePath, error);
-                return;
-            }
-
-            // Write error details to accompanying .error file
-            Path errorDetailsPath = errorDir.resolve(filePath.getFileName() + ".error").normalize();
-            Files.writeString(errorDetailsPath, "Error: " + error.getMessage() + "\n" +
-                    "Timestamp: " + Instant.now() + "\n" +
-                    "OriginalPath: " + filePath + "\n");
-
-            Files.move(filePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            log.info("Moved failed file to error directory: {}", targetPath);
-
-        } catch (IOException e) {
-            log.error("Failed to move file to error directory: {}, using fail-safe", filePath, e);
-            markAsFailedInPlace(filePath, error);
-        }
-    }
-
-    /**
-     * Fail-safe: Mark file as permanently failed in watch directory.
-     * <p>
-     * Used when moving to error directory fails. Prevents infinite retry loops.
-     * </p>
-     */
-    private void markAsFailedInPlace(Path filePath, Exception error) {
-        try {
-            String failedFileName = filePath.getFileName().toString() + ".failed";
-            Path failedPath = filePath.resolveSibling(failedFileName);
-
-            // Write error details
-            Files.writeString(failedPath, "FAILED PROCESSING\n" +
-                    "Error: " + error.getMessage() + "\n" +
-                    "Timestamp: " + Instant.now() + "\n" +
-                    "OriginalFile: " + filePath.getFileName() + "\n");
-
-            // Try to delete original file
-            Files.deleteIfExists(filePath);
-            permanentlySkippedFiles.add(filePath.normalize());
-            log.warn("Marked file as permanently failed in watch directory: {}", failedPath);
-
-        } catch (IOException ex) {
-            permanentlySkippedFiles.add(filePath.normalize());
-            log.error("Failed to mark file as permanently failed: {}, manual intervention required", filePath, ex);
-        }
+        long delay = fileConfig.getRetryDelayMs() * (long) Math.pow(2, attempts - 1);
+        Instant nextAt = Instant.now().plusMillis(delay);
+        stateStore.setNextAttemptAt(analyzerId, fileHash, nextAt);
+        log.info("Scheduling retry for file: {} in {}ms (next_attempt_at={})",
+                filePath.getFileName(), delay, nextAt);
+        stabilityChecker.schedule(() -> processFileWithRetry(filePath), delay, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -692,11 +798,20 @@ public class FileWatcher {
     }
 
     /**
-     * Determine analyzer ID from file path pattern.
+     * Determine the analyzer ID that owns a given file path.
      * <p>
-     * Matches file path against configured analyzer patterns.
-     * Falls back to parent directory name if no patterns match.
-     * </p>
+     * Lookup order (first match wins):
+     * <ol>
+     *   <li>Per-directory registrations: iterate the parent directory's
+     *       {@link WatchRegistration} list and return the first one whose
+     *       glob pattern matches the file name. This is how multi-observer
+     *       directories route: each analyzer declared its own glob at
+     *       registration time, and only one should match any given file.</li>
+     *   <li>Legacy {@code fileConfig.getAnalyzers()} pattern map — kept as a
+     *       fallback for bootstrap-registered analyzers that came in through
+     *       the config file rather than runtime registration.</li>
+     *   <li>Directory name as last resort.</li>
+     * </ol>
      *
      * @param filePath the file path to analyze
      * @return analyzer ID or null if cannot be determined
@@ -707,13 +822,29 @@ public class FileWatcher {
 
         Path parent = filePath.getParent();
         if (parent != null) {
-            String mappedAnalyzerId = directoryAnalyzerMap.get(parent.normalize());
-            if (mappedAnalyzerId != null && !mappedAnalyzerId.isBlank()) {
-                return mappedAnalyzerId;
+            List<WatchRegistration> registrations = registrationsByDirectory.get(parent.normalize());
+            if (registrations != null) {
+                for (WatchRegistration reg : registrations) {
+                    if (reg.analyzerId() == null || reg.analyzerId().isBlank()) {
+                        continue;
+                    }
+                    try {
+                        PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + reg.globPattern());
+                        if (matcher.matches(filePath.getFileName())) {
+                            log.debug("Matched file {} to analyzer {} via per-directory glob: {}", filename,
+                                    reg.analyzerId(), reg.globPattern());
+                            return reg.analyzerId();
+                        }
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid per-registration glob '{}' for analyzer {}: {}", reg.globPattern(),
+                                reg.analyzerId(), e.getMessage());
+                    }
+                }
             }
         }
 
-        // Check configured analyzer patterns
+        // Check configured analyzer patterns (legacy fallback for bootstrap
+        // registrations via FileConfig rather than runtime addWatchDirectory).
         for (Map.Entry<String, FileConfig.AnalyzerConfig> entry : fileConfig.getAnalyzers().entrySet()) {
             String pattern = entry.getKey();
             FileConfig.AnalyzerConfig config = entry.getValue();
@@ -754,38 +885,50 @@ public class FileWatcher {
     }
 
     /**
-     * Check if file should be processed based on configured patterns.
+     * Check if a file should be processed by ANY registered analyzer.
+     * <p>
+     * Skips hidden files and any legacy {@code .error} / {@code .failed}
+     * sidecars that a previous (destructive) bridge version may have left
+     * in the watched directory. Then checks each registration at the parent
+     * directory — returns true if ANY registration's glob matches. This is
+     * used by the rescan safety net and by existing-file bootstrap walks;
+     * the per-observer IOFileFilter captured at registration time is what
+     * actually routes events to individual analyzers once the monitor is
+     * running.
+     * </p>
      */
     private boolean shouldProcessFile(Path filePath) {
         if (!Files.isRegularFile(filePath)) {
             return false;
         }
-        if (permanentlySkippedFiles.contains(filePath.normalize())) {
-            return false;
-        }
 
-        String filename = filePath.getFileName().toString();
-
-        // Skip hidden files, error detail files, and permanently failed files
-        if (filename.startsWith(".") || filename.endsWith(".error") || filename.endsWith(".failed")) {
+        if (!matchesBaseFilter(filePath)) {
             return false;
         }
 
         Path parent = filePath.getParent();
         if (parent != null) {
-            String perDirGlob = directoryGlobPatternByDir.get(parent.normalize());
-            if (perDirGlob != null) {
-                try {
-                    PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + perDirGlob);
-                    return matcher.matches(filePath.getFileName());
-                } catch (IllegalArgumentException e) {
-                    log.warn("Invalid per-directory glob '{}' for {}: {}", perDirGlob, parent, e.getMessage());
-                    return false;
+            List<WatchRegistration> registrations = registrationsByDirectory.get(parent.normalize());
+            if (registrations != null && !registrations.isEmpty()) {
+                for (WatchRegistration reg : registrations) {
+                    try {
+                        PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + reg.globPattern());
+                        if (matcher.matches(filePath.getFileName())) {
+                            return true;
+                        }
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid glob '{}' for {}: {}", reg.globPattern(), parent, e.getMessage());
+                    }
                 }
+                // A directory with registrations is opinionated: if no glob
+                // matched, the file belongs to no analyzer at this path.
+                return false;
             }
         }
 
-        // Check against configured patterns
+        // No per-directory registrations — fall back to the bootstrap
+        // fileConfig.getFilePatterns() list (e.g. *.csv, *.hl7) for legacy
+        // config-file-driven analyzers.
         for (String pattern : fileConfig.getFilePatterns()) {
             PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + pattern);
             if (matcher.matches(filePath.getFileName())) {
@@ -803,9 +946,11 @@ public class FileWatcher {
     }
 
     /**
-     * Retry tracking information.
+     * Test-only accessor for the durable state store. Not part of the public
+     * API — used by integration tests to inspect RETRYING / PROCESSED / FAILED
+     * rows after a simulated drop.
      */
-    private static class RetryInfo {
-        int attemptCount = 0;
+    public FileStateStore getStateStore() {
+        return stateStore;
     }
 }

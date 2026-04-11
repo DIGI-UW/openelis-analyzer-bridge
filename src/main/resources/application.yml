@@ -1,6 +1,15 @@
 spring:
   profiles:
     active: prod
+  servlet:
+    multipart:
+      # Raised from Spring Boot's default 1MB file / 10MB request because
+      # real Madagascar analyzer files exceed 1MB (QS5 Arbo export is
+      # 1.1MB). 20MB ceiling comfortably handles all current real files
+      # with room for batched exports. Used by /admin/upload
+      # (FileUploadController, plan mellow-honking-cascade §2.5a).
+      max-file-size: 20MB
+      max-request-size: 20MB
 
 management:
   endpoints:

@@ -112,6 +112,15 @@
 			<artifactId>commons-io</artifactId>
 			<version>2.18.0</version>
 		</dependency>
+
+		<!-- Embedded SQLite for FileStateStore: tracks processed / failed / retrying
+		     state for files in watched directories without ever deleting or moving
+		     the files themselves. See FileStateStore.java. -->
+		<dependency>
+			<groupId>org.xerial</groupId>
+			<artifactId>sqlite-jdbc</artifactId>
+			<version>3.46.0.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>

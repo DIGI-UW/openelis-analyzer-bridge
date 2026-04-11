@@ -94,12 +94,20 @@ public class AnalyzerRegistryBootstrap {
                 String ip = (String) analyzer.get("ipAddress");
                 String protocol = (String) analyzer.get("protocolVersion");
 
+                @SuppressWarnings("unchecked")
+                List<String> rawMappings = (List<String>) analyzer.get("testMappings");
+                java.util.Set<String> mappedTestCodes =
+                        (rawMappings != null && !rawMappings.isEmpty())
+                                ? new java.util.LinkedHashSet<>(rawMappings)
+                                : java.util.Collections.emptySet();
+
                 if (ip != null && !ip.isBlank()) {
                     AnalyzerEntry entry = new AnalyzerEntry();
                     entry.setId(id);
                     entry.setName(name);
                     entry.setExpectedProtocol(
                             protocol != null && protocol.contains("HL7") ? "HL7" : "ASTM");
+                    entry.setMappedTestCodes(mappedTestCodes);
                     newRegistry.put(ip, entry);
                 }
 
@@ -126,6 +134,18 @@ public class AnalyzerRegistryBootstrap {
                     entry.setDelimiter(delimiter != null ? delimiter : ",");
                     Object skipRowsObj = analyzer.get("skipRows");
                     entry.setSkipRows(skipRowsObj instanceof Number ? ((Number) skipRowsObj).intValue() : 0);
+                    entry.setMappedTestCodes(mappedTestCodes);
+                    @SuppressWarnings("unchecked")
+                    Map<String, List<String>> synonyms =
+                            (Map<String, List<String>>) analyzer.get("scannerSynonyms");
+                    if (synonyms != null && !synonyms.isEmpty()) {
+                        entry.setScannerSynonyms(synonyms);
+                    } else {
+                        Map<String, List<String>> fallback = defaultScannerSynonymsForAnalyzerName(name);
+                        if (!fallback.isEmpty()) {
+                            entry.setScannerSynonyms(fallback);
+                        }
+                    }
                     newRegistry.put(importDir, entry);
                     fileWatcher.addWatchDirectory(
                             Path.of(importDir),
@@ -150,5 +170,26 @@ public class AnalyzerRegistryBootstrap {
             log.warn("Failed to pull analyzers from OE: {} — bridge starting without registry. "
                     + "OE will push registrations on next CRUD operation.", e.getMessage());
         }
+    }
+
+    /**
+     * Hardcoded fallback synonym table by analyzer-name substring match.
+     * Fluorocycler XT's result files use {@code HIV-1} and
+     * {@code GENERIC_HIV_CV} vocabulary but OE's test code is
+     * {@code VIH-1}; without translation the scanner returns
+     * NoDeclaration on valid files.
+     */
+    private Map<String, List<String>> defaultScannerSynonymsForAnalyzerName(String analyzerName) {
+        if (analyzerName == null) return java.util.Collections.emptyMap();
+        String lower = analyzerName.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("fluorocycler")) {
+            Map<String, List<String>> syn = new java.util.LinkedHashMap<>();
+            syn.put("VIH-1", java.util.List.of("VIH-1", "HIV-1", "GENERIC_HIV_CV"));
+            syn.put("CHIKV", java.util.List.of("CHIKV", "Chikungunya"));
+            syn.put("DENV", java.util.List.of("DENV", "Dengue"));
+            syn.put("ZIKV", java.util.List.of("ZIKV", "Zika"));
+            return syn;
+        }
+        return java.util.Collections.emptyMap();
     }
 }
