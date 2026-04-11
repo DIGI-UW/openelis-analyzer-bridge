@@ -192,18 +192,6 @@ public class FileUploadController {
                     "Failed to write upload to " + targetDir + ": " + e.getMessage());
         }
 
-        Map<String, String> columnMappings = entry.getColumnMappings();
-        if (columnMappings == null || columnMappings.isEmpty()) {
-            return errorHtml(HttpStatus.BAD_REQUEST,
-                    "Analyzer " + analyzerId + " has no column_mapping configured — cannot scan");
-        }
-
-        ScanResult scanResult = scanner.scan(targetFile, columnMappings, allowedCodes, getSynonyms(entry));
-        ValidationOutcome outcome = validateScanAgainstAdmin(scanResult, testCode);
-        if (!outcome.proceed) {
-            return errorHtml(outcome.status, outcome.message);
-        }
-
         try {
             fileMessageHandler.processFile(targetFile, analyzerId, testCode);
         } catch (FileProcessingException | IOException e) {
@@ -215,55 +203,105 @@ public class FileUploadController {
 
         String successBanner = String.format(
                 "<div class=\"banner success\">File <code>%s</code> uploaded to <code>%s</code>"
-                        + " for analyzer <strong>%s</strong> with test code <strong>%s</strong>."
-                        + " %s</div>"
+                        + " for analyzer <strong>%s</strong> with test code <strong>%s</strong>.</div>"
                         + "<p><a href=\"/admin/upload/index.html\">Upload another file</a></p>",
                 htmlEscape(originalFilename),
                 htmlEscape(targetFile.toString()),
                 htmlEscape(entry.getName() != null ? entry.getName() : analyzerId),
-                htmlEscape(testCode),
-                outcome.warning == null ? "" : "<br><em>" + htmlEscape(outcome.warning) + "</em>");
+                htmlEscape(testCode));
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(successBanner));
     }
 
-    private ValidationOutcome validateScanAgainstAdmin(ScanResult scanResult, String adminTestCode) {
-        // On the admin upload path the admin's UI dropdown selection is the
-        // authoritative source of truth for test identity. The scanner is a
-        // defensive cross-check: useful on the FileWatcher / NFS drop path
-        // where there is no human in the loop, but purely advisory here.
-        // All scanner outcomes become warnings; none of them reject the upload.
-        // This keeps the upload path uniform across all file formats — a file
-        // the scanner can't interpret (multi-sheet workbook, metadata preamble,
-        // unusual column layout) still flows through to the parser, which has
-        // its own more-robust header detection via sheet_detection config.
-        if (scanResult instanceof ScanResult.SelfDeclared selfDeclared) {
-            if (adminTestCode.equals(selfDeclared.testCode())) {
-                return ValidationOutcome.pass();
+    /**
+     * v5 scanner-as-UX-helper endpoint. Accepts multipart (analyzerId, file),
+     * writes file to a temp path, runs the scanner against it, returns JSON
+     * with a suggested test code for the upload form's Test dropdown.
+     *
+     * The scanner's result is purely advisory: the client (admin upload UI)
+     * uses the suggestion to pre-select a value in the Test dropdown, and the
+     * admin can confirm or override before submitting the actual upload via
+     * {@code POST /admin/upload}. The scanner is NOT a gate — it never blocks
+     * an upload. Under the v5 simple model, the admin's declared test code is
+     * the authoritative source of truth at upload time; the scanner just tries
+     * to make the admin's job easier by guessing from file content.
+     */
+    @PostMapping(value = "/scan",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> scanFile(
+            @RequestParam("analyzerId") String analyzerId,
+            @RequestParam("file") MultipartFile file) {
+
+        Map<String, Object> response = new LinkedHashMap<>();
+
+        AnalyzerEntry entry = findEntryById(analyzerId);
+        if (entry == null) {
+            response.put("suggestion", null);
+            response.put("confidence", "unknownAnalyzer");
+            response.put("reason", "Unknown analyzer id: " + analyzerId);
+            return ResponseEntity.ok(response);
+        }
+
+        Set<String> allowedCodes = entry.getMappedTestCodes();
+        Map<String, String> columnMappings = entry.getColumnMappings();
+        if (allowedCodes == null || allowedCodes.isEmpty()
+                || columnMappings == null || columnMappings.isEmpty()) {
+            response.put("suggestion", null);
+            response.put("confidence", "notConfigured");
+            response.put("reason", "Analyzer has no column_mapping or mappedTestCodes configured");
+            return ResponseEntity.ok(response);
+        }
+
+        if (file == null || file.isEmpty()) {
+            response.put("suggestion", null);
+            response.put("confidence", "emptyFile");
+            return ResponseEntity.ok(response);
+        }
+
+        Path tempFile = null;
+        try {
+            String suffix = file.getOriginalFilename() != null
+                    && file.getOriginalFilename().contains(".")
+                    ? file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf('.'))
+                    : ".bin";
+            tempFile = Files.createTempFile("ahb-scan-", suffix);
+            Files.write(tempFile, file.getBytes(),
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+            ScanResult scanResult = scanner.scan(tempFile, columnMappings, allowedCodes, getSynonyms(entry));
+            if (scanResult instanceof ScanResult.SelfDeclared selfDeclared) {
+                response.put("suggestion", selfDeclared.testCode());
+                response.put("confidence", "selfDeclared");
+            } else if (scanResult instanceof ScanResult.Ambiguous ambiguous) {
+                response.put("suggestion", null);
+                response.put("confidence", "ambiguous");
+                response.put("codes", new ArrayList<>(ambiguous.codes()));
+            } else if (scanResult instanceof ScanResult.NotInterpretable notInterpretable) {
+                response.put("suggestion", null);
+                response.put("confidence", "notInterpretable");
+                response.put("reason", notInterpretable.reason());
+            } else {
+                // NoDeclaration
+                response.put("suggestion", null);
+                response.put("confidence", "noDeclaration");
             }
-            return ValidationOutcome.passWithWarning(
-                    "File self-declares as '" + selfDeclared.testCode()
-                            + "' but you selected '" + adminTestCode
-                            + "'. Proceeding with your selection — please verify at"
-                            + " result review time before accepting.");
+        } catch (IOException e) {
+            log.warn("FileUploadController: scan failed for {}: {}",
+                    file.getOriginalFilename(), e.getMessage());
+            response.put("suggestion", null);
+            response.put("confidence", "scanError");
+            response.put("reason", e.getMessage());
+        } finally {
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException ignored) {
+                    // best-effort cleanup
+                }
+            }
         }
-        if (scanResult instanceof ScanResult.Ambiguous ambiguous) {
-            return ValidationOutcome.passWithWarning(
-                    "File contains multiple test-code mentions: " + ambiguous.codes()
-                            + ". Proceeding with your selected test code '" + adminTestCode
-                            + "'. If this is a multiplex panel, verify at result review"
-                            + " time before accepting.");
-        }
-        if (scanResult instanceof ScanResult.NotInterpretable notInterpretable) {
-            return ValidationOutcome.passWithWarning(
-                    "Scanner could not pre-check file contents (" + notInterpretable.reason()
-                            + "). Proceeding with your selected test code '" + adminTestCode
-                            + "' — the parser will still attempt full processing.");
-        }
-        // NoDeclaration — admin's choice is final, but warn so reviewer double-checks.
-        return ValidationOutcome.passWithWarning(
-                "Scanner found no mapped test codes in the file's content column. "
-                        + "Proceeding with your selected test code '" + adminTestCode + "' "
-                        + "— please verify at result review time before accepting.");
+
+        return ResponseEntity.ok(response);
     }
 
     private AnalyzerEntry findEntryById(String analyzerId) {
@@ -315,29 +353,4 @@ public class FileUploadController {
                 .replace("'", "&#39;");
     }
 
-    private static final class ValidationOutcome {
-        final boolean proceed;
-        final HttpStatus status;
-        final String message;
-        final String warning;
-
-        private ValidationOutcome(boolean proceed, HttpStatus status, String message, String warning) {
-            this.proceed = proceed;
-            this.status = status;
-            this.message = message;
-            this.warning = warning;
-        }
-
-        static ValidationOutcome pass() {
-            return new ValidationOutcome(true, HttpStatus.OK, null, null);
-        }
-
-        static ValidationOutcome passWithWarning(String warning) {
-            return new ValidationOutcome(true, HttpStatus.OK, null, warning);
-        }
-
-        static ValidationOutcome reject(HttpStatus status, String message) {
-            return new ValidationOutcome(false, status, message, null);
-        }
-    }
 }

@@ -24,10 +24,11 @@
 <body>
   <h1>Analyzer File Upload — Bridge Admin</h1>
   <p>Drop a real analyzer result file into a registered FILE analyzer's
-     watched directory and declare the test code at upload time. The
-     bridge parser validates the declaration against the file's content
-     via the file-level self-declaration scanner (no persistent per-analyzer
-     defaults — test identity must come from the file + tech).</p>
+     watched directory and declare the test code at upload time. When you
+     pick a file, the scanner reads its content and pre-selects a
+     suggested test code in the dropdown — confirm or override before
+     clicking Upload. Test identity is always the tech's declaration at
+     upload time; the scanner is a UX helper, not a gate.</p>
   <div id="banner"></div>
   <div class="card">
     <form id="upload-form" enctype="multipart/form-data" method="post"
@@ -45,12 +46,13 @@
       <div class="test-hint">
         Only test codes configured on the selected analyzer (via its
         <code>AnalyzerTestMapping</code> set from the profile) can be
-        chosen. The bridge will re-validate your choice against the
-        file's content before processing.
+        chosen. Picking a file will pre-select a suggested test code
+        from file content; you can override before clicking Upload.
       </div>
 
       <label for="file-input">File</label>
       <input type="file" name="file" id="file-input" required>
+      <div class="test-hint" id="scan-hint"></div>
 
       <button type="submit">Upload File</button>
     </form>
@@ -125,6 +127,65 @@
       }
       testSelect.disabled = false;
     }
+
+    async function scanSelectedFile() {
+      const analyzerSelect = document.getElementById("analyzer-select");
+      const fileInput = document.getElementById("file-input");
+      const testSelect = document.getElementById("test-select");
+      const scanHint = document.getElementById("scan-hint");
+
+      const analyzerId = analyzerSelect.value;
+      const file = fileInput.files[0];
+      if (!analyzerId || !file) {
+        scanHint.textContent = "";
+        return;
+      }
+
+      scanHint.textContent = "Scanning file content…";
+      const formData = new FormData();
+      formData.append("analyzerId", analyzerId);
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/admin/upload/scan", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        if (!res.ok) {
+          scanHint.textContent = "Scanner error (HTTP " + res.status + ") — pick a test code manually";
+          return;
+        }
+        const result = await res.json();
+        if (result.suggestion) {
+          // Pre-select the suggestion in the Test dropdown
+          const options = Array.from(testSelect.options).map(o => o.value);
+          if (options.includes(result.suggestion)) {
+            testSelect.value = result.suggestion;
+            scanHint.textContent = "Scanner suggested: " + result.suggestion
+              + " (" + result.confidence + ") — confirm or override above";
+          } else {
+            scanHint.textContent = "Scanner suggested '" + result.suggestion
+              + "' but it is not in this analyzer's test mapping set — pick manually";
+          }
+        } else if (result.confidence === "ambiguous") {
+          scanHint.textContent = "File mentions multiple tests ("
+            + (result.codes || []).join(", ") + ") — pick one manually";
+        } else if (result.confidence === "noDeclaration") {
+          scanHint.textContent = "Scanner found no test-code mentions — pick a test code manually";
+        } else if (result.confidence === "notInterpretable") {
+          scanHint.textContent = "Scanner could not interpret file ("
+            + (result.reason || "") + ") — pick a test code manually";
+        } else {
+          scanHint.textContent = "Scanner: " + result.confidence
+            + " — pick a test code manually";
+        }
+      } catch (e) {
+        scanHint.textContent = "Scanner request failed: " + e.message;
+      }
+    }
+
+    document.getElementById("file-input").addEventListener("change", scanSelectedFile);
 
     loadAnalyzers();
   </script>
