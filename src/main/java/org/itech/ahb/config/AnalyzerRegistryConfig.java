@@ -9,9 +9,12 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.PatternSyntaxException;
 
 /**
@@ -275,5 +278,15 @@ public class AnalyzerRegistryConfig {
 
         /** Number of metadata rows to skip before header detection (default 0). */
         private int skipRows;
+
+        /**
+         * Vocabulary translation for {@code FileNameSelfDeclarationScanner}:
+         * maps OE test code → free-text synonyms the lab's files use
+         * (e.g. {@code "VIH-1" → ["HIV-1", "GENERIC_HIV_CV"]}).
+         */
+        private Map<String, List<String>> scannerSynonyms = Collections.emptyMap();
+
+        /** OE test codes this analyzer is allowed to emit (whitelist, not a default). */
+        private Set<String> mappedTestCodes = Collections.emptySet();
     }
 }

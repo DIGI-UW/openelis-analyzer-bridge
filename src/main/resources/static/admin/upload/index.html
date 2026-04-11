@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Analyzer File Upload — OpenELIS Bridge Admin</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px;
+           margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.25rem; margin-bottom: 1rem; }
+    .card { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; }
+    label { display: block; margin-top: 0.75rem; font-weight: 600; }
+    select, input[type="file"] { width: 100%; margin-top: 0.25rem;
+                                  padding: 0.4rem; font-size: 1rem; }
+    .watch-path { font-family: monospace; color: #555; font-size: 0.85em;
+                  margin-top: 0.25rem; word-break: break-all; }
+    .test-hint { color: #555; font-size: 0.85em; margin-top: 0.25rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; font-size: 1rem;
+             cursor: pointer; }
+    .banner { padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; }
+    .banner.success { background: #d4edda; border: 1px solid #c3e6cb; }
+    .banner.error { background: #f8d7da; border: 1px solid #f5c6cb; }
+  </style>
+</head>
+<body>
+  <h1>Analyzer File Upload — Bridge Admin</h1>
+  <p>Drop a real analyzer result file into a registered FILE analyzer's
+     watched directory and declare the test code at upload time. The
+     bridge parser validates the declaration against the file's content
+     via the file-level self-declaration scanner (no persistent per-analyzer
+     defaults — test identity must come from the file + tech).</p>
+  <div id="banner"></div>
+  <div class="card">
+    <form id="upload-form" enctype="multipart/form-data" method="post"
+          action="/admin/upload">
+      <label for="analyzer-select">Analyzer</label>
+      <select name="analyzerId" id="analyzer-select" required>
+        <option value="">Loading…</option>
+      </select>
+      <div class="watch-path" id="watch-path"></div>
+
+      <label for="test-select">Test</label>
+      <select name="testCode" id="test-select" required disabled>
+        <option value="">Select an analyzer first</option>
+      </select>
+      <div class="test-hint">
+        Only test codes configured on the selected analyzer (via its
+        <code>AnalyzerTestMapping</code> set from the profile) can be
+        chosen. The bridge will re-validate your choice against the
+        file's content before processing.
+      </div>
+
+      <label for="file-input">File</label>
+      <input type="file" name="file" id="file-input" required>
+
+      <button type="submit">Upload File</button>
+    </form>
+  </div>
+
+  <script>
+    async function loadAnalyzers() {
+      const res = await fetch("/admin/upload/analyzers", { credentials: "include" });
+      if (!res.ok) {
+        document.getElementById("banner").innerHTML =
+          '<div class="banner error">Failed to load analyzer list: HTTP ' + res.status + '</div>';
+        return;
+      }
+      const analyzers = await res.json();
+      const select = document.getElementById("analyzer-select");
+      select.innerHTML = "";
+      if (analyzers.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(No FILE analyzers registered)";
+        select.appendChild(opt);
+        select.disabled = true;
+        return;
+      }
+      for (const a of analyzers) {
+        const opt = document.createElement("option");
+        opt.value = a.id;
+        opt.textContent = a.name;
+        opt.dataset.watchDirectory = a.watchDirectory;
+        opt.dataset.filePattern = a.filePattern;
+        select.appendChild(opt);
+      }
+      select.addEventListener("change", refreshAnalyzerContext);
+      refreshAnalyzerContext();
+    }
+
+    async function refreshAnalyzerContext() {
+      const select = document.getElementById("analyzer-select");
+      const opt = select.options[select.selectedIndex];
+      if (!opt || !opt.value) return;
+      document.getElementById("watch-path").textContent =
+        "Watch: " + opt.dataset.watchDirectory +
+        "   Pattern: " + opt.dataset.filePattern;
+      await loadTests(opt.value);
+    }
+
+    async function loadTests(analyzerId) {
+      const testSelect = document.getElementById("test-select");
+      testSelect.innerHTML = '<option value="">Loading…</option>';
+      testSelect.disabled = true;
+      const res = await fetch("/admin/upload/analyzers/" + encodeURIComponent(analyzerId) + "/tests",
+                              { credentials: "include" });
+      if (!res.ok) {
+        testSelect.innerHTML = '<option value="">(Failed to load tests)</option>';
+        return;
+      }
+      const codes = await res.json();
+      testSelect.innerHTML = "";
+      if (codes.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(No test mappings configured)";
+        testSelect.appendChild(opt);
+        testSelect.disabled = true;
+        return;
+      }
+      for (const code of codes) {
+        const opt = document.createElement("option");
+        opt.value = code;
+        opt.textContent = code;
+        testSelect.appendChild(opt);
+      }
+      testSelect.disabled = false;
+    }
+
+    loadAnalyzers();
+  </script>
+</body>
+</html>

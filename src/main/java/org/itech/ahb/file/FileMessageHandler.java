@@ -85,6 +85,18 @@ public class FileMessageHandler {
     }
 
     public MessageEnvelope processFile(Path filePath, String analyzerId) throws IOException, FileProcessingException {
+        return processFile(filePath, analyzerId, null);
+    }
+
+    /**
+     * Process a file with an optional event-scoped per-file test code that
+     * the parser applies to rows lacking a per-row testCode from the
+     * column mapping. {@code perFileTestCode} must come from the caller
+     * (upload-time admin declaration or self-declaration scanner) — never
+     * read from persistent analyzer config.
+     */
+    public MessageEnvelope processFile(Path filePath, String analyzerId, String perFileTestCode)
+            throws IOException, FileProcessingException {
         if (analyzerId == null || analyzerId.isBlank()) {
             throw new FileProcessingException("analyzerId is required for FILE delivery: " + filePath);
         }
@@ -107,7 +119,7 @@ public class FileMessageHandler {
                     "FILE transport requires bridge.routing.useFhir=true; legacy direct import path has been removed");
         }
 
-        postFileAsFhir(filePath, analyzerId, content);
+        postFileAsFhir(filePath, analyzerId, content, perFileTestCode);
 
         return MessageEnvelope.builder()
                 .protocol(Protocol.CSV)
@@ -119,7 +131,7 @@ public class FileMessageHandler {
                 .build();
     }
 
-    private void postFileAsFhir(Path filePath, String analyzerId, byte[] content)
+    private void postFileAsFhir(Path filePath, String analyzerId, byte[] content, String perFileTestCode)
             throws IOException, FileProcessingException {
         // Resolve analyzer entry from registry
         AnalyzerEntry analyzerEntry = null;
@@ -145,13 +157,14 @@ public class FileMessageHandler {
         if (".csv".equals(ext) || ".tsv".equals(ext) || ".txt".equals(ext)) {
             String delimiter = analyzerEntry.getDelimiter();
             int skipRows = analyzerEntry.getSkipRows();
-            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}) for analyzer {}",
-                    filePath.getFileName(), delimiter, skipRows, analyzerId);
-            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows);
+            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}) for analyzer {}",
+                    filePath.getFileName(), delimiter, skipRows, perFileTestCode, analyzerId);
+            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode);
         } else if (".xls".equals(ext) || ".xlsx".equals(ext)) {
-            log.info("Parsing Excel file {} for analyzer {}", filePath.getFileName(), analyzerId);
+            log.info("Parsing Excel file {} (perFileTestCode={}) for analyzer {}",
+                    filePath.getFileName(), perFileTestCode, analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-                allResults = FileResultParser.parse(bis, columnMappings);
+                allResults = FileResultParser.parse(bis, columnMappings, perFileTestCode);
             }
         } else {
             throw new FileProcessingException(

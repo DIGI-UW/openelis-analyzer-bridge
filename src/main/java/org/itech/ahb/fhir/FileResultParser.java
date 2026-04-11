@@ -52,6 +52,18 @@ public class FileResultParser {
      */
     public static List<HL7ResultParser.ParsedResults> parse(
             InputStream inputStream, Map<String, String> columnMappings) {
+        return parse(inputStream, columnMappings, null);
+    }
+
+    /**
+     * Parse an Excel file with an optional file-wide test code applied to
+     * rows that yield no per-row testCode from the column mapping.
+     *
+     * @param perFileTestCode event-scoped fallback test code; null or
+     *        blank drops rows with no per-row identity
+     */
+    public static List<HL7ResultParser.ParsedResults> parse(
+            InputStream inputStream, Map<String, String> columnMappings, String perFileTestCode) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser: null input or empty column mappings");
@@ -94,16 +106,32 @@ public class FileResultParser {
                 String sampleId = getCellValue(row, fieldIndex.get("sampleId"), formatter);
                 String testCode = getCellValue(row, fieldIndex.get("testCode"), formatter);
                 String result = getCellValue(row, fieldIndex.get("result"), formatter);
+                String ctValue = getCellValue(row, fieldIndex.get("ctValue"), formatter);
                 String units = getCellValue(row, fieldIndex.get("units"), formatter);
                 String interpretation = getCellValue(row, fieldIndex.get("interpretation"), formatter);
                 String qcTask = getCellValue(row, fieldIndex.get("qcTask"), formatter);
                 String testDate = getCellValue(row, fieldIndex.get("testDate"), formatter);
 
                 if (sampleId == null || sampleId.isBlank()) continue;
-                if (testCode == null || testCode.isBlank()) continue;
+                if (testCode == null || testCode.isBlank()) {
+                    if (perFileTestCode != null && !perFileTestCode.isBlank()) {
+                        testCode = perFileTestCode.trim();
+                    } else {
+                        continue;
+                    }
+                }
 
-                // Use result or interpretation as the value
-                String value = (result != null && !result.isBlank()) ? result : interpretation;
+                // Use result → ctValue → interpretation as the value.
+                // QuantStudio HIV Viral Load fills `Quantity Mean` (mapped to
+                // `result`) with copies/mL. QuantStudio Arbovirus PCR leaves
+                // `Quantity Mean` empty because arbovirus targets are
+                // qualitative — only the `CT` column (mapped to `ctValue`)
+                // carries the cycle threshold. Falling back from result →
+                // ctValue lets a single profile serve both workflows without
+                // a rewrite. Interpretation is a last-resort text slot.
+                String value = (result != null && !result.isBlank()) ? result
+                        : (ctValue != null && !ctValue.isBlank()) ? ctValue
+                        : interpretation;
                 if (value == null || value.isBlank()) continue;
 
                 boolean isNumeric = isNumericValue(value);
@@ -147,6 +175,13 @@ public class FileResultParser {
     public static List<HL7ResultParser.ParsedResults> parseCsv(
             byte[] content, Map<String, String> columnMappings,
             String delimiter, int skipRows) {
+        return parseCsv(content, columnMappings, delimiter, skipRows, null);
+    }
+
+    /** See {@link #parse(InputStream, Map, String)} for {@code perFileTestCode} semantics. */
+    public static List<HL7ResultParser.ParsedResults> parseCsv(
+            byte[] content, Map<String, String> columnMappings,
+            String delimiter, int skipRows, String perFileTestCode) {
 
         if (content == null || content.length == 0 || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseCsv: null/empty input or column mappings");
@@ -211,7 +246,13 @@ public class FileResultParser {
                     String dateTime = getMappedValue(record, columnMappings, "dateTime");
 
                     if (sampleId == null || sampleId.isBlank()) continue;
-                    if (testCode == null || testCode.isBlank()) continue;
+                    if (testCode == null || testCode.isBlank()) {
+                        if (perFileTestCode != null && !perFileTestCode.isBlank()) {
+                            testCode = perFileTestCode.trim();
+                        } else {
+                            continue;
+                        }
+                    }
 
                     String value = (result != null && !result.isBlank()) ? result : interpretation;
                     if (value == null || value.isBlank()) continue;
@@ -295,8 +336,18 @@ public class FileResultParser {
     }
 
     /**
-     * Find header row. For QuantStudio-style files with metadata block, scans
-     * for row where first cell equals "Well".
+     * Find header row. For QuantStudio-style files with a metadata preamble
+     * (row 0 contains {@code "Block Type"} or {@code "Experiment Name"}),
+     * scan forward for a row whose first cell is {@code "Well"}.
+     * <p>
+     * Scan window: 200 rows. This is defensive margin — Madagascar's
+     * CVVIH 24 07 2024 serie 02 QuantStudio 7 Flex export has the header
+     * row at row 50, the Arbo-extraitQS5.xls at row 20, and QS SDS exports
+     * in general put the header between row 15 and row 50 depending on
+     * how many calibration / experiment metadata fields the tech filled in.
+     * A 60-row window (previous value) covered both known real files but
+     * gave only a 10-row margin on the CVVIH case; 200 covers any
+     * reasonable preamble size.
      * Ported from ExcelAnalyzerReader.findHeaderRow().
      */
     private static int findHeaderRow(Sheet sheet, DataFormatter formatter) {
@@ -310,7 +361,7 @@ public class FileResultParser {
         }
         // QuantStudio metadata block detection
         if (firstCell != null && (firstCell.contains("Block Type") || firstCell.contains("Experiment Name"))) {
-            for (int r = firstRow + 1; r <= Math.min(firstRow + 60, sheet.getLastRowNum()); r++) {
+            for (int r = firstRow + 1; r <= Math.min(firstRow + 200, sheet.getLastRowNum()); r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
                 String cell0 = formatter.formatCellValue(row.getCell(0));
@@ -366,8 +417,28 @@ public class FileResultParser {
     }
 
     private static boolean isControlRow(String sampleId, String qcTask) {
-        if (qcTask != null && "CONTROL".equalsIgnoreCase(qcTask.trim())) {
-            return true;
+        // Non-clinical task / type values are treated as controls so they're
+        // preserved in the staging table but hidden from the clinical review
+        // UI by default (OE staging filters by isControl). Covers:
+        //   • "CONTROL" — generic control flag (pre-existing)
+        //   • "STANDARD" / "STD" — QuantStudio calibration curve rows
+        //   • "NTC" — No Template Control (QuantStudio)
+        //   • "CALIBRATOR" — plate-reader calibration wells
+        //   • "POSITIVE" / "NEGATIVE" — Bruker Fluorocycler XT control wells.
+        //     The Fluorocycler "Type" column distinguishes clinical samples
+        //     (Type=Unknown) from control wells (Type=Positive for positive
+        //     control, Type=Negative for negative control). These are NOT
+        //     result interpretations — they're well purposes, same semantic
+        //     as QuantStudio's Task=STANDARD. In practice no analyzer we
+        //     handle uses Type=Positive to mean "this clinical sample is
+        //     positive"; that lives in the Result column instead.
+        if (qcTask != null) {
+            String t = qcTask.trim().toUpperCase();
+            if (t.equals("CONTROL") || t.equals("STANDARD") || t.equals("STD")
+                    || t.equals("NTC") || t.equals("CALIBRATOR")
+                    || t.equals("POSITIVE") || t.equals("NEGATIVE")) {
+                return true;
+            }
         }
         if (sampleId == null) {
             return false;
