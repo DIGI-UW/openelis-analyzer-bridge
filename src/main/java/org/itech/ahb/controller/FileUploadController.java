@@ -102,7 +102,7 @@ public class FileUploadController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> uploadFile(
             @RequestParam("analyzerId") String analyzerId,
-            @RequestParam("testCode") String testCode,
+            @RequestParam(value = "testCode", required = false) String testCode,
             @RequestParam("file") MultipartFile file) {
 
         AnalyzerEntry entry = findEntryById(analyzerId);
@@ -122,10 +122,17 @@ public class FileUploadController {
                     "Analyzer " + analyzerId
                             + " has no configured test mappings — refusing upload");
         }
-        if (testCode == null || testCode.isBlank() || !allowedCodes.contains(testCode)) {
+        // testCode is optional — files with per-row test labels (e.g. QuantStudio's
+        // Target Name column) don't need a form-level declaration. Only reject if a
+        // non-blank value was provided that doesn't match the configured mapping set.
+        if (testCode != null && !testCode.isBlank() && !allowedCodes.contains(testCode)) {
             return errorHtml(HttpStatus.BAD_REQUEST,
                     "testCode '" + testCode + "' is not in analyzer's configured mapping set "
                             + allowedCodes);
+        }
+        // Normalize blank to null so downstream receives a clean signal
+        if (testCode != null && testCode.isBlank()) {
+            testCode = null;
         }
 
         if (file == null || file.isEmpty()) {
