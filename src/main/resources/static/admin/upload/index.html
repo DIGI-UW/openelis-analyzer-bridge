@@ -39,15 +39,17 @@
       </select>
       <div class="watch-path" id="watch-path"></div>
 
-      <label for="test-select">Test</label>
-      <select name="testCode" id="test-select" required disabled>
+      <label for="test-select">Test (optional — override per-row labels)</label>
+      <select name="testCode" id="test-select" disabled>
         <option value="">Select an analyzer first</option>
       </select>
       <div class="test-hint">
-        Only test codes configured on the selected analyzer (via its
-        <code>AnalyzerTestMapping</code> set from the profile) can be
-        chosen. Picking a file will pre-select a suggested test code
-        from file content; you can override before clicking Upload.
+        Optional. If the file has per-row test labels (e.g. QuantStudio's
+        <code>Target Name</code> column), leave this blank — the parser
+        reads test identity from each row. Set this only when the file
+        has NO per-row label (e.g. FluoroCycler) and the tech needs to
+        declare which test this file represents. The scanner will suggest
+        a value from file content when possible.
       </div>
 
       <label for="file-input">File</label>
