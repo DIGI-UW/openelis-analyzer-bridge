@@ -103,7 +103,8 @@ public class FileUploadController {
     public ResponseEntity<String> uploadFile(
             @RequestParam("analyzerId") String analyzerId,
             @RequestParam(value = "testCode", required = false) String testCode,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") MultipartFile file,
+            jakarta.servlet.http.HttpServletResponse response) {
 
         AnalyzerEntry entry = findEntryById(analyzerId);
         if (entry == null) {
@@ -199,24 +200,57 @@ public class FileUploadController {
                     "Failed to write upload to " + targetDir + ": " + e.getMessage());
         }
 
+        // Stream progress to the browser via chunked HTML response so the
+        // user sees "Processing accession N of M" instead of a frozen screen.
+        // Each flush() pushes a new <p> line to the browser immediately.
+        response.setContentType("text/html; charset=UTF-8");
+        response.setStatus(200);
+        java.io.PrintWriter writer;
         try {
-            fileMessageHandler.processFile(targetFile, analyzerId, testCode);
+            writer = response.getWriter();
+        } catch (IOException e) {
+            return errorHtml(HttpStatus.INTERNAL_SERVER_ERROR, "Response writer failed");
+        }
+        writer.write("<!DOCTYPE html><html><head><title>Uploading…</title>"
+                + "<style>"
+                + "body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; }"
+                + "h1 { font-size: 1.3rem; }"
+                + ".progress { color: #525252; font-size: 0.85rem; margin: 2px 0; }"
+                + ".banner { padding: 12px 16px; border-radius: 4px; margin: 16px 0; }"
+                + ".banner.success { background: #defbe6; border-left: 4px solid #24a148; }"
+                + ".banner.error { background: #fff1f1; border-left: 4px solid #da1e28; }"
+                + "code { background: #e8e8e8; padding: 2px 6px; border-radius: 3px; font-size: 0.85em; }"
+                + "</style></head><body>"
+                + "<h1>Processing " + htmlEscape(originalFilename) + "…</h1>");
+        writer.flush();
+
+        try {
+            fileMessageHandler.processFile(targetFile, analyzerId, testCode,
+                    (current, total, accession) -> {
+                        writer.write("<p class=\"progress\">Accession " + current + " of " + total
+                                + ": <code>" + htmlEscape(accession) + "</code></p>");
+                        writer.flush();
+                    });
         } catch (FileProcessingException | IOException e) {
             log.warn("FileUploadController: processFile failed for {}: {}",
                     targetFile, e.getMessage());
-            return errorHtml(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "File upload accepted but processing failed: " + e.getMessage());
+            writer.write("<div class=\"banner error\">Processing failed: "
+                    + htmlEscape(e.getMessage()) + "</div></body></html>");
+            writer.flush();
+            return null;
         }
 
-        String successBanner = String.format(
-                "<div class=\"banner success\">File <code>%s</code> uploaded to <code>%s</code>"
-                        + " for analyzer <strong>%s</strong> with test code <strong>%s</strong>.</div>"
-                        + "<p><a href=\"/admin/upload/index.html\">Upload another file</a></p>",
-                htmlEscape(originalFilename),
-                htmlEscape(targetFile.toString()),
-                htmlEscape(entry.getName() != null ? entry.getName() : analyzerId),
-                htmlEscape(testCode));
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(successBanner));
+        String analyzerName = entry.getName() != null ? entry.getName() : analyzerId;
+        writer.write("<div class=\"banner success\">File <code>" + htmlEscape(originalFilename)
+                + "</code> uploaded to <code>" + htmlEscape(targetFile.toString())
+                + "</code> for analyzer <strong>" + htmlEscape(analyzerName)
+                + "</strong>"
+                + (testCode != null ? " with test code <strong>" + htmlEscape(testCode) + "</strong>" : "")
+                + ".</div>"
+                + "<p><a href=\"/admin/upload/index.html\">Upload another file</a></p>"
+                + "</body></html>");
+        writer.flush();
+        return null;
     }
 
     /**
