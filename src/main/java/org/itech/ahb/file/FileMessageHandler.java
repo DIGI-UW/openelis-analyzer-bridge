@@ -95,8 +95,22 @@ public class FileMessageHandler {
      * (upload-time admin declaration or self-declaration scanner) — never
      * read from persistent analyzer config.
      */
+    /**
+     * Callback for per-accession progress during file processing.
+     * Used by the upload controller to stream progress to the browser.
+     */
+    @FunctionalInterface
+    public interface ProgressCallback {
+        void onAccession(int current, int total, String accessionNumber);
+    }
+
     public MessageEnvelope processFile(Path filePath, String analyzerId, String perFileTestCode)
             throws IOException, FileProcessingException {
+        return processFile(filePath, analyzerId, perFileTestCode, null);
+    }
+
+    public MessageEnvelope processFile(Path filePath, String analyzerId, String perFileTestCode,
+            ProgressCallback progress) throws IOException, FileProcessingException {
         if (analyzerId == null || analyzerId.isBlank()) {
             throw new FileProcessingException("analyzerId is required for FILE delivery: " + filePath);
         }
@@ -119,7 +133,7 @@ public class FileMessageHandler {
                     "FILE transport requires bridge.routing.useFhir=true; legacy direct import path has been removed");
         }
 
-        postFileAsFhir(filePath, analyzerId, content, perFileTestCode);
+        postFileAsFhir(filePath, analyzerId, content, perFileTestCode, progress);
 
         return MessageEnvelope.builder()
                 .protocol(Protocol.CSV)
@@ -131,7 +145,8 @@ public class FileMessageHandler {
                 .build();
     }
 
-    private void postFileAsFhir(Path filePath, String analyzerId, byte[] content, String perFileTestCode)
+    private void postFileAsFhir(Path filePath, String analyzerId, byte[] content, String perFileTestCode,
+            ProgressCallback progress)
             throws IOException, FileProcessingException {
         // Resolve analyzer entry from registry
         AnalyzerEntry analyzerEntry = null;
@@ -180,7 +195,12 @@ public class FileMessageHandler {
         URI fhirUri = buildFhirUri();
 
         int totalResults = 0;
+        int accessionIndex = 0;
         for (HL7ResultParser.ParsedResults parsed : allResults) {
+            accessionIndex++;
+            if (progress != null) {
+                progress.onAccession(accessionIndex, allResults.size(), parsed.accessionNumber());
+            }
             String fhirJson = FhirBundleBuilder.buildBundle(
                     parsed.accessionNumber(), analyzerId, parsed.results());
 
