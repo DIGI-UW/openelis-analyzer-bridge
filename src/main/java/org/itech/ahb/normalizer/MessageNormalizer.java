@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.metrics.MetricsService;
+import org.itech.ahb.model.Protocol;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.routing.MessageRouter;
 import org.itech.ahb.util.DeadLetterWriter;
@@ -161,17 +162,34 @@ public class MessageNormalizer implements MessageRouter {
         }
 
         String protocolHint = firstNonBlank(envelope.getProtocolAnalyzerHint(), envelope.getAnalyzerId());
+
+        // Skip ASTM Q-only messages (queries with no R-records) — they don't carry
+        // results to forward. Until bidirectional order-response is implemented
+        // (OGC-335/336), log INFO and ack as success. Without this, the result
+        // parser logs ERROR for every Q-record and clutters operational telemetry.
+        if (envelope.getProtocol() == Protocol.ASTM && isQueryOnlyAstmMessage(envelope.getRawMessage())) {
+            log.info("ASTM query message from source '{}' (no R-records) — protocolHint='{}'. "
+                + "Skipping result-parser path; bidirectional order-response not implemented.",
+                envelope.getSourceId(), protocolHint);
+            if (metricsService != null) {
+                metricsService.recordRouted(sample, protocol, transport, true);
+            }
+            return true;
+        }
+
         String resolvedAnalyzerId = identifier.identify(envelope);
 
-        // Policy: source-binding registration is authoritative for routing.
+        // Transparent-pipe principle: routing is NEVER gated on local source
+        // registration. If we don't recognize the source, we forward the
+        // bundle anyway with full identification (sourceId + protocolHint
+        // travel as Device resource fields) and let OE handle find-or-create
+        // stub atomically per FHIR-bundle import. See
+        // .claude/projects/.../memory/feedback_bridge_transparent_fhir_pipe.md
+        // for the architectural rule.
         if (resolvedAnalyzerId == null || resolvedAnalyzerId.isBlank()) {
-            log.warn("No registered analyzer for source '{}'; protocolHint='{}' — message will not be routed",
+            log.info("Source '{}' not in local registry — forwarding bundle anyway. "
+                + "OE will find-or-create stub from Device resource. protocolHint='{}'",
                 envelope.getSourceId(), protocolHint);
-            handleUnknownSource(envelope, protocolHint);
-            if (metricsService != null) {
-                metricsService.recordRouted(sample, protocol, transport, false);
-            }
-            return false;
         }
 
         AnalyzerRegistryConfig.AnalyzerEntry registryEntry = registry != null
@@ -179,9 +197,9 @@ public class MessageNormalizer implements MessageRouter {
             : null;
 
         // Policy: protocol hints are diagnostic evidence only. Routing remains bound to the
-        // source-registered OpenELIS analyzer ID, even when the protocol-level sender token
-        // uses a different namespace (for example, GENEXPERT vs OE analyzer id 44).
-        if (protocolHint != null && !protocolHint.equals(resolvedAnalyzerId)) {
+        // source-registered OpenELIS analyzer ID when present; when not present, OE resolves
+        // from the FHIR Device resource carrying the same hint.
+        if (resolvedAnalyzerId != null && protocolHint != null && !protocolHint.equals(resolvedAnalyzerId)) {
             if (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry)) {
                 log.info("Analyzer identity evidence matched registered analyzer for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
                     envelope.getSourceId(), resolvedAnalyzerId, protocolHint, registryEntry.getName());
@@ -226,34 +244,34 @@ public class MessageNormalizer implements MessageRouter {
         return success;
     }
 
-    private void handleUnknownSource(MessageEnvelope envelope, String protocolHint) {
-        // Report discovered source to OE asynchronously (don't block message processing)
-        if (oeApiClient != null) {
-            final String sourceId = envelope.getSourceId();
-            final String protocolName = envelope.getProtocol() != null ? envelope.getProtocol().name() : null;
-            final String transportName = envelope.getTransport() != null ? envelope.getTransport().name() : null;
-            java.util.concurrent.CompletableFuture.runAsync(() -> {
-                try {
-                    Map<String, String> body = new LinkedHashMap<>();
-                    body.put("sourceId", sourceId);
-                    body.put("protocol", protocolName);
-                    body.put("protocolHint", protocolHint);
-                    body.put("transport", transportName);
-                    Map<String, Object> result = oeApiClient.post("/rest/analyzer/discovered-sources", body);
-                    if (result != null) {
-                        log.info("Reported unknown source '{}' to OE: analyzerId={}, alreadyExists={}",
-                            sourceId, result.get("analyzerId"), result.get("alreadyExists"));
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to report unknown source '{}' to OE: {}", sourceId, e.getMessage());
-                }
-            }, asyncExecutor);
+    /**
+     * Detect ASTM Q-only messages (queries with no R-records).
+     *
+     * <p>Bidirectional ASTM analyzers (GeneXpert, etc.) periodically send
+     * Q-records asking the LIS for pending orders. These messages carry no
+     * results — they're requests, not responses. Trying to parse them as
+     * results produces "FHIR parse produced no results" errors that
+     * cluttered telemetry until this filter was added (see plan
+     * .claude/plans/abundant-chasing-hoare.md Issue #3).
+     *
+     * <p>Until OGC-335/336 implements the bidirectional order-response
+     * handler, the right thing to do is detect Q-only messages early,
+     * log INFO, and ack as success (we received and intentionally
+     * declined to forward).
+     *
+     * @param rawMessage the ASTM message payload
+     * @return true if the message contains a Q-record but no R-record
+     */
+    private boolean isQueryOnlyAstmMessage(String rawMessage) {
+        if (rawMessage == null || rawMessage.isBlank()) return false;
+        boolean hasQ = false;
+        boolean hasR = false;
+        for (String segment : rawMessage.split("\r")) {
+            String trimmed = segment.trim();
+            if (trimmed.startsWith("Q|")) hasQ = true;
+            if (trimmed.startsWith("R|")) hasR = true;
         }
-
-        // DLQ write stays synchronous — local filesystem, fast
-        if (deadLetterWriter != null) {
-            deadLetterWriter.write(envelope, "UNREGISTERED_SOURCE");
-        }
+        return hasQ && !hasR;
     }
 
     private String firstNonBlank(String first, String second) {

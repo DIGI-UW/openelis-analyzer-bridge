@@ -99,9 +99,10 @@ class MessageNormalizerTest {
         }
 
         @Test
-        @DisplayName("Should reject routing when identifier returns null")
-        void shouldRejectWhenIdentifierReturnsNull() {
+        @DisplayName("Should forward even when identifier returns null (transparent-pipe principle)")
+        void shouldForwardWhenIdentifierReturnsNull() {
             when(mockIdentifier.identify(any())).thenReturn(null);
+            when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.CSV)
@@ -112,8 +113,16 @@ class MessageNormalizerTest {
 
             boolean result = normalizer.process(envelope);
 
-            assertFalse(result);
-            verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
+            // Per the transparent-pipe architecture, unknown sources are no
+            // longer rejected at the bridge — bundle is forwarded so OE can
+            // find-or-create the analyzer atomically from the FHIR Device
+            // resource. See feedback_bridge_transparent_fhir_pipe.md.
+            assertTrue(result);
+            verify(mockForwardingRouter).route(argThat(e ->
+                e.getResolvedAnalyzerId() == null &&
+                e.getAnalyzerId() == null &&
+                "/mnt/analyzer/file.csv".equals(e.getSourceId())
+            ));
         }
 
         @Test
@@ -173,9 +182,10 @@ class MessageNormalizerTest {
         }
 
         @Test
-        @DisplayName("Should reject routing when only protocol hint is present")
-        void shouldRejectWhenOnlyProtocolHintPresent() {
+        @DisplayName("Should forward when only protocol hint is present (transparent-pipe principle)")
+        void shouldForwardWhenOnlyProtocolHintPresent() {
             when(mockIdentifier.identify(any())).thenReturn(null);
+            when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.HL7)
@@ -187,8 +197,13 @@ class MessageNormalizerTest {
 
             boolean result = normalizer.process(envelope);
 
-            assertFalse(result);
-            verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
+            // Forward anyway; OE resolves analyzer from the FHIR Device
+            // resource that the router includes from sourceId + hint.
+            assertTrue(result);
+            verify(mockForwardingRouter).route(argThat(e ->
+                e.getResolvedAnalyzerId() == null &&
+                "SYSMEX".equals(e.getProtocolAnalyzerHint())
+            ));
         }
     }
 
@@ -413,11 +428,18 @@ class MessageNormalizerTest {
         }
     }
 
-    // === OGC-526: Unknown source discovery + DLQ tests ===
+    // === Transparent-pipe behaviour for unknown sources ===
+    //
+    // Replaces the older OGC-526 "Unknown Source Handling" tests, which
+    // verified the now-retired discovered-sources side-channel + DLQ writer.
+    // The transparent-pipe architecture (see
+    // .claude memory feedback_bridge_transparent_fhir_pipe.md) requires the
+    // bridge to forward unknown-source messages anyway — OE owns
+    // find-or-create-stub atomically per FHIR-bundle import.
 
     @Nested
-    @DisplayName("Unknown Source Handling Tests")
-    class UnknownSourceHandlingTests {
+    @DisplayName("Unknown Source Forwarding (transparent-pipe)")
+    class UnknownSourceForwardingTests {
 
         @Mock
         private OeApiClient mockOeApiClient;
@@ -425,73 +447,66 @@ class MessageNormalizerTest {
         @Mock
         private DeadLetterWriter mockDeadLetterWriter;
 
-        private MessageNormalizer normalizerWithDlq;
+        private MessageNormalizer normalizerWithUnknownSource;
+
+        private AnalyzerIdentifier rejectingIdentifier;
 
         @BeforeEach
-        void setUpDlqNormalizer() {
-            AnalyzerIdentifier rejectingIdentifier = mock(AnalyzerIdentifier.class);
-            when(rejectingIdentifier.identify(any())).thenReturn(null);
-
-            // Runnable::run executes on the calling thread — deterministic, no timeout needed
-            normalizerWithDlq = new MessageNormalizer(
+        void setUp() {
+            rejectingIdentifier = mock(AnalyzerIdentifier.class);
+            // Note: per-test stub `rejectingIdentifier.identify` because the
+            // Q-only-message path short-circuits before identifier is called
+            // (avoids Mockito strict-mode UnnecessaryStubbing failures).
+            normalizerWithUnknownSource = new MessageNormalizer(
                 mockForwardingRouter, rejectingIdentifier,
                 null, null, mockOeApiClient, mockDeadLetterWriter, Runnable::run);
         }
 
         @Test
-        @DisplayName("Should report unknown source to OE via discovered-sources endpoint")
-        void shouldReportUnknownSourceToOe() {
-            when(mockOeApiClient.post(any(), any())).thenReturn(Map.of("analyzerId", "99"));
+        @DisplayName("Forwards unknown-source messages without calling discovered-sources")
+        void shouldForwardWithoutSideChannel() {
+            when(rejectingIdentifier.identify(any())).thenReturn(null);
+            when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
 
+            MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.HL7)
+                .transport(Transport.MLLP)
+                .sourceId("10.0.0.50")
+                .rawMessage("MSH|^~\\&|||UNKNOWN-DEVICE")
+                .build();
+
+            boolean result = normalizerWithUnknownSource.process(envelope);
+
+            assertTrue(result, "transparent pipe: forward anyway");
+            verify(mockForwardingRouter).route(any(MessageEnvelope.class));
+            // Side-channel must NOT be invoked
+            verify(mockOeApiClient, never()).post(any(), any());
+            // Dead-letter must NOT be written for unknown source
+            verify(mockDeadLetterWriter, never()).write(any(), any());
+        }
+
+        @Test
+        @DisplayName("Drops ASTM Q-only messages (queries) without calling parser or DLQ")
+        void shouldSkipAstmQueryOnlyMessages() {
+            // Real GeneXpert query format: H|...|Q|...|L|
+            String astmQuery = "H|@^\\|GXM-12345|||LA2M3^GeneXpert^6.2|||||geneexpert||P|1394-97|20260414155743\r"
+                + "Q|1|ALL||||||||||O@N\r"
+                + "L|1|N\r";
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
                 .transport(Transport.TCP)
                 .sourceId("10.0.0.50")
-                .rawMessage("H|\\^&|||UNKNOWN-DEVICE")
+                .rawMessage(astmQuery)
                 .build();
 
-            boolean result = normalizerWithDlq.process(envelope);
+            boolean result = normalizerWithUnknownSource.process(envelope);
 
-            assertFalse(result, "Unknown source should not route");
-            verify(mockOeApiClient).post(eq("/rest/analyzer/discovered-sources"), argThat(body ->
-                "10.0.0.50".equals(body.get("sourceId"))
-                    && "ASTM".equals(body.get("protocol"))
-                    && "TCP".equals(body.get("transport"))
-            ));
-        }
-
-        @Test
-        @DisplayName("Should write message to dead letter on unknown source")
-        void shouldWriteDeadLetterOnUnknownSource() {
-            MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.HL7)
-                .transport(Transport.MLLP)
-                .sourceId("192.168.1.99")
-                .rawMessage("MSH|^~\\&|UNKNOWN")
-                .build();
-
-            normalizerWithDlq.process(envelope);
-
-            verify(mockDeadLetterWriter).write(eq(envelope), eq("UNREGISTERED_SOURCE"));
-        }
-
-        @Test
-        @DisplayName("Should survive OE API failure gracefully")
-        void shouldSurviveOeApiFailure() {
-            when(mockOeApiClient.post(any(), any())).thenThrow(new RuntimeException("OE unreachable"));
-
-            MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.TCP)
-                .sourceId("10.0.0.99")
-                .rawMessage("H|\\^&|||TEST")
-                .build();
-
-            boolean result = normalizerWithDlq.process(envelope);
-
-            assertFalse(result);
-            // DLQ should still be written even if OE call fails
-            verify(mockDeadLetterWriter).write(eq(envelope), eq("UNREGISTERED_SOURCE"));
+            // Q-only messages are intentionally not forwarded — no R-records
+            // to translate. Treated as "successfully handled" so callers
+            // don't retry / log errors.
+            assertTrue(result);
+            verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
+            verify(mockDeadLetterWriter, never()).write(any(), any());
         }
     }
 }
