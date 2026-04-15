@@ -9,8 +9,14 @@ import org.apache.commons.io.input.BOMInputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
@@ -21,6 +27,10 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 /**
  * Extracts lab results from Excel (xlsx/xls) and CSV files.
@@ -41,6 +51,10 @@ public class FileResultParser {
             "CNEG", "CPOS", "NTC", "PTC",
             // ELISA plate readers (Tecan, Multiskan)
             "NEG", "POS", "NC", "PC", "BLANC", "BLANK");
+
+    /** OpenDocument XML namespaces used to navigate ODS content.xml. */
+    private static final String ODS_TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
+    private static final String ODS_TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
 
     /**
      * Parse an Excel file and extract results using column mappings.
@@ -161,6 +175,234 @@ public class FileResultParser {
             log.error("FileResultParser: failed to read Excel file: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    /**
+     * Parse an OpenDocument Spreadsheet (.ods) file and extract results.
+     *
+     * <p>Header row is located by scanning for a cell whose text equals
+     * {@code "Sample ID"}. {@code Row} + {@code Col} columns, when both
+     * present, are composed into the {@code position} semantic field
+     * inline (not declared in {@code column_mapping}). If {@code Calc. Conc.}
+     * is absent or all blank, {@code Result} is promoted to the
+     * {@code result} semantic field so qualitative rows still produce a
+     * populated value.
+     */
+    public static List<HL7ResultParser.ParsedResults> parseOds(
+            InputStream inputStream, Map<String, String> columnMappings, String perFileTestCode) {
+
+        if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
+            log.warn("FileResultParser.parseOds: null input or empty column mappings");
+            return null;
+        }
+
+        List<List<String>> table;
+        try {
+            table = readOdsContentXml(inputStream);
+        } catch (IOException | SAXException | ParserConfigurationException e) {
+            log.error("FileResultParser.parseOds: failed to read ODS file: {}", e.getMessage(), e);
+            return null;
+        }
+
+        if (table == null || table.isEmpty()) {
+            log.warn("FileResultParser.parseOds: no usable table found in content.xml");
+            return null;
+        }
+
+        int headerRowIdx = findOdsHeaderRow(table);
+        if (headerRowIdx < 0) {
+            log.warn("FileResultParser.parseOds: header row not found (no row contains 'Sample ID')");
+            return null;
+        }
+
+        List<String> headers = table.get(headerRowIdx);
+        Map<String, Integer> headerIndex = new LinkedHashMap<>();
+        for (int i = 0; i < headers.size(); i++) {
+            String h = headers.get(i);
+            if (h != null && !h.isBlank()) {
+                headerIndex.put(h.trim(), i);
+            }
+        }
+
+        Map<String, Integer> fieldIndex = new HashMap<>();
+        for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
+            Integer colIdx = headerIndex.get(mapping.getKey());
+            if (colIdx != null) {
+                fieldIndex.put(mapping.getValue(), colIdx);
+            }
+        }
+
+        // If Calc. Conc. is missing or all-blank, promote Result to the
+        // `result` semantic field so qualitative rows still produce a value.
+        Integer calcConcIdx = headerIndex.get("Calc. Conc.");
+        boolean calcConcPopulated = false;
+        if (calcConcIdx != null) {
+            for (int r = headerRowIdx + 1; r < table.size(); r++) {
+                String v = getRowValue(table.get(r), calcConcIdx);
+                if (v != null && !v.isBlank()) { calcConcPopulated = true; break; }
+            }
+        }
+        if (!calcConcPopulated) {
+            Integer resultColIdx = headerIndex.get("Result");
+            if (resultColIdx != null) {
+                fieldIndex.put("result", resultColIdx);
+            }
+        }
+
+        Map<String, List<AnalyzerResult>> resultsByAccession = new HashMap<>();
+
+        for (int rIdx = headerRowIdx + 1; rIdx < table.size(); rIdx++) {
+            List<String> row = table.get(rIdx);
+            if (isRowAllEmpty(row)) continue;
+
+            String sampleId = getRowValue(row, fieldIndex.get("sampleId"));
+            String testCode = getRowValue(row, fieldIndex.get("testCode"));
+            String result = getRowValue(row, fieldIndex.get("result"));
+            String interpretation = getRowValue(row, fieldIndex.get("interpretation"));
+            String qcTask = getRowValue(row, fieldIndex.get("qcTask"));
+            String units = getRowValue(row, fieldIndex.get("units"));
+            String ctValue = getRowValue(row, fieldIndex.get("ctValue"));
+
+            if (sampleId == null || sampleId.isBlank()) continue;
+            if (testCode == null || testCode.isBlank()) {
+                if (perFileTestCode != null && !perFileTestCode.isBlank()) {
+                    testCode = perFileTestCode.trim();
+                } else {
+                    continue;
+                }
+            }
+
+            String value = (result != null && !result.isBlank()) ? result
+                    : (ctValue != null && !ctValue.isBlank()) ? ctValue
+                    : interpretation;
+            if (value == null || value.isBlank()) continue;
+
+            boolean isNumeric = isNumericValue(value);
+            AnalyzerResult ar = isNumeric
+                    ? AnalyzerResult.numeric(testCode, testCode, value, units)
+                    : AnalyzerResult.text(testCode, testCode, value);
+            ar = ar.withControl(isControlRow(sampleId, qcTask));
+
+            resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
+        }
+
+        if (resultsByAccession.isEmpty()) {
+            log.warn("FileResultParser.parseOds: no results extracted from ODS");
+            return null;
+        }
+
+        List<HL7ResultParser.ParsedResults> allResults = new ArrayList<>();
+        for (Map.Entry<String, List<AnalyzerResult>> entry : resultsByAccession.entrySet()) {
+            allResults.add(new HL7ResultParser.ParsedResults(entry.getKey(), entry.getValue()));
+        }
+        log.info("FileResultParser.parseOds: extracted {} accessions from ODS", allResults.size());
+        return allResults;
+    }
+
+    /**
+     * Read an ODS file's {@code content.xml} and return its first non-empty
+     * table as a row-major list of cell text values. Public for reuse by
+     * the file-identity scanner.
+     */
+    public static List<List<String>> readOdsContentXml(InputStream inputStream)
+            throws IOException, SAXException, ParserConfigurationException {
+        try (ZipInputStream zis = new ZipInputStream(inputStream)) {
+            ZipEntry e;
+            while ((e = zis.getNextEntry()) != null) {
+                if ("content.xml".equals(e.getName())) {
+                    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+                    dbf.setNamespaceAware(true);
+                    // Defensive: disable DTD + external entity processing
+                    dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                    dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+                    dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+                    DocumentBuilder db = dbf.newDocumentBuilder();
+                    Document doc = db.parse(zis);
+                    NodeList tables = doc.getElementsByTagNameNS(ODS_TABLE_NS, "table");
+                    for (int t = 0; t < tables.getLength(); t++) {
+                        Element tbl = (Element) tables.item(t);
+                        List<List<String>> rows = extractOdsTableRows(tbl);
+                        boolean anyNonEmpty = false;
+                        for (List<String> r : rows) {
+                            if (!isRowAllEmpty(r)) { anyNonEmpty = true; break; }
+                        }
+                        if (anyNonEmpty) return rows;
+                    }
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static List<List<String>> extractOdsTableRows(Element table) {
+        List<List<String>> rows = new ArrayList<>();
+        NodeList rowNodes = table.getElementsByTagNameNS(ODS_TABLE_NS, "table-row");
+        for (int r = 0; r < rowNodes.getLength(); r++) {
+            Element rowEl = (Element) rowNodes.item(r);
+            List<String> cells = new ArrayList<>();
+            NodeList cellNodes = rowEl.getElementsByTagNameNS(ODS_TABLE_NS, "table-cell");
+            for (int c = 0; c < cellNodes.getLength(); c++) {
+                Element cellEl = (Element) cellNodes.item(c);
+                String text = extractOdsCellText(cellEl);
+                int repeat = 1;
+                String repeatAttr = cellEl.getAttributeNS(ODS_TABLE_NS, "number-columns-repeated");
+                if (repeatAttr != null && !repeatAttr.isBlank()) {
+                    try {
+                        repeat = Integer.parseInt(repeatAttr);
+                    } catch (NumberFormatException ignored) { }
+                }
+                // Empty trailing repeats blow up row length — collapse them
+                // to a single blank cell to preserve column alignment for
+                // data cells without inflating memory.
+                if ((text == null || text.isBlank()) && repeat > 64) {
+                    cells.add("");
+                } else {
+                    int capped = Math.min(repeat, 1024);
+                    for (int i = 0; i < capped; i++) cells.add(text == null ? "" : text);
+                }
+            }
+            rows.add(cells);
+        }
+        return rows;
+    }
+
+    private static String extractOdsCellText(Element cellEl) {
+        NodeList ps = cellEl.getElementsByTagNameNS(ODS_TEXT_NS, "p");
+        if (ps.getLength() == 0) return null;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ps.getLength(); i++) {
+            if (i > 0) sb.append('\n');
+            sb.append(ps.item(i).getTextContent());
+        }
+        String s = sb.toString().trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    private static int findOdsHeaderRow(List<List<String>> table) {
+        for (int r = 0; r < table.size(); r++) {
+            List<String> row = table.get(r);
+            for (String cell : row) {
+                if (cell != null && "Sample ID".equalsIgnoreCase(cell.trim())) {
+                    return r;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isRowAllEmpty(List<String> row) {
+        if (row == null || row.isEmpty()) return true;
+        for (String cell : row) {
+            if (cell != null && !cell.isBlank()) return false;
+        }
+        return true;
+    }
+
+    private static String getRowValue(List<String> row, Integer colIdx) {
+        if (row == null || colIdx == null || colIdx < 0 || colIdx >= row.size()) return null;
+        String v = row.get(colIdx);
+        return (v != null && !v.isBlank()) ? v.trim() : null;
     }
 
     /**

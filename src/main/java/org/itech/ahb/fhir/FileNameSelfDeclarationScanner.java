@@ -51,6 +51,14 @@ public class FileNameSelfDeclarationScanner {
                     "analyzer has no configured test mappings — scanner needs at least one");
         }
 
+        // ODS branch — POI's WorkbookFactory doesn't handle OpenDocument
+        // spreadsheets. Read via the zero-dep ZIP+XML path in FileResultParser
+        // and run the same synonym-scan against the resulting row grid.
+        String name = filePath.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".ods")) {
+            return scanOdsFile(filePath, columnMappings, mappedTestCodes, scannerSynonyms);
+        }
+
         try (InputStream in = new FileInputStream(filePath.toFile());
                 Workbook workbook = WorkbookFactory.create(in)) {
 
@@ -159,6 +167,128 @@ public class FileNameSelfDeclarationScanner {
             log.warn("FileNameSelfDeclarationScanner: unexpected error reading {}: {}", filePath, e.getMessage(), e);
             return new ScanResult.NotInterpretable("unexpected error: " + e.getMessage());
         }
+    }
+
+    /**
+     * ODS equivalent of the POI-based scan above. Reads content.xml via
+     * {@link FileResultParser#readOdsContentXml(InputStream)} and runs the
+     * same cell-text synonym-scan loop against the row grid.
+     */
+    private ScanResult scanOdsFile(Path filePath, Map<String, String> columnMappings,
+            Set<String> mappedTestCodes, Map<String, List<String>> scannerSynonyms) {
+
+        List<List<String>> rows;
+        try (InputStream in = new FileInputStream(filePath.toFile())) {
+            rows = FileResultParser.readOdsContentXml(in);
+        } catch (IOException e) {
+            log.warn("FileNameSelfDeclarationScanner: I/O error reading ODS {}: {}", filePath, e.getMessage());
+            return new ScanResult.NotInterpretable("I/O error: " + e.getMessage());
+        } catch (Exception e) {
+            log.warn("FileNameSelfDeclarationScanner: failed to parse ODS {}: {}", filePath, e.getMessage(), e);
+            return new ScanResult.NotInterpretable("ODS parse error: " + e.getMessage());
+        }
+
+        if (rows == null || rows.isEmpty()) {
+            return new ScanResult.NotInterpretable("empty or missing content.xml table");
+        }
+
+        Set<String> requiredContentHeaders = new LinkedHashSet<>();
+        for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
+            String semanticField = mapping.getValue();
+            if ("result".equals(semanticField) || "interpretation".equals(semanticField)) {
+                requiredContentHeaders.add(mapping.getKey());
+            }
+        }
+
+        if (requiredContentHeaders.isEmpty()) {
+            return new ScanResult.NotInterpretable(
+                    "profile has no result/interpretation column mapping for scanner to read");
+        }
+
+        int headerRowIndex = findOdsHeaderRowWithAny(rows, requiredContentHeaders);
+        if (headerRowIndex < 0) {
+            return new ScanResult.NotInterpretable(
+                    "no header row with any of the content columns " + requiredContentHeaders
+                            + " found in first 200 ODS rows");
+        }
+
+        List<String> headerRow = rows.get(headerRowIndex);
+        Map<String, Integer> headerIndex = new java.util.HashMap<>();
+        for (int c = 0; c < headerRow.size(); c++) {
+            String cell = headerRow.get(c);
+            if (cell != null && !cell.isBlank()) {
+                headerIndex.put(cell.trim(), c);
+            }
+        }
+
+        Set<Integer> contentColumnIndices = new LinkedHashSet<>();
+        for (String header : requiredContentHeaders) {
+            Integer colIdx = headerIndex.get(header);
+            if (colIdx != null) {
+                contentColumnIndices.add(colIdx);
+            }
+        }
+
+        if (contentColumnIndices.isEmpty()) {
+            return new ScanResult.NotInterpretable(
+                    "header row found but none of the expected content columns "
+                            + requiredContentHeaders + " were in it");
+        }
+
+        Map<String, String> synonymToCode = buildSynonymMap(mappedTestCodes, scannerSynonyms);
+
+        Set<String> foundCodes = new LinkedHashSet<>();
+        for (int rowIdx = headerRowIndex + 1; rowIdx < rows.size(); rowIdx++) {
+            List<String> row = rows.get(rowIdx);
+            for (Integer colIdx : contentColumnIndices) {
+                if (colIdx >= row.size()) continue;
+                String cell = row.get(colIdx);
+                if (cell == null || cell.isBlank()) continue;
+                StringBuilder needle = new StringBuilder(cell.toLowerCase(Locale.ROOT));
+                for (Map.Entry<String, String> syn : synonymToCode.entrySet()) {
+                    String synLower = syn.getKey();
+                    int idx;
+                    boolean matched = false;
+                    while ((idx = needle.indexOf(synLower)) >= 0) {
+                        matched = true;
+                        for (int k = 0; k < synLower.length(); k++) {
+                            needle.setCharAt(idx + k, ' ');
+                        }
+                    }
+                    if (matched) {
+                        foundCodes.add(syn.getValue());
+                    }
+                }
+            }
+        }
+
+        if (foundCodes.isEmpty()) {
+            log.info("FileNameSelfDeclarationScanner: no mapped test codes found in ODS {} "
+                    + "(mappedTestCodes={}, synonyms={})", filePath.getFileName(),
+                    mappedTestCodes, synonymToCode.keySet());
+            return new ScanResult.NoDeclaration();
+        }
+        if (foundCodes.size() > 1) {
+            log.info("FileNameSelfDeclarationScanner: multiple test codes {} found in ODS {} — ambiguous",
+                    foundCodes, filePath.getFileName());
+            return new ScanResult.Ambiguous(Collections.unmodifiableSet(foundCodes));
+        }
+        String declared = foundCodes.iterator().next();
+        log.info("FileNameSelfDeclarationScanner: ODS {} self-declares as {}", filePath.getFileName(), declared);
+        return new ScanResult.SelfDeclared(declared);
+    }
+
+    private int findOdsHeaderRowWithAny(List<List<String>> rows, Set<String> headerCandidates) {
+        int maxScan = Math.min(rows.size() - 1, 200);
+        for (int r = 0; r <= maxScan; r++) {
+            List<String> row = rows.get(r);
+            for (String cell : row) {
+                if (cell != null && headerCandidates.contains(cell.trim())) {
+                    return r;
+                }
+            }
+        }
+        return -1;
     }
 
     /**
