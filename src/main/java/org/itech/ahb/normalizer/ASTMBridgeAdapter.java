@@ -116,10 +116,20 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * @return true if message is a DefaultASTMMessage, false otherwise
      */
     /**
-     * Extract sender identification from ASTM H-record field 4.
-     * H-record format: H|\^&|msgId|senderInfo|...
-     * Field 4 may contain: "GENEXPERT^GeneXpert^4.6.0" or "MINDRAY"
-     * Returns the first component (before ^) as the identifier.
+     * Extract sender identification from ASTM H-record field 4 — full string.
+     *
+     * <p>H-record format: {@code H|\^&|msgId|senderInfo|...} where senderInfo
+     * may be a single token ({@code "MINDRAY"}) or a {@code ^}-delimited
+     * tuple ({@code "LA2M3^GeneXpert^6.2"} = site^model^version per
+     * Cepheid LIS protocol spec).
+     *
+     * <p>Returns the FULL field-4 value (not just the first component).
+     * Downstream consumers (FhirBundleBuilder, OE's profile matcher) need
+     * the complete sender identification — truncating to the first component
+     * loses model + version info needed for accurate profile matching at
+     * the OE side. Per the "transparent FHIR pipe" architecture (see
+     * .claude/memory feedback_bridge_transparent_fhir_pipe.md): preserve
+     * everything, let OE decide.
      */
     private String extractSenderFromHRecord(String rawMessage) {
         if (rawMessage == null) return null;
@@ -127,9 +137,9 @@ public class ASTMBridgeAdapter implements ASTMHandler {
             if (line.startsWith("H|")) {
                 String[] fields = line.split("\\|", -1);
                 if (fields.length > 4 && fields[4] != null && !fields[4].isBlank()) {
-                    String sender = fields[4].split("\\^")[0].trim();
+                    String sender = fields[4].trim();
                     if (!sender.isEmpty()) {
-                        log.debug("Extracted ASTM sender identifier: {}", sender);
+                        log.debug("Extracted ASTM sender identifier (full): {}", sender);
                         return sender;
                     }
                 }

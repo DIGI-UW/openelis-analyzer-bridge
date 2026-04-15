@@ -261,12 +261,18 @@ public class HttpForwardingRouter implements MessageRouter {
             return false;
         }
 
-        // Build FHIR Bundle
+        // Build FHIR Bundle with Device resource carrying full identification
+        // so OE can find-or-create the analyzer atomically per the
+        // transparent-pipe architecture (bridge never gates routing on local
+        // source registration). See feedback_bridge_transparent_fhir_pipe.md.
         String analyzerId = canonicalAnalyzerId(envelope);
+        FhirBundleBuilder.DeviceInfo deviceInfo = FhirBundleBuilder.DeviceInfo
+                .fromSenderToken(envelope.getSourceId(), envelope.getProtocolAnalyzerHint());
         String fhirJson = FhirBundleBuilder.buildBundle(
                 parsed.accessionNumber(),
                 analyzerId,
-                parsed.results());
+                parsed.results(),
+                deviceInfo);
 
         // Build target URI for /analyzer/fhir
         URI targetUri = buildFhirTargetUri();

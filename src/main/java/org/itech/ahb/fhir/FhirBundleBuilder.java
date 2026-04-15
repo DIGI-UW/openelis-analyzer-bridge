@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
+import org.hl7.fhir.r4.model.Device;
 import org.hl7.fhir.r4.model.DiagnosticReport;
 import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Quantity;
@@ -34,16 +35,58 @@ public class FhirBundleBuilder {
     /**
      * Build a FHIR R4 transaction Bundle from a list of parsed results.
      *
+     * <p>Backwards-compatible overload — no Device resource included. Call the
+     * {@link #buildBundle(String, String, List, DeviceInfo)} overload instead
+     * when the bridge can supply identification (sourceId + protocol sender
+     * token), so OE can find-or-create the analyzer stub atomically per
+     * the transparent-pipe architecture.
+     *
      * @param accessionNumber the sample/accession ID
-     * @param analyzerId      the OE analyzer ID (from bridge registry)
+     * @param analyzerId      the OE analyzer ID (may be null if unknown)
      * @param results         list of individual test results
      * @return FHIR Bundle JSON string ready for POST to OE /analyzer/fhir
      */
     public static String buildBundle(String accessionNumber, String analyzerId,
             List<AnalyzerResult> results) {
+        return buildBundle(accessionNumber, analyzerId, results, null);
+    }
+
+    /**
+     * Build a FHIR R4 transaction Bundle including a {@link Device} resource
+     * for analyzer identification.
+     *
+     * <p>The Device resource carries identification fields parsed by the
+     * bridge from the protocol's sender token (ASTM H-record field 5,
+     * HL7 MSH-3, etc.). OE's import controller reads it to find-or-create
+     * the analyzer stub atomically — so even if {@code analyzerId} is
+     * null (unregistered source), results still land in OE staging
+     * under a freshly-created PENDING_REGISTRATION stub.
+     *
+     * @param accessionNumber the sample/accession ID
+     * @param analyzerId      the OE analyzer ID; may be null if the bridge
+     *                        couldn't resolve the source — OE will use the
+     *                        Device resource to find-or-create
+     * @param results         list of individual test results
+     * @param deviceInfo      identification parsed by the bridge; may be null
+     *                        for backwards compat (no Device resource added)
+     * @return FHIR Bundle JSON string ready for POST to OE /analyzer/fhir
+     */
+    public static String buildBundle(String accessionNumber, String analyzerId,
+            List<AnalyzerResult> results, DeviceInfo deviceInfo) {
 
         Bundle bundle = new Bundle();
         bundle.setType(Bundle.BundleType.TRANSACTION);
+
+        // Device — analyzer identification (when bridge could parse it).
+        // OE's AnalyzerFhirImportController uses Device.identifier and
+        // Device.deviceName to resolve the analyzer (and create a stub
+        // when no existing analyzer matches).
+        String deviceUrl = null;
+        if (deviceInfo != null && deviceInfo.hasAnyIdentifier()) {
+            deviceUrl = "urn:uuid:" + UUID.randomUUID();
+            Device device = buildDevice(deviceInfo);
+            addEntry(bundle, deviceUrl, device, "Device");
+        }
 
         // Specimen — carries the accession number
         String specimenUrl = "urn:uuid:" + UUID.randomUUID();
@@ -73,6 +116,11 @@ public class FhirBundleBuilder {
             obs.setCode(new CodeableConcept()
                     .addCoding(new Coding().setCode(result.testCode()).setDisplay(result.testName())));
             obs.setSpecimen(new Reference(specimenUrl));
+            // Link to Device when present — gives OE a per-observation
+            // pointer to the analyzer that produced the result.
+            if (deviceUrl != null) {
+                obs.setDevice(new Reference(deviceUrl));
+            }
 
             // Set value based on type
             if (result.isNumeric()) {
@@ -117,6 +165,123 @@ public class FhirBundleBuilder {
                 .getRequest()
                 .setMethod(Bundle.HTTPVerb.POST)
                 .setUrl(resourceType);
+    }
+
+    /**
+     * Build a FHIR R4 {@link Device} resource from parsed identification info.
+     *
+     * <p>Mappings (chosen so OE's existing AnalyzerFhirImportController
+     * Device-resolution code path uses them out of the box):
+     * <ul>
+     *   <li>{@code Device.identifier[].value} — sourceId (e.g. source IP),
+     *       site code (parsed from sender token), and the raw sender token
+     *       itself. OE matches any of them against analyzer identifiers.</li>
+     *   <li>{@code Device.deviceName.name} — model component (e.g. "GeneXpert").
+     *       OE falls back to this for analyzer-by-name match.</li>
+     *   <li>{@code Device.manufacturer} — derived best-effort from sender
+     *       token; OE may use it for profile selection.</li>
+     *   <li>{@code Device.version[].value} — version component when parseable
+     *       (e.g. "6.2"). Operational metadata.</li>
+     * </ul>
+     */
+    private static Device buildDevice(DeviceInfo info) {
+        Device device = new Device();
+
+        // Identifiers — every distinct value gets its own entry. OE walks
+        // them with tryFindAnalyzerByIdentifier(List<String>).
+        if (info.sourceId() != null && !info.sourceId().isBlank()) {
+            device.addIdentifier()
+                .setSystem("https://openelis-global.org/fhir/source-ip")
+                .setValue(info.sourceId());
+        }
+        if (info.senderToken() != null && !info.senderToken().isBlank()) {
+            device.addIdentifier()
+                .setSystem("https://openelis-global.org/fhir/sender-token")
+                .setValue(info.senderToken());
+        }
+        if (info.site() != null && !info.site().isBlank()) {
+            device.addIdentifier()
+                .setSystem("https://openelis-global.org/fhir/site")
+                .setValue(info.site());
+        }
+
+        // Device name — model when parseable
+        if (info.model() != null && !info.model().isBlank()) {
+            Device.DeviceDeviceNameComponent dn = new Device.DeviceDeviceNameComponent();
+            dn.setName(info.model());
+            dn.setType(Device.DeviceNameType.MANUFACTURERNAME);
+            device.addDeviceName(dn);
+        } else if (info.senderToken() != null && !info.senderToken().isBlank()) {
+            // Fall back to the raw sender token if model wasn't isolated
+            Device.DeviceDeviceNameComponent dn = new Device.DeviceDeviceNameComponent();
+            dn.setName(info.senderToken());
+            dn.setType(Device.DeviceNameType.MANUFACTURERNAME);
+            device.addDeviceName(dn);
+        }
+
+        if (info.manufacturer() != null && !info.manufacturer().isBlank()) {
+            device.setManufacturer(info.manufacturer());
+        }
+
+        if (info.version() != null && !info.version().isBlank()) {
+            Device.DeviceVersionComponent v = new Device.DeviceVersionComponent();
+            v.setValue(info.version());
+            device.addVersion(v);
+        }
+
+        return device;
+    }
+
+    /**
+     * Identification info parsed by the bridge from a protocol's sender
+     * field, packaged for inclusion in the FHIR Bundle as a Device resource.
+     *
+     * <p>All fields are nullable; the builder uses whatever's present.
+     * {@code sourceId} (network source IP/host) should always be set
+     * — it's the most stable identifier for re-routing.
+     *
+     * @param sourceId    network address of the analyzer (e.g. "10.0.0.42")
+     * @param senderToken raw sender token from the protocol header
+     *                    (e.g. ASTM H-record field 5: "LA2M3^GeneXpert^6.2";
+     *                    HL7 MSH-3: "MINDRAY")
+     * @param site        parsed site code (e.g. "LA2M3"); null if not parseable
+     * @param model       parsed model name (e.g. "GeneXpert"); null if not parseable
+     * @param version     parsed version (e.g. "6.2"); null if not parseable
+     * @param manufacturer best-effort manufacturer name (e.g. "Cepheid"); may be null
+     */
+    public record DeviceInfo(
+            String sourceId,
+            String senderToken,
+            String site,
+            String model,
+            String version,
+            String manufacturer) {
+
+        /** True if any identifier field is non-blank — bundle-builder uses this to decide whether to emit a Device entry. */
+        public boolean hasAnyIdentifier() {
+            return (sourceId != null && !sourceId.isBlank())
+                || (senderToken != null && !senderToken.isBlank())
+                || (model != null && !model.isBlank());
+        }
+
+        /** Build from just a sourceId + a raw sender token; parses the token as ASTM-style {@code site^model^version}. */
+        public static DeviceInfo fromSenderToken(String sourceId, String senderToken) {
+            String site = null, model = null, version = null;
+            if (senderToken != null && !senderToken.isBlank() && senderToken.contains("^")) {
+                String[] parts = senderToken.split("\\^", -1);
+                if (parts.length >= 1) site = blankToNull(parts[0]);
+                if (parts.length >= 2) model = blankToNull(parts[1]);
+                if (parts.length >= 3) version = blankToNull(parts[2]);
+            } else if (senderToken != null && !senderToken.isBlank()) {
+                // Single-token sender (e.g. "MINDRAY") — treat as model.
+                model = senderToken.trim();
+            }
+            return new DeviceInfo(sourceId, senderToken, site, model, version, null);
+        }
+
+        private static String blankToNull(String s) {
+            return (s == null || s.trim().isEmpty()) ? null : s.trim();
+        }
     }
 
     /**
