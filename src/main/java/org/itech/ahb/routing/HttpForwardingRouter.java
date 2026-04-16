@@ -21,6 +21,7 @@ import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.fhir.ASTMResultParser;
 import org.itech.ahb.fhir.FhirBundleBuilder;
 import org.itech.ahb.fhir.HL7ResultParser;
+import org.itech.ahb.file.SqliteFileStateStore;
 import org.itech.ahb.normalizer.MessageEnvelope;
 import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -87,6 +88,7 @@ public class HttpForwardingRouter implements MessageRouter {
 
     private final HTTPForwardServerConfigurationProperties httpConfig;
     private final FhirRoutingConfig fhirConfig;
+    private final SqliteFileStateStore stateStore;
     private final int connectTimeoutSeconds;
     private final int readTimeoutSeconds;
     private final HttpClient httpClient;
@@ -96,12 +98,17 @@ public class HttpForwardingRouter implements MessageRouter {
      *
      * @param httpConfig the HTTP forwarding server configuration
      * @param fhirConfig the FHIR routing configuration (optional)
+     * @param stateStore shared SQLite state store (optional — when absent the
+     *                   router logs rejections without persisting them, same
+     *                   as the pre-B1 behavior)
      */
     public HttpForwardingRouter(
             HTTPForwardServerConfigurationProperties httpConfig,
-            @Autowired(required = false) FhirRoutingConfig fhirConfig) {
+            @Autowired(required = false) FhirRoutingConfig fhirConfig,
+            @Autowired(required = false) SqliteFileStateStore stateStore) {
         this.httpConfig = httpConfig;
         this.fhirConfig = fhirConfig;
+        this.stateStore = stateStore;
         this.connectTimeoutSeconds = httpConfig.getConnectTimeoutSeconds();
         this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
         this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
@@ -110,6 +117,11 @@ public class HttpForwardingRouter implements MessageRouter {
             httpConfig.getMaxAttempts(), httpConfig.getBackoffMs());
         log.info("HttpForwardingRouter timeouts: connect={}s read={}s",
             connectTimeoutSeconds, readTimeoutSeconds);
+        if (stateStore == null) {
+            log.warn("HttpForwardingRouter: no SqliteFileStateStore bean available — "
+                + "rejected bundles will be logged only, not persisted. The admin "
+                + "/admin/rejected-bundles endpoint will be empty until a state store is wired.");
+        }
     }
 
     /**
@@ -196,6 +208,8 @@ public class HttpForwardingRouter implements MessageRouter {
                 // Non-retryable client errors (4xx) — fail immediately
                 if (statusCode >= 400 && statusCode < 500) {
                     log.error("Non-retryable HTTP error {}", statusCode);
+                    recordRejection(envelope, envelope.getRawMessage(), statusCode,
+                        "Non-retryable HTTP " + statusCode);
                     return false;
                 }
 
@@ -228,6 +242,8 @@ public class HttpForwardingRouter implements MessageRouter {
 
         log.error("All {} attempts failed for {} message from {}",
             maxAttempts, envelope.getProtocol(), envelope.getSourceId());
+        recordRejection(envelope, envelope.getRawMessage(), 0,
+            "All " + maxAttempts + " attempts failed (5xx / IO)");
         return false;
     }
 
@@ -313,6 +329,8 @@ public class HttpForwardingRouter implements MessageRouter {
                 if (response.statusCode() >= 400 && response.statusCode() < 500) {
                     log.error("OE rejected FHIR Bundle (HTTP {}): {}",
                             response.statusCode(), response.body());
+                    recordRejection(envelope, fhirJson, response.statusCode(),
+                        "OE rejected FHIR Bundle: " + truncate(response.body(), 400));
                     return false;
                 }
                 log.warn("OE returned {} for FHIR Bundle, attempt {}/{}",
@@ -333,7 +351,44 @@ public class HttpForwardingRouter implements MessageRouter {
                 }
             }
         }
+        log.error("All {} FHIR forwarding attempts failed for {} message from {}",
+            maxAttempts, envelope.getProtocol(), envelope.getSourceId());
+        recordRejection(envelope, fhirJson, 0,
+            "All " + maxAttempts + " FHIR attempts failed (5xx / IO)");
         return false;
+    }
+
+    /**
+     * Persist a rejected payload to the shared state store so the admin
+     * endpoint and OE Import Issues dashboard can surface it. No-op when
+     * {@code stateStore} is null (unit tests without Spring context, or
+     * {@code bridge.file.enabled=false}) — the ERROR log above still fires.
+     */
+    private void recordRejection(MessageEnvelope envelope, String payload, int httpStatus,
+                                 String lastError) {
+        if (stateStore == null) {
+            return;
+        }
+        try {
+            String id = stateStore.recordRejection(
+                envelope.getSourceId(),
+                envelope.getProtocol() == null ? null : envelope.getProtocol().name(),
+                httpStatus,
+                lastError,
+                payload);
+            log.warn("Recorded rejected bundle id={} source={} httpStatus={}",
+                id, envelope.getSourceId(), httpStatus);
+        } catch (RuntimeException e) {
+            // Never let the diagnostic store block the hot path; worst case
+            // the rejection is visible in logs only.
+            log.error("Failed to persist rejected bundle (source={}, httpStatus={}): {}",
+                envelope.getSourceId(), httpStatus, e.getMessage());
+        }
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) return null;
+        return s.length() <= max ? s : s.substring(0, max);
     }
 
     /**

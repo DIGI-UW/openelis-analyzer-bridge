@@ -8,6 +8,7 @@ import org.apache.commons.io.monitor.FileAlterationListenerAdaptor;
 import org.apache.commons.io.monitor.FileAlterationMonitor;
 import org.apache.commons.io.monitor.FileAlterationObserver;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -104,9 +105,15 @@ public class FileWatcher {
         return running;
     }
 
-    public FileWatcher(FileConfig fileConfig, FileMessageHandler messageHandler) {
+    public FileWatcher(FileConfig fileConfig, FileMessageHandler messageHandler,
+                       @Autowired(required = false) SqliteFileStateStore stateStore) {
         this.fileConfig = fileConfig;
         this.messageHandler = messageHandler;
+        // May be null when bridge.file.enabled=false (StateStoreConfig is
+        // @ConditionalOnProperty and does not register the bean in that case).
+        // start() bails out on !fileConfig.isEnabled() before touching the
+        // store, so null here is safe.
+        this.stateStore = stateStore;
     }
 
     /**
@@ -124,11 +131,6 @@ public class FileWatcher {
         }
 
         log.info("Starting file watcher service (polling mode, interval={}ms)...", fileConfig.getPollIntervalMs());
-
-        // Initialize the durable state store. This is the ONLY place the
-        // bridge persists per-file processing information; the watched
-        // directories themselves remain strictly read-only.
-        this.stateStore = new SqliteFileStateStore(Paths.get(fileConfig.getStateStorePath()));
 
         // Initialize polling monitor and processor
         monitor = new FileAlterationMonitor(fileConfig.getPollIntervalMs());
@@ -464,11 +466,10 @@ public class FileWatcher {
         shutdownExecutor(processorExecutor, "processor");
         shutdownExecutor(stabilityChecker, "stability-checker");
 
-        // Close the state store (best-effort — a leaked connection won't
-        // corrupt WAL-mode SQLite but clean close is still preferred).
-        if (stateStore instanceof SqliteFileStateStore sqlite) {
-            sqlite.close();
-        }
+        // State store is a shared @Bean; Spring closes it via
+        // StateStoreConfig#fileStateStore(destroyMethod="close") during
+        // ApplicationContext shutdown. FileWatcher must NOT close it here
+        // because HttpForwardingRouter may still be using it.
 
         log.info("File watcher service stopped");
     }

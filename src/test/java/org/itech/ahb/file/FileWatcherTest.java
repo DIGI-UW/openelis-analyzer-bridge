@@ -81,12 +81,11 @@ class FileWatcherTest {
         fileConfig.setFilePatterns(List.of("*.csv", "*.hl7", "*.txt"));
 
         mockMessageHandler = mock(FileMessageHandler.class);
-        fileWatcher = new FileWatcher(fileConfig, mockMessageHandler);
 
-        // Inject a state store so the unit tests can call processFileWithRetry
-        // directly without going through the full FileWatcher lifecycle.
+        // State store is now constructor-injected (see StateStoreConfig bean).
+        // Keep a field reference so tests can assert on its rows directly.
         stateStore = new SqliteFileStateStore(stateStorePath);
-        ReflectionTestUtils.setField(fileWatcher, "stateStore", stateStore);
+        fileWatcher = new FileWatcher(fileConfig, mockMessageHandler, stateStore);
     }
 
     @AfterEach
