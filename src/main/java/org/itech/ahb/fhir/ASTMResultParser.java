@@ -117,16 +117,28 @@ public class ASTMResultParser {
 
     /**
      * Parse one R-record to extract a test result.
-     * Ported from GenericASTMLineInserter.addResultFromLine().
+     * Only Main Result records are forwarded as clinical results.
+     * Per Cepheid LIS spec 302-2261 Rev C: Main Result has Component 5
+     * (assay name) non-empty in the Universal Test ID field.
+     * Analyte, Complementary, and internal control rows are skipped.
      *
      * R|seq|^^^testCode|value|units|...
      *       [2]         [3]   [4]
      */
-    private static AnalyzerResult parseResultRecord(String resultRecord) {
+    static AnalyzerResult parseResultRecord(String resultRecord) {
         String[] fields = resultRecord.split(Pattern.quote(FIELD_DELIMITER));
+
+        if (!isMainResult(fields)) {
+            return null;
+        }
 
         String testCode = extractTestCode(fields);
         if (testCode == null || testCode.isEmpty()) return null;
+
+        String cartridgeCode = extractCartridgeCode(fields);
+        if (cartridgeCode != null) {
+            log.trace("Multi-result cartridge={} analyte={}", cartridgeCode, testCode);
+        }
 
         String value = cleanResultValue(
                 fields.length > R_VALUE_FIELD ? fields[R_VALUE_FIELD] : "");
@@ -144,6 +156,34 @@ public class ASTMResultParser {
             result = result.withTimestamp(timestamp);
         }
         return result;
+    }
+
+    /**
+     * Check if an R-record is a Main Result (clinical value).
+     * Per Cepheid spec: Component 5 (index 4) of the Universal Test ID field
+     * contains the assay name for Main Results and is empty for Analyte/Complementary rows.
+     * For simple formats with fewer than 5 components, treat as Main Result (backward compat).
+     */
+    static boolean isMainResult(String[] fields) {
+        if (fields.length <= R_TEST_ID_FIELD) return false;
+        String testIdField = fields[R_TEST_ID_FIELD];
+        String[] components = testIdField.split(Pattern.quote(COMPONENT_DELIMITER), -1);
+        if (components.length < 5) return true;
+        return !components[4].trim().isEmpty();
+    }
+
+    /**
+     * Extract cartridge/panel code from Component 2 (index 1) of the Universal Test ID.
+     * Present in multi-result tests (e.g. "CTNG" for CT/NG cartridge).
+     */
+    static String extractCartridgeCode(String[] fields) {
+        if (fields.length <= R_TEST_ID_FIELD) return null;
+        String testIdField = fields[R_TEST_ID_FIELD];
+        String[] components = testIdField.split(Pattern.quote(COMPONENT_DELIMITER), -1);
+        if (components.length >= 2 && !components[1].trim().isEmpty()) {
+            return components[1].trim();
+        }
+        return null;
     }
 
     /**

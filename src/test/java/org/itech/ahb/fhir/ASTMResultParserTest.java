@@ -3,6 +3,7 @@ package org.itech.ahb.fhir;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
+import java.util.regex.Pattern;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
 import org.junit.jupiter.api.DisplayName;
@@ -287,6 +288,112 @@ class ASTMResultParserTest {
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isNumeric());
+        }
+    }
+
+    @Nested
+    @DisplayName("Main Result filter (Cepheid multi-result)")
+    class MainResultFilter {
+
+        private static final String CTNG_MESSAGE =
+                "H|\\^&|||GeneXpert^6.5\r"
+                + "P|1\r"
+                + "O|1|CTNG_SAMPLE001||^^^CTNG\r"
+                + "R|1|^CTNG^^CT^Xpert CT_NG^3^CT^|POS^||||||20260415120000\r"
+                + "R|2|^CTNG^^CT^^^CT1^|POS^||||||20260415120000\r"
+                + "R|3|^CTNG^^CT^^^CT1^Ct|^20.1||||||20260415120000\r"
+                + "R|4|^CTNG^^CT^^^CT1^EndPt|^304.0||||||20260415120000\r"
+                + "R|5|^CTNG^^CT^^^SAC^|NA^||||||20260415120000\r"
+                + "R|6|^CTNG^^NG^Xpert CT_NG^3^NG^|NOT DETECTED||||||20260415120000\r"
+                + "R|7|^CTNG^^NG^^^NG2^|NEG^||||||20260415120000\r"
+                + "R|8|^CTNG^^NG^^^NG2^Ct|^0.0||||||20260415120000\r"
+                + "L|1\r";
+
+        @Test
+        @DisplayName("Only Main Results (Component 5 non-empty) forwarded from CTNG cartridge")
+        void onlyMainResultsForwarded() {
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+
+            assertNotNull(parsed);
+            assertEquals(2, parsed.results().size(), "Only 2 Main Results (CT + NG) from 8 R-records");
+        }
+
+        @Test
+        @DisplayName("Main Results carry per-analyte test codes (CT, NG)")
+        void mainResultsCarryAnalyteCodes() {
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+
+            assertNotNull(parsed);
+            List<String> codes = parsed.results().stream()
+                    .map(AnalyzerResult::testCode).toList();
+            assertEquals(List.of("CT", "NG"), codes);
+        }
+
+        @Test
+        @DisplayName("Main Result values cleaned correctly (POS^→POS, NOT DETECTED)")
+        void mainResultValuesClean() {
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+
+            assertNotNull(parsed);
+            assertEquals("POS", parsed.results().get(0).value());
+            assertEquals("NOT DETECTED", parsed.results().get(1).value());
+        }
+
+        @Test
+        @DisplayName("Analyte rows (CT1, NG2), Complementary (Ct, EndPt), and controls (SAC) all filtered out")
+        void analyteAndComplementaryFiltered() {
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+
+            assertNotNull(parsed);
+            List<String> codes = parsed.results().stream()
+                    .map(AnalyzerResult::testCode).toList();
+            assertFalse(codes.contains("CT1"), "CT1 analyte row should be filtered");
+            assertFalse(codes.contains("NG2"), "NG2 analyte row should be filtered");
+            assertFalse(codes.contains("SAC"), "SAC control row should be filtered");
+        }
+
+        @Test
+        @DisplayName("Simple ^^^CODE format (< 5 components) still works as Main Result")
+        void simpleFormatBackwardCompat() {
+            String msg = "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^GLUCOSE|95.0|mg/dL\r"
+                    + "L|1\r";
+
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+
+            assertNotNull(parsed);
+            assertEquals(1, parsed.results().size());
+            assertEquals("GLUCOSE", parsed.results().get(0).testCode());
+        }
+
+        @Test
+        @DisplayName("isMainResult correctly identifies Main vs Analyte via Component 5")
+        void isMainResultUnit() {
+            String[] mainFields = "R|1|^CTNG^^CT^Xpert CT_NG^3^CT^|POS^".split(Pattern.quote("|"));
+            String[] analyteFields = "R|2|^CTNG^^CT^^^CT1^|POS^".split(Pattern.quote("|"));
+            String[] complementaryFields = "R|3|^CTNG^^CT^^^CT1^Ct|^20.1".split(Pattern.quote("|"));
+            String[] simpleFields = "R|1|^^^GLUCOSE|95.0|mg/dL".split(Pattern.quote("|"));
+
+            assertTrue(ASTMResultParser.isMainResult(mainFields), "Main Result should pass");
+            assertFalse(ASTMResultParser.isMainResult(analyteFields), "Analyte should be filtered");
+            assertFalse(ASTMResultParser.isMainResult(complementaryFields), "Complementary should be filtered");
+            assertTrue(ASTMResultParser.isMainResult(simpleFields), "Simple format backward compat");
+        }
+
+        @Test
+        @DisplayName("extractCartridgeCode returns panel code from Component 2")
+        void cartridgeCodeExtracted() {
+            String[] fields = "R|1|^CTNG^^CT^Xpert CT_NG^3^CT^|POS^".split(Pattern.quote("|"));
+            assertEquals("CTNG", ASTMResultParser.extractCartridgeCode(fields));
+        }
+
+        @Test
+        @DisplayName("extractCartridgeCode returns null for simple format")
+        void cartridgeCodeNullForSimple() {
+            String[] fields = "R|1|^^^GLUCOSE|95.0|mg/dL".split(Pattern.quote("|"));
+            assertNull(ASTMResultParser.extractCartridgeCode(fields));
         }
     }
 
