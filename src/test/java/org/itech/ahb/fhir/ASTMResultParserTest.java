@@ -31,6 +31,17 @@ class ASTMResultParserTest {
             + "R|2|^^^CT|28.5|cycles|||||20260326120000\r"
             + "L|1\r";
 
+    // Real Cepheid GeneXpert H-record uses H|@^\  (repeat=@ component=^ escape=\)
+    // instead of the standard H|\^&. The component separator ^ is identical in
+    // both variants, so R-record field/component parsing is unaffected.
+    // This message replicates what GXM-04567890 sends on the Madagascar fleet.
+    private static final String REAL_GENEXPERT_MESSAGE =
+            "H|@^\\|GXM-04567890||LA2M3^GeneXpert^6.2|||||geneexpert||P|1394-97|20260414120000\r"
+            + "P|1\r"
+            + "O|1|ACC-REAL-001||^^^MTBRif\r"
+            + "R|1|^MTBRif^^MTB-RIF^Xpert MTB/RIF Ultra^3^MTB-RIF^|NOT DETECTED^||||||20260414120000\r"
+            + "L|1\r";
+
     @Nested
     @DisplayName("parseRaw - valid ASTM message")
     class ValidMessage {
@@ -82,6 +93,26 @@ class ASTMResultParserTest {
             assertNotNull(parsed);
             assertEquals("copies/mL", parsed.results().get(0).units());
             assertEquals("cycles", parsed.results().get(1).units());
+        }
+
+        @Test
+        @DisplayName("Real Cepheid H|@^\\ delimiter format parsed identically to H|\\^&")
+        void realGeneXpertHeaderFormat_parsedCorrectly() {
+            // Verifies that the H-record delimiter variant used by physical GeneXpert
+            // machines (H|@^\) does not affect accession, test code, or value
+            // extraction — the parser only relies on | (field) and ^ (component)
+            // which are the same in both delimiter sets.
+            ParsedResults parsed = ASTMResultParser.parseRaw(REAL_GENEXPERT_MESSAGE);
+
+            assertNotNull(parsed);
+            assertEquals("ACC-REAL-001", parsed.accessionNumber(),
+                    "Accession extracted from O-record specimen ID");
+            assertEquals(1, parsed.results().size(),
+                    "Main Result filter preserves 1 MTB-RIF record (comp 5 non-empty)");
+            assertEquals("MTB-RIF", parsed.results().get(0).testCode(),
+                    "Test code extracted from R-record component 4");
+            assertEquals("NOT DETECTED", parsed.results().get(0).value(),
+                    "Real Cepheid qualitative value (not NEGATIVE) extracted cleanly");
         }
     }
 
