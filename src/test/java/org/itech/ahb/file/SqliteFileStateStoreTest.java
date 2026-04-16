@@ -266,4 +266,112 @@ class SqliteFileStateStoreTest {
             store.close();
         }
     }
+
+    // --- rejected_bundles (B1) -----------------------------------------
+
+    @Test
+    void recordRejection_roundTripsThroughListRejections(@TempDir Path tmp) {
+        SqliteFileStateStore store = new SqliteFileStateStore(tmp.resolve("state.db"));
+        try {
+            String payload = "{\"resourceType\":\"Bundle\",\"type\":\"transaction\"}";
+            String id = store.recordRejection("100.127.144.150", "ASTM", 401,
+                    "HTTP 401 Unauthorized", payload);
+            assertNotNull(id);
+
+            List<RejectedBundle> rows = store.listRejections(100);
+            assertEquals(1, rows.size());
+            RejectedBundle r = rows.get(0);
+            assertEquals(id, r.id());
+            assertEquals("100.127.144.150", r.sourceId());
+            assertEquals("ASTM", r.protocol());
+            assertEquals(401, r.httpStatus());
+            assertEquals(payload, r.payloadSnippet(),
+                    "small payload must round-trip in snippet unchanged");
+            assertNotNull(r.payloadHash());
+            assertEquals(64, r.payloadHash().length(), "SHA-256 hex is 64 chars");
+            assertFalse(r.dismissed());
+            assertNotNull(r.rejectedAt());
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
+    void recordRejection_clampsHugePayloadSnippet(@TempDir Path tmp) {
+        SqliteFileStateStore store = new SqliteFileStateStore(tmp.resolve("state.db"));
+        try {
+            String huge = "x".repeat(100_000);
+            store.recordRejection("src", "FHIR", 422, "schema", huge);
+            RejectedBundle r = store.listRejections(1).get(0);
+            assertEquals(800, r.payloadSnippet().length(),
+                    "snippet must be clamped to PAYLOAD_SNIPPET_MAX");
+            // Hash must be over the full payload, not the snippet
+            assertNotNull(r.payloadHash());
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
+    void dismissRejection_hidesFromActiveListButRowStillExists(@TempDir Path tmp) {
+        SqliteFileStateStore store = new SqliteFileStateStore(tmp.resolve("state.db"));
+        try {
+            String id = store.recordRejection("gx1", "ASTM", 500, "boom", "msg");
+            assertEquals(1, store.listRejections(100).size());
+
+            assertTrue(store.dismissRejection(id));
+            assertEquals(0, store.listRejections(100).size(),
+                    "dismissed row must be hidden from active list");
+
+            // Idempotency: second dismiss is a no-op
+            assertFalse(store.dismissRejection(id),
+                    "already-dismissed id returns false so the REST endpoint can 404");
+            assertFalse(store.dismissRejection("does-not-exist"));
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
+    void listRejections_orderedByNewestFirst(@TempDir Path tmp) throws InterruptedException {
+        SqliteFileStateStore store = new SqliteFileStateStore(tmp.resolve("state.db"));
+        try {
+            String first = store.recordRejection("src", "ASTM", 500, "a", "1");
+            Thread.sleep(15); // ISO_INSTANT has ms resolution
+            String second = store.recordRejection("src", "ASTM", 500, "b", "2");
+            Thread.sleep(15);
+            String third = store.recordRejection("src", "ASTM", 500, "c", "3");
+
+            List<RejectedBundle> rows = store.listRejections(100);
+            assertEquals(3, rows.size());
+            assertEquals(third, rows.get(0).id());
+            assertEquals(second, rows.get(1).id());
+            assertEquals(first, rows.get(2).id());
+        } finally {
+            store.close();
+        }
+    }
+
+    @Test
+    void rejectedBundles_persistAcrossReopen(@TempDir Path tmp) {
+        Path dbPath = tmp.resolve("state.db");
+        String id;
+        {
+            SqliteFileStateStore store = new SqliteFileStateStore(dbPath);
+            try {
+                id = store.recordRejection("src", "FHIR", 401, "auth", "payload");
+            } finally {
+                store.close();
+            }
+        }
+        // Simulate JVM restart by opening the same file in a new store
+        SqliteFileStateStore reopened = new SqliteFileStateStore(dbPath);
+        try {
+            List<RejectedBundle> rows = reopened.listRejections(10);
+            assertEquals(1, rows.size());
+            assertEquals(id, rows.get(0).id());
+        } finally {
+            reopened.close();
+        }
+    }
 }

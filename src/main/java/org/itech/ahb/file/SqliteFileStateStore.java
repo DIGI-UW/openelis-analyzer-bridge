@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -13,11 +14,15 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * SQLite-backed {@link FileStateStore}.
@@ -57,6 +62,26 @@ public class SqliteFileStateStore implements FileStateStore {
 
     private static final String SCHEMA_INDEX =
             "CREATE INDEX IF NOT EXISTS idx_file_state_status ON file_state (status)";
+
+    private static final String REJECTED_BUNDLES_SCHEMA = """
+            CREATE TABLE IF NOT EXISTS rejected_bundles (
+              id              TEXT NOT NULL PRIMARY KEY,
+              source_id       TEXT,
+              protocol        TEXT,
+              http_status     INTEGER NOT NULL,
+              last_error      TEXT,
+              payload_hash    TEXT,
+              payload_snippet TEXT,
+              rejected_at     TEXT NOT NULL,
+              dismissed       INTEGER NOT NULL DEFAULT 0
+            )
+            """;
+
+    private static final String REJECTED_BUNDLES_INDEX =
+            "CREATE INDEX IF NOT EXISTS idx_rejected_bundles_active "
+                    + "ON rejected_bundles (dismissed, rejected_at DESC)";
+
+    private static final int PAYLOAD_SNIPPET_MAX = 800;
 
     private final Path dbPath;
     private final Connection conn;
@@ -132,6 +157,8 @@ public class SqliteFileStateStore implements FileStateStore {
         try (Statement st = conn.createStatement()) {
             st.execute(SCHEMA);
             st.execute(SCHEMA_INDEX);
+            st.execute(REJECTED_BUNDLES_SCHEMA);
+            st.execute(REJECTED_BUNDLES_INDEX);
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to initialize FileStateStore schema", e);
         }
@@ -307,6 +334,110 @@ public class SqliteFileStateStore implements FileStateStore {
 
     private static Instant parseTs(String s) {
         return (s == null || s.isBlank()) ? null : Instant.parse(s);
+    }
+
+    /**
+     * Record a bundle that OE rejected (non-retryable 4xx, or 5xx/IO exhausted
+     * all retries). Returns the generated id so callers can log it or cite it
+     * to operators. The {@code payloadSnippet} is clamped to 800 chars so
+     * storage cost is bounded even for very large HL7/ASTM/FHIR payloads.
+     */
+    public String recordRejection(String sourceId, String protocol, int httpStatus,
+                                  String lastError, String fullPayload) {
+        String id = UUID.randomUUID().toString();
+        String now = TS.format(Instant.now());
+        String hash = sha256Hex(fullPayload);
+        String snippet = snippetOf(fullPayload);
+        String sql = "INSERT INTO rejected_bundles "
+                + "(id, source_id, protocol, http_status, last_error, payload_hash, payload_snippet, "
+                + "rejected_at, dismissed) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, id);
+            ps.setString(2, sourceId);
+            ps.setString(3, protocol);
+            ps.setInt(4, httpStatus);
+            ps.setString(5, lastError);
+            ps.setString(6, hash);
+            ps.setString(7, snippet);
+            ps.setString(8, now);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("FileStateStore.recordRejection failed", e);
+        }
+        return id;
+    }
+
+    /**
+     * List active (non-dismissed) rejected bundles ordered by rejection time
+     * descending. Capped at {@code limit}; callers enforce their own ceiling.
+     */
+    public List<RejectedBundle> listRejections(int limit) {
+        String sql = "SELECT id, source_id, protocol, http_status, last_error, payload_hash, "
+                + "payload_snippet, rejected_at, dismissed "
+                + "FROM rejected_bundles WHERE dismissed = 0 "
+                + "ORDER BY rejected_at DESC LIMIT ?";
+        List<RejectedBundle> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(rejectedFromRow(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("FileStateStore.listRejections failed", e);
+        }
+        return out;
+    }
+
+    /**
+     * Mark a rejected bundle as dismissed (hidden from the active list).
+     * No-op if the id does not exist.
+     */
+    public boolean dismissRejection(String id) {
+        String sql = "UPDATE rejected_bundles SET dismissed = 1 WHERE id = ? AND dismissed = 0";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            throw new IllegalStateException("FileStateStore.dismissRejection failed", e);
+        }
+    }
+
+    private static RejectedBundle rejectedFromRow(ResultSet rs) throws SQLException {
+        return new RejectedBundle(
+                rs.getString("id"),
+                rs.getString("source_id"),
+                rs.getString("protocol"),
+                rs.getInt("http_status"),
+                rs.getString("last_error"),
+                rs.getString("payload_hash"),
+                rs.getString("payload_snippet"),
+                parseTs(rs.getString("rejected_at")),
+                rs.getInt("dismissed") != 0
+        );
+    }
+
+    private static String snippetOf(String payload) {
+        if (payload == null) {
+            return null;
+        }
+        return payload.length() <= PAYLOAD_SNIPPET_MAX
+                ? payload
+                : payload.substring(0, PAYLOAD_SNIPPET_MAX);
+    }
+
+    private static String sha256Hex(String payload) {
+        if (payload == null) {
+            return null;
+        }
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     /** Visible for shutdown + tests. */
