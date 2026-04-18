@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.util.HtmlUtils;
 
 /**
  * Admin file-upload endpoint. Validates the admin's declared test code
@@ -467,13 +468,14 @@ public class FileUploadController {
                 + "</body></html>";
     }
 
-    private String htmlEscape(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
+    /**
+     * Null-safe wrapper over Spring's {@link HtmlUtils#htmlEscape(String)}.
+     * Returns {@code ""} for null input so string-concatenation callsites don't
+     * propagate literal "null" into the rendered HTML. Spring's implementation
+     * handles the actual escape rules; keeping a wrapper keeps callsites terse.
+     */
+    private static String htmlEscape(String s) {
+        return s == null ? "" : HtmlUtils.htmlEscape(s);
     }
 
 }
