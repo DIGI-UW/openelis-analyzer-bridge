@@ -9,6 +9,12 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -372,6 +378,168 @@ class SqliteFileStateStoreTest {
             assertEquals(id, rows.get(0).id());
         } finally {
             reopened.close();
+        }
+    }
+
+    /**
+     * Concurrent access contract tests.
+     *
+     * <p>The store is held by FileWatcher (2-thread processor pool + scheduled
+     * retry tasks) and the admin REST controller simultaneously. JDBC {@link
+     * java.sql.Connection} is not guaranteed to be thread-safe by the JDBC
+     * specification; explicit synchronization on the store's public methods
+     * makes the contract independent of driver-specific behavior.
+     *
+     * <p><b>Important caveat:</b> these tests do not fail against an
+     * un-{@code synchronized} version of the production code because the
+     * current driver ({@code org.xerial:sqlite-jdbc 3.46.0.0}) synchronizes
+     * internally at the native-connection level. They exist as:
+     *
+     * <ol>
+     *   <li>A contract test — "the store supports concurrent access without
+     *       throwing, and the attempts counter reflects every increment".</li>
+     *   <li>A regression guard against future driver swaps, connection
+     *       pooling wrappers, or a change that spreads DB access across
+     *       multiple {@link java.sql.Connection} instances without external
+     *       synchronization.</li>
+     * </ol>
+     *
+     * <p>In other words: these tests document the invariant the explicit
+     * {@code synchronized} modifier enforces. They do not prove it.
+     */
+    @org.junit.jupiter.api.Nested
+    @org.junit.jupiter.api.DisplayName("Concurrent access contract")
+    class Concurrency {
+
+        @Test
+        void manyThreads_mixedOps_noExceptionsAndConsistentState(@TempDir Path tmp) throws Exception {
+            SqliteFileStateStore store = new SqliteFileStateStore(tmp.resolve("state.db"));
+            try {
+                final int threads = 8;
+                final int opsPerThread = 50;
+                ExecutorService pool = Executors.newFixedThreadPool(threads);
+                CountDownLatch start = new CountDownLatch(1);
+                CountDownLatch done = new CountDownLatch(threads);
+                AtomicReference<Throwable> firstError = new AtomicReference<>();
+
+                // Seed one shared row every thread will touch, plus one row per thread.
+                Path sharedFile = tmp.resolve("shared.xlsx");
+                store.upsertRetrying("shared", "hash-shared", sharedFile);
+
+                for (int t = 0; t < threads; t++) {
+                    final int threadIdx = t;
+                    pool.submit(() -> {
+                        try {
+                            start.await();
+                            Path myFile = tmp.resolve("t" + threadIdx + ".xlsx");
+                            for (int i = 0; i < opsPerThread; i++) {
+                                switch (i % 5) {
+                                    case 0 -> store.upsertRetrying("t" + threadIdx, "h-" + threadIdx, myFile);
+                                    case 1 -> store.incrementAttempts("shared", "hash-shared",
+                                            "err from t" + threadIdx + "-" + i);
+                                    case 2 -> store.touchLastSeen("shared", "hash-shared", sharedFile);
+                                    case 3 -> store.get("t" + threadIdx, "h-" + threadIdx);
+                                    case 4 -> store.list(FileProcessingState.Status.RETRYING, 50, 0);
+                                }
+                            }
+                        } catch (Throwable e) {
+                            firstError.compareAndSet(null, e);
+                        } finally {
+                            done.countDown();
+                        }
+                    });
+                }
+
+                start.countDown();
+                assertTrue(done.await(30, TimeUnit.SECONDS),
+                        "concurrent workload should complete within 30s");
+                pool.shutdown();
+                assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+
+                assertNull(firstError.get(),
+                        "no thread should throw during concurrent access; got: " + firstError.get());
+
+                // Every thread incrementAttempts ran opsPerThread/5 = 10 times → 8*10 = 80 increments
+                // on the shared row. Attempts counter must equal 80 exactly (no lost updates).
+                int expectedAttempts = threads * (opsPerThread / 5);
+                FileProcessingState shared = store.get("shared", "hash-shared").orElseThrow();
+                assertEquals(expectedAttempts, shared.attempts(),
+                        "attempts counter must reflect every increment — a lost update means the "
+                                + "increment wasn't serialized");
+
+                // Each thread-specific row exists and is RETRYING.
+                for (int t = 0; t < threads; t++) {
+                    FileProcessingState row = store.get("t" + t, "h-" + t).orElseThrow();
+                    assertEquals(FileProcessingState.Status.RETRYING, row.status());
+                }
+            } finally {
+                store.close();
+            }
+        }
+
+        @Test
+        void reader_concurrentWithWriter_neverThrowsOrReturnsGarbage(@TempDir Path tmp) throws Exception {
+            // Simulates the admin REST controller list() racing against FileWatcher
+            // writes. The admin path should never throw SQLException and should
+            // always return a valid snapshot (status enum parseable, attempts >= 0).
+            SqliteFileStateStore store = new SqliteFileStateStore(tmp.resolve("state.db"));
+            try {
+                AtomicInteger writes = new AtomicInteger();
+                AtomicInteger reads = new AtomicInteger();
+                AtomicReference<Throwable> firstError = new AtomicReference<>();
+                long deadline = System.currentTimeMillis() + 2_000;
+
+                Thread writer = new Thread(() -> {
+                    try {
+                        int i = 0;
+                        while (System.currentTimeMillis() < deadline) {
+                            Path p = tmp.resolve("w" + (i % 20) + ".xlsx");
+                            store.upsertRetrying("analyzer-w", "hash-" + (i % 20), p);
+                            store.incrementAttempts("analyzer-w", "hash-" + (i % 20), "n=" + i);
+                            if (i % 3 == 0) {
+                                store.markProcessed("analyzer-w", "hash-" + (i % 20), p);
+                            }
+                            writes.incrementAndGet();
+                            i++;
+                        }
+                    } catch (Throwable e) {
+                        firstError.compareAndSet(null, e);
+                    }
+                }, "writer");
+
+                Thread reader = new Thread(() -> {
+                    try {
+                        while (System.currentTimeMillis() < deadline) {
+                            List<FileProcessingState> rows = store.list(
+                                    FileProcessingState.Status.RETRYING, 100, 0);
+                            for (FileProcessingState r : rows) {
+                                // Accessing all fields forces full row materialization — would
+                                // expose a half-read row (null fields, ClassCast on the status
+                                // column) if the Connection were mid-mutation under us.
+                                assertNotNull(r.status());
+                                assertNotNull(r.analyzerId());
+                                assertNotNull(r.contentHash());
+                                assertTrue(r.attempts() >= 0);
+                            }
+                            reads.incrementAndGet();
+                        }
+                    } catch (Throwable e) {
+                        firstError.compareAndSet(null, e);
+                    }
+                }, "reader");
+
+                writer.start();
+                reader.start();
+                writer.join(10_000);
+                reader.join(10_000);
+
+                assertNull(firstError.get(),
+                        "neither reader nor writer should throw; got: " + firstError.get());
+                assertTrue(writes.get() > 0, "writer should have made progress");
+                assertTrue(reads.get() > 0, "reader should have made progress");
+            } finally {
+                store.close();
+            }
         }
     }
 }

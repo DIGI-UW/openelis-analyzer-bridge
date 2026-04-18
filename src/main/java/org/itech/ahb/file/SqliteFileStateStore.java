@@ -32,6 +32,18 @@ import java.util.UUID;
  * don't block writes from the file-processing thread.
  * </p>
  * <p>
+ * <b>Thread safety:</b> this store is held concurrently by the FileWatcher
+ * processor pool (2 threads), scheduled retry tasks, and the admin REST
+ * controller. All public DB-touching methods are {@code synchronized} to
+ * serialize access to the shared {@link Connection} instance. Per the JDBC
+ * specification, {@code Connection} is not guaranteed to be thread-safe;
+ * while the {@code org.xerial:sqlite-jdbc} driver happens to synchronize
+ * internally today, explicit locking makes the contract independent of
+ * driver-specific behavior and survives driver swaps or pooling wrappers.
+ * The cost is a lock per call — negligible compared to the disk I/O already
+ * dominating each operation.
+ * </p>
+ * <p>
  * <b>Corruption recovery:</b> if the database fails to open, the file is
  * renamed with a {@code .corrupt-<timestamp>} suffix and a fresh empty store
  * is created. The worst-case consequence is re-POSTing a small number of
@@ -165,7 +177,7 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public Optional<FileProcessingState> get(String analyzerId, String contentHash) {
+    public synchronized Optional<FileProcessingState> get(String analyzerId, String contentHash) {
         String sql = "SELECT analyzer_id, content_hash, status, last_path, first_seen, last_seen, "
                 + "last_attempt, next_attempt_at, attempts, last_error "
                 + "FROM file_state WHERE analyzer_id = ? AND content_hash = ?";
@@ -184,7 +196,7 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public void markProcessed(String analyzerId, String contentHash, Path path) {
+    public synchronized void markProcessed(String analyzerId, String contentHash, Path path) {
         String now = TS.format(Instant.now());
         String sql = "INSERT INTO file_state "
                 + "(analyzer_id, content_hash, status, last_path, first_seen, last_seen, last_attempt, "
@@ -210,7 +222,7 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public void upsertRetrying(String analyzerId, String contentHash, Path path) {
+    public synchronized void upsertRetrying(String analyzerId, String contentHash, Path path) {
         String now = TS.format(Instant.now());
         String sql = "INSERT INTO file_state "
                 + "(analyzer_id, content_hash, status, last_path, first_seen, last_seen, last_attempt, "
@@ -233,7 +245,7 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public int incrementAttempts(String analyzerId, String contentHash, String errorMessage) {
+    public synchronized int incrementAttempts(String analyzerId, String contentHash, String errorMessage) {
         String sql = "UPDATE file_state SET attempts = attempts + 1, last_error = ?, last_attempt = ? "
                 + "WHERE analyzer_id = ? AND content_hash = ?";
         String now = TS.format(Instant.now());
@@ -250,7 +262,7 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public void setNextAttemptAt(String analyzerId, String contentHash, Instant at) {
+    public synchronized void setNextAttemptAt(String analyzerId, String contentHash, Instant at) {
         String sql = "UPDATE file_state SET next_attempt_at = ? "
                 + "WHERE analyzer_id = ? AND content_hash = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -264,7 +276,8 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public void markFailedNeedsHandling(String analyzerId, String contentHash, Path path, String errorMessage) {
+    public synchronized void markFailedNeedsHandling(String analyzerId, String contentHash, Path path,
+            String errorMessage) {
         String now = TS.format(Instant.now());
         String sql = "UPDATE file_state SET status = 'FAILED_NEEDS_HANDLING', last_error = ?, "
                 + "last_path = ?, last_seen = ?, next_attempt_at = NULL "
@@ -282,7 +295,7 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public void touchLastSeen(String analyzerId, String contentHash, Path path) {
+    public synchronized void touchLastSeen(String analyzerId, String contentHash, Path path) {
         String sql = "UPDATE file_state SET last_seen = ?, last_path = ? "
                 + "WHERE analyzer_id = ? AND content_hash = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -297,7 +310,7 @@ public class SqliteFileStateStore implements FileStateStore {
     }
 
     @Override
-    public List<FileProcessingState> list(FileProcessingState.Status status, int limit, int offset) {
+    public synchronized List<FileProcessingState> list(FileProcessingState.Status status, int limit, int offset) {
         String sql = "SELECT analyzer_id, content_hash, status, last_path, first_seen, last_seen, "
                 + "last_attempt, next_attempt_at, attempts, last_error "
                 + "FROM file_state WHERE status = ? ORDER BY last_seen DESC LIMIT ? OFFSET ?";
@@ -342,7 +355,7 @@ public class SqliteFileStateStore implements FileStateStore {
      * to operators. The {@code payloadSnippet} is clamped to 800 chars so
      * storage cost is bounded even for very large HL7/ASTM/FHIR payloads.
      */
-    public String recordRejection(String sourceId, String protocol, int httpStatus,
+    public synchronized String recordRejection(String sourceId, String protocol, int httpStatus,
                                   String lastError, String fullPayload) {
         String id = UUID.randomUUID().toString();
         String now = TS.format(Instant.now());
@@ -372,7 +385,7 @@ public class SqliteFileStateStore implements FileStateStore {
      * List active (non-dismissed) rejected bundles ordered by rejection time
      * descending. Capped at {@code limit}; callers enforce their own ceiling.
      */
-    public List<RejectedBundle> listRejections(int limit) {
+    public synchronized List<RejectedBundle> listRejections(int limit) {
         String sql = "SELECT id, source_id, protocol, http_status, last_error, payload_hash, "
                 + "payload_snippet, rejected_at, dismissed "
                 + "FROM rejected_bundles WHERE dismissed = 0 "
@@ -395,7 +408,7 @@ public class SqliteFileStateStore implements FileStateStore {
      * Mark a rejected bundle as dismissed (hidden from the active list).
      * No-op if the id does not exist.
      */
-    public boolean dismissRejection(String id) {
+    public synchronized boolean dismissRejection(String id) {
         String sql = "UPDATE rejected_bundles SET dismissed = 1 WHERE id = ? AND dismissed = 0";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -440,8 +453,12 @@ public class SqliteFileStateStore implements FileStateStore {
         }
     }
 
-    /** Visible for shutdown + tests. */
-    public void close() {
+    /**
+     * Visible for shutdown + tests. Worst-case stall at shutdown is bounded by
+     * the 5-second {@code busy_timeout} pragma — if another thread is mid-query
+     * when close is called, it completes or times out within that window.
+     */
+    public synchronized void close() {
         try {
             if (conn != null && !conn.isClosed()) {
                 conn.close();
