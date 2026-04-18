@@ -17,11 +17,16 @@ import org.springframework.context.annotation.Configuration;
  * bridge has exactly one durable store to back up / recover.
  * </p>
  * <p>
- * Guarded by {@code bridge.file.enabled}: when disabled (e.g. pure-ASTM
- * deployments that still want rejection tracking), the bean is still created
- * because rejections come from the router, not the watcher. The existing
- * default {@code matchIfMissing = true} keeps the bridge rejection-aware in
- * all environments; explicit disable requires setting the property to false.
+ * Guarded by {@code bridge.file.enabled}. The bean is created:
+ * <ul>
+ *   <li>when the property is explicitly {@code true}, and</li>
+ *   <li>when the property is missing (default) — {@code matchIfMissing = true}
+ *       keeps the bridge rejection-aware out of the box.</li>
+ * </ul>
+ * When the property is explicitly {@code false}, the bean is NOT created,
+ * which disables both the file-ingestion pipeline AND rejection tracking.
+ * Deployments that want rejection tracking without the file watcher must
+ * leave {@code bridge.file.enabled} unset or {@code true}.
  * </p>
  */
 @Configuration

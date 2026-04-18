@@ -947,9 +947,11 @@ public class FileWatcher {
     }
 
     /**
-     * Test-only accessor for the durable state store. Not part of the public
-     * API — used by integration tests to inspect RETRYING / PROCESSED / FAILED
-     * rows after a simulated drop.
+     * Accessor for the durable {@link FileStateStore}. Used by admin
+     * controllers that surface state-store data ({@code FileStateController},
+     * {@code FileUploadController}, {@code RejectedBundlesController}) and by
+     * integration tests that inspect RETRYING / PROCESSED / FAILED rows after
+     * a simulated drop.
      */
     public FileStateStore getStateStore() {
         return stateStore;
