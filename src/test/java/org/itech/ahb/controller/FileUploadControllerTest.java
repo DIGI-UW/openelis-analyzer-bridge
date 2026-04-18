@@ -219,12 +219,13 @@ class FileUploadControllerTest {
             doThrow(new IllegalStateException("state store unavailable"))
                     .when(stateStore).upsertRetrying(anyString(), anyString(), any(Path.class));
 
-            var result = controller.uploadFile(ANALYZER_ID, TEST_CODE, file, response);
+            controller.uploadFile(ANALYZER_ID, TEST_CODE, file, response);
 
             // Upload refused with 500 — the controller cannot claim the row,
             // so proceeding would risk FileWatcher racing concurrently.
-            assertNotNull(result, "pre-mark failure must return a ResponseEntity with 500 error");
-            assertEquals(500, result.getStatusCode().value());
+            // uploadFile returns void and writes status + HTML directly to the response.
+            assertEquals(500, response.getStatus(),
+                    "pre-mark failure must write HTTP 500 to the response");
 
             // processFile must NOT have been called (file not claimed → don't process)
             verify(fileMessageHandler, never()).processFile(any(Path.class), anyString(),
