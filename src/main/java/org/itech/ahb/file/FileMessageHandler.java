@@ -89,13 +89,6 @@ public class FileMessageHandler {
     }
 
     /**
-     * Process a file with an optional event-scoped per-file test code that
-     * the parser applies to rows lacking a per-row testCode from the
-     * column mapping. {@code perFileTestCode} must come from the caller
-     * (upload-time admin declaration or self-declaration scanner) — never
-     * read from persistent analyzer config.
-     */
-    /**
      * Callback for per-accession progress during file processing.
      * Used by the upload controller to stream progress to the browser.
      */
@@ -104,6 +97,13 @@ public class FileMessageHandler {
         void onAccession(int current, int total, String accessionNumber);
     }
 
+    /**
+     * Process a file with an optional event-scoped per-file test code that
+     * the parser applies to rows lacking a per-row testCode from the
+     * column mapping. {@code perFileTestCode} must come from the caller
+     * (upload-time admin declaration or self-declaration scanner) — never
+     * read from persistent analyzer config.
+     */
     public MessageEnvelope processFile(Path filePath, String analyzerId, String perFileTestCode)
             throws IOException, FileProcessingException {
         return processFile(filePath, analyzerId, perFileTestCode, null);
