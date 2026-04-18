@@ -7,6 +7,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HexFormat;
@@ -45,6 +46,16 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/admin/upload")
 @Slf4j
 public class FileUploadController {
+
+    /**
+     * How long the pre-register lease claims ownership of the uploaded file
+     * before handing off to FileWatcher's retry loop. Must exceed the typical
+     * upload + processFile wall-clock, and at least one FileWatcher poll
+     * interval (default 5s; see {@code bridge.file.pollIntervalMs}). 60s
+     * gives generous headroom for large files without holding ownership
+     * indefinitely on a stuck upload.
+     */
+    static final long UPLOAD_LEASE_SECONDS = 60;
 
     private final AnalyzerRegistryConfig registry;
     private final FileMessageHandler fileMessageHandler;
@@ -175,14 +186,30 @@ public class FileUploadController {
                     "Failed to read uploaded bytes: " + e.getMessage());
         }
 
-        // Pre-register the file as PROCESSED so FileWatcher's polling loop
-        // sees it as already-handled the moment it appears on disk, avoiding
-        // a race where FileWatcher and this controller process the same
-        // file concurrently and flood OE with duplicate FHIR bundles.
+        // Pre-register the file as RETRYING with a short future lease
+        // (next_attempt_at = now + UPLOAD_LEASE_SECONDS). This claims ownership
+        // so FileWatcher's polling loop skips it during the upload (RETRYING
+        // rows with a future next_attempt_at are skipped per FileWatcher's
+        // existing backoff logic). On success we transition to PROCESSED below;
+        // on processFile failure we clear the lease to hand the file off to
+        // FileWatcher's normal retry machinery.
+        //
+        // Previously this marked PROCESSED immediately. That was a silent
+        // data-loss bug: a processFile failure left the row stuck PROCESSED,
+        // and FileWatcher skipped the file forever even though it was never
+        // actually processed.
         try {
-            fileWatcher.getStateStore().markProcessed(analyzerId, contentHash, targetFile);
+            fileWatcher.getStateStore().upsertRetrying(analyzerId, contentHash, targetFile);
+            fileWatcher.getStateStore().setNextAttemptAt(analyzerId, contentHash,
+                    Instant.now().plusSeconds(UPLOAD_LEASE_SECONDS));
         } catch (RuntimeException e) {
-            log.warn("FileUploadController: pre-mark state store failed: {}", e.getMessage());
+            // If we can't register ownership, refuse the upload — proceeding
+            // would risk a FileWatcher race against a state we don't control.
+            log.error("FileUploadController: pre-register state store failed — refusing upload to avoid "
+                    + "FileWatcher race. analyzerId={} file={} error={}",
+                    analyzerId, originalFilename, e.getMessage(), e);
+            return errorHtml(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Could not register upload in state store: " + e.getMessage());
         }
 
         try {
@@ -234,10 +261,35 @@ public class FileUploadController {
         } catch (FileProcessingException | IOException e) {
             log.warn("FileUploadController: processFile failed for {}: {}",
                     targetFile, e.getMessage());
+            // Hand off to FileWatcher's retry loop: clearing the lease
+            // (next_attempt_at = null) makes the row eligible for re-processing
+            // on the next polling cycle via the existing incrementAttempts →
+            // backoff → FAILED_NEEDS_HANDLING machinery. Do NOT markProcessed —
+            // that would permanently skip the file.
+            try {
+                fileWatcher.getStateStore().setNextAttemptAt(analyzerId, contentHash, null);
+            } catch (RuntimeException stateErr) {
+                log.warn("FileUploadController: failed to clear upload lease after processFile error "
+                        + "(FileWatcher will still retry once the lease expires naturally): {}",
+                        stateErr.getMessage());
+            }
             writer.write("<div class=\"banner error\">Processing failed: "
                     + htmlEscape(e.getMessage()) + "</div></body></html>");
             writer.flush();
             return null;
+        }
+
+        // Success: transition from RETRYING+lease to PROCESSED. This also
+        // clears next_attempt_at (via markProcessed's SQL) so any subsequent
+        // re-drop of the same file content is treated as an idempotent
+        // already-processed observation by FileWatcher.
+        try {
+            fileWatcher.getStateStore().markProcessed(analyzerId, contentHash, targetFile);
+        } catch (RuntimeException e) {
+            // Upload succeeded functionally; state-store discrepancy will
+            // self-heal on the next FileWatcher scan via touchLastSeen.
+            log.warn("FileUploadController: failed to mark state as PROCESSED after successful upload "
+                    + "(will self-heal on next FileWatcher scan): {}", e.getMessage());
         }
 
         String analyzerName = entry.getName() != null ? entry.getName() : analyzerId;
