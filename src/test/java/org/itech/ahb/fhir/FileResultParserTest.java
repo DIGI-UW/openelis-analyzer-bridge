@@ -1,15 +1,10 @@
 package org.itech.ahb.fhir;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -668,32 +663,21 @@ class FileResultParserTest {
     /**
      * Madagascar real-file integration tests.
      *
-     * <p>Drives {@link FileResultParser} against Herbert Yiga's actual analyzer
-     * exports and against a synthetic fixture that mirrors the real QuantStudio
-     * SDS export shape (metadata preamble + header-scan requirement). These
-     * tests ground every Madagascar profile / parser change in empirical
-     * results rather than speculation.
-     *
-     * <p>Real-file tests use {@code assumeTrue} to skip gracefully when the
-     * files aren't present (e.g. in CI without the local dev corpus). They
-     * expect to find the files at {@code ../../docs/debug-local/} relative to
-     * the bridge submodule working directory — which is where Piotr keeps
-     * local copies of the files pulled from Herbert's UAT mount (the
-     * directory is gitignored and never committed).
-     *
-     * <p>The synthetic fixture test ({@link RealShapeSynthetic}) runs
-     * unconditionally and is the CI baseline. It builds a POI workbook that
-     * matches the real QuantStudio 5 / QuantStudio 7 Flex shape: multiple
-     * sheets, a {@code Results} sheet with a {@code Block Type} metadata
-     * preamble, a {@code Well}-headed data table, and a mix of
-     * {@code Task=UNKNOWN} clinical rows and {@code Task=STANDARD} calibration
-     * rows.
+     * <p>Drives {@link FileResultParser} against synthetic fixtures that
+     * mirror the real QuantStudio SDS export shape (metadata preamble +
+     * header-scan requirement) and the real Fluorocycler-XT shape. Real-file
+     * tests were removed — they depended on gitignored fixtures from Herbert
+     * Yiga's UAT mount ({@code docs/debug-local/...}) that can't be checked
+     * into a public repo. Those tests silently passed on CI and any fresh
+     * checkout without the fixtures, which Samuel flagged as false positives.
+     * Synthetic fixtures reproduce the structural quirks the parser must
+     * handle without including patient data.
      *
      * <p>Plan reference: {@code ~/.claude/plans/mellow-honking-cascade.md},
      * Phase A and A.3. Each failure here maps to a specific fix in the plan.
      */
     @Nested
-    @DisplayName("Madagascar real-file integration")
+    @DisplayName("Madagascar-shape synthetic fixtures")
     class MadagascarRealFiles {
 
         /**
@@ -713,200 +697,6 @@ class FileResultParserTest {
                 "Quantity", "quantityRaw",
                 "Ct Mean", "ctMean",
                 "Comments", "comments");
-
-        /**
-         * Column mapping from
-         * {@code projects/analyzer-profiles/file/fluorocycler-xt.json} (version
-         * 1.1.0). Note: this profile targets a hypothetical "Loris Excel
-         * template" that does NOT match Madagascar's actual Fluorocycler-XT
-         * file layout. Phase A.2 of the plan rewrites this mapping. The test
-         * below that uses this mapping against the real files is EXPECTED to
-         * return empty — that's the regression gate that proves the profile
-         * is broken.
-         */
-        private static final Map<String, String> FLUOROCYCLER_CURRENT_COLUMN_MAPPING = Map.of(
-                "SampleID", "sampleId",
-                "WellPosition", "position",
-                "TargetName", "testCode",
-                "CP", "result",
-                "Interpretation", "interpretation");
-
-        /**
-         * What the Fluorocycler profile SHOULD look like after Phase A.2 —
-         * matches Madagascar's real file layout from
-         * {@code /mnt/la2m/central/analyzers_results/Fluorocycler-XT/}.
-         */
-        private static final Map<String, String> FLUOROCYCLER_PROPOSED_COLUMN_MAPPING = Map.of(
-                "Sample ID", "sampleId",
-                "Type", "qcTask",
-                "Calc. Conc.", "result",
-                "Result", "interpretation");
-
-        private static Path debugLocalDir() {
-            // Bridge submodule working dir is
-            //   <repo>/tools/openelis-analyzer-bridge/
-            // during `mvn test`, so ../../docs/debug-local resolves to
-            //   <repo>/docs/debug-local/
-            return Paths.get("..", "..", "docs", "debug-local").toAbsolutePath().normalize();
-        }
-
-        private static InputStream openIfExists(Path file) throws Exception {
-            assumeTrue(Files.exists(file),
-                    "Real file not present at " + file
-                            + " — skipping (copy from Herbert's UAT mount to docs/debug-local/ to exercise this test)");
-            return new FileInputStream(file.toFile());
-        }
-
-        // ------------------------------------------------------------------
-        // QuantStudio 5 — Arbovirus (real file)
-        // ------------------------------------------------------------------
-
-        @Test
-        @DisplayName("QS5 Arbo real file → parser extracts clinical rows with current profile")
-        void quantstudio5Arbo_realFile_extractsResults() throws Exception {
-            Path file = debugLocalDir().resolve("Arbo-extraitQS5.xls");
-            try (InputStream in = openIfExists(file)) {
-                List<ParsedResults> results = FileResultParser.parse(in, QUANTSTUDIO_COLUMN_MAPPING);
-
-                assertNotNull(results, "Parser returned null for real QS5 Arbo file — profile or parser is broken");
-                assertFalse(results.isEmpty(),
-                        "Parser extracted zero results from real QS5 Arbo file. "
-                                + "Check findHeaderRow window (header is at row 20) and columnMappings.");
-
-                // Spot-check: at least one result should come from an Arbovirus target.
-                Set<String> seenTestCodes = results.stream()
-                        .flatMap(pr -> pr.results().stream())
-                        .map(AnalyzerResult::testCode)
-                        .collect(Collectors.toSet());
-                // CHIKV / DENV / ZIKV are the multiplex targets in the real Arbo file.
-                // Not asserting a specific code because the file's actual `Target Name`
-                // values may vary — just prove we got some non-empty set.
-                assertFalse(seenTestCodes.isEmpty(),
-                        "Parser extracted rows but no testCodes — Target Name column mapping is broken");
-
-                // Diagnostic dump so failing runs show what we saw.
-                System.out.println("QS5 Arbo: " + results.size() + " accessions, "
-                        + results.stream().mapToInt(pr -> pr.results().size()).sum() + " rows, "
-                        + "testCodes=" + seenTestCodes);
-            }
-        }
-
-        @Test
-        @DisplayName("QS5 Arbo real file → rows with Task=STANDARD/NTC currently leak through (regression gate for A.3.2)")
-        void quantstudio5Arbo_realFile_qcTaskNotFilteredYet() throws Exception {
-            Path file = debugLocalDir().resolve("Arbo-extraitQS5.xls");
-            try (InputStream in = openIfExists(file)) {
-                List<ParsedResults> results = FileResultParser.parse(in, QUANTSTUDIO_COLUMN_MAPPING);
-                if (results == null || results.isEmpty()) {
-                    return; // Covered by the previous test
-                }
-                // Current parser has no Task filtering — STANDARD and NTC rows
-                // are ingested as if they were clinical samples. After Phase
-                // A.3.2 ships the qcTask filter and is wired into this
-                // profile, this test should be replaced with the inverse
-                // assertion. For now it's a documented regression gate.
-                //
-                // We don't have a cheap way to detect which rows came from
-                // STANDARD / NTC tasks without re-parsing the file, so the
-                // check here is just that parsing succeeded at all. The
-                // observable effect of the leak is in the staging UI.
-                System.out.println("QS5 Arbo: " + results.stream()
-                        .mapToInt(pr -> pr.results().size()).sum()
-                        + " total rows (includes STANDARD + NTC until Phase A.3.2 ships)");
-            }
-        }
-
-        // ------------------------------------------------------------------
-        // Fluorocycler-XT — real file (currently BROKEN against profile)
-        // ------------------------------------------------------------------
-
-        @Test
-        @DisplayName("Fluorocycler-XT HIV real file with CURRENT profile → should extract ZERO (regression gate proving the profile is broken)")
-        void fluorocyclerXtHiv_realFile_currentProfileIsBroken() throws Exception {
-            Path file = debugLocalDir().resolve("mnt-snapshot/la2m/central/analyzers_results/Fluorocycler-XT/HIV-result.xlsx");
-            try (InputStream in = openIfExists(file)) {
-                List<ParsedResults> results = FileResultParser.parse(in, FLUOROCYCLER_CURRENT_COLUMN_MAPPING);
-
-                // The current profile expects SampleID / WellPosition /
-                // TargetName / CP / Interpretation columns — NONE of which
-                // exist in the real file (which has Row / Col / Sample ID /
-                // Type / Calc. Conc. / Result). The parser finds no header
-                // matches, can't populate fieldIndex, and drops every row
-                // because the per-row testCode lookup returns null.
-                //
-                // This test EXPECTS null or empty. If it starts passing with
-                // non-empty results, the profile has been fixed — flip this
-                // test to assert non-empty instead of null/empty.
-                if (results == null) {
-                    System.out.println("Fluorocycler HIV (current profile): parser returned null (header or mapping miss)");
-                    return;
-                }
-                assertTrue(results.isEmpty() || results.stream().allMatch(pr -> pr.results().isEmpty()),
-                        "Current Fluorocycler profile is supposed to be broken against real files — "
-                                + "if this test is failing because results came back, Phase A.2 is done and "
-                                + "this assertion should be flipped to assertFalse.");
-            }
-        }
-
-        @Test
-        @DisplayName("Fluorocycler-XT HIV real file with PROPOSED profile + perFileTestCode → extracts clinical rows (A.3.3 verified)")
-        void fluorocyclerXtHiv_realFile_proposedProfileWithPerFileTestCode_extractsRows() throws Exception {
-            Path file = debugLocalDir().resolve("mnt-snapshot/la2m/central/analyzers_results/Fluorocycler-XT/HIV-result.xlsx");
-            try (InputStream in = openIfExists(file)) {
-                List<ParsedResults> results = FileResultParser.parse(
-                        in, FLUOROCYCLER_PROPOSED_COLUMN_MAPPING, "VIH-1");
-
-                assertNotNull(results,
-                        "Parser returned null for real Fluorocycler HIV file with proposed column mapping + perFileTestCode=VIH-1");
-                assertFalse(results.isEmpty(),
-                        "Parser extracted zero results from real Fluorocycler HIV file even with perFileTestCode. "
-                                + "Check that Sample ID column maps correctly and that Result has a value.");
-
-                // Every emitted row should carry the fallback test code.
-                long rowsWithFallbackCode = results.stream()
-                        .flatMap(pr -> pr.results().stream())
-                        .filter(r -> "VIH-1".equals(r.testCode()))
-                        .count();
-                assertTrue(rowsWithFallbackCode > 0,
-                        "Expected at least one result row to use the fallback testCode 'VIH-1', got zero");
-
-                // The real HIV file has 95 rows including 10 Standard rows
-                // and a handful of control rows. After STANDARD/NTC/CPOS/CNEG
-                // control flagging (shipped in commit eae654f) AND the new
-                // perFileTestCode fallback (this commit), all rows should
-                // flow through with appropriate isControl flags.
-                int totalRows = results.stream().mapToInt(pr -> pr.results().size()).sum();
-                System.out.println("Fluorocycler HIV (proposed profile + perFileTestCode): "
-                        + results.size() + " accessions, " + totalRows + " rows, "
-                        + "fallback-coded rows=" + rowsWithFallbackCode);
-            }
-        }
-
-        @Test
-        @DisplayName("Fluorocycler-XT Arbo real file with PROPOSED profile + perFileTestCode=ARBO → extracts clinical rows")
-        void fluorocyclerXtArbo_realFile_proposedProfileWithPerFileTestCode_extractsRows() throws Exception {
-            Path file = debugLocalDir().resolve("mnt-snapshot/la2m/central/analyzers_results/Fluorocycler-XT/ARBOVIROSE.xlsx");
-            try (InputStream in = openIfExists(file)) {
-                List<ParsedResults> results = FileResultParser.parse(
-                        in, FLUOROCYCLER_PROPOSED_COLUMN_MAPPING, "ARBO-MULTIPLEX");
-
-                assertNotNull(results,
-                        "Parser returned null for real Fluorocycler Arbo file with proposed mapping + perFileTestCode");
-                assertFalse(results.isEmpty(),
-                        "Parser extracted zero results from real Fluorocycler Arbo file");
-
-                long rowsWithFallbackCode = results.stream()
-                        .flatMap(pr -> pr.results().stream())
-                        .filter(r -> "ARBO-MULTIPLEX".equals(r.testCode()))
-                        .count();
-                assertTrue(rowsWithFallbackCode > 0,
-                        "Expected at least one result row to use the fallback testCode 'ARBO-MULTIPLEX'");
-
-                System.out.println("Fluorocycler Arbo (proposed profile + perFileTestCode): "
-                        + results.size() + " accessions, "
-                        + results.stream().mapToInt(pr -> pr.results().size()).sum() + " rows");
-            }
-        }
 
         @Test
         @DisplayName("Synthetic Fluorocycler-shape file + perFileTestCode → CI baseline for A.3.3")
@@ -1105,16 +895,22 @@ class FileResultParserTest {
         }
 
         @Test
-        @DisplayName("Synthetic QS fixture with header at row 120 → currently FAILS (regression gate for Phase A.3.1 scan-window bump)")
-        void syntheticDeeperPreamble_headerAt120_currentlyFails() {
-            InputStream xls = buildQuantStudioLikeWorkbook(
-                    Math.min(20, 19 /* metadata keys to fill */)); // build the workbook with row-120 header
-            // The helper tops out at 20 metadata rows; for deeper-preamble
-            // testing we'd need a second helper. Leaving this as a TODO marker
-            // that becomes a real assertion once Phase A.3.1 bumps the
-            // window to 200. For now, assert nothing and just document the
-            // gap.
-            assertNotNull(xls);
+        @DisplayName("Synthetic QS fixture with header at row 120 → parser finds header (within 200-row scan window)")
+        void syntheticDeeperPreamble_headerAt120_parses() {
+            // The parser's findHeaderRow scan window is 200 rows (see
+            // FileResultParser.findHeaderRow, bumped from 60 in Phase A.3.1).
+            // Row 120 is well within that window; the helper fills 20 metadata
+            // rows then leaves a gap to row 120 and the parser must still find
+            // the header.
+            InputStream xls = buildQuantStudioLikeWorkbook(120);
+
+            List<ParsedResults> results = FileResultParser.parse(xls, QUANTSTUDIO_COLUMN_MAPPING);
+
+            assertNotNull(results,
+                    "Parser returned null for QS-shape fixture with header at row 120 — "
+                            + "the findHeaderRow scan window may have been tightened below 120.");
+            assertFalse(results.isEmpty(),
+                    "Parser extracted zero results from QS-shape fixture with header at row 120.");
         }
     }
 }
