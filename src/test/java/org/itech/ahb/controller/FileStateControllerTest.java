@@ -4,6 +4,7 @@ import org.itech.ahb.file.FileProcessingState;
 import org.itech.ahb.file.FileStateStore;
 import org.itech.ahb.file.FileWatcher;
 import org.itech.ahb.file.SqliteFileStateStore;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -67,6 +68,17 @@ class FileStateControllerTest {
         store.upsertRetrying("qs7-hiv", "hash-failed", tempDir.resolve("d.xls"));
         store.markFailedNeedsHandling("qs7-hiv", "hash-failed", tempDir.resolve("d.xls"),
                 "EmptyResults: 0 rows matched testCodeFilter=VIH-1");
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Release the SQLite JDBC connection + file handle so each test cleans
+        // up deterministically. Without this, platforms that lock SQLite files
+        // (Windows in particular) can see intermittent failures when @TempDir
+        // tries to delete the db file while the connection is still open.
+        if (store != null) {
+            store.close();
+        }
     }
 
     @Nested
