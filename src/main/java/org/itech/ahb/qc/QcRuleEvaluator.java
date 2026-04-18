@@ -1,6 +1,7 @@
 package org.itech.ahb.qc;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -57,12 +58,18 @@ public final class QcRuleEvaluator {
             case "FIELD_CONTAINS" -> {
                 String value = fieldValues != null
                         ? fieldValues.get(rule.targetField()) : null;
+                // Locale.ROOT so case-folding is deterministic across JVM locales.
+                // In Turkish locale, "i".toUpperCase() yields "İ" (U+0130), not "I",
+                // which breaks case-insensitive matching when either side contains 'i'.
                 yield value != null
-                        && value.toUpperCase().contains(rule.operand().toUpperCase());
+                        && value.toUpperCase(Locale.ROOT)
+                                .contains(rule.operand().toUpperCase(Locale.ROOT));
             }
             case "SPECIMEN_ID_PREFIX" -> {
+                // Same Locale.ROOT fix as FIELD_CONTAINS above.
                 yield specimenId != null
-                        && specimenId.toUpperCase().startsWith(rule.operand().toUpperCase());
+                        && specimenId.toUpperCase(Locale.ROOT)
+                                .startsWith(rule.operand().toUpperCase(Locale.ROOT));
             }
             case "SPECIMEN_ID_PATTERN" -> {
                 if (specimenId == null) yield false;
