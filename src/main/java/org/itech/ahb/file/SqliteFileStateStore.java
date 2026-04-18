@@ -120,8 +120,19 @@ public class SqliteFileStateStore implements FileStateStore {
         try {
             return openWithPragmas(dbPath);
         } catch (SQLException e) {
-            log.error("CRITICAL: FileStateStore database at {} failed to open: {}",
-                    dbPath, e.getMessage(), e);
+            if (!isCorruptionException(e)) {
+                // Not corruption — could be missing driver, permission denied,
+                // disk full, busy lock, etc. Destroying the database in those
+                // cases would be a catastrophic response to a transient or
+                // operator-fixable problem. Propagate loudly instead.
+                log.error("FileStateStore at {} failed to open with a NON-CORRUPTION SQLException. "
+                        + "Refusing to rename-and-replace the file. Investigate driver, filesystem "
+                        + "permissions, disk state. Cause: {}", dbPath, e.getMessage(), e);
+                throw new IllegalStateException(
+                        "FileStateStore failed to open (non-corruption error): " + dbPath, e);
+            }
+            log.error("CRITICAL: FileStateStore database at {} is CORRUPT (error code {}): {}",
+                    dbPath, e.getErrorCode(), e.getMessage(), e);
             Path corrupt = dbPath.resolveSibling(
                     dbPath.getFileName() + ".corrupt-" + Instant.now().toString().replace(':', '-'));
             try {
@@ -140,6 +151,53 @@ public class SqliteFileStateStore implements FileStateStore {
                         "Failed to open fresh state store after corruption recovery", retryErr);
             }
         }
+    }
+
+    /**
+     * Classify an {@link SQLException} thrown during connection open as
+     * corruption (the db file is damaged or is not a SQLite file at all) vs
+     * anything else (missing JDBC driver, filesystem permission denied, disk
+     * full, concurrent-open lock, malformed connection string, etc.).
+     *
+     * <p>For xerial sqlite-jdbc, corruption surfaces via SQLite error codes:
+     * <ul>
+     *   <li>{@code SQLITE_CORRUPT} (11) — on-disk format is damaged</li>
+     *   <li>{@code SQLITE_NOTADB} (26) — file header isn't a SQLite header</li>
+     * </ul>
+     *
+     * <p>{@link #openWithPragmas} also runs {@code PRAGMA integrity_check} and
+     * throws a synthetic {@code SQLException} whose message starts with
+     * {@code "Integrity check failed"}; that path lacks an error code, so the
+     * classifier matches on message text as a fallback. A handful of
+     * driver-independent messages ("file is not a database", "database disk
+     * image is malformed") are also treated as corruption.
+     *
+     * <p>Visible-for-testing (package-private) so unit tests can assert the
+     * classification directly without simulating real on-disk corruption.
+     *
+     * @param e the SQLException from the failed open
+     * @return true iff the error indicates a damaged/non-SQLite file, in which
+     *         case the rename-and-replace recovery path is appropriate
+     */
+    static boolean isCorruptionException(SQLException e) {
+        Throwable t = e;
+        while (t != null) {
+            if (t instanceof SQLException sql) {
+                int code = sql.getErrorCode();
+                // 11 = SQLITE_CORRUPT, 26 = SQLITE_NOTADB (xerial + libsqlite3)
+                if (code == 11 || code == 26) {
+                    return true;
+                }
+                String msg = sql.getMessage();
+                if (msg != null && (msg.startsWith("Integrity check failed")
+                        || msg.contains("file is not a database")
+                        || msg.contains("database disk image is malformed"))) {
+                    return true;
+                }
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 
     private static Connection openWithPragmas(Path dbPath) throws SQLException {
