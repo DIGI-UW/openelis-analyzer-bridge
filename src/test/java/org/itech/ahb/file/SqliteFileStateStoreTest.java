@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -540,6 +541,97 @@ class SqliteFileStateStoreTest {
             } finally {
                 store.close();
             }
+        }
+    }
+
+    /**
+     * Unit tests for {@link SqliteFileStateStore#isCorruptionException(SQLException)}.
+     *
+     * <p>Why these tests matter: before the fix, {@code openOrRecover} caught
+     * <em>any</em> SQLException and immediately renamed the db file to
+     * {@code .corrupt-<timestamp>}, then created a fresh store. That's
+     * catastrophic for transient errors (missing JDBC driver at classpath
+     * resolution time, filesystem permission denied, disk full) because it
+     * destroys a potentially-healthy database in response to an
+     * operator-fixable condition. The classifier restricts the destructive
+     * rename path to actual corruption signals.
+     *
+     * <p>Testing the classifier directly (rather than simulating end-to-end
+     * corruption scenarios) is more robust: simulating a permission-denied
+     * SQLite open on macOS, Windows, and Linux uniformly is fragile, whereas
+     * constructing synthetic {@link SQLException}s with specific error codes
+     * and messages is deterministic and platform-independent.
+     */
+    @org.junit.jupiter.api.Nested
+    @org.junit.jupiter.api.DisplayName("Corruption classifier — only rename-and-replace for real corruption")
+    class CorruptionClassifier {
+
+        @org.junit.jupiter.api.Test
+        void sqliteCorruptCode_classifiedAsCorrupt() {
+            SQLException e = new SQLException("database disk image is malformed", "SQLITE_CORRUPT", 11);
+            assertTrue(SqliteFileStateStore.isCorruptionException(e),
+                    "SQLITE_CORRUPT (code 11) must be treated as corruption");
+        }
+
+        @org.junit.jupiter.api.Test
+        void sqliteNotADbCode_classifiedAsCorrupt() {
+            SQLException e = new SQLException("file is not a database", "SQLITE_NOTADB", 26);
+            assertTrue(SqliteFileStateStore.isCorruptionException(e),
+                    "SQLITE_NOTADB (code 26) must be treated as corruption");
+        }
+
+        @org.junit.jupiter.api.Test
+        void integrityCheckFailedMessage_classifiedAsCorrupt() {
+            // openWithPragmas throws a synthetic SQLException with no error code
+            // when PRAGMA integrity_check reports a problem. The classifier must
+            // match on message text as a fallback.
+            SQLException e = new SQLException("Integrity check failed: wrong # of entries in index");
+            assertTrue(SqliteFileStateStore.isCorruptionException(e),
+                    "synthetic integrity-check failure must be treated as corruption");
+        }
+
+        @org.junit.jupiter.api.Test
+        void permissionDeniedError_notCorrupt() {
+            // SQLITE_PERM (3): filesystem permission denied. Not corruption —
+            // operator needs to chmod, not the DB renamed.
+            SQLException e = new SQLException("unable to open database file", "SQLITE_PERM", 14);
+            assertFalse(SqliteFileStateStore.isCorruptionException(e),
+                    "permission-denied (code 14) must NOT trigger the destructive rename path");
+        }
+
+        @org.junit.jupiter.api.Test
+        void busyLockError_notCorrupt() {
+            // SQLITE_BUSY (5): another process/thread holds the lock. Transient.
+            SQLException e = new SQLException("database is locked", "SQLITE_BUSY", 5);
+            assertFalse(SqliteFileStateStore.isCorruptionException(e),
+                    "busy lock (code 5) is transient, must NOT trigger rename");
+        }
+
+        @org.junit.jupiter.api.Test
+        void missingDriverError_notCorrupt() {
+            // Simulates ClassNotFoundException wrapped in SQLException — though
+            // usually surfaces as the unchecked variant, message-level rejection
+            // covers the common forms.
+            SQLException e = new SQLException("No suitable driver found for jdbc:sqlite:/tmp/x.db");
+            assertFalse(SqliteFileStateStore.isCorruptionException(e),
+                    "missing-driver error message must NOT trigger rename");
+        }
+
+        @org.junit.jupiter.api.Test
+        void unrelatedSqlException_notCorrupt() {
+            SQLException e = new SQLException("some unrelated failure", "XX000", 999);
+            assertFalse(SqliteFileStateStore.isCorruptionException(e),
+                    "unknown error must default to 'not corruption' (safe default)");
+        }
+
+        @org.junit.jupiter.api.Test
+        void corruptionInCauseChain_stillClassified() {
+            // Corruption sometimes arrives wrapped in an outer driver exception.
+            SQLException root = new SQLException("database disk image is malformed", "SQLITE_CORRUPT", 11);
+            SQLException wrapper = new SQLException("wrapper", "XX000", 0);
+            wrapper.initCause(root);
+            assertTrue(SqliteFileStateStore.isCorruptionException(wrapper),
+                    "corruption exception wrapped in a cause chain must still classify as corruption");
         }
     }
 }
