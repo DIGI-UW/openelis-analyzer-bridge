@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -45,44 +44,6 @@ class FileNameSelfDeclarationScannerTest {
             "CHIKV", List.of("CHIKV", "Chikungunya"),
             "DENV", List.of("DENV", "Dengue"),
             "ZIKV", List.of("ZIKV", "Zika"));
-
-    @Nested
-    @DisplayName("Real LA2M files")
-    class RealFiles {
-
-        @Test
-        @DisplayName("HIV-result.xlsx → SelfDeclared(VIH-1) via HIV-1/GENERIC_HIV_CV synonyms")
-        void hivResultFile_selfDeclaresAsVIH1() throws Exception {
-            Path file = Path.of("../../docs/debug-local/mnt-snapshot/la2m/central/"
-                    + "analyzers_results/Fluorocycler-XT/HIV-result.xlsx");
-            if (!Files.exists(file)) {
-                // Gitignored real file not present in CI — skip cleanly.
-                return;
-            }
-            ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
-            assertInstanceOf(ScanResult.SelfDeclared.class, result,
-                    "Expected SelfDeclared(VIH-1) from HIV-result.xlsx; got " + result);
-            assertEquals("VIH-1", ((ScanResult.SelfDeclared) result).testCode());
-        }
-
-        @Test
-        @DisplayName("ARBOVIROSE.xlsx → NoDeclaration (positional multiplex with zero inline target names)")
-        void arbovioroseFile_returnsNoDeclaration() throws Exception {
-            Path file = Path.of("../../docs/debug-local/mnt-snapshot/la2m/central/"
-                    + "analyzers_results/Fluorocycler-XT/ARBOVIROSE.xlsx");
-            if (!Files.exists(file)) {
-                return;
-            }
-            // Result column holds positional multiplex slots like
-            // "Negative -Negative -Positive (CP=28.6)" — no target labels,
-            // so the file carries no inline identity and must be rejected.
-            ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
-            assertInstanceOf(ScanResult.NoDeclaration.class, result,
-                    "Expected NoDeclaration from ARBOVIROSE.xlsx; got " + result);
-        }
-    }
 
     @Nested
     @DisplayName("Synthetic fixtures")
