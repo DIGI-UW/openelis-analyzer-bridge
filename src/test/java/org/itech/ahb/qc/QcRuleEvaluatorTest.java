@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -207,6 +210,92 @@ class QcRuleEvaluatorTest {
                     new QcRule("SPECIMEN_ID_PREFIX", null, "QC-"));
             Map<String, String> fields = Map.of("O.12", "P");
             assertFalse(QcRuleEvaluator.isQcSample(rules, "SAMPLE-001", fields));
+        }
+    }
+
+    @Nested
+    @DisplayName("Locale independence — regression guard against JVM default locale")
+    class LocaleIndependence {
+        // Turkish is the canonical case-folding outlier in Java:
+        //   "i".toUpperCase(Locale.forLanguageTag("tr")) → "İ" (U+0130), not "I"
+        //   "I".toLowerCase(Locale.forLanguageTag("tr")) → "ı" (U+0131), not "i"
+        // So if FIELD_CONTAINS / SPECIMEN_ID_PREFIX use the default-locale toUpperCase()
+        // and the JVM happens to boot in Turkish locale, any rule involving an
+        // 'i'/'I' character silently misfires. Locking the test locale to tr-TR
+        // around each assertion proves the production code case-folds through
+        // Locale.ROOT (or equivalent), not the ambient JVM locale.
+        //
+        // This is a regression guard, not a "we serve Turkish labs" test. If the
+        // assertion passes in tr-TR, it passes in every other locale too.
+
+        private static final Locale TURKISH = Locale.forLanguageTag("tr-TR");
+        private Locale originalLocale;
+
+        @BeforeEach
+        void forceTurkishLocale() {
+            originalLocale = Locale.getDefault();
+            Locale.setDefault(TURKISH);
+        }
+
+        @AfterEach
+        void restoreLocale() {
+            Locale.setDefault(originalLocale);
+        }
+
+        @Test
+        @DisplayName("FIELD_CONTAINS matches 'Positive'/'POSITIVE' in Turkish locale")
+        void fieldContains_TurkishLocale_stillMatchesOnI() {
+            // 'POSITIVE'.toUpperCase(tr-TR) = 'POSİTİVE' (note the İ); 'Positive'.toUpperCase(tr-TR) = 'POSİTİVE'.
+            // With Locale.ROOT these are both 'POSITIVE'. Either way the operand + value
+            // must fold consistently so contains() returns true.
+            List<QcRule> rules = List.of(new QcRule("FIELD_CONTAINS", "QC_TASK", "Positive"));
+            Map<String, String> fields = Map.of("QC_TASK", "Control POSITIVE sample");
+            assertTrue(QcRuleEvaluator.isQcSample(rules, "SAMPLE001", fields),
+                    "FIELD_CONTAINS must be locale-insensitive; failed under tr-TR default locale");
+        }
+
+        @Test
+        @DisplayName("FIELD_CONTAINS mismatched case across 'i' variants still matches")
+        void fieldContains_TurkishLocale_mixedCaseI() {
+            // Operand has lowercase 'i', value has uppercase 'I'. Under tr-TR default
+            // folding they'd diverge (İ vs I). Under Locale.ROOT they both normalize.
+            List<QcRule> rules = List.of(new QcRule("FIELD_CONTAINS", "QC_TASK", "calibration"));
+            Map<String, String> fields = Map.of("QC_TASK", "CALIBRATION run 12");
+            assertTrue(QcRuleEvaluator.isQcSample(rules, "SAMPLE001", fields),
+                    "FIELD_CONTAINS with i↔I case mismatch must still match in Turkish locale");
+        }
+
+        @Test
+        @DisplayName("SPECIMEN_ID_PREFIX matches 'QI-'/'qi-' in Turkish locale")
+        void specimenIdPrefix_TurkishLocale_matchesOnI() {
+            // Prefix contains 'i'; specimen contains 'I'. Default-locale folding in
+            // tr-TR would break this; Locale.ROOT does not.
+            List<QcRule> rules = List.of(new QcRule("SPECIMEN_ID_PREFIX", null, "qi-"));
+            assertTrue(QcRuleEvaluator.isQcSample(rules, "QI-2026-001", Map.of()),
+                    "SPECIMEN_ID_PREFIX must be locale-insensitive; failed under tr-TR default locale");
+        }
+
+        @Test
+        @DisplayName("SPECIMEN_ID_PREFIX does NOT match non-prefix even in Turkish locale")
+        void specimenIdPrefix_TurkishLocale_negativeStillFalse() {
+            // Locale.ROOT fix must not accidentally make everything match. Prove a
+            // genuine non-match still returns false under tr-TR.
+            List<QcRule> rules = List.of(new QcRule("SPECIMEN_ID_PREFIX", null, "QI-"));
+            assertFalse(QcRuleEvaluator.isQcSample(rules, "SAMPLE-001", Map.of()),
+                    "SPECIMEN_ID_PREFIX must still be a true prefix check under tr-TR");
+        }
+
+        @Test
+        @DisplayName("FIELD_EQUALS unchanged — equalsIgnoreCase is already locale-safe by Java spec")
+        void fieldEquals_TurkishLocale_stillMatches() {
+            // String.equalsIgnoreCase is defined by Java spec to be locale-insensitive
+            // (it uses per-char comparison, not full-string case-folding). This test
+            // documents that guarantee and catches a future refactor that might
+            // replace it with .equals(.toUpperCase()) style code.
+            List<QcRule> rules = List.of(new QcRule("FIELD_EQUALS", "O.12", "INIT"));
+            Map<String, String> fields = Map.of("O.12", "init");
+            assertTrue(QcRuleEvaluator.isQcSample(rules, "SAMPLE001", fields),
+                    "FIELD_EQUALS via equalsIgnoreCase must be locale-insensitive by Java spec");
         }
     }
 
