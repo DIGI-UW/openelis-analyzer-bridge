@@ -111,7 +111,7 @@ public class FileUploadController {
      * endpoints instead.
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> uploadFile(
+    public void uploadFile(
             @RequestParam("analyzerId") String analyzerId,
             @RequestParam(value = "testCode", required = false) String testCode,
             @RequestParam("file") MultipartFile file,
@@ -119,28 +119,32 @@ public class FileUploadController {
 
         AnalyzerEntry entry = findEntryById(analyzerId);
         if (entry == null) {
-            return errorHtml(HttpStatus.BAD_REQUEST,
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST,
                     "Unknown analyzer id: " + analyzerId);
+            return;
         }
         if (!"FILE".equalsIgnoreCase(entry.getExpectedProtocol())) {
-            return errorHtml(HttpStatus.BAD_REQUEST,
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST,
                     "Analyzer " + analyzerId + " is not a FILE analyzer (protocol="
                             + entry.getExpectedProtocol() + ")");
+            return;
         }
 
         Set<String> allowedCodes = entry.getMappedTestCodes();
         if (allowedCodes == null || allowedCodes.isEmpty()) {
-            return errorHtml(HttpStatus.BAD_REQUEST,
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST,
                     "Analyzer " + analyzerId
                             + " has no configured test mappings — refusing upload");
+            return;
         }
         // testCode is optional — files with per-row test labels (e.g. QuantStudio's
         // Target Name column) don't need a form-level declaration. Only reject if a
         // non-blank value was provided that doesn't match the configured mapping set.
         if (testCode != null && !testCode.isBlank() && !allowedCodes.contains(testCode)) {
-            return errorHtml(HttpStatus.BAD_REQUEST,
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST,
                     "testCode '" + testCode + "' is not in analyzer's configured mapping set "
                             + allowedCodes);
+            return;
         }
         // Normalize blank to null so downstream receives a clean signal
         if (testCode != null && testCode.isBlank()) {
@@ -148,16 +152,19 @@ public class FileUploadController {
         }
 
         if (file == null || file.isEmpty()) {
-            return errorHtml(HttpStatus.BAD_REQUEST, "Uploaded file is empty");
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST, "Uploaded file is empty");
+            return;
         }
         String originalFilename = file.getOriginalFilename();
         if (originalFilename == null || originalFilename.isBlank()) {
-            return errorHtml(HttpStatus.BAD_REQUEST, "Uploaded file has no filename");
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST, "Uploaded file has no filename");
+            return;
         }
         if (originalFilename.contains("/") || originalFilename.contains("\\")
                 || originalFilename.contains("..")) {
-            return errorHtml(HttpStatus.BAD_REQUEST,
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST,
                     "Unsafe filename rejected (path separator or traversal): " + originalFilename);
+            return;
         }
 
         String watchDir = null;
@@ -169,8 +176,9 @@ public class FileUploadController {
             }
         }
         if (watchDir == null) {
-            return errorHtml(HttpStatus.INTERNAL_SERVER_ERROR,
+            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR,
                     "Could not resolve watch directory for analyzer " + analyzerId);
+            return;
         }
 
         Path targetDir = Paths.get(watchDir);
@@ -182,8 +190,9 @@ public class FileUploadController {
             fileBytes = file.getBytes();
             contentHash = sha256Hex(fileBytes);
         } catch (IOException | NoSuchAlgorithmException e) {
-            return errorHtml(HttpStatus.BAD_REQUEST,
+            writeErrorHtml(response, HttpStatus.BAD_REQUEST,
                     "Failed to read uploaded bytes: " + e.getMessage());
+            return;
         }
 
         // Pre-register the file as RETRYING with a short future lease
@@ -208,8 +217,9 @@ public class FileUploadController {
             log.error("FileUploadController: pre-register state store failed — refusing upload to avoid "
                     + "FileWatcher race. analyzerId={} file={} error={}",
                     analyzerId, originalFilename, e.getMessage(), e);
-            return errorHtml(HttpStatus.INTERNAL_SERVER_ERROR,
+            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR,
                     "Could not register upload in state store: " + e.getMessage());
+            return;
         }
 
         try {
@@ -223,8 +233,9 @@ public class FileUploadController {
         } catch (IOException e) {
             log.warn("FileUploadController: failed to write {} to {}: {}",
                     originalFilename, targetDir, e.getMessage());
-            return errorHtml(HttpStatus.INTERNAL_SERVER_ERROR,
+            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR,
                     "Failed to write upload to " + targetDir + ": " + e.getMessage());
+            return;
         }
 
         // Stream progress to the browser via chunked HTML response so the
@@ -236,7 +247,8 @@ public class FileUploadController {
         try {
             writer = response.getWriter();
         } catch (IOException e) {
-            return errorHtml(HttpStatus.INTERNAL_SERVER_ERROR, "Response writer failed");
+            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR, "Response writer failed");
+            return;
         }
         writer.write("<!DOCTYPE html><html><head><title>Uploading…</title>"
                 + "<style>"
@@ -276,7 +288,7 @@ public class FileUploadController {
             writer.write("<div class=\"banner error\">Processing failed: "
                     + htmlEscape(e.getMessage()) + "</div></body></html>");
             writer.flush();
-            return null;
+            return;
         }
 
         // Success: transition from RETRYING+lease to PROCESSED. This also
@@ -302,7 +314,6 @@ public class FileUploadController {
                 + "<p><a href=\"/admin/upload/index.html\">Upload another file</a></p>"
                 + "</body></html>");
         writer.flush();
-        return null;
     }
 
     /**
@@ -417,11 +428,30 @@ public class FileUploadController {
         return HexFormat.of().formatHex(md.digest(bytes));
     }
 
-    private ResponseEntity<String> errorHtml(HttpStatus status, String message) {
+    /**
+     * Write an HTML error banner directly to the response. Used by
+     * {@link #uploadFile} which declares {@code void} return type because it
+     * streams chunked HTML progress to the response during processing —
+     * returning a {@link ResponseEntity} would be inconsistent with the
+     * response-already-in-progress contract.
+     *
+     * <p>Callers must {@code return} immediately after calling this; the
+     * response is fully written and no further body should be emitted.
+     */
+    private void writeErrorHtml(jakarta.servlet.http.HttpServletResponse response,
+            HttpStatus status, String message) {
         String body = wrapHtml(
                 "<div class=\"banner error\">" + htmlEscape(message) + "</div>"
                         + "<p><a href=\"/admin/upload/index.html\">Back to upload</a></p>");
-        return ResponseEntity.status(status).contentType(MediaType.TEXT_HTML).body(body);
+        response.setStatus(status.value());
+        response.setContentType(MediaType.TEXT_HTML_VALUE);
+        try {
+            response.getWriter().write(body);
+            response.getWriter().flush();
+        } catch (java.io.IOException e) {
+            log.warn("FileUploadController: failed to write error HTML (status={}): {}",
+                    status.value(), e.getMessage());
+        }
     }
 
     private String wrapHtml(String bodyContent) {
