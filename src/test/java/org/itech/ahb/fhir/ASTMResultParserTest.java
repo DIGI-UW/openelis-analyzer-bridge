@@ -21,12 +21,13 @@ import org.junit.jupiter.api.Test;
 class ASTMResultParserTest {
 
     // Realistic ASTM from a GeneXpert analyzer.
-    // Field indices: O|1[0]|specimen[2]|...[3-11]|actionCode[12]
-    //                R|1[0]|seq[1]|testId[2]|value[3]|units[4]|ref[5]|flag[6]|op[7]|status[8]|timestamp[9]
+    // Field indices (0-indexed split, segment ID at idx 0):
+    //   O[0] | seq[1] | specimen[2] | ... | actionCode[11] (ASTM O.12)
+    //   R[0] | seq[1] | testId[2] | value[3] | units[4] | ref[5] | flag[6] | op[7] | status[8] | timestamp[9]
     private static final String VALID_ASTM_MESSAGE =
             "H|\\^&|||GeneXpert^1.0|||||||LIS2-A2\r"
             + "P|1\r"
-            + "O|1|SAMPLE001||||||||||P\r"
+            + "O|1|SAMPLE001|||||||||P\r"
             + "R|1|^^^HIV-VL|1520.5|copies/mL|||||20260326120000\r"
             + "R|2|^^^CT|28.5|cycles|||||20260326120000\r"
             + "L|1\r";
@@ -223,11 +224,11 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("O.12 = 'Q' -> result.isControl() = true")
         void qcSampleDetected() {
-            // O-record: O[0]|seq[1]|specimen[2]|...[3-11]|actionCode[12]
-            // Need 13 pipe-separated fields so index 12 = "Q"
+            // O-record: O[0]|seq[1]|specimen[2]|...[3-10]|actionCode[11]
+            // ASTM LIS2-A2 §5.7: action code is field 12 (1-indexed) = idx 11.
             String msg = "H|\\^&|||Analyzer\r"
                     + "P|1\r"
-                    + "O|1|QC_SAMPLE001||||||||||Q\r"
+                    + "O|1|QC_SAMPLE001|||||||||Q\r"
                     + "R|1|^^^TEST|5.0|units\r"
                     + "L|1\r";
 
@@ -261,6 +262,60 @@ class ASTMResultParserTest {
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isControl());
+        }
+
+        // Standards-conformant test fixtures — drive the bridge with messages
+        // shaped like REAL analyzer output, not hand-crafted with off-by-one
+        // padding. Per LIS2-A2 §5.7 (Order Record), Action Code is O.12 in
+        // 1-indexed ASTM field numbering, which is idx 11 when the segment ID
+        // ("O") is included as field 0 in the 0-indexed split (the convention
+        // OE uses, see src/test/resources/testdata/astm/mindray-ba88a-result.txt:26
+        // where action code "A" sits at idx 11). The earlier bridge tests
+        // padded by one extra pipe and so masked an off-by-one in
+        // O_ACTION_CODE_FIELD; these tests assert the correct shape.
+
+        @Test
+        @DisplayName("REAL wire format: O.12='Q' at idx 11 (per ASTM LIS2-A2) -> isControl=true")
+        void wireFormatQcMessageDetectedAsControl() {
+            // This is the EXACT message shape the analyzer mock generates
+            // via `--qc --template genexpert_astm`. Verified by Test A in
+            // tools/analyzer-mock-server/test_qc_message.py.
+            String wireFormat =
+                    "H|\\^&|||GENEXPERT^GeneXpert^4.6.0|||||||LIS2-A2|20260429181325\r"
+                    + "P|1||QCCTRL001|QC^Control||U|19000101\r"
+                    + "O|1|DEV01269800000000001|||||||||Q|||||||||||||\r"
+                    + "R|1|^^^HIV-VL|1687.5|copies/mL|20-10000000|N||F|20260429181325\r"
+                    + "Q|1|HIV-VL^LOT-HIVVL-N^N|1687.5|copies/mL|20260429181325\r"
+                    + "L|1|N\r";
+
+            ParsedResults parsed = ASTMResultParser.parseRaw(wireFormat);
+
+            assertNotNull(parsed, "parseRaw should produce results from wire-format QC message");
+            assertEquals(1, parsed.results().size(), "Expected one R-record parsed");
+            assertTrue(parsed.results().get(0).isControl(),
+                    "Mock-generated QC message must be detected as control. "
+                    + "If this fails, O_ACTION_CODE_FIELD has an off-by-one — "
+                    + "ASTM O.12 lands at idx 11 in 0-indexed split.");
+        }
+
+        @Test
+        @DisplayName("OE-fixture wire format (mindray-ba88a) Action Code at idx 11")
+        void oeMindrayFixtureActionCodeAtCorrectIndex() {
+            // Verbatim from src/test/resources/testdata/astm/mindray-ba88a-result.txt
+            // Action code "A" (Add) at idx 11 — patient sample, not QC.
+            String fixture =
+                    "H|\\^&|||Mindray^BA-88A^V1.0|||||||LIS2-A2|20260202115500\r"
+                    + "P|1||PATIENT001||Doe^John||19800115|M|||||||||||||||||||\r"
+                    + "O|1|ACC-2026-001^LAB||^^^CHEM||||20260202115500|||A||||||||||||||Q\r"
+                    + "R|1|^^^ALT|35.2|U/L|10-40|N||F||20260202115530||\r"
+                    + "L|1\r";
+
+            ParsedResults parsed = ASTMResultParser.parseRaw(fixture);
+
+            assertNotNull(parsed);
+            assertFalse(parsed.results().get(0).isControl(),
+                    "Action code 'A' (Add, idx 11) is patient sample, NOT control. "
+                    + "If this returns true, parser is reading the wrong index.");
         }
     }
 

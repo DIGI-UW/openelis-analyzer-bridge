@@ -33,7 +33,12 @@ public class ASTMResultParser {
     private static final int R_VALUE_FIELD = 3;
     private static final int R_UNITS_FIELD = 4;
     private static final int R_TIMESTAMP_FIELD = 9;
-    private static final int O_ACTION_CODE_FIELD = 12;
+    // ASTM LIS2-A2 §5.7: Order Record Action Code is field 12 (1-indexed).
+    // In a 0-indexed split that includes the segment ID ("O") at index 0,
+    // O.12 lands at array index 11. Pinned by the mindray-ba88a-result.txt
+    // fixture (action code "A" at idx 11) and by the analyzer mock's
+    // test_qc_message.py (Q at idx 11).
+    private static final int O_ACTION_CODE_FIELD = 11;
 
     /**
      * Parse ASTM message lines and extract results.
