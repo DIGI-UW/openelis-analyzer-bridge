@@ -3,6 +3,7 @@ package org.itech.ahb.qc;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -32,18 +33,28 @@ public final class QcRuleEvaluator {
      */
     public static boolean isQcSample(List<QcRule> rules, String specimenId,
             Map<String, String> fieldValues) {
-        if (rules == null || rules.isEmpty()) {
-            return false;
-        }
+        return findMatchingRule(rules, specimenId, fieldValues).isPresent();
+    }
 
+    /**
+     * Like {@link #isQcSample} but returns the matched rule itself, so
+     * callers can extract its operand (e.g., the level prefix "LPC", the
+     * QC_TASK value "STANDARD"). Used by FILE/HL7 parsers that propagate
+     * controlLevel metadata into the FHIR Observation.
+     */
+    public static Optional<QcRule> findMatchingRule(List<QcRule> rules, String specimenId,
+            Map<String, String> fieldValues) {
+        if (rules == null || rules.isEmpty()) {
+            return Optional.empty();
+        }
         for (QcRule rule : rules) {
             if (evaluateRule(rule, specimenId, fieldValues)) {
                 log.debug("QC rule matched: type={}, field={}, operand={}",
                         rule.ruleType(), rule.targetField(), rule.operand());
-                return true;
+                return Optional.of(rule);
             }
         }
-        return false;
+        return Optional.empty();
     }
 
     private static boolean evaluateRule(QcRule rule, String specimenId,

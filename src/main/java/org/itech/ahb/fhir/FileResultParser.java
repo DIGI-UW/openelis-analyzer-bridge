@@ -169,7 +169,12 @@ public class FileResultParser {
                 AnalyzerResult ar = isNumeric
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
-                ar = ar.withControl(isControlRow(sampleId, qcTask, qcRules));
+                String matchedLevel = matchControlRule(sampleId, qcTask, qcRules);
+                boolean isCtrl = matchedLevel != null || isControlRow(sampleId, qcTask);
+                ar = ar.withControl(isCtrl);
+                if (matchedLevel != null) {
+                    ar = ar.withControlLevel(matchedLevel);
+                }
                 if (testDate != null && !testDate.isBlank()) {
                     ar = ar.withTimestamp(testDate);
                 }
@@ -476,12 +481,38 @@ public class FileResultParser {
             return null;
         }
 
-        StringBuilder csvContent = new StringBuilder();
-        for (int i = skipRows; i < allLines.length; i++) {
-            csvContent.append(allLines[i]).append("\n");
+        char delimChar = (delimiter != null && !delimiter.isEmpty()) ? delimiter.charAt(0) : ',';
+
+        // QuantStudio Design & Analysis CSV exports carry a `* Key = Value`
+        // metadata preamble + multi-section layout (`[Sample Setup]` then
+        // `[Results]`) before the actual tabular header. Mirrors the Excel
+        // path's findHeaderRow logic so QuantStudio CSV exports parse the
+        // same way the .xlsx exports already do.
+        //
+        // Strategy: start at the configured `skipRows` (preserves existing
+        // behavior for non-QuantStudio CSVs). Scan up to 200 more lines for
+        // a row whose first delimiter-separated field is exactly "Well" —
+        // the QuantStudio header marker. Prefer the LAST such header before
+        // EOF, since the Sample Setup section also starts with "Well" but
+        // the Results section is what we want.
+        int headerLineIndex = -1;
+        int scanEnd = Math.min(allLines.length, skipRows + 200);
+        for (int i = skipRows; i < scanEnd; i++) {
+            String line = allLines[i];
+            if (line == null || line.isBlank()) continue;
+            int firstDelim = line.indexOf(delimChar);
+            String firstField = (firstDelim >= 0) ? line.substring(0, firstDelim) : line;
+            if ("Well".equals(firstField.trim())) {
+                headerLineIndex = i;
+                // Don't break — keep scanning for a later "Well" row.
+            }
         }
 
-        char delimChar = (delimiter != null && !delimiter.isEmpty()) ? delimiter.charAt(0) : ',';
+        StringBuilder csvContent = new StringBuilder();
+        int contentStart = (headerLineIndex >= 0) ? headerLineIndex : skipRows;
+        for (int i = contentStart; i < allLines.length; i++) {
+            csvContent.append(allLines[i]).append("\n");
+        }
 
         try {
             CSVFormat format = CSVFormat.DEFAULT.builder()
@@ -508,6 +539,7 @@ public class FileResultParser {
                         testCode = getFirstPresentValue(record, "TestCode", "Test Code", "Target", "Test Name");
                     }
                     String result = getMappedValue(record, columnMappings, "result");
+                    String ctValue = getMappedValue(record, columnMappings, "ctValue");
                     String units = getMappedValue(record, columnMappings, "units");
                     String interpretation = getMappedValue(record, columnMappings, "interpretation");
                     String qcTask = getMappedValue(record, columnMappings, "qcTask");
@@ -523,14 +555,27 @@ public class FileResultParser {
                         }
                     }
 
-                    String value = (result != null && !result.isBlank()) ? result : interpretation;
+                    // Mirror the Excel parse() fallback chain: result → ctValue
+                    // → interpretation. QuantStudio Arbovirus PCR + QuantStudio
+                    // QC samples leave `Quantity Mean` (mapped to `result`)
+                    // empty since the meaningful number is in `CT` (mapped to
+                    // `ctValue`). Without this fallback, every QuantStudio QC
+                    // row gets dropped at the value check.
+                    String value = (result != null && !result.isBlank()) ? result
+                            : (ctValue != null && !ctValue.isBlank()) ? ctValue
+                            : interpretation;
                     if (value == null || value.isBlank()) continue;
 
                     boolean isNumeric = isNumericValue(value);
                     AnalyzerResult ar = isNumeric
                             ? AnalyzerResult.numeric(testCode, testCode, value, units)
                             : AnalyzerResult.text(testCode, testCode, value);
-                    ar = ar.withControl(isControlRow(sampleId, qcTask, qcRules));
+                    String matchedLevel = matchControlRule(sampleId, qcTask, qcRules);
+                    boolean isCtrl = matchedLevel != null || isControlRow(sampleId, qcTask);
+                    ar = ar.withControl(isCtrl);
+                    if (matchedLevel != null) {
+                        ar = ar.withControlLevel(matchedLevel);
+                    }
 
                     // Use testDate or dateTime — fall back to dateTime if testDate is null or blank
                     String ts = (testDate != null && !testDate.isBlank()) ? testDate : dateTime;
@@ -689,14 +734,28 @@ public class FileResultParser {
      * FR-15: rule-based QC detection with fallback to hardcoded logic.
      */
     static boolean isControlRow(String sampleId, String qcTask, List<QcRule> qcRules) {
-        if (qcRules != null && !qcRules.isEmpty()) {
-            Map<String, String> fieldValues = new HashMap<>();
-            if (qcTask != null) {
-                fieldValues.put("QC_TASK", qcTask);
-            }
-            return QcRuleEvaluator.isQcSample(qcRules, sampleId, fieldValues);
+        return matchControlRule(sampleId, qcTask, qcRules) != null
+                || isControlRow(sampleId, qcTask);
+    }
+
+    /**
+     * Find the QC rule that classifies the sample as control, returning
+     * its operand (the level identifier — "LPC", "CNEG", "STANDARD",
+     * etc.) so the FHIR Observation can carry controlLevel metadata for
+     * OE's QCResultProcessingService. Returns null when no rule matches
+     * (caller should fall through to legacy detection).
+     */
+    static String matchControlRule(String sampleId, String qcTask, List<QcRule> qcRules) {
+        if (qcRules == null || qcRules.isEmpty()) {
+            return null;
         }
-        return isControlRow(sampleId, qcTask);
+        Map<String, String> fieldValues = new HashMap<>();
+        if (qcTask != null) {
+            fieldValues.put("QC_TASK", qcTask);
+        }
+        return QcRuleEvaluator.findMatchingRule(qcRules, sampleId, fieldValues)
+                .map(QcRule::operand)
+                .orElse(null);
     }
 
     private static boolean isControlRow(String sampleId, String qcTask) {

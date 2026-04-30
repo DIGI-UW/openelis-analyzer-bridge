@@ -97,6 +97,30 @@ public class ASTMResultParser {
                         }
                     }
                 }
+                case "Q" -> {
+                    // Q-segment carries QC metadata: field_code^lot_number^level
+                    // (per LIS2-A2 §5.10 + OE GenericASTM convention). Pair
+                    // with the most-recent R-record so OE's
+                    // QCResultProcessingService can resolve to the correct
+                    // control lot without guessing from accession.
+                    if (!results.isEmpty()) {
+                        String[] qFields = line.split(Pattern.quote(FIELD_DELIMITER));
+                        if (qFields.length > 2 && qFields[2] != null && !qFields[2].isBlank()) {
+                            String[] components = qFields[2].split(Pattern.quote(COMPONENT_DELIMITER));
+                            String lotNumber = components.length >= 2 ? components[1].trim() : null;
+                            String controlLevel = components.length >= 3 ? components[2].trim() : null;
+                            int lastIdx = results.size() - 1;
+                            AnalyzerResult last = results.get(lastIdx);
+                            if (lotNumber != null && !lotNumber.isEmpty()) {
+                                last = last.withLotNumber(lotNumber);
+                            }
+                            if (controlLevel != null && !controlLevel.isEmpty()) {
+                                last = last.withControlLevel(controlLevel);
+                            }
+                            results.set(lastIdx, last);
+                        }
+                    }
+                }
             }
         }
 

@@ -165,6 +165,16 @@ public class FileMessageHandler {
                     "No column mappings registered for analyzer " + analyzerId + " — refusing FILE fallback");
         }
 
+        // QC identification rules from the analyzer registration (FR-15).
+        // Empty list = legacy hardcoded prefix detection in isControlRow.
+        // Wiring this through ensures profile-defined SPECIMEN_ID_PREFIX
+        // rules (e.g. LPC/HPC for QuantStudio HIV-1 controls) actually
+        // classify rows as QC at parse time so the FHIR meta.tag flows
+        // through to OE.
+        java.util.List<org.itech.ahb.qc.QcRule> qcRules = analyzerEntry.getQcRules() != null
+                ? analyzerEntry.getQcRules()
+                : java.util.Collections.emptyList();
+
         // Dispatch by file extension: CSV/TSV/TXT → CSV parser, XLS/XLSX → Excel parser
         String ext = getFileExtension(filePath);
         List<HL7ResultParser.ParsedResults> allResults;
@@ -172,18 +182,18 @@ public class FileMessageHandler {
         if (".csv".equals(ext) || ".tsv".equals(ext) || ".txt".equals(ext)) {
             String delimiter = analyzerEntry.getDelimiter();
             int skipRows = analyzerEntry.getSkipRows();
-            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}) for analyzer {}",
-                    filePath.getFileName(), delimiter, skipRows, perFileTestCode, analyzerId);
-            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode);
+            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}, qcRules={}) for analyzer {}",
+                    filePath.getFileName(), delimiter, skipRows, perFileTestCode, qcRules.size(), analyzerId);
+            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules);
         } else if (".xls".equals(ext) || ".xlsx".equals(ext)) {
-            log.info("Parsing Excel file {} (perFileTestCode={}) for analyzer {}",
-                    filePath.getFileName(), perFileTestCode, analyzerId);
+            log.info("Parsing Excel file {} (perFileTestCode={}, qcRules={}) for analyzer {}",
+                    filePath.getFileName(), perFileTestCode, qcRules.size(), analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-                allResults = FileResultParser.parse(bis, columnMappings, perFileTestCode);
+                allResults = FileResultParser.parse(bis, columnMappings, perFileTestCode, qcRules);
             }
         } else if (".ods".equals(ext)) {
-            log.info("Parsing ODS file {} (perFileTestCode={}) for analyzer {}",
-                    filePath.getFileName(), perFileTestCode, analyzerId);
+            log.info("Parsing ODS file {} (perFileTestCode={}, qcRules={}) for analyzer {}",
+                    filePath.getFileName(), perFileTestCode, qcRules.size(), analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
                 allResults = FileResultParser.parseOds(bis, columnMappings, perFileTestCode);
             }

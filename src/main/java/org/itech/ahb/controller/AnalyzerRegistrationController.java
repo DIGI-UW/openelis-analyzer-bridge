@@ -5,11 +5,14 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
 import org.itech.ahb.file.FileConfig;
 import org.itech.ahb.file.FileWatcher;
+import org.itech.ahb.qc.QcRule;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -63,6 +66,12 @@ public class AnalyzerRegistrationController {
         if (request.testMappings != null && !request.testMappings.isEmpty()) {
             entry.setMappedTestCodes(new java.util.LinkedHashSet<>(request.testMappings));
         }
+        // QC identification rules from the OE-side analyzer profile
+        // (`configDefaults.qcRules`). Without these, FileResultParser falls
+        // back to a hardcoded CONTROL_PREFIXES list (CNEG/CPOS/NTC/PTC/...)
+        // and any sample-name-prefix convention beyond that — e.g. clinical
+        // LPC/HPC for HIV viral load — silently misclassifies QC as patient.
+        entry.setQcRules(parseQcRules(request.qcRules));
 
         registry.register(request.sourceId, entry);
 
@@ -144,9 +153,14 @@ public class AnalyzerRegistrationController {
             entry.setName(req.name);
             entry.setExpectedProtocol(req.protocol);
             entry.setFilePattern(req.filePattern);
+            entry.setColumnMappings(req.columnMappings);
+            entry.setFileFormat(req.fileFormat);
+            entry.setDelimiter(req.delimiter != null ? req.delimiter : ",");
+            entry.setSkipRows(req.skipRows != null ? req.skipRows : 0);
             if (req.testMappings != null && !req.testMappings.isEmpty()) {
                 entry.setMappedTestCodes(new java.util.LinkedHashSet<>(req.testMappings));
             }
+            entry.setQcRules(parseQcRules(req.qcRules));
             newRegistry.put(req.sourceId, entry);
             newAnalyzerIds.add(req.oeAnalyzerId);
 
@@ -206,5 +220,33 @@ public class AnalyzerRegistrationController {
         public String delimiter;
         public Integer skipRows;
         public java.util.List<String> testMappings;
+        // QC identification rules pushed from OE per analyzer profile
+        // (`configDefaults.qcRules`). Each map carries
+        // {ruleType, targetField?, operand}. Mirrors the JSON shape that
+        // AnalyzerRegistryBootstrap.parseQcRules consumes at startup.
+        public java.util.List<java.util.Map<String, Object>> qcRules;
+    }
+
+    /**
+     * Parse the raw JSON `qcRules` list (as received from OE's registration
+     * push) into typed {@link QcRule} records. Mirrors the algorithm used
+     * by {@code AnalyzerRegistryBootstrap.parseQcRules} so startup-pulled
+     * and runtime-pushed registrations produce identical entries.
+     */
+    private static List<QcRule> parseQcRules(java.util.List<java.util.Map<String, Object>> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<QcRule> rules = new ArrayList<>(raw.size());
+        for (java.util.Map<String, Object> ruleMap : raw) {
+            if (ruleMap == null) continue;
+            String ruleType = (String) ruleMap.get("ruleType");
+            String targetField = (String) ruleMap.get("targetField");
+            String operand = (String) ruleMap.get("operand");
+            if (ruleType != null && operand != null) {
+                rules.add(new QcRule(ruleType, targetField, operand));
+            }
+        }
+        return rules;
     }
 }
