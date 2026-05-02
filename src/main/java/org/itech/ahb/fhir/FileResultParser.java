@@ -170,7 +170,9 @@ public class FileResultParser {
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
                 String matchedLevel = matchControlRule(sampleId, qcTask, qcRules);
-                boolean isCtrl = matchedLevel != null || isControlRow(sampleId, qcTask);
+                boolean rulesConfigured = qcRules != null && !qcRules.isEmpty();
+                boolean isCtrl =
+                        rulesConfigured ? matchedLevel != null : isControlRow(sampleId, qcTask);
                 ar = ar.withControl(isCtrl);
                 if (matchedLevel != null) {
                     ar = ar.withControlLevel(matchedLevel);
@@ -731,11 +733,16 @@ public class FileResultParser {
     }
 
     /**
-     * FR-15: rule-based QC detection with fallback to hardcoded logic.
+     * FR-15: rule-based QC detection. Configured rules take precedence;
+     * when present, hardcoded prefix and qcTask fallbacks are bypassed
+     * entirely so analyzer profiles can opt out of legacy detection.
+     * Falls back to hardcoded logic only when rules are null or empty.
      */
     static boolean isControlRow(String sampleId, String qcTask, List<QcRule> qcRules) {
-        return matchControlRule(sampleId, qcTask, qcRules) != null
-                || isControlRow(sampleId, qcTask);
+        if (qcRules != null && !qcRules.isEmpty()) {
+            return matchControlRule(sampleId, qcTask, qcRules) != null;
+        }
+        return isControlRow(sampleId, qcTask);
     }
 
     /**
