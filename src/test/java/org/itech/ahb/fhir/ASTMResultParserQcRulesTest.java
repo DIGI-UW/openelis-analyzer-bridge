@@ -12,31 +12,34 @@ import org.junit.jupiter.api.Test;
 @DisplayName("ASTMResultParser — QC rules (FR-15)")
 class ASTMResultParserQcRulesTest {
 
+    // O-record fixtures use 11 fields (10 separators) with Action Code at idx 11,
+    // matching ASTM LIS2-A2 §5.7 (1-indexed O.12 → 0-indexed array idx 11) and
+    // O_ACTION_CODE_FIELD in ASTMResultParser.
     private static final String ASTM_QC_O12_Q =
             "H|\\^&|||Analyzer\r"
             + "P|1\r"
-            + "O|1|QC_SAMPLE001||||||||||Q\r"
+            + "O|1|QC_SAMPLE001|||||||||Q\r"
             + "R|1|^^^WBC|7.5|10*3/uL\r"
             + "L|1\r";
 
     private static final String ASTM_PATIENT_O12_P =
             "H|\\^&|||Analyzer\r"
             + "P|1\r"
-            + "O|1|SAMPLE001||||||||||P\r"
+            + "O|1|SAMPLE001|||||||||P\r"
             + "R|1|^^^WBC|7.5|10*3/uL\r"
             + "L|1\r";
 
     private static final String ASTM_QC_PREFIX =
             "H|\\^&|||Analyzer\r"
             + "P|1\r"
-            + "O|1|QC-LOT-001||||||||||P\r"
+            + "O|1|QC-LOT-001|||||||||P\r"
             + "R|1|^^^WBC|7.5|10*3/uL\r"
             + "L|1\r";
 
     private static final String ASTM_TWO_RESULTS =
             "H|\\^&|||Analyzer\r"
             + "P|1\r"
-            + "O|1|SAMPLE001||||||||||Q\r"
+            + "O|1|SAMPLE001|||||||||Q\r"
             + "R|1|^^^WBC|7.5|10*3/uL\r"
             + "R|2|^^^RBC|4.82|10*6/uL\r"
             + "L|1\r";

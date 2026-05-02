@@ -74,11 +74,14 @@ public class ASTMResultParser {
                 case "O" -> {
                     accession = extractAccessionNumber(line);
                     if (qcRules != null && !qcRules.isEmpty()) {
-                        // FR-15: rule-based QC detection
+                        // FR-15: rule-based QC detection. Operand naming follows the
+                        // ASTM LIS2-A2 §5.7 1-indexed convention where O.1 is the
+                        // segment ID ("O") and O.12 is the Action Code — same
+                        // convention pinned by O_ACTION_CODE_FIELD (= idx 11).
                         String[] fields = line.split(Pattern.quote(FIELD_DELIMITER));
                         Map<String, String> fieldValues = new HashMap<>();
                         for (int i = 0; i < fields.length; i++) {
-                            fieldValues.put("O." + i, fields[i].trim());
+                            fieldValues.put("O." + (i + 1), fields[i].trim());
                         }
                         isQcSample = QcRuleEvaluator.isQcSample(qcRules, accession, fieldValues);
                     } else {
