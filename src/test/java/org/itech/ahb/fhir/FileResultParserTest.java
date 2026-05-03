@@ -411,6 +411,63 @@ class FileResultParserTest {
             assertFalse(results.get(0).results().get(0).isControl(),
                     "Patient accession should not be flagged as QC");
         }
+
+        @Test
+        @DisplayName("SPECIMEN_ID_PREFIX rule -> isControl=true AND controlLevel=operand")
+        void specimenIdPrefixRuleSetsControlLevel() {
+            InputStream xlsx = buildXlsx("Results",
+                    new String[]{"Well", "Sample Name", "Target Name", "Quantity Mean"},
+                    new Object[][]{
+                            {"A1", "LPC-2026-Q2", "VIH-1", "32.5"},
+                    });
+
+            Map<String, String> mappings = Map.of(
+                    "Sample Name", "sampleId",
+                    "Target Name", "testCode",
+                    "Quantity Mean", "result");
+
+            List<org.itech.ahb.qc.QcRule> rules = List.of(
+                    new org.itech.ahb.qc.QcRule(
+                            "SPECIMEN_ID_PREFIX", null, "LPC"));
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings, null, rules);
+
+            assertNotNull(results);
+            var ar = results.get(0).results().get(0);
+            assertTrue(ar.isControl(), "Row should be flagged as control");
+            assertEquals("LPC", ar.controlLevel(),
+                    "Operand of SPECIMEN_ID_PREFIX rule should propagate as controlLevel");
+        }
+
+        @Test
+        @DisplayName("FIELD_EQUALS rule -> isControl=true but controlLevel stays null (operand is a predicate, not a level)")
+        void fieldEqualsRuleDoesNotPopulateControlLevel() {
+            InputStream xlsx = buildXlsx("Results",
+                    new String[]{"Well", "Sample Name", "Target Name", "Quantity Mean", "Task"},
+                    new Object[][]{
+                            {"A1", "RANDOM-001", "VIH-1", "32.5", "STANDARD"},
+                    });
+
+            Map<String, String> mappings = Map.of(
+                    "Sample Name", "sampleId",
+                    "Target Name", "testCode",
+                    "Quantity Mean", "result",
+                    "Task", "qcTask");
+
+            List<org.itech.ahb.qc.QcRule> rules = List.of(
+                    new org.itech.ahb.qc.QcRule(
+                            "FIELD_EQUALS", "QC_TASK", "STANDARD"));
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings, null, rules);
+
+            assertNotNull(results);
+            var ar = results.get(0).results().get(0);
+            assertTrue(ar.isControl(),
+                    "FIELD_EQUALS QC_TASK=STANDARD match should still mark row as control");
+            assertNull(ar.controlLevel(),
+                    "FIELD_EQUALS operand is a predicate value (e.g. 'STANDARD'), "
+                    + "not a control level — must not propagate as controlLevel");
+        }
     }
 
     // ── CSV Parsing Tests ───────────────────────────────────────────
@@ -507,6 +564,61 @@ class FileResultParserTest {
         @DisplayName("Empty content → returns null")
         void emptyContentReturnsNull() {
             assertNull(FileResultParser.parseCsv(new byte[0], CSV_MAPPINGS, ",", 0));
+        }
+
+        @Test
+        @DisplayName("QuantStudio multi-section CSV → picks the LAST 'Well' header (Results section)")
+        void quantStudioMultiSectionCsvPicksLastWellHeader() {
+            // QuantStudio Design & Analysis CSV exports include two sections
+            // both starting with a row whose first cell is "Well": [Sample Setup]
+            // (assigns Well -> sample) then [Results] (carries Cq/quantities).
+            // We want the LAST "Well" row picked so the Results section is parsed,
+            // not the Sample Setup section.
+            String csv = "* Block Type = 96-Well Block (0.2mL)\n"
+                    + "* Chemistry = TAQMAN\n"
+                    + "[Sample Setup]\n"
+                    + "Well,Sample Name,Target Name\n"
+                    + "A1,IGNORE-ME,VIH-1\n"
+                    + "[Results]\n"
+                    + "Well,Sample Name,Target Name,CT\n"
+                    + "A1,RESULT-001,VIH-1,28.5\n";
+
+            Map<String, String> mappings = Map.of(
+                    "Sample Name", "sampleId",
+                    "Target Name", "testCode",
+                    "CT", "ctValue");
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), mappings, ",", 0);
+
+            assertNotNull(results);
+            // Setup section's "IGNORE-ME" must NOT show up — only Results section.
+            assertEquals(1, results.size(), "Should parse only the Results section");
+            assertEquals("RESULT-001", results.get(0).accessionNumber());
+        }
+
+        @Test
+        @DisplayName("Empty result column → falls back to ctValue (QuantStudio CT fallback chain)")
+        void emptyResultFallsBackToCtValue() {
+            // Real QuantStudio rows have CT but blank result cells when only Cq
+            // matters. The parser's value fallback (result -> ctValue ->
+            // interpretation) must keep the row and forward the CT value.
+            String csv = "Sample Name,Target Name,Result,CT\n"
+                    + "S001,VIH-1,,28.5\n";
+
+            Map<String, String> mappings = Map.of(
+                    "Sample Name", "sampleId",
+                    "Target Name", "testCode",
+                    "Result", "result",
+                    "CT", "ctValue");
+
+            List<ParsedResults> results = FileResultParser.parseCsv(
+                    csv.getBytes(), mappings, ",", 0);
+
+            assertNotNull(results);
+            assertEquals(1, results.size(), "Row with blank result + CT must be retained");
+            assertEquals("28.5", results.get(0).results().get(0).value(),
+                    "CT value must be forwarded when result column is blank");
         }
 
         @Test

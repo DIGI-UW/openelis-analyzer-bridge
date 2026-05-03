@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -169,11 +170,12 @@ public class FileResultParser {
                 AnalyzerResult ar = isNumeric
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
-                String matchedLevel = matchControlRule(sampleId, qcTask, qcRules);
+                Optional<QcRule> matchedRule = findMatchingControlRule(sampleId, qcTask, qcRules);
                 boolean rulesConfigured = qcRules != null && !qcRules.isEmpty();
                 boolean isCtrl =
-                        rulesConfigured ? matchedLevel != null : isControlRow(sampleId, qcTask);
+                        rulesConfigured ? matchedRule.isPresent() : isControlRow(sampleId, qcTask);
                 ar = ar.withControl(isCtrl);
+                String matchedLevel = matchedRule.map(FileResultParser::extractControlLevel).orElse(null);
                 if (matchedLevel != null) {
                     ar = ar.withControlLevel(matchedLevel);
                 }
@@ -572,9 +574,10 @@ public class FileResultParser {
                     AnalyzerResult ar = isNumeric
                             ? AnalyzerResult.numeric(testCode, testCode, value, units)
                             : AnalyzerResult.text(testCode, testCode, value);
-                    String matchedLevel = matchControlRule(sampleId, qcTask, qcRules);
-                    boolean isCtrl = matchedLevel != null || isControlRow(sampleId, qcTask);
+                    Optional<QcRule> matchedRule = findMatchingControlRule(sampleId, qcTask, qcRules);
+                    boolean isCtrl = matchedRule.isPresent() || isControlRow(sampleId, qcTask);
                     ar = ar.withControl(isCtrl);
+                    String matchedLevel = matchedRule.map(FileResultParser::extractControlLevel).orElse(null);
                     if (matchedLevel != null) {
                         ar = ar.withControlLevel(matchedLevel);
                     }
@@ -740,7 +743,10 @@ public class FileResultParser {
      */
     static boolean isControlRow(String sampleId, String qcTask, List<QcRule> qcRules) {
         if (qcRules != null && !qcRules.isEmpty()) {
-            return matchControlRule(sampleId, qcTask, qcRules) != null;
+            // Any matching rule classifies the row as control, regardless of
+            // whether the rule's operand carries a level (only
+            // SPECIMEN_ID_PREFIX does — see extractControlLevel).
+            return findMatchingControlRule(sampleId, qcTask, qcRules).isPresent();
         }
         return isControlRow(sampleId, qcTask);
     }
@@ -752,17 +758,32 @@ public class FileResultParser {
      * OE's QCResultProcessingService. Returns null when no rule matches
      * (caller should fall through to legacy detection).
      */
-    static String matchControlRule(String sampleId, String qcTask, List<QcRule> qcRules) {
+    static Optional<QcRule> findMatchingControlRule(
+            String sampleId, String qcTask, List<QcRule> qcRules) {
         if (qcRules == null || qcRules.isEmpty()) {
-            return null;
+            return Optional.empty();
         }
         Map<String, String> fieldValues = new HashMap<>();
         if (qcTask != null) {
             fieldValues.put("QC_TASK", qcTask);
         }
-        return QcRuleEvaluator.findMatchingRule(qcRules, sampleId, fieldValues)
-                .map(QcRule::operand)
+        return QcRuleEvaluator.findMatchingRule(qcRules, sampleId, fieldValues);
+    }
+
+    static String matchControlRule(String sampleId, String qcTask, List<QcRule> qcRules) {
+        return findMatchingControlRule(sampleId, qcTask, qcRules)
+                .map(FileResultParser::extractControlLevel)
                 .orElse(null);
+    }
+
+    // Only ID-prefix-style rules carry a control level in their operand
+    // (e.g., "LPC", "HPC"). Other rule types — like FIELD_EQUALS
+    // QC_TASK=CONTROL — use the operand as a match predicate, not a level
+    // tag. Returning "CONTROL" as a controlLevel would propagate junk into
+    // OE's tier-2 lot resolver.
+    static String extractControlLevel(QcRule rule) {
+        if (rule == null) return null;
+        return "SPECIMEN_ID_PREFIX".equals(rule.ruleType()) ? rule.operand() : null;
     }
 
     private static boolean isControlRow(String sampleId, String qcTask) {
