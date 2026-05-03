@@ -192,8 +192,11 @@ public class FileMessageHandler {
                 allResults = FileResultParser.parse(bis, columnMappings, perFileTestCode, qcRules);
             }
         } else if (".ods".equals(ext)) {
-            log.info("Parsing ODS file {} (perFileTestCode={}, qcRules={}) for analyzer {}",
-                    filePath.getFileName(), perFileTestCode, qcRules.size(), analyzerId);
+            // parseOds does not yet accept qcRules — ODS QC detection still
+            // falls back to the legacy task-based heuristic. Don't log
+            // qcRules here so the message doesn't mislead.
+            log.info("Parsing ODS file {} (perFileTestCode={}) for analyzer {}",
+                    filePath.getFileName(), perFileTestCode, analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
                 allResults = FileResultParser.parseOds(bis, columnMappings, perFileTestCode);
             }

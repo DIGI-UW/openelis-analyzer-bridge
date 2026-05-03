@@ -247,6 +247,50 @@ class FhirBundleBuilderTest {
             assertTrue(obs.getMeta().getTag().isEmpty(),
                     "Non-QC observation should have no meta tags");
         }
+
+        @Test
+        @DisplayName("QC with lotNumber + controlLevel -> emits qc/lot-number + qc/control-level extensions")
+        void qcExtensionsEmittedForLotAndLevel() {
+            AnalyzerResult qcResult = AnalyzerResult.numeric("HIV-VL", "HIV-VL", "1687.5", "copies/mL")
+                    .withControl(true)
+                    .withLotNumber("LOT-HIVVL-N")
+                    .withControlLevel("LPC");
+
+            Bundle bundle = parseBundle(
+                    FhirBundleBuilder.buildBundle(ACCESSION, ANALYZER_ID, List.of(qcResult)));
+
+            Observation obs = bundle.getEntry().stream()
+                    .filter(e -> e.getResource() instanceof Observation)
+                    .map(e -> (Observation) e.getResource())
+                    .findFirst().orElseThrow();
+
+            var lot = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/lot-number");
+            var level = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-level");
+            assertNotNull(lot, "qc/lot-number extension must be present");
+            assertNotNull(level, "qc/control-level extension must be present");
+            assertEquals("LOT-HIVVL-N",
+                    ((org.hl7.fhir.r4.model.StringType) lot.getValue()).getValue());
+            assertEquals("LPC",
+                    ((org.hl7.fhir.r4.model.StringType) level.getValue()).getValue());
+        }
+
+        @Test
+        @DisplayName("QC without lot/level -> qc extensions absent")
+        void qcExtensionsAbsentWhenLotAndLevelNull() {
+            AnalyzerResult qcResult = AnalyzerResult.numeric("WBC", "WBC", "7.5", "10*3/uL")
+                    .withControl(true);
+
+            Bundle bundle = parseBundle(
+                    FhirBundleBuilder.buildBundle(ACCESSION, ANALYZER_ID, List.of(qcResult)));
+
+            Observation obs = bundle.getEntry().stream()
+                    .filter(e -> e.getResource() instanceof Observation)
+                    .map(e -> (Observation) e.getResource())
+                    .findFirst().orElseThrow();
+
+            assertNull(obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/lot-number"));
+            assertNull(obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-level"));
+        }
     }
 
     @Nested

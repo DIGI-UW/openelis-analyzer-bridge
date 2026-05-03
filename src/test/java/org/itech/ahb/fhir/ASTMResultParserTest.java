@@ -268,18 +268,16 @@ class ASTMResultParserTest {
         // shaped like REAL analyzer output, not hand-crafted with off-by-one
         // padding. Per LIS2-A2 §5.7 (Order Record), Action Code is O.12 in
         // 1-indexed ASTM field numbering, which is idx 11 when the segment ID
-        // ("O") is included as field 0 in the 0-indexed split (the convention
-        // OE uses, see src/test/resources/testdata/astm/mindray-ba88a-result.txt:26
-        // where action code "A" sits at idx 11). The earlier bridge tests
-        // padded by one extra pipe and so masked an off-by-one in
-        // O_ACTION_CODE_FIELD; these tests assert the correct shape.
+        // ("O") is included as field 0 in the 0-indexed split — same
+        // convention pinned by the O_ACTION_CODE_FIELD = 11 constant in
+        // ASTMResultParser. Earlier bridge tests padded by one extra pipe
+        // and so masked an off-by-one; these tests assert the correct shape.
 
         @Test
         @DisplayName("REAL wire format: O.12='Q' at idx 11 (per ASTM LIS2-A2) -> isControl=true")
         void wireFormatQcMessageDetectedAsControl() {
-            // This is the EXACT message shape the analyzer mock generates
-            // via `--qc --template genexpert_astm`. Verified by Test A in
-            // tools/analyzer-mock-server/test_qc_message.py.
+            // Wire shape matches what the bridge accepts on the production
+            // ASTM listener: O-record with Action Code "Q" at field 12.
             String wireFormat =
                     "H|\\^&|||GENEXPERT^GeneXpert^4.6.0|||||||LIS2-A2|20260429181325\r"
                     + "P|1||QCCTRL001|QC^Control||U|19000101\r"
