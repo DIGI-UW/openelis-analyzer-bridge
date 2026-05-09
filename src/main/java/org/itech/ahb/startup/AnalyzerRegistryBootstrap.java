@@ -111,6 +111,7 @@ public class AnalyzerRegistryBootstrap {
                             protocol != null && protocol.contains("HL7") ? "HL7" : "ASTM");
                     entry.setMappedTestCodes(mappedTestCodes);
                     entry.setQcRules(parseQcRules(analyzer));
+                    entry.setControlLots(parseControlLots(analyzer));
                     newRegistry.put(ip, entry);
                 }
 
@@ -150,6 +151,7 @@ public class AnalyzerRegistryBootstrap {
                         }
                     }
                     entry.setQcRules(parseQcRules(analyzer));
+                    entry.setControlLots(parseControlLots(analyzer));
                     newRegistry.put(importDir, entry);
                     fileWatcher.addWatchDirectory(
                             Path.of(importDir),
@@ -215,5 +217,24 @@ public class AnalyzerRegistryBootstrap {
             }
         }
         return rules;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<org.itech.ahb.qc.ControlLotDto> parseControlLots(Map<String, Object> analyzer) {
+        Object lotsObj = analyzer.get("controlLots");
+        if (!(lotsObj instanceof List<?>)) {
+            return new ArrayList<>();
+        }
+        List<Map<String, Object>> rawLots = (List<Map<String, Object>>) lotsObj;
+        List<org.itech.ahb.qc.ControlLotDto> lots = new ArrayList<>(rawLots.size());
+        for (Map<String, Object> lotMap : rawLots) {
+            String lotNumber = (String) lotMap.get("lotNumber");
+            if (lotNumber == null || lotNumber.isBlank()) continue;
+            String controlLevel = (String) lotMap.get("controlLevel");
+            Object testIdObj = lotMap.get("testId");
+            Integer testId = (testIdObj instanceof Number) ? ((Number) testIdObj).intValue() : null;
+            lots.add(new org.itech.ahb.qc.ControlLotDto(lotNumber, controlLevel, testId));
+        }
+        return lots;
     }
 }

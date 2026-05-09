@@ -174,6 +174,13 @@ public class FileMessageHandler {
         java.util.List<org.itech.ahb.qc.QcRule> qcRules = analyzerEntry.getQcRules() != null
                 ? analyzerEntry.getQcRules()
                 : java.util.Collections.emptyList();
+        // Active control lots from OE — used by FileResultParser to attach
+        // lotNumber to QC samples whose sample-id embeds the lot string.
+        // Empty list when OE hasn't pushed lots (older deployments) or the
+        // analyzer has no active lots — parser silently skips lot enrichment.
+        java.util.List<org.itech.ahb.qc.ControlLotDto> controlLots = analyzerEntry.getControlLots() != null
+                ? analyzerEntry.getControlLots()
+                : java.util.Collections.emptyList();
 
         // Dispatch by file extension: CSV/TSV/TXT → CSV parser, XLS/XLSX → Excel parser
         String ext = getFileExtension(filePath);
@@ -182,14 +189,14 @@ public class FileMessageHandler {
         if (".csv".equals(ext) || ".tsv".equals(ext) || ".txt".equals(ext)) {
             String delimiter = analyzerEntry.getDelimiter();
             int skipRows = analyzerEntry.getSkipRows();
-            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}, qcRules={}) for analyzer {}",
-                    filePath.getFileName(), delimiter, skipRows, perFileTestCode, qcRules.size(), analyzerId);
-            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules);
+            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}, qcRules={}, controlLots={}) for analyzer {}",
+                    filePath.getFileName(), delimiter, skipRows, perFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
+            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules, controlLots);
         } else if (".xls".equals(ext) || ".xlsx".equals(ext)) {
-            log.info("Parsing Excel file {} (perFileTestCode={}, qcRules={}) for analyzer {}",
-                    filePath.getFileName(), perFileTestCode, qcRules.size(), analyzerId);
+            log.info("Parsing Excel file {} (perFileTestCode={}, qcRules={}, controlLots={}) for analyzer {}",
+                    filePath.getFileName(), perFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-                allResults = FileResultParser.parse(bis, columnMappings, perFileTestCode, qcRules);
+                allResults = FileResultParser.parse(bis, columnMappings, perFileTestCode, qcRules, controlLots);
             }
         } else if (".ods".equals(ext)) {
             // parseOds does not yet accept qcRules — ODS QC detection still

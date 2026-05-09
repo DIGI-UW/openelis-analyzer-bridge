@@ -91,4 +91,12 @@ public interface FileStateStore {
      * @param offset   rows to skip (for paging)
      */
     List<FileProcessingState> list(FileProcessingState.Status status, int limit, int offset);
+
+    /**
+     * Drop every row for a given analyzer. Intended for the admin reset
+     * endpoint used by demo / iteration setups so a fresh QC trigger doesn't
+     * race with stale {@code RETRYING} or {@code FAILED_NEEDS_HANDLING} rows
+     * from prior runs. Returns the number of rows removed.
+     */
+    int deleteAllForAnalyzer(String analyzerId);
 }
