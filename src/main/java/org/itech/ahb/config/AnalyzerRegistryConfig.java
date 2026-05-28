@@ -291,5 +291,36 @@ public class AnalyzerRegistryConfig {
 
         /** FR-15: QC identification rules pulled from OE. Evaluated by parsers. */
         private java.util.List<org.itech.ahb.qc.QcRule> qcRules = new java.util.ArrayList<>();
+
+        /**
+         * Analyzer test_code → LOINC mapping, pushed from OE2 at registration
+         * (sourced from the analyzer profile's {@code default_test_mappings}).
+         * This is the bridge's authority for the analyzer↔LOINC translation:
+         * inbound results translate code→LOINC ({@link #getLoincForCode}), and
+         * outbound orders translate LOINC→code ({@link #getCodeForLoinc}). OE2
+         * never sees analyzer codes — it speaks LOINC over FHIR.
+         */
+        private java.util.Map<String, String> codeToLoinc = Collections.emptyMap();
+
+        /** Resolve an analyzer test code to its LOINC (inbound). Null if unmapped. */
+        public String getLoincForCode(String analyzerCode) {
+            if (codeToLoinc == null || analyzerCode == null) {
+                return null;
+            }
+            return codeToLoinc.get(analyzerCode);
+        }
+
+        /** Resolve a LOINC back to this analyzer's test code (outbound). Null if unmapped. */
+        public String getCodeForLoinc(String loinc) {
+            if (codeToLoinc == null || loinc == null) {
+                return null;
+            }
+            for (java.util.Map.Entry<String, String> e : codeToLoinc.entrySet()) {
+                if (loinc.equals(e.getValue())) {
+                    return e.getKey();
+                }
+            }
+            return null;
+        }
     }
 }
