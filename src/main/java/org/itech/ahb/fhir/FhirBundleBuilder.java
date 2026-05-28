@@ -73,6 +73,23 @@ public class FhirBundleBuilder {
      */
     public static String buildBundle(String accessionNumber, String analyzerId,
             List<AnalyzerResult> results, DeviceInfo deviceInfo) {
+        return buildBundle(accessionNumber, analyzerId, results, deviceInfo, null);
+    }
+
+    /**
+     * As {@link #buildBundle(String, String, List, DeviceInfo)} but translates
+     * each result's analyzer test code to LOINC via {@code codeToLoinc}, so the
+     * emitted Observations are LOINC-coded. This lets OE2 resolve results by
+     * LOINC (its external-order FHIR path) and stay analyzer-agnostic. A code
+     * with no LOINC mapping falls back to the raw code with no coding system —
+     * it still flows, and the absent LOINC system flags it as unmapped.
+     *
+     * @param codeToLoinc analyzer code → LOINC resolver; null preserves the
+     *                    legacy raw-code behavior
+     */
+    public static String buildBundle(String accessionNumber, String analyzerId,
+            List<AnalyzerResult> results, DeviceInfo deviceInfo,
+            java.util.function.Function<String, String> codeToLoinc) {
 
         Bundle bundle = new Bundle();
         bundle.setType(Bundle.BundleType.TRANSACTION);
@@ -113,8 +130,18 @@ public class FhirBundleBuilder {
                     .addCoding(new Coding(
                             "http://terminology.hl7.org/CodeSystem/observation-category",
                             "laboratory", "Laboratory")));
-            obs.setCode(new CodeableConcept()
-                    .addCoding(new Coding().setCode(result.testCode()).setDisplay(result.testName())));
+            // Code the Observation in LOINC when the analyzer code maps (the
+            // bridge owns analyzer↔LOINC; OE2 resolves by LOINC). Unmapped or
+            // no-resolver → keep the raw analyzer code with no system so it
+            // still flows and OE can flag it.
+            Coding obsCoding = new Coding().setDisplay(result.testName());
+            String loinc = codeToLoinc != null ? codeToLoinc.apply(result.testCode()) : null;
+            if (loinc != null && !loinc.isBlank()) {
+                obsCoding.setSystem("http://loinc.org").setCode(loinc);
+            } else {
+                obsCoding.setCode(result.testCode());
+            }
+            obs.setCode(new CodeableConcept().addCoding(obsCoding));
             obs.setSpecimen(new Reference(specimenUrl));
             // Link to Device when present — gives OE a per-observation
             // pointer to the analyzer that produced the result.

@@ -325,11 +325,21 @@ public class HttpForwardingRouter implements MessageRouter {
         String analyzerId = canonicalAnalyzerId(envelope);
         FhirBundleBuilder.DeviceInfo deviceInfo = FhirBundleBuilder.DeviceInfo
                 .fromSenderToken(envelope.getSourceId(), envelope.getProtocolAnalyzerHint());
+        // Resolve analyzer code → LOINC from the registered analyzer's pushed
+        // mapping so the bundle is LOINC-coded and OE2 stays analyzer-agnostic.
+        // Null resolver (unregistered source) preserves raw-code behavior.
+        java.util.function.Function<String, String> codeToLoinc = null;
+        if (registry != null) {
+            codeToLoinc = registry.findAnalyzerEntry(envelope.getSourceId())
+                    .map(entry -> (java.util.function.Function<String, String>) entry::getLoincForCode)
+                    .orElse(null);
+        }
         String fhirJson = FhirBundleBuilder.buildBundle(
                 parsed.accessionNumber(),
                 analyzerId,
                 parsed.results(),
-                deviceInfo);
+                deviceInfo,
+                codeToLoinc);
 
         // Build target URI for /analyzer/fhir
         URI targetUri = buildFhirTargetUri();
