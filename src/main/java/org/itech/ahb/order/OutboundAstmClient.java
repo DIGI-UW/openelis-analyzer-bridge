@@ -40,6 +40,14 @@ public class OutboundAstmClient {
             out.write(ENQ);
             out.flush();
             int resp = in.read();
+            if (resp == ENQ) {
+                // Line contention (CLSI LIS1-A §8.2.7.1): the instrument also
+                // asserted ENQ (e.g. a GeneXpert with queued results). The LIS
+                // holds priority when it has an active order, so the instrument
+                // yields and ACKs — consume that ENQ and read its ACK.
+                log.debug("ASTM order to {}:{} — ENQ contention; instrument yielding, awaiting ACK", host, port);
+                resp = in.read();
+            }
             if (resp != ACK) {
                 log.warn("ASTM order to {}:{} — ENQ not ACKed (got 0x{})", host, port,
                         Integer.toHexString(resp & 0xFF));

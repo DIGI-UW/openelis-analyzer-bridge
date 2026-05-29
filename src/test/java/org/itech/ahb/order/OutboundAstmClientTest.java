@@ -62,6 +62,33 @@ class OutboundAstmClientTest {
 
     @Test
     @Timeout(5)
+    @DisplayName("instrument asserts proactive ENQ (GeneXpert) → contention resolved, order still delivered")
+    void sendsOrderDespiteProactiveEnqContention() throws Exception {
+        // A real GeneXpert (and the mock, via proactive_enq) asserts ENQ on
+        // connect when it has queued results. The LIS, sending an order, also
+        // sends ENQ — line contention (CLSI LIS1-A §8.2.7.1). The LIS holds
+        // priority for active orders; the instrument yields and ACKs. The client
+        // must resolve this and still deliver the order, not abort on the ENQ.
+        receiver = new FakeAstmReceiver(true);
+        int port = receiver.start();
+
+        List<String> records = List.of(
+                "H|\\^&|||OpenELIS^Order^1.0|||||||LIS2-A2",
+                "P|1|||PAT-9",
+                "O|1|ACC-1||^^^MTB-RIF|R",
+                "L|1|N");
+
+        OutboundAstmClient client = new OutboundAstmClient();
+        boolean ok = client.send("127.0.0.1", port, records, 2000);
+
+        assertTrue(ok, "send should resolve ENQ contention (LIS priority) and still deliver the order");
+        List<String> got = receiver.awaitRecords(2000);
+        assertEquals(4, got.size(), "receiver should get all 4 records despite contention; got: " + got);
+        assertEquals("O|1|ACC-1||^^^MTB-RIF|R", got.get(2));
+    }
+
+    @Test
+    @Timeout(5)
     @DisplayName("connection refused → returns false, does not throw")
     void connectionRefused() {
         OutboundAstmClient client = new OutboundAstmClient();
@@ -70,11 +97,24 @@ class OutboundAstmClientTest {
         assertFalse(ok);
     }
 
-    /** Minimal ASTM receiver: ACK the ENQ, ACK each frame, collect content, stop on EOT. */
+    /**
+     * Minimal ASTM receiver: ACK the ENQ, ACK each frame, collect content, stop on EOT.
+     * When {@code proactiveEnq} is set, it asserts ENQ on connect first — modeling a
+     * real GeneXpert with queued results — so the LIS order send hits line contention.
+     */
     private static final class FakeAstmReceiver {
         private ServerSocket serverSocket;
         private Thread thread;
+        private final boolean proactiveEnq;
         private final AtomicReference<List<String>> records = new AtomicReference<>();
+
+        FakeAstmReceiver() {
+            this(false);
+        }
+
+        FakeAstmReceiver(boolean proactiveEnq) {
+            this.proactiveEnq = proactiveEnq;
+        }
 
         int start() throws Exception {
             serverSocket = new ServerSocket(0);
@@ -90,6 +130,12 @@ class OutboundAstmClientTest {
                 conn.setSoTimeout(3000);
                 InputStream in = conn.getInputStream();
                 OutputStream out = conn.getOutputStream();
+                if (proactiveEnq) {
+                    // Instrument has queued results: assert ENQ on connect. The
+                    // read loop below then ACKs the client's contending ENQ.
+                    out.write(ENQ);
+                    out.flush();
+                }
                 List<String> recs = new ArrayList<>();
                 int b;
                 while ((b = in.read()) != -1) {
