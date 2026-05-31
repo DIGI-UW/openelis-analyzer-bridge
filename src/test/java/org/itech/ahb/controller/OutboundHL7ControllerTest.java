@@ -9,8 +9,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import java.lang.reflect.Field;
 import java.util.Map;
+import java.util.Optional;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.mllp.OutboundMllpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,23 +21,25 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * Unit tests for {@link OutboundHL7Controller}. Wires a mocked
- * {@link OutboundMllpClient} via reflection so each test stays isolated from
- * the actual MLLP socket layer.
+ * Unit tests for {@link OutboundHL7Controller}. Constructor-injects a mocked
+ * {@link OutboundMllpClient} and {@link AnalyzerRegistryConfig} so each test
+ * stays isolated from the actual MLLP socket layer.
  */
 @DisplayName("OutboundHL7Controller — POST /api/send-hl7")
 class OutboundHL7ControllerTest {
 
     private OutboundHL7Controller controller;
     private OutboundMllpClient mockClient;
+    private AnalyzerRegistryConfig mockRegistry;
 
     @BeforeEach
-    void setUp() throws Exception {
-        controller = new OutboundHL7Controller();
+    void setUp() {
         mockClient = Mockito.mock(OutboundMllpClient.class);
-        Field f = OutboundHL7Controller.class.getDeclaredField("outboundMllpClient");
-        f.setAccessible(true);
-        f.set(controller, mockClient);
+        mockRegistry = Mockito.mock(AnalyzerRegistryConfig.class);
+        // Default: the destination host IS a registered analyzer (happy-path tests rely on this).
+        when(mockRegistry.findAnalyzerEntry(anyString()))
+                .thenReturn(Optional.of(Mockito.mock(AnalyzerRegistryConfig.AnalyzerEntry.class)));
+        controller = new OutboundHL7Controller(mockClient, mockRegistry);
     }
 
     private OutboundHL7Controller.SendHl7Request newRequest() {
@@ -76,6 +79,16 @@ class OutboundHL7ControllerTest {
         r.hl7Message = "";
         ResponseEntity<Map<String, Object>> resp = controller.sendHl7(r);
         assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+        verifyNoInteractions(mockClient);
+    }
+
+    @Test
+    @DisplayName("unregistered host → 422 (no SSRF to arbitrary destinations)")
+    void unregisteredHostIs422() {
+        when(mockRegistry.findAnalyzerEntry(anyString())).thenReturn(Optional.empty());
+        ResponseEntity<Map<String, Object>> resp = controller.sendHl7(newRequest());
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, resp.getStatusCode());
+        assertTrue(((String) resp.getBody().get("error")).contains("registered"));
         verifyNoInteractions(mockClient);
     }
 

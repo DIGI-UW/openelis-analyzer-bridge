@@ -3,8 +3,8 @@ package org.itech.ahb.controller;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.mllp.OutboundMllpClient;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,8 +22,13 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 public class OutboundHL7Controller {
 
-    @Autowired
-    private OutboundMllpClient outboundMllpClient;
+    private final OutboundMllpClient outboundMllpClient;
+    private final AnalyzerRegistryConfig registry;
+
+    public OutboundHL7Controller(OutboundMllpClient outboundMllpClient, AnalyzerRegistryConfig registry) {
+        this.outboundMllpClient = outboundMllpClient;
+        this.registry = registry;
+    }
 
     @PostMapping("/send-hl7")
     public ResponseEntity<Map<String, Object>> sendHl7(@RequestBody SendHl7Request request) {
@@ -35,6 +40,14 @@ public class OutboundHL7Controller {
         }
         if (request.hl7Message == null || request.hl7Message.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "hl7Message is required"));
+        }
+        // Restrict the destination to a registered analyzer (keyed by sourceId == host).
+        // Without this the endpoint would relay arbitrary HL7 to any host:port — an
+        // SSRF / internal-port-scan / message-injection primitive, since the bridge is
+        // unauthenticated by design. Mirrors OutboundOrderController's registry check.
+        if (registry.findAnalyzerEntry(request.host).isEmpty()) {
+            return ResponseEntity.unprocessableEntity()
+                    .body(Map.of("error", "no registered analyzer for host " + request.host));
         }
 
         int timeoutMs = request.timeoutMs != null && request.timeoutMs > 0
