@@ -96,6 +96,25 @@ class OutboundMllpClientTest {
 
     @Test
     @Timeout(5)
+    @DisplayName("non-retryable (AE/AR) result is not retried by send()")
+    void nonRetryableResultStopsAfterOneAttempt() {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        OutboundMllpClient client = new OutboundMllpClient() {
+            @Override
+            SendResult attemptSend(String h, int p, String m, int t, int attempt) {
+                calls.incrementAndGet();
+                // retryable=false → the analyzer rejected the message (deterministic)
+                return new SendResult(false, "MSA|AE|CTRL\r", "Application error ACK (MSA|AE)", attempt, false);
+            }
+        };
+        OutboundMllpClient.SendResult r = client.send("127.0.0.1", port, SAMPLE_HL7, 1000);
+        assertFalse(r.success);
+        assertEquals(1, r.attempts, "AE/AR must not be retried");
+        assertEquals(1, calls.get(), "send() must call attemptSend exactly once for a non-retryable result");
+    }
+
+    @Test
+    @Timeout(5)
     @DisplayName("server closes connection before FS+CR terminator → failure with clean error")
     void serverClosesBeforeTerminator() {
         server.setCloseEarlyWithoutAck(true);

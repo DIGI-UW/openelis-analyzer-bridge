@@ -16,16 +16,19 @@ import org.springframework.stereotype.Component;
  *
  * <p>Opens a fresh TCP connection per send, frames the message with MLLP block
  * markers ({@code VT … FS CR}), writes it, reads back the framed ACK, and
- * inspects MSA-2 to classify the result. Mirrors the raw-socket style of the
+ * inspects the MSA-1 acknowledgement code (AA/AE/AR) to classify the result.
+ * Mirrors the raw-socket style of the
  * existing inbound {@link HapiMLLPListener} and outbound ASTM logic in
  * {@code AnalyzerQueryController} rather than pulling in HAPI's
  * {@code ca.uhn.hl7v2.app.Connection} which would require parsing every
  * payload into a typed {@code Message} before sending.
  *
- * <p>Connection-refused, timeout, and negative-ACK failures are retried up to
- * three times with a 10 second back-off — matching the existing forward-side
- * retry shape in {@code DefaultForwardingHTTPToASTMHandler}. A separate ticket
- * tracks adding durable persistence (mirror of OGC-500).
+ * <p>Connection-refused, timeout, and connection-closed failures are retried up
+ * to three times with a 10 second back-off — matching the existing forward-side
+ * retry shape in {@code DefaultForwardingHTTPToASTMHandler}. Deterministic
+ * application rejects (MSA|AE / MSA|AR) are NOT retried: the analyzer already
+ * received and rejected the message, so resending would only be rejected again.
+ * A separate ticket tracks adding durable persistence (mirror of OGC-500).
  */
 @Component
 @Slf4j
@@ -46,12 +49,19 @@ public class OutboundMllpClient {
         public final String ackMessage;
         public final String error;
         public final int attempts;
+        /** False for deterministic application rejects (MSA|AE / MSA|AR) — retrying won't help. */
+        public final boolean retryable;
 
-        public SendResult(boolean success, String ackMessage, String error, int attempts) {
+        public SendResult(boolean success, String ackMessage, String error, int attempts, boolean retryable) {
             this.success = success;
             this.ackMessage = ackMessage;
             this.error = error;
             this.attempts = attempts;
+            this.retryable = retryable;
+        }
+
+        public SendResult(boolean success, String ackMessage, String error, int attempts) {
+            this(success, ackMessage, error, attempts, true);
         }
     }
 
@@ -60,7 +70,7 @@ public class OutboundMllpClient {
         SendResult lastResult = null;
         for (int attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
             lastResult = attemptSend(host, port, hl7Message, effectiveTimeout, attempt);
-            if (lastResult.success) {
+            if (lastResult.success || !lastResult.retryable) {
                 return lastResult;
             }
             if (attempt < RETRY_ATTEMPTS) {
@@ -103,6 +113,7 @@ public class OutboundMllpClient {
                         host, port, attempt, RETRY_ATTEMPTS);
                 return new SendResult(true, ackText, null, attempt);
             }
+            boolean appReject = containsAckCode(ackText, "AE") || containsAckCode(ackText, "AR");
             String error = containsAckCode(ackText, "AE")
                     ? "Application error ACK (MSA|AE)"
                     : containsAckCode(ackText, "AR")
@@ -110,7 +121,9 @@ public class OutboundMllpClient {
                             : "ACK missing MSA segment or unrecognized code";
             log.warn("MLLP outbound to {}:{}: {}; ack head: {}", host, port, error,
                     ackText.length() > 200 ? ackText.substring(0, 200) : ackText);
-            return new SendResult(false, ackText, error, attempt);
+            // AE/AR are deterministic application rejects — not retryable. A
+            // missing/unrecognized MSA stays retryable (could be a transient read).
+            return new SendResult(false, ackText, error, attempt, !appReject);
 
         } catch (SocketTimeoutException e) {
             return new SendResult(false, null, "Timeout: " + e.getMessage(), attempt);

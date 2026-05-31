@@ -51,6 +51,11 @@ public class OutboundOrderController {
             response.put("error", "host and port are required");
             return ResponseEntity.badRequest().body(response);
         }
+        if (request.port < 1 || request.port > 65535) {
+            response.put("dispatched", false);
+            response.put("error", "port must be in 1-65535");
+            return ResponseEntity.badRequest().body(response);
+        }
         if (request.loincCodes == null || request.loincCodes.isEmpty()) {
             response.put("dispatched", false);
             response.put("error", "loincCodes are required");
@@ -87,6 +92,13 @@ public class OutboundOrderController {
 
         int timeout = request.timeoutMs != null && request.timeoutMs > 0 ? request.timeoutMs : 30000;
         String protocol = request.protocol == null ? "" : request.protocol.toUpperCase();
+        // Reject anything that isn't explicitly HL7 or ASTM rather than silently
+        // dispatching an unknown/typo'd protocol as ASTM.
+        if (!protocol.startsWith("HL7") && !protocol.startsWith("ASTM")) {
+            response.put("dispatched", false);
+            response.put("error", "unsupported protocol '" + request.protocol + "' (expected HL7 or ASTM)");
+            return ResponseEntity.badRequest().body(response);
+        }
         boolean dispatched;
         String error = null;
 

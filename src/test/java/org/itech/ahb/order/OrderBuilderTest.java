@@ -37,8 +37,7 @@ class OrderBuilderTest {
     void hl7Order() {
         String msg = OrderBuilder.buildHl7Orm("ACC-7", "PAT-3", List.of("WBC", "HGB"));
         assertTrue(msg.contains("ORM^O01"), "must be an ORM^O01");
-        List<String> obr = msg.split("\r").length == 0 ? List.of()
-                : java.util.Arrays.stream(msg.split("\r")).filter(s -> s.startsWith("OBR|")).toList();
+        List<String> obr = java.util.Arrays.stream(msg.split("\r")).filter(s -> s.startsWith("OBR|")).toList();
         assertEquals(2, obr.size(), "one OBR per ordered test");
         assertTrue(obr.get(0).contains("|ACC-7|ACC-7|^^^WBC"), "OBR-2/3=accession, OBR-4=^^^WBC; got: " + obr.get(0));
         assertTrue(obr.get(1).contains("^^^HGB"), "second OBR carries HGB");
