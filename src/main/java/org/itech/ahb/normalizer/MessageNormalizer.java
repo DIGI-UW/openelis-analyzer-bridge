@@ -196,18 +196,33 @@ public class MessageNormalizer implements MessageRouter {
             ? registry.findAnalyzerEntry(envelope.getSourceId()).orElse(null)
             : null;
 
-        // Policy: protocol hints are diagnostic evidence only. Routing remains bound to the
-        // source-registered OpenELIS analyzer ID when present; when not present, OE resolves
+        // Corroborate the two analyzer-identity signals: the connection source IP
+        // (resolvedAnalyzerId) and the in-message sender (protocolHint). Identity
+        // NEVER gates routing — the transparent-pipe rule above stands — this only
+        // surfaces a warning + metric so a silent content-only fallback can't hide
+        // delivery bugs the way it hid the analyzer-demo flake. Routing remains
+        // bound to the IP-resolved analyzer when present; otherwise OE resolves
         // from the FHIR Device resource carrying the same hint.
-        if (resolvedAnalyzerId != null && protocolHint != null && !protocolHint.equals(resolvedAnalyzerId)) {
-            if (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry)) {
-                log.info("Analyzer identity evidence matched registered analyzer for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
-                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint, registryEntry.getName());
+        boolean haveIp = resolvedAnalyzerId != null && !resolvedAnalyzerId.isBlank();
+        boolean haveHint = protocolHint != null && !protocolHint.isBlank();
+        if (haveIp && haveHint) {
+            boolean agrees = protocolHint.equals(resolvedAnalyzerId)
+                || (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry));
+            if (agrees) {
+                recordIdentity(protocol, transport, "corroborated");
+                log.info("Analyzer identity corroborated for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
+                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint,
+                    registryEntry != null ? registryEntry.getName() : "unknown");
             } else {
-                log.warn("Analyzer identity evidence mismatch for source '{}': resolved='{}', protocolHint='{}', registeredName='{}' — routing will continue with resolved analyzer",
+                recordIdentity(protocol, transport, "mismatch");
+                log.warn("Analyzer identity mismatch for source '{}': resolved='{}', protocolHint='{}', registeredName='{}' — routing continues with the IP-resolved analyzer",
                     envelope.getSourceId(), resolvedAnalyzerId, protocolHint,
                     registryEntry != null ? registryEntry.getName() : "unknown");
             }
+        } else if (!haveIp && haveHint) {
+            recordIdentity(protocol, transport, "degraded_content_only");
+            log.warn("Analyzer identity degraded for source '{}': connection source IP did not resolve to a registered analyzer; routing on the in-message sender alone (protocolHint='{}')",
+                envelope.getSourceId(), protocolHint);
         }
 
         // Rebuild envelope with explicit canonical ID and protocol hint.
@@ -272,6 +287,12 @@ public class MessageNormalizer implements MessageRouter {
             if (trimmed.startsWith("R|")) hasR = true;
         }
         return hasQ && !hasR;
+    }
+
+    private void recordIdentity(String protocol, String transport, String mode) {
+        if (metricsService != null) {
+            metricsService.recordIdentityMismatch(protocol, transport, mode);
+        }
     }
 
     private String firstNonBlank(String first, String second) {

@@ -24,6 +24,23 @@ public class MetricsService {
         ).increment();
     }
 
+    /**
+     * Records the outcome of cross-checking the two analyzer-identity signals —
+     * the connection source IP ({@code resolvedAnalyzerId}) and the in-message
+     * sender ({@code protocolHint}). {@code mode} is one of {@code corroborated}
+     * (both agree), {@code mismatch} (both present, disagree), or
+     * {@code degraded_content_only} (IP did not resolve, routing on content
+     * alone). Identity outcomes never gate routing — this is observability so
+     * the content-only fallback (which silently masked delivery bugs) is visible.
+     */
+    public void recordIdentityMismatch(String protocol, String transport, String mode) {
+        registry.counter("bridge.identity.mismatch",
+            "protocol", protocol,
+            "transport", transport,
+            "mode", mode
+        ).increment();
+    }
+
     public void recordRouted(Timer.Sample sample, String protocol, String transport, boolean success) {
         String result = success ? "success" : "failure";
 
