@@ -110,4 +110,39 @@ class MessageNormalizerIdentityCorroborationTest {
         assertEquals(1.0, identityCount("degraded_content_only"));
         verify(forwardingRouter).route(any(MessageEnvelope.class));
     }
+
+    private void registerAnalyzerWithPattern(String id, String name, String identifierPattern) {
+        AnalyzerEntry entry = new AnalyzerEntry();
+        entry.setId(id);
+        entry.setName(name);
+        entry.setIdentifierPattern(identifierPattern);
+        analyzerRegistry.register(SOURCE_IP, entry);
+    }
+
+    @Test
+    @DisplayName("ASTM caret sender corroborates via OE identifier_pattern (no false mismatch)")
+    void corroboratesViaIdentifierPattern() {
+        when(identifier.identify(any())).thenReturn("44");
+        // The display name does NOT substring-match the caret-delimited sender, so
+        // only the authoritative identifier_pattern keeps this from a false mismatch.
+        registerAnalyzerWithPattern("44", "Demo: GeneXpert ASTM", "GENEXPERT|CEPHEID");
+
+        assertTrue(normalizer.process(hl7FromSourceIp("GENEXPERT^GeneXpert^4.6.0")));
+
+        assertEquals(1.0, identityCount("corroborated"));
+        assertEquals(0.0, identityCount("mismatch"));
+    }
+
+    @Test
+    @DisplayName("identifier_pattern still flags a genuine cross-model mismatch (no over-match)")
+    void identifierPatternStillCatchesMismatch() {
+        when(identifier.identify(any())).thenReturn("93");
+        registerAnalyzerWithPattern("93", "Demo: Mindray BC-5380", "MINDRAY.*BC.?5380|BC.?5380");
+
+        // A BS-200 sender arriving on the BC-5380's source IP must NOT corroborate.
+        assertTrue(normalizer.process(hl7FromSourceIp("MINDRAY-BS-200")));
+
+        assertEquals(1.0, identityCount("mismatch"));
+        assertEquals(0.0, identityCount("corroborated"));
+    }
 }

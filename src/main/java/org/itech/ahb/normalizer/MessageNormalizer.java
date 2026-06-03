@@ -4,6 +4,8 @@ import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.model.Protocol;
@@ -312,6 +314,24 @@ public class MessageNormalizer implements MessageRouter {
             return false;
         }
 
+        // Primary: corroborate against the SAME regex OE uses to identify the
+        // sender (Analyzer.identifierPattern). This is authoritative and keeps the
+        // two identity signals consistent — it matches ASTM caret-delimited
+        // senders ("GENEXPERT^GeneXpert^4.6.0") and HL7 MSH-3/4 hints alike,
+        // without the false-positive risk of a manufacturer-substring heuristic.
+        String idPattern = registryEntry.getIdentifierPattern();
+        if (idPattern != null && !idPattern.isBlank()) {
+            try {
+                if (Pattern.compile(idPattern, Pattern.CASE_INSENSITIVE).matcher(protocolHint).find()) {
+                    return true;
+                }
+            } catch (PatternSyntaxException e) {
+                log.warn("Invalid identifierPattern '{}' for analyzer '{}': {}",
+                    idPattern, registryEntry.getName(), e.getMessage());
+            }
+        }
+
+        // Fallback for analyzers registered without a pattern: normalized name/id.
         String normalizedHint = normalizeIdentityToken(protocolHint);
         String normalizedName = normalizeIdentityToken(registryEntry.getName());
         String normalizedId = normalizeIdentityToken(registryEntry.getId());

@@ -261,6 +261,14 @@ public class AnalyzerRegistryConfig {
         private String filePattern;
 
         /**
+         * Regex OE uses to identify an inbound message by its sender (HL7 MSH-3/4,
+         * ASTM H-record). Pushed from OE's {@code Analyzer.identifierPattern} so the
+         * bridge corroborates the source-IP identity against the same authoritative
+         * pattern OE matches with — see {@code MessageNormalizer}.
+         */
+        private String identifierPattern;
+
+        /**
          * Column mappings for FILE protocol (spreadsheet column name → semantic field).
          * E.g., {"Sample Name": "sampleId", "Target": "testCode", "CT": "result"}
          * Synced from OE's Analyzer entity at registration time.
