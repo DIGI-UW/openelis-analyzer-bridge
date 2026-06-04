@@ -40,6 +40,66 @@ class FileResultParserTest {
             "CT", "result",
             "Units", "units");
 
+    // The REAL Bruker FluoroCycler XT export headers (verified against site
+    // captures + a user-reported file), mapped to semantic fields. The parser
+    // matches headers exactly (trim only), so these must be the literal export
+    // column names.
+    private static final Map<String, String> FLUOROCYCLER_MAPPINGS = Map.of(
+            "Sample ID", "sampleId",
+            "Type", "qcTask",
+            "Calc. Conc.", "result",
+            "Result", "interpretation",
+            "testCode", "testCode");
+
+    // The previous (broken) profile mapping: idealized headers that match no
+    // real export, so every column resolved empty and zero results imported.
+    private static final Map<String, String> FLUOROCYCLER_OLD_BROKEN_MAPPINGS = Map.of(
+            "SampleID", "sampleId",
+            "CalcConc", "result",
+            "TargetName", "testCode",
+            "Interpretation", "interpretation");
+
+    @Nested
+    @DisplayName("FluoroCycler XT real export format (profile mapping regression)")
+    class FluoroCyclerRealFormat {
+
+        private final String[] realHeaders = {"Sample ID", "Type", "Calc. Conc.", "Result", "testCode"};
+
+        @Test
+        @DisplayName("real export headers parse with the corrected profile mapping")
+        void realHeadersParseWithCorrectedMapping() {
+            InputStream xlsx = buildXlsx("Sheet1", realHeaders, new Object[][] {
+                    {"DEV-PAT-001", "Unknown", 1520.5, "Detected", "VL"},
+                    {"STD 1E7", "Standard", null, "STD 1E7 control failed", "VL"},
+            });
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_MAPPINGS);
+
+            assertNotNull(results);
+            assertFalse(results.isEmpty(),
+                    "corrected mapping must extract results from the real export format");
+            ParsedResults patient = results.stream()
+                    .filter(r -> "DEV-PAT-001".equals(r.accessionNumber())).findFirst().orElse(null);
+            assertNotNull(patient, "the patient row must be extracted");
+            assertEquals("VL", patient.results().get(0).testCode());
+        }
+
+        @Test
+        @DisplayName("the old idealized mapping extracted NOTHING from the real export (the bug)")
+        void oldMappingExtractedNothing() {
+            InputStream xlsx = buildXlsx("Sheet1", realHeaders, new Object[][] {
+                    {"DEV-PAT-001", "Unknown", 1520.5, "Detected", "VL"},
+            });
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_OLD_BROKEN_MAPPINGS);
+
+            // SampleID/CalcConc/TargetName don't exist in the real export
+            // ("Sample ID"/"Calc. Conc."/"testCode") — exact matching resolves nothing.
+            assertTrue(results == null || results.isEmpty(),
+                    "old idealized mapping must extract nothing — proving the profile was broken");
+        }
+    }
+
     /**
      * Build an xlsx workbook in memory and return its bytes as an InputStream.
      */
