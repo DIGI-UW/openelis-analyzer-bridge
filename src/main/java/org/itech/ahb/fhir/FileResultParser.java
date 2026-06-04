@@ -96,6 +96,23 @@ public class FileResultParser {
     public static List<HL7ResultParser.ParsedResults> parse(
             InputStream inputStream, Map<String, String> columnMappings,
             String perFileTestCode, List<QcRule> qcRules) {
+        return parse(inputStream, columnMappings, perFileTestCode, qcRules,
+                java.util.Collections.emptyList());
+    }
+
+    /**
+     * Parse an Excel file with optional file-wide test code, QC rules, and
+     * registered control lots. The control-lot list is used to enrich
+     * recognized QC samples with a {@code lotNumber} when the sample id
+     * embeds one of the registered lot strings (e.g. sample
+     * "QC-LOT-LPC-26B-LPC" with registered "LOT-LPC-26B" → emit
+     * {@code lotNumber=LOT-LPC-26B}). Without this, OE's resolver falls back
+     * to controlLevel match (Tier 2) or single-active-lot (Tier 3).
+     */
+    public static List<HL7ResultParser.ParsedResults> parse(
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, List<QcRule> qcRules,
+            List<org.itech.ahb.qc.ControlLotDto> controlLots) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser: null input or empty column mappings");
@@ -178,6 +195,10 @@ public class FileResultParser {
                 String matchedLevel = matchedRule.map(FileResultParser::extractControlLevel).orElse(null);
                 if (matchedLevel != null) {
                     ar = ar.withControlLevel(matchedLevel);
+                }
+                String embeddedLot = isCtrl ? findEmbeddedLot(sampleId, controlLots) : null;
+                if (embeddedLot != null) {
+                    ar = ar.withLotNumber(embeddedLot);
                 }
                 if (testDate != null && !testDate.isBlank()) {
                     ar = ar.withTimestamp(testDate);
@@ -455,11 +476,26 @@ public class FileResultParser {
 
     /**
      * Parse a CSV file with an optional file-wide test code and configurable
-     * QC identification rules.
+     * QC identification rules. Forwards to the canonical 7-arg form with an
+     * empty {@code controlLots} list (no lot enrichment).
      */
     public static List<HL7ResultParser.ParsedResults> parseCsv(
             byte[] content, Map<String, String> columnMappings,
             String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules) {
+        return parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules,
+                java.util.Collections.emptyList());
+    }
+
+    /**
+     * Parse a CSV file with optional test code, QC rules, and registered
+     * control lots. See
+     * {@link #parse(InputStream, Map, String, List, List)} for {@code controlLots}
+     * semantics — the same lot-enrichment pass applies to CSV.
+     */
+    public static List<HL7ResultParser.ParsedResults> parseCsv(
+            byte[] content, Map<String, String> columnMappings,
+            String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules,
+            List<org.itech.ahb.qc.ControlLotDto> controlLots) {
 
         if (content == null || content.length == 0 || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseCsv: null/empty input or column mappings");
@@ -575,11 +611,21 @@ public class FileResultParser {
                             ? AnalyzerResult.numeric(testCode, testCode, value, units)
                             : AnalyzerResult.text(testCode, testCode, value);
                     Optional<QcRule> matchedRule = findMatchingControlRule(sampleId, qcTask, qcRules);
-                    boolean isCtrl = matchedRule.isPresent() || isControlRow(sampleId, qcTask);
+                    // When explicit QC rules are configured they are authoritative
+                    // (mirrors the Excel path): a row is QC iff a rule matches. Only
+                    // when no rules are pushed do we fall back to the legacy hardcoded
+                    // heuristic, so configured rules can't be overridden by it.
+                    boolean rulesConfigured = qcRules != null && !qcRules.isEmpty();
+                    boolean isCtrl =
+                            rulesConfigured ? matchedRule.isPresent() : isControlRow(sampleId, qcTask);
                     ar = ar.withControl(isCtrl);
                     String matchedLevel = matchedRule.map(FileResultParser::extractControlLevel).orElse(null);
                     if (matchedLevel != null) {
                         ar = ar.withControlLevel(matchedLevel);
+                    }
+                    String embeddedLot = isCtrl ? findEmbeddedLot(sampleId, controlLots) : null;
+                    if (embeddedLot != null) {
+                        ar = ar.withLotNumber(embeddedLot);
                     }
 
                     // Use testDate or dateTime — fall back to dateTime if testDate is null or blank
@@ -784,6 +830,31 @@ public class FileResultParser {
     static String extractControlLevel(QcRule rule) {
         if (rule == null) return null;
         return "SPECIMEN_ID_PREFIX".equals(rule.ruleType()) ? rule.operand() : null;
+    }
+
+    /**
+     * Scan the registered control-lot list for any lot number that appears
+     * as a substring of {@code sampleId}. Returns the first match, or null
+     * when none are found (or no lots are registered). Caller should only
+     * invoke this on samples already classified as QC — calling on patient
+     * samples is wasted work, not unsafe (the patient sample-id should not
+     * coincidentally embed a lot string).
+     *
+     * <p>The first-match policy is acceptable because real labs assign
+     * unique lot strings per (test, instrument); ambiguity at this layer
+     * means OE's resolver will fall back to controlLevel match anyway.
+     */
+    static String findEmbeddedLot(String sampleId, List<org.itech.ahb.qc.ControlLotDto> controlLots) {
+        if (sampleId == null || sampleId.isBlank() || controlLots == null || controlLots.isEmpty()) {
+            return null;
+        }
+        for (org.itech.ahb.qc.ControlLotDto lot : controlLots) {
+            String lotNumber = lot.lotNumber();
+            if (lotNumber != null && !lotNumber.isBlank() && sampleId.contains(lotNumber)) {
+                return lotNumber;
+            }
+        }
+        return null;
     }
 
     private static boolean isControlRow(String sampleId, String qcTask) {

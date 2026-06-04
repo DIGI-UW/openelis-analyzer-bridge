@@ -335,6 +335,14 @@ public class AnalyzerRegistryConfig {
         private java.util.List<org.itech.ahb.qc.QcRule> qcRules = new java.util.ArrayList<>();
 
         /**
+         * Active control lots pulled from OE. Used by parsers to enrich
+         * recognized QC samples with lot identity (Tier 1 lot-number match in
+         * OE's resolver) when the inbound message embeds the lot in a
+         * sample-name (FILE) or carries it in a Q-segment (ASTM).
+         */
+        private java.util.List<org.itech.ahb.qc.ControlLotDto> controlLots = new java.util.ArrayList<>();
+
+        /**
          * Analyzer test_code → LOINC mapping, pushed from OE2 at registration
          * (sourced from the analyzer profile's {@code default_test_mappings}).
          * This is the bridge's authority for the analyzer↔LOINC translation:

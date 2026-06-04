@@ -298,7 +298,8 @@ public class SqliteFileStateStore implements FileStateStore {
             ps.setString(6, now);
             ps.executeUpdate();
         } catch (SQLException e) {
-            throw new IllegalStateException("FileStateStore.upsertRetrying failed", e);
+            throw new IllegalStateException(
+                    "FileStateStore.upsertRetrying failed: " + e.getMessage(), e);
         }
     }
 
@@ -405,6 +406,18 @@ public class SqliteFileStateStore implements FileStateStore {
 
     private static Instant parseTs(String s) {
         return (s == null || s.isBlank()) ? null : Instant.parse(s);
+    }
+
+    @Override
+    public synchronized int deleteAllForAnalyzer(String analyzerId) {
+        String sql = "DELETE FROM file_state WHERE analyzer_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, analyzerId);
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException(
+                    "FileStateStore.deleteAllForAnalyzer failed: " + e.getMessage(), e);
+        }
     }
 
     /**

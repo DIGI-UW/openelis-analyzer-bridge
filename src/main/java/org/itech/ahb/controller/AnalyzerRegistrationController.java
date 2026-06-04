@@ -85,6 +85,7 @@ public class AnalyzerRegistrationController {
         // and any sample-name-prefix convention beyond that — e.g. clinical
         // LPC/HPC for HIV viral load — silently misclassifies QC as patient.
         entry.setQcRules(parseQcRules(request.qcRules));
+        entry.setControlLots(parseControlLots(request.controlLots));
 
         registry.register(request.sourceId, entry);
 
@@ -188,6 +189,7 @@ public class AnalyzerRegistrationController {
                 entry.setCodeToLoinc(new java.util.LinkedHashMap<>(req.testCodeLoinc));
             }
             entry.setQcRules(parseQcRules(req.qcRules));
+            entry.setControlLots(parseControlLots(req.controlLots));
             newRegistry.put(req.sourceId, entry);
             newAnalyzerIds.add(req.oeAnalyzerId);
 
@@ -259,6 +261,10 @@ public class AnalyzerRegistrationController {
         // {ruleType, targetField?, operand}. Mirrors the JSON shape that
         // AnalyzerRegistryBootstrap.parseQcRules consumes at startup.
         public java.util.List<java.util.Map<String, Object>> qcRules;
+        // Active QC control lots pushed from OE so parsers can attach
+        // lotNumber to QC samples whose inbound message embeds the lot
+        // identifier. Each map carries {lotNumber, controlLevel?, testId?}.
+        public java.util.List<java.util.Map<String, Object>> controlLots;
     }
 
     /**
@@ -282,5 +288,28 @@ public class AnalyzerRegistrationController {
             }
         }
         return rules;
+    }
+
+    /**
+     * Parse the raw JSON {@code controlLots} list (from OE's registration
+     * push) into typed {@link org.itech.ahb.qc.ControlLotDto} records. Lots
+     * without a non-blank lotNumber are dropped.
+     */
+    private static List<org.itech.ahb.qc.ControlLotDto> parseControlLots(
+            java.util.List<java.util.Map<String, Object>> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<org.itech.ahb.qc.ControlLotDto> lots = new ArrayList<>(raw.size());
+        for (java.util.Map<String, Object> lotMap : raw) {
+            if (lotMap == null) continue;
+            String lotNumber = (String) lotMap.get("lotNumber");
+            if (lotNumber == null || lotNumber.isBlank()) continue;
+            String controlLevel = (String) lotMap.get("controlLevel");
+            Object testIdObj = lotMap.get("testId");
+            Integer testId = (testIdObj instanceof Number) ? ((Number) testIdObj).intValue() : null;
+            lots.add(new org.itech.ahb.qc.ControlLotDto(lotNumber, controlLevel, testId));
+        }
+        return lots;
     }
 }
