@@ -11,6 +11,7 @@ import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
 import org.itech.ahb.file.FileStateStore;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,7 +34,12 @@ public class BridgeAdminController {
     private final AnalyzerRegistryConfig registry;
     private final FileStateStore fileStateStore;
 
-    public BridgeAdminController(AnalyzerRegistryConfig registry, FileStateStore fileStateStore) {
+    // FileStateStore only exists when file handling is enabled
+    // (StateStoreConfig is @ConditionalOnProperty bridge.file.enabled). The
+    // admin controller must still load (and serve watch-dir cleanup) when
+    // file mode is off, so the store is an optional dependency — null then,
+    // and the SQLite-row reset below is simply skipped.
+    public BridgeAdminController(AnalyzerRegistryConfig registry, @Nullable FileStateStore fileStateStore) {
         this.registry = registry;
         this.fileStateStore = fileStateStore;
     }
@@ -62,10 +68,12 @@ public class BridgeAdminController {
         }
 
         int stateRowsRemoved = 0;
-        try {
-            stateRowsRemoved = fileStateStore.deleteAllForAnalyzer(analyzerId);
-        } catch (RuntimeException e) {
-            log.warn("admin/reset: deleteAllForAnalyzer failed for {}: {}", analyzerId, e.getMessage());
+        if (fileStateStore != null) {
+            try {
+                stateRowsRemoved = fileStateStore.deleteAllForAnalyzer(analyzerId);
+            } catch (RuntimeException e) {
+                log.warn("admin/reset: deleteAllForAnalyzer failed for {}: {}", analyzerId, e.getMessage());
+            }
         }
 
         int filesRemoved = 0;
