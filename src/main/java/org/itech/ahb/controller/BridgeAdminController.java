@@ -78,17 +78,9 @@ public class BridgeAdminController {
 
         int filesRemoved = 0;
         java.util.List<String> watchDirs = new java.util.ArrayList<>();
-        for (AnalyzerEntry entry : registry.getRegisteredAnalyzers().values()) {
-            if (!analyzerId.equals(entry.getId())) continue;
-            String protocol = entry.getExpectedProtocol();
-            if (protocol == null || (!protocol.equalsIgnoreCase("FILE") && !protocol.equalsIgnoreCase("CSV"))) {
-                continue;
-            }
-            // For FILE entries the registry key is the watch directory path.
-            // The registry map keys aren't directly exposed on the entry, so
-            // we resolve via getRegisteredAnalyzers() iteration: find the key
-            // whose value is this entry.
-        }
+        // For FILE entries the registry key is the watch directory path, which
+        // isn't exposed on the entry — resolve it via entrySet() iteration
+        // (find the key whose value is this analyzer).
         for (Map.Entry<String, AnalyzerEntry> e : registry.getRegisteredAnalyzers().entrySet()) {
             AnalyzerEntry entry = e.getValue();
             if (!analyzerId.equals(entry.getId())) continue;

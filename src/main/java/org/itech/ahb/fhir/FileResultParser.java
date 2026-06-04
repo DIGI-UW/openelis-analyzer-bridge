@@ -611,7 +611,13 @@ public class FileResultParser {
                             ? AnalyzerResult.numeric(testCode, testCode, value, units)
                             : AnalyzerResult.text(testCode, testCode, value);
                     Optional<QcRule> matchedRule = findMatchingControlRule(sampleId, qcTask, qcRules);
-                    boolean isCtrl = matchedRule.isPresent() || isControlRow(sampleId, qcTask);
+                    // When explicit QC rules are configured they are authoritative
+                    // (mirrors the Excel path): a row is QC iff a rule matches. Only
+                    // when no rules are pushed do we fall back to the legacy hardcoded
+                    // heuristic, so configured rules can't be overridden by it.
+                    boolean rulesConfigured = qcRules != null && !qcRules.isEmpty();
+                    boolean isCtrl =
+                            rulesConfigured ? matchedRule.isPresent() : isControlRow(sampleId, qcTask);
                     ar = ar.withControl(isCtrl);
                     String matchedLevel = matchedRule.map(FileResultParser::extractControlLevel).orElse(null);
                     if (matchedLevel != null) {
