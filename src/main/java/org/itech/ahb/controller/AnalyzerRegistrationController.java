@@ -60,6 +60,15 @@ public class AnalyzerRegistrationController {
         entry.setExpectedProtocol(request.protocol);
         entry.setFilePattern(request.filePattern);
         entry.setIdentifierPattern(request.identifierPattern);
+        // Validate the regex once, here, rather than letting an invalid pattern
+        // persist and warn on every inbound message in MessageNormalizer. The
+        // setter compiled it (or left it null on a syntax error).
+        if (request.identifierPattern != null && !request.identifierPattern.isBlank()
+                && entry.getCompiledIdentifierPattern() == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "registered", false,
+                    "error", "identifierPattern is not a valid regex: " + request.identifierPattern));
+        }
         entry.setColumnMappings(request.columnMappings);
         entry.setFileFormat(request.fileFormat);
         entry.setDelimiter(request.delimiter != null ? request.delimiter : ",");
@@ -155,6 +164,16 @@ public class AnalyzerRegistrationController {
             entry.setExpectedProtocol(req.protocol);
             entry.setFilePattern(req.filePattern);
             entry.setIdentifierPattern(req.identifierPattern);
+            // A bulk full-state sync must not fail wholesale on one bad regex:
+            // ignore an invalid identifierPattern (clear it so the entry falls back
+            // to normalized name/id matching) and warn once here instead of on every
+            // inbound message.
+            if (req.identifierPattern != null && !req.identifierPattern.isBlank()
+                    && entry.getCompiledIdentifierPattern() == null) {
+                log.warn("Ignoring invalid identifierPattern '{}' for analyzer '{}' during sync",
+                        req.identifierPattern, req.oeAnalyzerId);
+                entry.setIdentifierPattern(null);
+            }
             entry.setColumnMappings(req.columnMappings);
             entry.setFileFormat(req.fileFormat);
             entry.setDelimiter(req.delimiter != null ? req.delimiter : ",");

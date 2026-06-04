@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.model.Protocol;
@@ -319,16 +318,12 @@ public class MessageNormalizer implements MessageRouter {
         // two identity signals consistent — it matches ASTM caret-delimited
         // senders ("GENEXPERT^GeneXpert^4.6.0") and HL7 MSH-3/4 hints alike,
         // without the false-positive risk of a manufacturer-substring heuristic.
-        String idPattern = registryEntry.getIdentifierPattern();
-        if (idPattern != null && !idPattern.isBlank()) {
-            try {
-                if (Pattern.compile(idPattern, Pattern.CASE_INSENSITIVE).matcher(protocolHint).find()) {
-                    return true;
-                }
-            } catch (PatternSyntaxException e) {
-                log.warn("Invalid identifierPattern '{}' for analyzer '{}': {}",
-                    idPattern, registryEntry.getName(), e.getMessage());
-            }
+        // The pattern is compiled once at registration/sync time and cached on the
+        // entry (CASE_INSENSITIVE); invalid patterns are rejected/ignored there and
+        // never reach here, so this is a pure matcher().find() per message.
+        Pattern idPattern = registryEntry.getCompiledIdentifierPattern();
+        if (idPattern != null && idPattern.matcher(protocolHint).find()) {
+            return true;
         }
 
         // Fallback for analyzers registered without a pattern: normalized name/id.
