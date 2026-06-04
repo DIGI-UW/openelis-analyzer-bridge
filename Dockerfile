@@ -35,6 +35,9 @@ RUN addgroup -S astm --gid 9257 && adduser -S astm -s /bin/bash -u 9257 -G astm
 RUN mkdir /app
 RUN chown astm:astm /app
 
+RUN mkdir -p /data/openelis-analyzer-bridge && chown -R astm:astm /data
+VOLUME /data/openelis-analyzer-bridge
+
 
 #Deploy the jar into java image
 COPY --from=build /build/target/*.jar /app/openelis-analyzer-bridge.jar
