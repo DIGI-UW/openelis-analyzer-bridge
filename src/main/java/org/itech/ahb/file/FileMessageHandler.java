@@ -145,6 +145,21 @@ public class FileMessageHandler {
                 .build();
     }
 
+    /**
+     * Build the FHIR bundle for one parsed file accession, applying the analyzer's
+     * code→LOINC mapping (parity with the ASTM/HL7 inbound path via
+     * HttpForwardingRouter) so OE2 resolves the result by LOINC instead of receiving
+     * a raw analyzer test code. Without this the FILE path emitted raw codes and OE2
+     * left test_id unresolved (G1). Null entry/mapping preserves raw-code fallback.
+     */
+    static String buildFileFhirBundle(AnalyzerEntry analyzerEntry,
+            HL7ResultParser.ParsedResults parsed, String analyzerId) {
+        java.util.function.Function<String, String> codeToLoinc =
+                (analyzerEntry != null) ? analyzerEntry::getLoincForCode : null;
+        return FhirBundleBuilder.buildBundle(
+                parsed.accessionNumber(), analyzerId, parsed.results(), null, codeToLoinc);
+    }
+
     private void postFileAsFhir(Path filePath, String analyzerId, byte[] content, String perFileTestCode,
             ProgressCallback progress)
             throws IOException, FileProcessingException {
@@ -220,8 +235,7 @@ public class FileMessageHandler {
             if (progress != null) {
                 progress.onAccession(accessionIndex, allResults.size(), parsed.accessionNumber());
             }
-            String fhirJson = FhirBundleBuilder.buildBundle(
-                    parsed.accessionNumber(), analyzerId, parsed.results());
+            String fhirJson = buildFileFhirBundle(analyzerEntry, parsed, analyzerId);
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(fhirUri)
                     .timeout(Duration.ofSeconds(httpConfig.getReadTimeoutSeconds()))

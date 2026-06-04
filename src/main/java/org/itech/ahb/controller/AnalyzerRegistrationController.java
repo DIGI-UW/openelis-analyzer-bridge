@@ -76,6 +76,9 @@ public class AnalyzerRegistrationController {
         if (request.testMappings != null && !request.testMappings.isEmpty()) {
             entry.setMappedTestCodes(new java.util.LinkedHashSet<>(request.testMappings));
         }
+        if (request.testCodeLoinc != null && !request.testCodeLoinc.isEmpty()) {
+            entry.setCodeToLoinc(new java.util.LinkedHashMap<>(request.testCodeLoinc));
+        }
         // QC identification rules from the OE-side analyzer profile
         // (`configDefaults.qcRules`). Without these, FileResultParser falls
         // back to a hardcoded CONTROL_PREFIXES list (CNEG/CPOS/NTC/PTC/...)
@@ -181,6 +184,9 @@ public class AnalyzerRegistrationController {
             if (req.testMappings != null && !req.testMappings.isEmpty()) {
                 entry.setMappedTestCodes(new java.util.LinkedHashSet<>(req.testMappings));
             }
+            if (req.testCodeLoinc != null && !req.testCodeLoinc.isEmpty()) {
+                entry.setCodeToLoinc(new java.util.LinkedHashMap<>(req.testCodeLoinc));
+            }
             entry.setQcRules(parseQcRules(req.qcRules));
             newRegistry.put(req.sourceId, entry);
             newAnalyzerIds.add(req.oeAnalyzerId);
@@ -244,6 +250,10 @@ public class AnalyzerRegistrationController {
         public String delimiter;
         public Integer skipRows;
         public java.util.List<String> testMappings;
+        // Analyzer test_code → LOINC, pushed from OE per analyzer profile
+        // (`default_test_mappings`). The bridge's authority for analyzer↔LOINC
+        // translation so OE2 stays analyzer-agnostic (speaks LOINC over FHIR).
+        public java.util.Map<String, String> testCodeLoinc;
         // QC identification rules pushed from OE per analyzer profile
         // (`configDefaults.qcRules`). Each map carries
         // {ruleType, targetField?, operand}. Mirrors the JSON shape that
