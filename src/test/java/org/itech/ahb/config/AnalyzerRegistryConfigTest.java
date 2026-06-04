@@ -241,6 +241,62 @@ class AnalyzerRegistryConfigTest {
     }
 
     // -------------------------------------------------------------------------
+    // identifierPattern: compile-once + validate-on-set (Copilot #42)
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("AnalyzerEntry.identifierPattern compiles once on set")
+    class IdentifierPatternCompilation {
+
+        @Test
+        @DisplayName("a valid regex is compiled and cached (CASE_INSENSITIVE), reused per message")
+        void validPatternIsCompiledAndCached() {
+            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            entry.setIdentifierPattern("GENEXPERT|CEPHEID");
+
+            assertNotNull(entry.getCompiledIdentifierPattern(),
+                    "valid regex must compile to a cached Pattern");
+            // Same instance returned each call — proves it is not recompiled per access.
+            assertSame(entry.getCompiledIdentifierPattern(), entry.getCompiledIdentifierPattern());
+            // CASE_INSENSITIVE: a lowercase ASTM sender still matches.
+            assertTrue(entry.getCompiledIdentifierPattern().matcher("genexpert^GeneXpert^4.6.0").find());
+        }
+
+        @Test
+        @DisplayName("an invalid regex leaves the compiled form null (no throw) so callers can reject/ignore")
+        void invalidPatternLeavesCompiledNull() {
+            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            // Unbalanced bracket — a PatternSyntaxException source.
+            assertDoesNotThrow(() -> entry.setIdentifierPattern("MINDRAY["));
+            assertEquals("MINDRAY[", entry.getIdentifierPattern(),
+                    "the raw string is still retained for diagnostics");
+            assertNull(entry.getCompiledIdentifierPattern(),
+                    "an invalid regex must not produce a Pattern");
+        }
+
+        @Test
+        @DisplayName("null / blank pattern compiles to null")
+        void nullOrBlankPatternCompilesToNull() {
+            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            entry.setIdentifierPattern(null);
+            assertNull(entry.getCompiledIdentifierPattern());
+            entry.setIdentifierPattern("   ");
+            assertNull(entry.getCompiledIdentifierPattern());
+        }
+
+        @Test
+        @DisplayName("re-setting to a new pattern replaces the cached compiled form")
+        void resettingPatternReplacesCompiledForm() {
+            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            entry.setIdentifierPattern("AAA");
+            assertTrue(entry.getCompiledIdentifierPattern().matcher("aaa").find());
+            entry.setIdentifierPattern("BBB");
+            assertFalse(entry.getCompiledIdentifierPattern().matcher("aaa").find());
+            assertTrue(entry.getCompiledIdentifierPattern().matcher("bbb").find());
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Helper methods
     // -------------------------------------------------------------------------
 
