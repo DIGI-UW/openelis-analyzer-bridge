@@ -6,12 +6,12 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.4.0</version>
+		<version>3.3.0</version>
 		<relativePath /> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>org.itech</groupId>
 	<artifactId>openelis-analyzer-bridge</artifactId>
-	<version>3.0.3</version>
+	<version>3.0.4</version>
 	<name>openelis-analyzer-bridge</name>
 	<description>OpenELIS Analyzer Bridge: transports/protocol mediation (ASTM, HL7/MLLP, serial, file) forwarding analyzer messages to OpenELIS via HTTP.</description>
 	<url>https://github.com/DIGI-UW/openelis-analyzer-bridge</url>
