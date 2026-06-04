@@ -40,6 +40,96 @@ class FileResultParserTest {
             "CT", "result",
             "Units", "units");
 
+    // Superset FluoroCycler XT mapping: recognizes BOTH the raw Bruker instrument
+    // export (Sample ID / Calc. Conc. / Result, verified against site captures + a
+    // user-reported file) AND the standardized converter output (SampleID / CalcConc
+    // / TargetName / Interpretation, from scripts/converters/convert-fluorocycler-legacy.py).
+    // The parser matches headers exactly (trim only) and assigns a role to each
+    // header it finds, so a file in EITHER format imports without running the
+    // converter. Mirrors projects/analyzer-profiles/file/fluorocycler-xt.json.
+    private static final Map<String, String> FLUOROCYCLER_MAPPINGS = Map.ofEntries(
+            Map.entry("Sample ID", "sampleId"),
+            Map.entry("SampleID", "sampleId"),
+            Map.entry("Type", "qcTask"),
+            Map.entry("Calc. Conc.", "result"),
+            Map.entry("CalcConc", "result"),
+            Map.entry("Result", "interpretation"),
+            Map.entry("Interpretation", "interpretation"),
+            Map.entry("TargetName", "testCode"),
+            Map.entry("testCode", "testCode"),
+            Map.entry("WellPosition", "position"));
+
+    // The previous (broken) profile mapping: idealized headers that match no
+    // real export, so every column resolved empty and zero results imported.
+    private static final Map<String, String> FLUOROCYCLER_OLD_BROKEN_MAPPINGS = Map.of(
+            "SampleID", "sampleId",
+            "CalcConc", "result",
+            "TargetName", "testCode",
+            "Interpretation", "interpretation");
+
+    @Nested
+    @DisplayName("FluoroCycler XT real export format (profile mapping regression)")
+    class FluoroCyclerRealFormat {
+
+        private final String[] realHeaders = {"Sample ID", "Type", "Calc. Conc.", "Result", "testCode"};
+
+        @Test
+        @DisplayName("real export headers parse with the corrected profile mapping")
+        void realHeadersParseWithCorrectedMapping() {
+            InputStream xlsx = buildXlsx("Sheet1", realHeaders, new Object[][] {
+                    {"DEV-PAT-001", "Unknown", 1520.5, "Detected", "VL"},
+                    {"STD 1E7", "Standard", null, "STD 1E7 control failed", "VL"},
+            });
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_MAPPINGS);
+
+            assertNotNull(results);
+            assertFalse(results.isEmpty(),
+                    "corrected mapping must extract results from the real export format");
+            ParsedResults patient = results.stream()
+                    .filter(r -> "DEV-PAT-001".equals(r.accessionNumber())).findFirst().orElse(null);
+            assertNotNull(patient, "the patient row must be extracted");
+            assertEquals("VL", patient.results().get(0).testCode());
+        }
+
+        @Test
+        @DisplayName("the old idealized mapping extracted NOTHING from the real export (the bug)")
+        void oldMappingExtractedNothing() {
+            InputStream xlsx = buildXlsx("Sheet1", realHeaders, new Object[][] {
+                    {"DEV-PAT-001", "Unknown", 1520.5, "Detected", "VL"},
+            });
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_OLD_BROKEN_MAPPINGS);
+
+            // SampleID/CalcConc/TargetName don't exist in the real export
+            // ("Sample ID"/"Calc. Conc."/"testCode") — exact matching resolves nothing.
+            assertTrue(results == null || results.isEmpty(),
+                    "old idealized mapping must extract nothing — proving the profile was broken");
+        }
+
+        @Test
+        @DisplayName("converter output headers parse with the same superset mapping (no converter run needed)")
+        void convertedHeadersParseWithSupersetMapping() {
+            // Headers as emitted by scripts/converters/convert-fluorocycler-legacy.py.
+            // The superset mapping recognizes these too, so a pre-converted file
+            // imports through the identical profile as the raw export.
+            String[] convertedHeaders = {"SampleID", "WellPosition", "TargetName", "CalcConc", "Interpretation", "Type"};
+            InputStream xlsx = buildXlsx("Sheet1", convertedHeaders, new Object[][] {
+                    {"DEV-PAT-002", "A1", "VL", 980.0, "Detected", "Unknown"},
+            });
+
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_MAPPINGS);
+
+            assertNotNull(results);
+            assertFalse(results.isEmpty(),
+                    "superset mapping must extract results from the converter output format");
+            ParsedResults patient = results.stream()
+                    .filter(r -> "DEV-PAT-002".equals(r.accessionNumber())).findFirst().orElse(null);
+            assertNotNull(patient, "the converted patient row must be extracted");
+            assertEquals("VL", patient.results().get(0).testCode());
+        }
+    }
+
     /**
      * Build an xlsx workbook in memory and return its bytes as an InputStream.
      */

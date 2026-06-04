@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.model.Protocol;
@@ -196,18 +197,33 @@ public class MessageNormalizer implements MessageRouter {
             ? registry.findAnalyzerEntry(envelope.getSourceId()).orElse(null)
             : null;
 
-        // Policy: protocol hints are diagnostic evidence only. Routing remains bound to the
-        // source-registered OpenELIS analyzer ID when present; when not present, OE resolves
+        // Corroborate the two analyzer-identity signals: the connection source IP
+        // (resolvedAnalyzerId) and the in-message sender (protocolHint). Identity
+        // NEVER gates routing — the transparent-pipe rule above stands — this only
+        // surfaces a warning + metric so a silent content-only fallback can't hide
+        // delivery bugs the way it hid the analyzer-demo flake. Routing remains
+        // bound to the IP-resolved analyzer when present; otherwise OE resolves
         // from the FHIR Device resource carrying the same hint.
-        if (resolvedAnalyzerId != null && protocolHint != null && !protocolHint.equals(resolvedAnalyzerId)) {
-            if (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry)) {
-                log.info("Analyzer identity evidence matched registered analyzer for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
-                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint, registryEntry.getName());
+        boolean haveIp = resolvedAnalyzerId != null && !resolvedAnalyzerId.isBlank();
+        boolean haveHint = protocolHint != null && !protocolHint.isBlank();
+        if (haveIp && haveHint) {
+            boolean agrees = protocolHint.equals(resolvedAnalyzerId)
+                || (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry));
+            if (agrees) {
+                recordIdentity(protocol, transport, "corroborated");
+                log.info("Analyzer identity corroborated for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
+                    envelope.getSourceId(), resolvedAnalyzerId, protocolHint,
+                    registryEntry != null ? registryEntry.getName() : "unknown");
             } else {
-                log.warn("Analyzer identity evidence mismatch for source '{}': resolved='{}', protocolHint='{}', registeredName='{}' — routing will continue with resolved analyzer",
+                recordIdentity(protocol, transport, "mismatch");
+                log.warn("Analyzer identity mismatch for source '{}': resolved='{}', protocolHint='{}', registeredName='{}' — routing continues with the IP-resolved analyzer",
                     envelope.getSourceId(), resolvedAnalyzerId, protocolHint,
                     registryEntry != null ? registryEntry.getName() : "unknown");
             }
+        } else if (!haveIp && haveHint) {
+            recordIdentity(protocol, transport, "degraded_content_only");
+            log.warn("Analyzer identity degraded for source '{}': connection source IP did not resolve to a registered analyzer; routing on the in-message sender alone (protocolHint='{}')",
+                envelope.getSourceId(), protocolHint);
         }
 
         // Rebuild envelope with explicit canonical ID and protocol hint.
@@ -274,6 +290,12 @@ public class MessageNormalizer implements MessageRouter {
         return hasQ && !hasR;
     }
 
+    private void recordIdentity(String protocol, String transport, String mode) {
+        if (metricsService != null) {
+            metricsService.recordIdentityMismatch(protocol, transport, mode);
+        }
+    }
+
     private String firstNonBlank(String first, String second) {
         if (first != null && !first.isBlank()) {
             return first;
@@ -291,6 +313,20 @@ public class MessageNormalizer implements MessageRouter {
             return false;
         }
 
+        // Primary: corroborate against the SAME regex OE uses to identify the
+        // sender (Analyzer.identifierPattern). This is authoritative and keeps the
+        // two identity signals consistent — it matches ASTM caret-delimited
+        // senders ("GENEXPERT^GeneXpert^4.6.0") and HL7 MSH-3/4 hints alike,
+        // without the false-positive risk of a manufacturer-substring heuristic.
+        // The pattern is compiled once at registration/sync time and cached on the
+        // entry (CASE_INSENSITIVE); invalid patterns are rejected/ignored there and
+        // never reach here, so this is a pure matcher().find() per message.
+        Pattern idPattern = registryEntry.getCompiledIdentifierPattern();
+        if (idPattern != null && idPattern.matcher(protocolHint).find()) {
+            return true;
+        }
+
+        // Fallback for analyzers registered without a pattern: normalized name/id.
         String normalizedHint = normalizeIdentityToken(protocolHint);
         String normalizedName = normalizeIdentityToken(registryEntry.getName());
         String normalizedId = normalizeIdentityToken(registryEntry.getId());

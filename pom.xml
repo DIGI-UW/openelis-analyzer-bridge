@@ -11,7 +11,7 @@
 	</parent>
 	<groupId>org.itech</groupId>
 	<artifactId>openelis-analyzer-bridge</artifactId>
-	<version>3.0.2</version>
+	<version>3.0.3</version>
 	<name>openelis-analyzer-bridge</name>
 	<description>OpenELIS Analyzer Bridge: transports/protocol mediation (ASTM, HL7/MLLP, serial, file) forwarding analyzer messages to OpenELIS via HTTP.</description>
 	<url>https://github.com/DIGI-UW/openelis-analyzer-bridge</url>

@@ -1,6 +1,8 @@
 package org.itech.ahb.config;
 
+import lombok.AccessLevel;
 import lombok.Data;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
@@ -261,6 +264,45 @@ public class AnalyzerRegistryConfig {
         private String filePattern;
 
         /**
+         * Regex OE uses to identify an inbound message by its sender (HL7 MSH-3/4,
+         * ASTM H-record). Pushed from OE's {@code Analyzer.identifierPattern} so the
+         * bridge corroborates the source-IP identity against the same authoritative
+         * pattern OE matches with — see {@code MessageNormalizer}.
+         */
+        private String identifierPattern;
+
+        /**
+         * Compiled form of {@link #identifierPattern}, built once when the pattern is
+         * set so {@code MessageNormalizer} reuses it on every inbound message instead
+         * of recompiling the regex per message. {@code null} when no pattern is set, or
+         * when the supplied regex was invalid — registration/sync validation decides
+         * whether an invalid pattern is rejected (register → 400) or ignored (sync).
+         */
+        @Setter(AccessLevel.NONE)
+        private transient Pattern compiledIdentifierPattern;
+
+        /**
+         * Custom setter (Lombok skips generating one): also (re)compiles
+         * {@link #compiledIdentifierPattern} with {@code CASE_INSENSITIVE}. An invalid
+         * regex leaves the compiled form {@code null} without throwing, so the caller
+         * can detect it via {@link #getCompiledIdentifierPattern()} and choose to reject
+         * or ignore. This is the single place a pattern string is turned into a Pattern.
+         */
+        public void setIdentifierPattern(String identifierPattern) {
+            this.identifierPattern = identifierPattern;
+            Pattern compiled = null;
+            if (identifierPattern != null && !identifierPattern.isBlank()) {
+                try {
+                    compiled = Pattern.compile(identifierPattern, Pattern.CASE_INSENSITIVE);
+                } catch (PatternSyntaxException e) {
+                    // Leave compiled null; the registration/sync path validates and
+                    // rejects (register) or ignores (sync) the bad pattern.
+                }
+            }
+            this.compiledIdentifierPattern = compiled;
+        }
+
+        /**
          * Column mappings for FILE protocol (spreadsheet column name → semantic field).
          * E.g., {"Sample Name": "sampleId", "Target": "testCode", "CT": "result"}
          * Synced from OE's Analyzer entity at registration time.
@@ -299,5 +341,36 @@ public class AnalyzerRegistryConfig {
          * sample-name (FILE) or carries it in a Q-segment (ASTM).
          */
         private java.util.List<org.itech.ahb.qc.ControlLotDto> controlLots = new java.util.ArrayList<>();
+
+        /**
+         * Analyzer test_code → LOINC mapping, pushed from OE2 at registration
+         * (sourced from the analyzer profile's {@code default_test_mappings}).
+         * This is the bridge's authority for the analyzer↔LOINC translation:
+         * inbound results translate code→LOINC ({@link #getLoincForCode}), and
+         * outbound orders translate LOINC→code ({@link #getCodeForLoinc}). OE2
+         * never sees analyzer codes — it speaks LOINC over FHIR.
+         */
+        private java.util.Map<String, String> codeToLoinc = Collections.emptyMap();
+
+        /** Resolve an analyzer test code to its LOINC (inbound). Null if unmapped. */
+        public String getLoincForCode(String analyzerCode) {
+            if (codeToLoinc == null || analyzerCode == null) {
+                return null;
+            }
+            return codeToLoinc.get(analyzerCode);
+        }
+
+        /** Resolve a LOINC back to this analyzer's test code (outbound). Null if unmapped. */
+        public String getCodeForLoinc(String loinc) {
+            if (codeToLoinc == null || loinc == null) {
+                return null;
+            }
+            for (java.util.Map.Entry<String, String> e : codeToLoinc.entrySet()) {
+                if (loinc.equals(e.getValue())) {
+                    return e.getKey();
+                }
+            }
+            return null;
+        }
     }
 }

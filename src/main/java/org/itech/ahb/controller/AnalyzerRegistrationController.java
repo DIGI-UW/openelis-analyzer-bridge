@@ -59,12 +59,25 @@ public class AnalyzerRegistrationController {
         entry.setName(request.name);
         entry.setExpectedProtocol(request.protocol);
         entry.setFilePattern(request.filePattern);
+        entry.setIdentifierPattern(request.identifierPattern);
+        // Validate the regex once, here, rather than letting an invalid pattern
+        // persist and warn on every inbound message in MessageNormalizer. The
+        // setter compiled it (or left it null on a syntax error).
+        if (request.identifierPattern != null && !request.identifierPattern.isBlank()
+                && entry.getCompiledIdentifierPattern() == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "registered", false,
+                    "error", "identifierPattern is not a valid regex: " + request.identifierPattern));
+        }
         entry.setColumnMappings(request.columnMappings);
         entry.setFileFormat(request.fileFormat);
         entry.setDelimiter(request.delimiter != null ? request.delimiter : ",");
         entry.setSkipRows(request.skipRows != null ? request.skipRows : 0);
         if (request.testMappings != null && !request.testMappings.isEmpty()) {
             entry.setMappedTestCodes(new java.util.LinkedHashSet<>(request.testMappings));
+        }
+        if (request.testCodeLoinc != null && !request.testCodeLoinc.isEmpty()) {
+            entry.setCodeToLoinc(new java.util.LinkedHashMap<>(request.testCodeLoinc));
         }
         // QC identification rules from the OE-side analyzer profile
         // (`configDefaults.qcRules`). Without these, FileResultParser falls
@@ -154,12 +167,26 @@ public class AnalyzerRegistrationController {
             entry.setName(req.name);
             entry.setExpectedProtocol(req.protocol);
             entry.setFilePattern(req.filePattern);
+            entry.setIdentifierPattern(req.identifierPattern);
+            // A bulk full-state sync must not fail wholesale on one bad regex:
+            // ignore an invalid identifierPattern (clear it so the entry falls back
+            // to normalized name/id matching) and warn once here instead of on every
+            // inbound message.
+            if (req.identifierPattern != null && !req.identifierPattern.isBlank()
+                    && entry.getCompiledIdentifierPattern() == null) {
+                log.warn("Ignoring invalid identifierPattern '{}' for analyzer '{}' during sync",
+                        req.identifierPattern, req.oeAnalyzerId);
+                entry.setIdentifierPattern(null);
+            }
             entry.setColumnMappings(req.columnMappings);
             entry.setFileFormat(req.fileFormat);
             entry.setDelimiter(req.delimiter != null ? req.delimiter : ",");
             entry.setSkipRows(req.skipRows != null ? req.skipRows : 0);
             if (req.testMappings != null && !req.testMappings.isEmpty()) {
                 entry.setMappedTestCodes(new java.util.LinkedHashSet<>(req.testMappings));
+            }
+            if (req.testCodeLoinc != null && !req.testCodeLoinc.isEmpty()) {
+                entry.setCodeToLoinc(new java.util.LinkedHashMap<>(req.testCodeLoinc));
             }
             entry.setQcRules(parseQcRules(req.qcRules));
             entry.setControlLots(parseControlLots(req.controlLots));
@@ -217,11 +244,18 @@ public class AnalyzerRegistrationController {
         public String name;
         public String protocol;
         public String filePattern;
+        // The regex OE uses to identify a message by its sender (MSH-3/4 for HL7,
+        // H-record for ASTM). Used to corroborate the source-IP identity.
+        public String identifierPattern;
         public java.util.Map<String, String> columnMappings;
         public String fileFormat;
         public String delimiter;
         public Integer skipRows;
         public java.util.List<String> testMappings;
+        // Analyzer test_code → LOINC, pushed from OE per analyzer profile
+        // (`default_test_mappings`). The bridge's authority for analyzer↔LOINC
+        // translation so OE2 stays analyzer-agnostic (speaks LOINC over FHIR).
+        public java.util.Map<String, String> testCodeLoinc;
         // QC identification rules pushed from OE per analyzer profile
         // (`configDefaults.qcRules`). Each map carries
         // {ruleType, targetField?, operand}. Mirrors the JSON shape that
