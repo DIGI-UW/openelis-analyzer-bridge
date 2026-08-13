@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/normalized-fhir-bundle.schema.json",
+  "title": "Analyzer Bridge normalized FHIR Bundle v1",
+  "type": "object",
+  "required": ["resourceType", "meta", "identifier", "type", "entry"],
+  "properties": {
+    "resourceType": { "const": "Bundle" },
+    "meta": {
+      "type": "object",
+      "required": ["profile"],
+      "properties": {
+        "profile": {
+          "type": "array",
+          "contains": {
+            "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-normalized-bundle-v1"
+          }
+        }
+      }
+    },
+    "identifier": {
+      "type": "object",
+      "required": ["system", "value"],
+      "properties": {
+        "system": {
+          "const": "https://openelis-global.org/fhir/analyzer-message-id"
+        },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    },
+    "type": { "const": "transaction" },
+    "entry": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["fullUrl", "resource", "request"],
+        "properties": {
+          "fullUrl": { "type": "string", "minLength": 1 },
+          "resource": {
+            "type": "object",
+            "required": ["resourceType"],
+            "properties": {
+              "resourceType": {
+                "enum": [
+                  "Device",
+                  "Specimen",
+                  "Observation",
+                  "DiagnosticReport"
+                ]
+              }
+            }
+          },
+          "request": {
+            "type": "object",
+            "required": ["method", "url"],
+            "properties": {
+              "method": { "const": "POST" },
+              "url": {
+                "enum": [
+                  "Device",
+                  "Specimen",
+                  "Observation",
+                  "DiagnosticReport"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/$defs/containsDevice" },
+    { "$ref": "#/$defs/containsSpecimen" },
+    { "$ref": "#/$defs/containsObservation" },
+    { "$ref": "#/$defs/containsDiagnosticReport" }
+  ],
+  "$defs": {
+    "extensionWithUrl": {
+      "type": "object",
+      "required": ["url"]
+    },
+    "containsDevice": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "type": "object",
+                "required": ["resourceType", "identifier", "extension"],
+                "properties": {
+                  "resourceType": { "const": "Device" },
+                  "identifier": { "type": "array", "minItems": 1 },
+                  "extension": {
+                    "type": "array",
+                    "allOf": [
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-contract-version"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-id"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-revision"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-protocol"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "containsSpecimen": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "properties": { "resourceType": { "const": "Specimen" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "containsObservation": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "type": "object",
+                "required": [
+                  "resourceType",
+                  "code",
+                  "extension",
+                  "specimen",
+                  "device"
+                ],
+                "properties": {
+                  "resourceType": { "const": "Observation" },
+                  "code": {
+                    "type": "object",
+                    "required": ["coding"],
+                    "properties": {
+                      "coding": {
+                        "type": "array",
+                        "contains": {
+                          "type": "object",
+                          "required": ["system", "code"],
+                          "properties": {
+                            "system": {
+                              "const": "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code"
+                            },
+                            "code": { "type": "string", "minLength": 1 }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "extension": {
+                    "type": "array",
+                    "allOf": [
+                      {
+                        "contains": {
+                          "properties": {
+                            "url": {
+                              "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value"
+                            }
+                          },
+                          "required": ["url", "valueString"]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "properties": {
+                            "url": {
+                              "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-transport"
+                            }
+                          },
+                          "required": ["url", "valueCode"]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "containsDiagnosticReport": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "properties": {
+                  "resourceType": { "const": "DiagnosticReport" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

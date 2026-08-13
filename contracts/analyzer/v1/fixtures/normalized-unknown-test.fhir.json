@@ -1,0 +1,103 @@
+{
+  "resourceType": "Bundle",
+  "meta": {
+    "profile": [
+      "https://openelis-global.org/fhir/StructureDefinition/analyzer-normalized-bundle-v1"
+    ]
+  },
+  "identifier": {
+    "system": "https://openelis-global.org/fhir/analyzer-message-id",
+    "value": "unknown-test-hl7-001"
+  },
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:20000000-0000-0000-0000-000000000001",
+      "resource": {
+        "resourceType": "Device",
+        "identifier": [
+          {
+            "system": "https://openelis-global.org/fhir/analyzer-id",
+            "value": "52"
+          }
+        ],
+        "extension": [
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-contract-version",
+            "valueString": "1.0"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-id",
+            "valueString": "site.unknown-capable"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-revision",
+            "valueInteger": 3
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-protocol",
+            "valueCode": "HL7"
+          }
+        ]
+      },
+      "request": { "method": "POST", "url": "Device" }
+    },
+    {
+      "fullUrl": "urn:uuid:20000000-0000-0000-0000-000000000002",
+      "resource": {
+        "resourceType": "Specimen",
+        "identifier": [{ "value": "ACC-UNKNOWN-TEST-001" }]
+      },
+      "request": { "method": "POST", "url": "Specimen" }
+    },
+    {
+      "fullUrl": "urn:uuid:20000000-0000-0000-0000-000000000003",
+      "resource": {
+        "resourceType": "Observation",
+        "status": "preliminary",
+        "code": {
+          "coding": [
+            {
+              "system": "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code",
+              "code": "VENDOR-NEW-42",
+              "display": "VENDOR-NEW-42"
+            }
+          ]
+        },
+        "valueString": "DETECTED",
+        "extension": [
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value",
+            "valueString": "DETECTED"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-transport",
+            "valueCode": "MLLP"
+          }
+        ],
+        "specimen": {
+          "reference": "urn:uuid:20000000-0000-0000-0000-000000000002"
+        },
+        "device": {
+          "reference": "urn:uuid:20000000-0000-0000-0000-000000000001"
+        }
+      },
+      "request": { "method": "POST", "url": "Observation" }
+    },
+    {
+      "fullUrl": "urn:uuid:20000000-0000-0000-0000-000000000004",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "status": "preliminary",
+        "code": { "text": "Analyzer Results" },
+        "specimen": [
+          { "reference": "urn:uuid:20000000-0000-0000-0000-000000000002" }
+        ],
+        "result": [
+          { "reference": "urn:uuid:20000000-0000-0000-0000-000000000003" }
+        ]
+      },
+      "request": { "method": "POST", "url": "DiagnosticReport" }
+    }
+  ]
+}

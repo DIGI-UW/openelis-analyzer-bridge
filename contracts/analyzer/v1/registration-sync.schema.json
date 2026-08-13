@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/registration-sync.schema.json",
+  "title": "OpenELIS desired analyzer registration sync v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "desiredStateRevision",
+    "generatedAt",
+    "analyzers"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "desiredStateRevision": { "type": "string", "minLength": 8 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "analyzers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/analyzerRegistration" }
+    }
+  },
+  "$defs": {
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "revision"],
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "role", "settings"],
+      "properties": {
+        "mode": { "enum": ["TCP", "MLLP", "SERIAL", "FILE", "HTTP"] },
+        "role": { "enum": ["RECEIVER", "INITIATOR"] },
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "integer", "boolean"]
+          }
+        }
+      }
+    },
+    "controlLot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lotNumber", "controlLevel", "active"],
+      "properties": {
+        "lotNumber": { "type": "string", "minLength": 1 },
+        "controlLevel": { "type": "string", "minLength": 1 },
+        "analyzerCode": { "type": "string", "minLength": 1 },
+        "active": { "type": "boolean" }
+      }
+    },
+    "analyzerRegistration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oeAnalyzerId",
+        "sourceId",
+        "name",
+        "profileRef",
+        "protocol",
+        "desiredStatus",
+        "siteBindingRevision",
+        "connection",
+        "operationalQc"
+      ],
+      "properties": {
+        "oeAnalyzerId": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "profileRef": { "$ref": "#/$defs/profileRef" },
+        "protocol": { "enum": ["ASTM", "HL7", "FILE"] },
+        "desiredStatus": { "enum": ["INACTIVE", "ACTIVE"] },
+        "siteBindingRevision": { "type": "string", "minLength": 1 },
+        "connection": { "$ref": "#/$defs/connection" },
+        "operationalQc": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contextRevision",
+            "ready",
+            "activeRuleIds",
+            "controlLots"
+          ],
+          "properties": {
+            "contextRevision": { "type": "string", "minLength": 1 },
+            "ready": { "type": "boolean" },
+            "activeRuleIds": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            },
+            "controlLots": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/controlLot" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

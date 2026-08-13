@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1.0",
+  "desiredStateRevision": "sha256:registration-next",
+  "generatedAt": "2026-08-13T20:05:00Z",
+  "analyzers": [
+    {
+      "oeAnalyzerId": "42",
+      "sourceId": "10.20.30.40",
+      "name": "Hematology 1",
+      "profileRef": { "profileId": "site.mock-hematology", "revision": 1 },
+      "protocol": "ASTM",
+      "desiredStatus": "ACTIVE",
+      "siteBindingRevision": "binding:42:3",
+      "connection": {
+        "mode": "TCP",
+        "role": "RECEIVER",
+        "settings": { "listenPort": 12001 }
+      },
+      "operationalQc": {
+        "contextRevision": "qc:42:2",
+        "ready": true,
+        "activeRuleIds": ["oe-qc-rule-7"],
+        "controlLots": [
+          {
+            "lotNumber": "LOT-WBC-2026-08",
+            "controlLevel": "NORMAL",
+            "analyzerCode": "WBC",
+            "active": true
+          }
+        ]
+      }
+    },
+    {
+      "oeAnalyzerId": "43",
+      "sourceId": "/mnt/analyzer-import/quantstudio-43",
+      "name": "QuantStudio 43",
+      "profileRef": { "profileId": "site.quantstudio-hiv", "revision": 2 },
+      "protocol": "FILE",
+      "desiredStatus": "INACTIVE",
+      "siteBindingRevision": "binding:43:1",
+      "connection": {
+        "mode": "FILE",
+        "role": "RECEIVER",
+        "settings": {
+          "directory": "/mnt/analyzer-import/quantstudio-43",
+          "filePattern": "*.csv"
+        }
+      },
+      "operationalQc": {
+        "contextRevision": "qc:43:0",
+        "ready": false,
+        "activeRuleIds": [],
+        "controlLots": []
+      }
+    }
+  ]
+}

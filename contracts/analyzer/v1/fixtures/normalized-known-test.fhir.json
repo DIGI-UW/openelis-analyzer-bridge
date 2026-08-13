@@ -1,0 +1,113 @@
+{
+  "resourceType": "Bundle",
+  "meta": {
+    "profile": [
+      "https://openelis-global.org/fhir/StructureDefinition/analyzer-normalized-bundle-v1"
+    ]
+  },
+  "identifier": {
+    "system": "https://openelis-global.org/fhir/analyzer-message-id",
+    "value": "known-astm-001"
+  },
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:10000000-0000-0000-0000-000000000001",
+      "resource": {
+        "resourceType": "Device",
+        "identifier": [
+          {
+            "system": "https://openelis-global.org/fhir/analyzer-id",
+            "value": "42"
+          },
+          {
+            "system": "https://openelis-global.org/fhir/source-id",
+            "value": "10.20.30.40"
+          }
+        ],
+        "extension": [
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-contract-version",
+            "valueString": "1.0"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-id",
+            "valueString": "site.mock-hematology"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-revision",
+            "valueInteger": 1
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-protocol",
+            "valueCode": "ASTM"
+          }
+        ],
+        "deviceName": [{ "name": "Hematology 1", "type": "user-friendly-name" }]
+      },
+      "request": { "method": "POST", "url": "Device" }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-0000-0000-000000000002",
+      "resource": {
+        "resourceType": "Specimen",
+        "identifier": [{ "value": "ACC-KNOWN-001" }]
+      },
+      "request": { "method": "POST", "url": "Specimen" }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-0000-0000-000000000003",
+      "resource": {
+        "resourceType": "Observation",
+        "status": "preliminary",
+        "code": {
+          "coding": [
+            {
+              "system": "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code",
+              "code": "WBC",
+              "display": "White blood cell count"
+            },
+            {
+              "system": "http://loinc.org",
+              "code": "6690-2",
+              "display": "Leukocytes [#/volume] in Blood by Automated count"
+            }
+          ]
+        },
+        "valueQuantity": { "value": 7.5, "unit": "10*3/uL" },
+        "extension": [
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value",
+            "valueString": "7.5"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-transport",
+            "valueCode": "TCP"
+          }
+        ],
+        "specimen": {
+          "reference": "urn:uuid:10000000-0000-0000-0000-000000000002"
+        },
+        "device": {
+          "reference": "urn:uuid:10000000-0000-0000-0000-000000000001"
+        }
+      },
+      "request": { "method": "POST", "url": "Observation" }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-0000-0000-000000000004",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "status": "preliminary",
+        "code": { "text": "Analyzer Results" },
+        "specimen": [
+          { "reference": "urn:uuid:10000000-0000-0000-0000-000000000002" }
+        ],
+        "result": [
+          { "reference": "urn:uuid:10000000-0000-0000-0000-000000000003" }
+        ]
+      },
+      "request": { "method": "POST", "url": "DiagnosticReport" }
+    }
+  ]
+}

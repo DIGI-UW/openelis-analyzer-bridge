@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "appliedStateRevision": "sha256:registration-next",
+  "counts": {
+    "total": 2,
+    "added": 1,
+    "updated": 1,
+    "removed": 0,
+    "unchanged": 0,
+    "rejected": 0
+  },
+  "registrations": [
+    { "oeAnalyzerId": "42", "status": "APPLIED" },
+    { "oeAnalyzerId": "43", "status": "APPLIED" }
+  ],
+  "errors": []
+}
