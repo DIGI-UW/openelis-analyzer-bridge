@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/legacy-registration.schema.json",
+  "title": "Legacy unversioned registration migration input",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "oeAnalyzerId",
+      "sourceId",
+      "name",
+      "protocol",
+      "qcRules",
+      "controlLots",
+      "testCodeLoinc"
+    ],
+    "properties": {
+      "oeAnalyzerId": { "type": "string", "minLength": 1 },
+      "sourceId": { "type": "string", "minLength": 1 },
+      "name": { "type": "string", "minLength": 1 },
+      "protocol": { "type": "string", "minLength": 1 },
+      "filePattern": { "type": "string" },
+      "identifierPattern": { "type": "string" },
+      "columnMappings": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      },
+      "fileFormat": { "type": "string" },
+      "delimiter": { "type": "string" },
+      "skipRows": { "type": "integer", "minimum": 0 },
+      "testMappings": { "type": "array", "items": { "type": "string" } },
+      "testCodeLoinc": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      },
+      "qcRules": { "type": "array", "items": { "type": "object" } },
+      "controlLots": { "type": "array", "items": { "type": "object" } }
+    }
+  }
+}

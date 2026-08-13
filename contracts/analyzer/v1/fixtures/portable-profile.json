@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "site.mock-hematology",
+  "revision": 1,
+  "displayName": "Mock Hematology Analyzer",
+  "source": "SITE",
+  "status": "ACTIVE",
+  "protocol": "ASTM",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "identity": {
+    "senderPattern": "OPENELIS.*MOCK.?HEMATOLOGY",
+    "manufacturer": "OpenELIS",
+    "model": "Mock Hematology"
+  },
+  "tests": [
+    {
+      "sourceRowKey": "wbc",
+      "analyzerCode": "WBC",
+      "aliases": ["WBC#"],
+      "displayName": "White blood cell count",
+      "resultType": "NUMERIC",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "6690-2",
+        "display": "Leukocytes [#/volume] in Blood by Automated count"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "hiv-interpretation",
+      "analyzerCode": "HIV-INTERP",
+      "aliases": [],
+      "displayName": "HIV interpretation",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "7918-6",
+        "display": "HIV 1+2 Ab [Presence] in Serum"
+      },
+      "resultValues": [
+        { "rawValue": "POS", "displayName": "Positive" },
+        { "rawValue": "NEG", "displayName": "Negative" }
+      ]
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "control-prefix",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "QC-",
+      "controlLevel": "NORMAL"
+    }
+  ]
+}

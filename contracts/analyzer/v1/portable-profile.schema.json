@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/portable-profile.schema.json",
+  "title": "OpenELIS Analyzer Bridge portable profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileId",
+    "revision",
+    "displayName",
+    "source",
+    "status",
+    "protocol",
+    "capabilities",
+    "tests",
+    "qcIdentification"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "profileId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "displayName": { "type": "string", "minLength": 1 },
+    "source": { "enum": ["SHIPPED", "SITE"] },
+    "status": { "enum": ["ACTIVE", "INACTIVE"] },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parentProfileId", "parentRevision"],
+      "properties": {
+        "parentProfileId": { "type": "string", "minLength": 1 },
+        "parentRevision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "protocol": { "enum": ["ASTM", "HL7", "FILE"] },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inboundResults", "outboundOrders", "connectionTest"],
+      "properties": {
+        "inboundResults": { "const": true },
+        "outboundOrders": { "type": "boolean" },
+        "connectionTest": { "type": "boolean" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "senderPattern": { "type": "string", "minLength": 1 },
+        "manufacturer": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tests": { "type": "array", "items": { "$ref": "#/$defs/testDefinition" } },
+    "qcIdentification": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/qcIdentificationRule" }
+    },
+    "file": { "$ref": "#/$defs/fileDefinition" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "protocol": { "const": "FILE" } },
+        "required": ["protocol"]
+      },
+      "then": { "required": ["file"] }
+    }
+  ],
+  "$defs": {
+    "coding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "code"],
+      "properties": {
+        "system": { "type": "string", "format": "uri" },
+        "code": { "type": "string", "minLength": 1 },
+        "display": { "type": "string", "minLength": 1 }
+      }
+    },
+    "resultValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rawValue", "displayName"],
+      "properties": {
+        "rawValue": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 },
+        "normalizedCoding": { "$ref": "#/$defs/coding" }
+      }
+    },
+    "testDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRowKey",
+        "analyzerCode",
+        "displayName",
+        "resultType",
+        "resultValues"
+      ],
+      "properties": {
+        "sourceRowKey": { "type": "string", "minLength": 1 },
+        "analyzerCode": { "type": "string", "minLength": 1 },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "displayName": { "type": "string", "minLength": 1 },
+        "resultType": { "enum": ["NUMERIC", "QUALITATIVE", "TEXT"] },
+        "normalizedCoding": { "$ref": "#/$defs/coding" },
+        "resultValues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/resultValue" }
+        }
+      }
+    },
+    "qcIdentificationRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleKey", "ruleType", "operand"],
+      "properties": {
+        "ruleKey": { "type": "string", "minLength": 1 },
+        "ruleType": {
+          "enum": [
+            "SPECIMEN_ID_PREFIX",
+            "SPECIMEN_ID_REGEX",
+            "FIELD_EQUALS",
+            "FIELD_REGEX"
+          ]
+        },
+        "targetField": { "type": "string", "minLength": 1 },
+        "operand": { "type": "string", "minLength": 1 },
+        "controlLevel": { "type": "string", "minLength": 1 }
+      }
+    },
+    "fileDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "filePattern", "columnMappings"],
+      "properties": {
+        "format": { "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS"] },
+        "filePattern": { "type": "string", "minLength": 1 },
+        "delimiter": { "type": "string", "minLength": 1, "maxLength": 1 },
+        "skipRows": { "type": "integer", "minimum": 0 },
+        "columnMappings": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "enum": [
+              "sampleId",
+              "testCode",
+              "result",
+              "units",
+              "interpretation",
+              "qcTask",
+              "testDate",
+              "ctValue"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

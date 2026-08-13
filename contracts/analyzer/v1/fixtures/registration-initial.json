@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "desiredStateRevision": "sha256:registration-initial",
+  "generatedAt": "2026-08-13T20:00:00Z",
+  "analyzers": [
+    {
+      "oeAnalyzerId": "42",
+      "sourceId": "10.20.30.40",
+      "name": "Hematology 1",
+      "profileRef": { "profileId": "site.mock-hematology", "revision": 1 },
+      "protocol": "ASTM",
+      "desiredStatus": "ACTIVE",
+      "siteBindingRevision": "binding:42:3",
+      "connection": {
+        "mode": "TCP",
+        "role": "RECEIVER",
+        "settings": { "listenPort": 12001 }
+      },
+      "operationalQc": {
+        "contextRevision": "qc:42:0",
+        "ready": false,
+        "activeRuleIds": [],
+        "controlLots": []
+      }
+    }
+  ]
+}

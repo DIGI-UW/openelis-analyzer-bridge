@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/registration-sync-result.schema.json",
+  "title": "Analyzer Bridge registration reconciliation result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "appliedStateRevision",
+    "counts",
+    "registrations",
+    "errors"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "appliedStateRevision": { "type": "string", "minLength": 8 },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "added",
+        "updated",
+        "removed",
+        "unchanged",
+        "rejected"
+      ],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "added": { "type": "integer", "minimum": 0 },
+        "updated": { "type": "integer", "minimum": 0 },
+        "removed": { "type": "integer", "minimum": 0 },
+        "unchanged": { "type": "integer", "minimum": 0 },
+        "rejected": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "registrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["oeAnalyzerId", "status"],
+        "properties": {
+          "oeAnalyzerId": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["APPLIED", "UNCHANGED", "REJECTED"] },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "errors": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}
