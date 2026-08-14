@@ -100,6 +100,8 @@ public class SecurityConfig {
                 // require authentication — they expose internal paths and
                 // error messages that must not be publicly readable.
                 .requestMatchers("/admin/**").authenticated()
+                // Portable profile reads and lifecycle mutations are service-to-service APIs.
+                .requestMatchers("/api/profiles/**").authenticated()
                 // All other endpoints (ASTM query forwarding, etc.) are permitted
                 .anyRequest().permitAll()
             )
