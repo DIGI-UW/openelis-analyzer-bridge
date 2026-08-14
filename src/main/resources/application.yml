@@ -18,3 +18,8 @@ management:
         include: loggers, health
     loggers:
       enabled: true
+
+bridge:
+  profile-catalog:
+    directory: ${BRIDGE_PROFILE_CATALOG_DIR:${java.io.tmpdir}/openelis-analyzer-bridge/profiles}
+    shipped-pattern: classpath*:/analyzer-profiles/**/*.json
