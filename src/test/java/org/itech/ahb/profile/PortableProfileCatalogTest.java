@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -38,10 +39,9 @@ class PortableProfileCatalogTest {
 
   @Test
   void listsLatestShippedAndSiteProfilesAndPersistsSiteCreationAcrossRestart() throws Exception {
-    ProfileCatalogEntry created = catalog.createSite(
-      profile("site-chemistry", "Site Chemistry", "SHIPPED"),
-      "oe-user-17"
-    );
+    ObjectNode candidate = (ObjectNode) profile("site-chemistry", "Site Chemistry", "SHIPPED");
+    candidate.put("revision", 44);
+    ProfileCatalogEntry created = catalog.createSite(candidate, "oe-user-17");
 
     assertThat(created.profile().path("source").asText()).isEqualTo("SITE");
     assertThat(created.profile().path("revision").asInt()).isEqualTo(1);
@@ -139,7 +139,7 @@ class PortableProfileCatalogTest {
       {
         "schemaVersion": "1.0",
         "profileId": "%s",
-        "revision": 44,
+        "revision": 1,
         "displayName": "%s",
         "source": "%s",
         "status": "ACTIVE",
