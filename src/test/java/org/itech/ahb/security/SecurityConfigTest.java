@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.itech.ahb.normalizer.MessageEnvelope;
@@ -110,6 +111,47 @@ class SecurityConfigTest {
     @DisplayName("Authenticated Bridge caller can read profile catalog")
     void authenticatedProfileReadSucceeds() throws Exception {
       mockMvc.perform(get("/api/profiles").with(httpBasic("testuser", "testpass"))).andExpect(status().isOk());
+    }
+  }
+
+  @Nested
+  @DisplayName("analyzer registration synchronization authentication")
+  class AnalyzerRegistrationTests {
+
+    private static final String VERSIONED_REGISTRATION =
+      """
+      {
+        "schemaVersion":"1.0",
+        "desiredStateRevision":"sha256:security-contract",
+        "generatedAt":"2026-08-14T02:00:00Z",
+        "analyzers":[]
+      }
+      """;
+
+    @Test
+    @DisplayName("Unauthenticated registration sync returns 401")
+    void unauthenticatedRegistrationSyncReturns401() throws Exception {
+      mockMvc
+        .perform(
+          put("/api/analyzers/sync")
+            .contentType("application/vnd.openelis.analyzer-registration.v1+json")
+            .content(VERSIONED_REGISTRATION)
+        )
+        .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Authenticated Bridge caller can synchronize desired state")
+    void authenticatedRegistrationSyncSucceeds() throws Exception {
+      mockMvc
+        .perform(
+          put("/api/analyzers/sync")
+            .with(httpBasic("testuser", "testpass"))
+            .contentType("application/vnd.openelis.analyzer-registration.v1+json")
+            .accept("application/vnd.openelis.analyzer-registration-result.v1+json")
+            .content(VERSIONED_REGISTRATION)
+        )
+        .andExpect(status().isOk());
     }
   }
 
