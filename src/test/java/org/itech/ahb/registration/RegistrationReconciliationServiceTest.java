@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.InOrder;
 
 @DisplayName("OGC-1054 versioned registration reconciliation")
 class RegistrationReconciliationServiceTest {
@@ -40,12 +45,15 @@ class RegistrationReconciliationServiceTest {
   Path catalogDirectory;
 
   private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+  private PortableProfileCatalog catalog;
   private AnalyzerRegistryConfig registry;
+  private FileWatcher fileWatcher;
+  private FileConfig fileConfig;
   private RegistrationReconciliationService service;
 
   @BeforeEach
   void setUp() throws Exception {
-    PortableProfileCatalog catalog = new PortableProfileCatalog(
+    catalog = new PortableProfileCatalog(
       catalogDirectory,
       List.of(),
       objectMapper,
@@ -60,11 +68,13 @@ class RegistrationReconciliationServiceTest {
     catalog.revise("site.quantstudio-hiv", quantstudio, "profile-admin");
 
     registry = new AnalyzerRegistryConfig();
+    fileWatcher = mock(FileWatcher.class);
+    fileConfig = mock(FileConfig.class);
     service = new RegistrationReconciliationService(
       catalog,
       registry,
-      mock(FileWatcher.class),
-      mock(FileConfig.class),
+      fileWatcher,
+      fileConfig,
       objectMapper
     );
   }
@@ -155,6 +165,47 @@ class RegistrationReconciliationServiceTest {
 
     assertThrows(RegistrationSyncException.class, () -> service.reconcile(invalid));
     assertEquals(Set.of("10.20.30.40"), registry.getRegisteredAnalyzers().keySet());
+  }
+
+  @Test
+  @DisplayName("active FILE watchers reconcile once and move without duplicate observers")
+  void activeFileWatchersAreIdempotentAndReplaceMovedSources() throws Exception {
+    when(fileConfig.isEnabled()).thenReturn(true);
+    ObjectNode active = (ObjectNode) read("registration-next.json");
+    ObjectNode fileAnalyzer = (ObjectNode) active.path("analyzers").get(1);
+    fileAnalyzer.put("desiredStatus", "ACTIVE");
+
+    RegistrationSyncResult first = service.reconcile(active);
+    assertEquals(0, first.counts().rejected());
+    org.mockito.Mockito.verify(fileWatcher).addWatchDirectory(
+      Path.of("/mnt/analyzer-import/quantstudio-43"),
+      "*.csv",
+      "43"
+    );
+
+    clearInvocations(fileWatcher);
+    RegistrationSyncResult replay = service.reconcile(active);
+    assertEquals(2, replay.counts().unchanged());
+    verifyNoInteractions(fileWatcher);
+
+    ObjectNode moved = active.deepCopy();
+    moved.put("desiredStateRevision", "sha256:registration-moved");
+    ObjectNode movedAnalyzer = (ObjectNode) moved.path("analyzers").get(1);
+    movedAnalyzer.put("sourceId", "/mnt/analyzer-import/quantstudio-43-moved");
+    movedAnalyzer.put("siteBindingRevision", "binding:43:2");
+    ((ObjectNode) movedAnalyzer.path("connection").path("settings")).put(
+        "directory",
+        "/mnt/analyzer-import/quantstudio-43-moved"
+      );
+
+    service.reconcile(moved);
+    InOrder watcherOrder = inOrder(fileWatcher);
+    watcherOrder.verify(fileWatcher).removeWatchDirectoriesByAnalyzerId("43");
+    watcherOrder.verify(fileWatcher).addWatchDirectory(
+      Path.of("/mnt/analyzer-import/quantstudio-43-moved"),
+      "*.csv",
+      "43"
+    );
   }
 
   private JsonNode read(String fixture) throws Exception {
