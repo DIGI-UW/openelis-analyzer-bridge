@@ -72,7 +72,7 @@ public class RegistrationReconciliationService {
           throw new RegistrationSyncException("Duplicate sourceId in desired state: " + sourceId);
         }
         entry = buildEntry(desired);
-        configureFileWatcher(sourceId, entry);
+        reconcileFileWatcher(sourceId, entry, previous);
         accepted.put(sourceId, entry);
       } catch (ProfileCatalogException | RegistrationSyncException exception) {
         rejection = exception.getMessage();
@@ -240,14 +240,35 @@ public class RegistrationReconciliationService {
     entry.setColumnMappings(columns);
   }
 
-  private void configureFileWatcher(String sourceId, AnalyzerEntry entry) {
+  private void reconcileFileWatcher(
+    String sourceId,
+    AnalyzerEntry entry,
+    Map<String, AnalyzerEntry> previous
+  ) {
     if (!"FILE".equals(entry.getExpectedProtocol()) || !entry.isActive()) {
       return;
     }
     if (!fileConfig.isEnabled()) {
       throw new RegistrationSyncException("Active FILE registration requires bridge.file.enabled=true");
     }
+    Map.Entry<String, AnalyzerEntry> prior = previous
+      .entrySet()
+      .stream()
+      .filter(candidate -> entry.getId().equals(candidate.getValue().getId()))
+      .findFirst()
+      .orElse(null);
+    if (prior != null && sourceId.equals(prior.getKey()) && entry.equals(prior.getValue())) {
+      return;
+    }
+
     try {
+      if (
+        prior != null &&
+        prior.getValue().isActive() &&
+        "FILE".equals(prior.getValue().getExpectedProtocol())
+      ) {
+        fileWatcher.removeWatchDirectoriesByAnalyzerId(entry.getId());
+      }
       fileWatcher.addWatchDirectory(Path.of(sourceId), entry.getFilePattern(), entry.getId());
     } catch (InvalidPathException exception) {
       throw new RegistrationSyncException("Invalid FILE source path", exception);
@@ -268,6 +289,8 @@ public class RegistrationReconciliationService {
     previous
       .values()
       .stream()
+      .filter(AnalyzerEntry::isActive)
+      .filter(entry -> "FILE".equals(entry.getExpectedProtocol()))
       .map(AnalyzerEntry::getId)
       .filter(id -> !activeFileAnalyzerIds.contains(id))
       .distinct()
