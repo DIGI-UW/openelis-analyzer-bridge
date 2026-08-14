@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-logging: &local-logging
   driver: "local"
   options:
@@ -8,16 +6,16 @@ x-logging: &local-logging
 
 services:
   openelis-analyzer-bridge:
-    container_name: openelis-analyzer-bridge
     image: itechuw/openelis-analyzer-bridge:latest
     pull_policy: always
     ports:
-      - "8442:8443"     # HTTP API endpoint (HTTPS when TLS is configured)
-      - "12000:12001"   # ASTM LIS1-A listener
-      - "12010:12011"   # ASTM E1381-95 listener
-      - "2575:2575"     # MLLP HL7 listener (concurrent connections via HAPI SimpleServer)
+      - "${BRIDGE_HTTPS_PORT:-8442}:8443"     # HTTP API endpoint (HTTPS when TLS is configured)
+      - "${BRIDGE_ASTM_LIS1_PORT:-12000}:12001"   # ASTM LIS1-A listener
+      - "${BRIDGE_ASTM_E1381_PORT:-12010}:12011"   # ASTM E1381-95 listener
+      - "${BRIDGE_MLLP_PORT:-2575}:2575"     # MLLP HL7 listener (concurrent connections via HAPI SimpleServer)
     volumes:
       - ./configuration.yml:/app/configuration.yml
+      - bridge-profile-catalog:/data/openelis-analyzer-bridge/profiles
       # File watcher directories (uncomment if bridge.file.enabled=true)
       # - /path/to/analyzer-import:/mnt/analyzer-import:ro
       # - /path/to/analyzer-archive:/mnt/analyzer-archive
@@ -26,6 +24,7 @@ services:
     #   - /dev/ttyUSB0:/dev/ttyUSB0
     environment:
       LOGGING_LEVEL_ORG_ITECH: INFO
+      BRIDGE_PROFILE_CATALOG_DIR: /data/openelis-analyzer-bridge/profiles
       # Local compose defaults to dev so default password is allowed (prod fails fast on changeme).
       SPRING_PROFILES_ACTIVE: dev
       # Production: use profile prod and set BRIDGE_AUTH_PASSWORD (or bridge.security.password).
@@ -37,3 +36,6 @@ services:
       interval: 30s
       retries: 3
       start_period: 2m
+
+volumes:
+  bridge-profile-catalog: {}
