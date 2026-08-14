@@ -34,6 +34,7 @@ class ASTMServerRunnerTriggerTest {
             assertThat(context).hasSingleBean(ASTMServerRunnerTrigger.class);
             verify(runner).run(servlet);
         });
+        verify(servlet).stop();
     }
 
     private ApplicationContextRunner contextRunner(ASTMServerRunner runner, ASTMServlet servlet) {

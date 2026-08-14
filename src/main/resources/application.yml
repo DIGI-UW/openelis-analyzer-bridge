@@ -23,3 +23,9 @@ bridge:
   profile-catalog:
     directory: ${BRIDGE_PROFILE_CATALOG_DIR:${java.io.tmpdir}/openelis-analyzer-bridge/profiles}
     shipped-pattern: classpath*:/analyzer-profiles/**/*.json
+
+org:
+  itech:
+    ahb:
+      astm:
+        enabled: ${ASTM_LISTENERS_ENABLED:true}
