@@ -4,7 +4,6 @@ on:
   push:
     branches: [ master, develop, '*-*' ]
   pull_request:
-    branches: [ master, develop ]
   workflow_dispatch:
 
 jobs:
@@ -42,4 +41,3 @@ jobs:
           path: "**/surefire-reports/*.xml"
           reporter: java-junit
           fail-on-error: true
-
