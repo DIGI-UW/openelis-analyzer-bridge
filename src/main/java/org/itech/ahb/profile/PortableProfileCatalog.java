@@ -27,20 +27,15 @@ import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 import org.springframework.core.io.Resource;
 
 /** Durable, append-only catalog for Bridge-owned portable profile revisions. */
 public class PortableProfileCatalog {
 
-  private static final Pattern PROFILE_ID = Pattern.compile("^[a-z0-9][a-z0-9._-]+$");
-  private static final Set<String> SOURCES = Set.of("SHIPPED", "SITE");
-  private static final Set<String> STATUSES = Set.of("ACTIVE", "INACTIVE");
-  private static final Set<String> PROTOCOLS = Set.of("ASTM", "HL7", "FILE");
-
   private final Path catalogDirectory;
   private final ObjectMapper objectMapper;
   private final Clock clock;
+  private final PortableProfileValidator validator;
   private final Map<String, NavigableMap<Integer, ProfileCatalogEntry>> revisions = new ConcurrentHashMap<>();
 
   public PortableProfileCatalog(
@@ -52,6 +47,7 @@ public class PortableProfileCatalog {
     this.catalogDirectory = catalogDirectory;
     this.objectMapper = objectMapper;
     this.clock = clock;
+    this.validator = new PortableProfileValidator(objectMapper);
     Files.createDirectories(catalogDirectory);
     loadShipped(shippedProfiles);
     loadPersisted();
@@ -325,42 +321,7 @@ public class PortableProfileCatalog {
   }
 
   private void validate(ObjectNode profile) {
-    String schemaVersion = text(profile, "schemaVersion");
-    String profileId = text(profile, "profileId");
-    String displayName = text(profile, "displayName");
-    String source = text(profile, "source");
-    String status = text(profile, "status");
-    String protocol = text(profile, "protocol");
-    int revision = profile.path("revision").asInt(0);
-
-    if (!"1.0".equals(schemaVersion)) {
-      throw new ProfileCatalogException("schemaVersion must be 1.0");
-    }
-    if (!PROFILE_ID.matcher(profileId).matches()) {
-      throw new ProfileCatalogException("Invalid profileId: " + profileId);
-    }
-    if (displayName.isBlank()) {
-      throw new ProfileCatalogException("displayName is required");
-    }
-    if (revision < 1) {
-      throw new ProfileCatalogException("revision must be at least 1");
-    }
-    if (!SOURCES.contains(source)) {
-      throw new ProfileCatalogException("Invalid profile source: " + source);
-    }
-    if (!STATUSES.contains(status)) {
-      throw new ProfileCatalogException("Invalid profile status: " + status);
-    }
-    if (!PROTOCOLS.contains(protocol)) {
-      throw new ProfileCatalogException("Invalid profile protocol: " + protocol);
-    }
-    if (
-      !profile.path("capabilities").isObject() ||
-      !profile.path("tests").isArray() ||
-      !profile.path("qcIdentification").isArray()
-    ) {
-      throw new ProfileCatalogException("capabilities, tests, and qcIdentification are required");
-    }
+    validator.validate(profile);
     requireUniqueKeys(profile.path("tests"), "sourceRowKey");
     requireUniqueKeys(profile.path("qcIdentification"), "ruleKey");
   }

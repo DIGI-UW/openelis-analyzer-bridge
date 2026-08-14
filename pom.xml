@@ -64,7 +64,6 @@
 			<groupId>com.networknt</groupId>
 			<artifactId>json-schema-validator</artifactId>
 			<version>1.5.6</version>
-			<scope>test</scope>
 		</dependency>
 
 		<!-- HL7 v2.x + MLLP -->
@@ -130,6 +129,18 @@
 	</dependencies>
 
 	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+			</resource>
+			<resource>
+				<directory>contracts</directory>
+				<targetPath>contracts</targetPath>
+				<includes>
+					<include>analyzer/v1/*.schema.json</include>
+				</includes>
+			</resource>
+		</resources>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
