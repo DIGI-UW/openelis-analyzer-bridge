@@ -136,6 +136,9 @@ public class PortableProfileCatalog {
 
   public synchronized ProfileCatalogEntry revise(String profileId, JsonNode candidate, String actor) {
     ProfileCatalogEntry latest = requireLatest(profileId);
+    if ("SHIPPED".equals(latest.profile().path("source").asText())) {
+      throw new ProfileCatalogException("Shipped profiles must be forked before editing");
+    }
     ObjectNode revision = requireObject(candidate).deepCopy();
     revision.put("profileId", profileId);
     revision.put("revision", latest.profile().path("revision").asInt() + 1);
@@ -183,7 +186,7 @@ public class PortableProfileCatalog {
       fingerprint(profile)
     );
     persist(entry);
-    addEntry(entry, false);
+    addEntry(entry);
     return entry;
   }
 
@@ -200,7 +203,7 @@ public class PortableProfileCatalog {
           new ProfileAuditEvent(ProfileAuditAction.SHIPPED, "distribution", Instant.EPOCH),
           fingerprint(profile)
         );
-        addEntry(entry, false);
+        addEntry(entry);
       }
     }
   }
@@ -212,7 +215,7 @@ public class PortableProfileCatalog {
         .filter(path -> path.getFileName().toString().endsWith(".json"))
         .sorted()
         .toList()) {
-        addEntry(readEnvelope(file), true);
+        addEntry(readEnvelope(file));
       }
     }
   }
@@ -278,7 +281,7 @@ public class PortableProfileCatalog {
     }
   }
 
-  private void addEntry(ProfileCatalogEntry entry, boolean replacePackagedRevision) {
+  private void addEntry(ProfileCatalogEntry entry) {
     String profileId = entry.profile().path("profileId").asText();
     int revision = entry.profile().path("revision").asInt();
     NavigableMap<Integer, ProfileCatalogEntry> history = revisions.computeIfAbsent(
@@ -287,10 +290,6 @@ public class PortableProfileCatalog {
     );
     ProfileCatalogEntry previous = history.putIfAbsent(revision, entry);
     if (previous != null) {
-      if (replacePackagedRevision && previous.audit().action() == ProfileAuditAction.SHIPPED) {
-        history.put(revision, entry);
-        return;
-      }
       throw new ProfileCatalogException("Duplicate profile revision: " + profileId + " revision " + revision);
     }
   }
