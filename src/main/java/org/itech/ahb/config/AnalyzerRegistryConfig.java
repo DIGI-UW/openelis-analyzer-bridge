@@ -102,7 +102,7 @@ public class AnalyzerRegistryConfig {
 
         // Strategy 1: Direct match (IP address, serial port path)
         AnalyzerEntry entry = analyzers.get(sourceId);
-        if (entry != null) {
+        if (entry != null && entry.isActive()) {
             log.debug("Direct match for source '{}': analyzer '{}'", sourceId, entry.getId());
             return Optional.of(entry);
         }
@@ -110,7 +110,7 @@ public class AnalyzerRegistryConfig {
         // Strategy 2: Pattern match (file paths with wildcards)
         for (Map.Entry<String, AnalyzerEntry> e : analyzers.entrySet()) {
             String pattern = e.getKey();
-            if (pattern.contains("*") && matchesGlob(sourceId, pattern)) {
+            if (e.getValue().isActive() && pattern.contains("*") && matchesGlob(sourceId, pattern)) {
                 log.debug("Pattern match for source '{}' using pattern '{}': analyzer '{}'",
                     sourceId, pattern, e.getValue().getId());
                 return Optional.of(e.getValue());
@@ -243,6 +243,31 @@ public class AnalyzerRegistryConfig {
      */
     @Data
     public static class AnalyzerEntry {
+        /** Inactive desired registrations remain visible for reconciliation but do not route traffic. */
+        private boolean active = true;
+
+        /** Exact Bridge-owned portable profile identity applied to this runtime registration. */
+        private String profileId;
+
+        private int profileRevision;
+
+        private String profileFingerprint;
+
+        /** Opaque OE-owned local-binding revision used for deterministic drift detection. */
+        private String siteBindingRevision;
+
+        private String operationalQcContextRevision;
+
+        private boolean operationalQcReady;
+
+        private Set<String> activeOperationalQcRuleIds = Collections.emptySet();
+
+        private String connectionMode;
+
+        private String connectionRole;
+
+        private Map<String, Object> connectionSettings = Collections.emptyMap();
+
         /**
          * Unique analyzer identifier (e.g., "MINDRAY-BC5380-001")
          */

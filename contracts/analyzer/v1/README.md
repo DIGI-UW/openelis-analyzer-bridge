@@ -33,6 +33,17 @@ OpenELIS must run the same fixtures. A later milestone may add fields
 compatibly, but changing required meaning or removing a field requires a new
 major contract directory.
 
+## Registration transport
+
+OpenELIS sends v1 desired state to `PUT /api/analyzers/sync` with:
+
+- `Content-Type: application/vnd.openelis.analyzer-registration.v1+json`
+- `Accept: application/vnd.openelis.analyzer-registration-result.v1+json`
+- HTTP Basic Bridge service credentials
+
+The unversioned JSON-array request remains a migration input only until OE-M1
+switches the OpenELIS producer. It is not a second source of desired state.
+
 `compatibility.json` records when current unversioned registration and FHIR
 behavior are read during migration and names the one-writer cutovers. Contract
 publication is not a claim that the current runtime already emits every target

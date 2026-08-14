@@ -102,6 +102,8 @@ public class SecurityConfig {
                 .requestMatchers("/admin/**").authenticated()
                 // Portable profile reads and lifecycle mutations are service-to-service APIs.
                 .requestMatchers("/api/profiles/**").authenticated()
+                // Analyzer desired-state registration is written by OpenELIS only.
+                .requestMatchers("/api/analyzers/**").authenticated()
                 // All other endpoints (ASTM query forwarding, etc.) are permitted
                 .anyRequest().permitAll()
             )

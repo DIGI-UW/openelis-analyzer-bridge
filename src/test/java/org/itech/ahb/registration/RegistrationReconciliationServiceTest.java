@@ -87,8 +87,9 @@ class RegistrationReconciliationServiceTest {
     assertFalse(entry.isOperationalQcReady());
     assertTrue(entry.isActive());
     assertEquals("OPENELIS.*MOCK.?HEMATOLOGY", entry.getIdentifierPattern());
-    assertEquals(Set.of("WBC", "HIV-INTERP"), entry.getMappedTestCodes());
+    assertEquals(Set.of("WBC", "WBC#", "HIV-INTERP"), entry.getMappedTestCodes());
     assertEquals("6690-2", entry.getLoincForCode("WBC"));
+    assertEquals("6690-2", entry.getLoincForCode("WBC#"));
     assertEquals("SPECIMEN_ID_PREFIX", entry.getQcRules().get(0).ruleType());
 
     RegistrationSyncResult replay = service.reconcile(read("registration-initial.json"));

@@ -18,9 +18,17 @@ package org.itech.ahb.qc;
  * @param testId       OE test id this lot is bound to; informational —
  *                     parsers don't filter on it because the same sample
  *                     may produce results for multiple test codes
+ * @param analyzerCode portable analyzer code this lot applies to, when scoped
+ * @param active       whether this lot is currently active in OpenELIS
  */
 public record ControlLotDto(
         String lotNumber,
         String controlLevel,
-        Integer testId) {
+        Integer testId,
+        String analyzerCode,
+        boolean active) {
+
+    public ControlLotDto(String lotNumber, String controlLevel, Integer testId) {
+        this(lotNumber, controlLevel, testId, null, true);
+    }
 }
