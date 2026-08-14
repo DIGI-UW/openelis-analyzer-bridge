@@ -1,0 +1,288 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "quantstudio",
+  "revision": 1,
+  "displayName": "QuantStudio QS5/QS7",
+  "category": "MOLECULAR",
+  "confidence": "VALIDATED",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "FILE",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-225b7892c551",
+      "analyzerCode": "VIH-1",
+      "displayName": "HIV-1 Viral Load",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9",
+        "display": "HIV-1 Viral Load"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    },
+    {
+      "sourceRowKey": "test-002-50f6747cc890",
+      "analyzerCode": "HIV-1 LTR",
+      "displayName": "HIV-1 Viral Load",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9",
+        "display": "HIV-1 Viral Load"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    },
+    {
+      "sourceRowKey": "test-003-4a9811c8b00b",
+      "analyzerCode": "IPC",
+      "displayName": "Internal Control DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "89578-3",
+        "display": "Internal Control DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-004-20e84a531c90",
+      "analyzerCode": "IC",
+      "displayName": "Internal Control DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "89578-3",
+        "display": "Internal Control DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-005-63b02d49ff42",
+      "analyzerCode": "MS2",
+      "displayName": "Internal Control DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "89578-3",
+        "display": "Internal Control DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-006-e056bb91d2c3",
+      "analyzerCode": "CHIKV",
+      "displayName": "Chikungunya PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "60260-7",
+        "display": "Chikungunya PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-007-19e47c2d2954",
+      "analyzerCode": "CHIK",
+      "displayName": "Chikungunya PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "60260-7",
+        "display": "Chikungunya PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-008-c4c36f0c3f17",
+      "analyzerCode": "DENV",
+      "displayName": "Dengue PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "7855-0",
+        "display": "Dengue PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-009-e6e3f3872909",
+      "analyzerCode": "DENGUE",
+      "displayName": "Dengue PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "7855-0",
+        "display": "Dengue PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-010-0f1c4ebd7fe3",
+      "analyzerCode": "ZIKV",
+      "displayName": "Zika PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85622-9",
+        "display": "Zika PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-011-95c6223402c6",
+      "analyzerCode": "ZIKA",
+      "displayName": "Zika PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85622-9",
+        "display": "Zika PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-012-3c1820c416b8",
+      "analyzerCode": "MPXV",
+      "displayName": "Monkeypox virus DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "100383-9",
+        "display": "Monkeypox virus DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-013-77ce8ad500db",
+      "analyzerCode": "Mpox",
+      "displayName": "Monkeypox virus DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "100383-9",
+        "display": "Monkeypox virus DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-014-64b309eb8bff",
+      "analyzerCode": "MPox",
+      "displayName": "Monkeypox virus DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "100383-9",
+        "display": "Monkeypox virus DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-015-89169d3dc426",
+      "analyzerCode": "ORF1ab",
+      "displayName": "SARS-CoV-2 PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6",
+        "display": "SARS-CoV-2 PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-016-e98797fd82df",
+      "analyzerCode": "N gene",
+      "displayName": "SARS-CoV-2 PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6",
+        "display": "SARS-CoV-2 PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-017-3d491d6d4c05",
+      "analyzerCode": "S gene",
+      "displayName": "SARS-CoV-2 PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6",
+        "display": "SARS-CoV-2 PCR"
+      },
+      "resultValues": []
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-668605817d5d",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "QC_TASK",
+      "operand": "STANDARD"
+    },
+    {
+      "ruleKey": "qc-002-b21f5b87982b",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "QC_TASK",
+      "operand": "NTC"
+    },
+    {
+      "ruleKey": "qc-003-83bc3dd114bd",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "CNEG"
+    },
+    {
+      "ruleKey": "qc-004-0c5be050769a",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "CPOS"
+    },
+    {
+      "ruleKey": "qc-005-274a3b76a405",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NTC"
+    },
+    {
+      "ruleKey": "qc-006-bae9e847c2c0",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "PTC"
+    },
+    {
+      "ruleKey": "qc-007-cbdbf5a06eae",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "LPC"
+    },
+    {
+      "ruleKey": "qc-008-5915ebae89e9",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "HPC"
+    }
+  ],
+  "identity": {
+    "manufacturer": "Thermo Fisher"
+  },
+  "file": {
+    "format": "CSV",
+    "filePattern": "(?i).*\\.(csv|tsv|txt|xls|xlsx|ods)$",
+    "columnMappings": {
+      "Sample Name": "sampleId",
+      "Target Name": "testCode",
+      "Quantity Mean": "result",
+      "CT": "ctValue",
+      "Well Position": "position",
+      "Task": "qcTask",
+      "Quantity": "quantityRaw",
+      "Ct Mean": "ctMean",
+      "Comments": "comments"
+    },
+    "delimiter": "\t"
+  }
+}

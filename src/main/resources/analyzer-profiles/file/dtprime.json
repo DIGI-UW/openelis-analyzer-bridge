@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "dtprime",
+  "revision": 1,
+  "displayName": "DNA Technology DT-Prime",
+  "category": "MOLECULAR",
+  "confidence": "MEDIUM",
+  "legacyVersion": "1.0.0",
+  "source": "SHIPPED",
+  "status": "INACTIVE",
+  "protocol": "FILE",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": false
+  },
+  "tests": [],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-9006f485d81d",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "C+"
+    },
+    {
+      "ruleKey": "qc-002-4cc0ae9dbdcd",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "C-"
+    },
+    {
+      "ruleKey": "qc-003-29d635372694",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NTC"
+    },
+    {
+      "ruleKey": "qc-004-1fb450cc186c",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "PTC"
+    }
+  ],
+  "identity": {
+    "manufacturer": "DNA Technology"
+  },
+  "file": {
+    "format": "XML",
+    "filePattern": "(?i).*\\.(xml)$",
+    "columnMappings": {
+      "SampleID": "sampleId",
+      "WellPosition": "position",
+      "Result": "result",
+      "Interpretation": "interpretation"
+    }
+  }
+}

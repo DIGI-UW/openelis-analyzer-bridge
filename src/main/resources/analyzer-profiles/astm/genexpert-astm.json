@@ -1,0 +1,542 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "genexpert-astm",
+  "revision": 1,
+  "displayName": "Cepheid GeneXpert (ASTM Mode)",
+  "category": "MOLECULAR",
+  "confidence": "HIGH",
+  "legacyVersion": "2.1.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "ASTM",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": true,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-63dc9c431f63",
+      "analyzerCode": "MTB",
+      "displayName": "MTB",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85362-2"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-002-881431cf3abb",
+      "analyzerCode": "MTB-RIF",
+      "displayName": "MTB-RIF",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85362-2"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-003-f2cd144a5c66",
+      "analyzerCode": "RIF",
+      "displayName": "RIF",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "46244-0"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-004-573a7b56193a",
+      "analyzerCode": "COVID19",
+      "displayName": "COVID19",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-005-91b21419dec9",
+      "analyzerCode": "SARSCOV2",
+      "displayName": "SARSCOV2",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-006-e6454e555d10",
+      "analyzerCode": "SARS-CoV-2",
+      "displayName": "SARS-CoV-2",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-007-d7be87be8ba5",
+      "analyzerCode": "Xpress",
+      "displayName": "Xpress",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-008-fc7e50cf2f67",
+      "analyzerCode": "HIV-VL",
+      "displayName": "HIV-VL",
+      "resultType": "NUMERIC",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    },
+    {
+      "sourceRowKey": "test-009-c0d68774eaa0",
+      "analyzerCode": "HIV",
+      "displayName": "HIV",
+      "resultType": "NUMERIC",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    },
+    {
+      "sourceRowKey": "test-010-31c77c3624e5",
+      "analyzerCode": "HIV-1 Viral",
+      "displayName": "HIV-1 Viral",
+      "resultType": "NUMERIC",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    },
+    {
+      "sourceRowKey": "test-011-7f8c14285334",
+      "analyzerCode": "VL",
+      "displayName": "VL",
+      "resultType": "NUMERIC",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-012-85de4cb39212",
+      "analyzerCode": "HIV-1 Qual",
+      "displayName": "HIV-1 Qual",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "5017-9"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-013-5f578185b3ba",
+      "analyzerCode": "HIV-1 DBS",
+      "displayName": "HIV-1 DBS",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "10351-5"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-014-c751c1811cf7",
+      "analyzerCode": "HBV",
+      "displayName": "HBV",
+      "resultType": "NUMERIC",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "42595-9"
+      },
+      "resultValues": [],
+      "unit": "IU/mL"
+    },
+    {
+      "sourceRowKey": "test-015-b0427869d23b",
+      "analyzerCode": "HCV Viral",
+      "displayName": "HCV Viral",
+      "resultType": "NUMERIC",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "11011-4"
+      },
+      "resultValues": [],
+      "unit": "IU/mL"
+    },
+    {
+      "sourceRowKey": "test-016-ddd2a1ff3a6c",
+      "analyzerCode": "HPV HR",
+      "displayName": "HPV HR",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "82675-0"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-017-0740f3b6caef",
+      "analyzerCode": "HPV 16_18-45",
+      "displayName": "HPV 16_18-45",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "82354-2"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-018-4c02701a6f56",
+      "analyzerCode": "CT",
+      "displayName": "CT",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "21613-5"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-019-3b022fea3f32",
+      "analyzerCode": "NG",
+      "displayName": "NG",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "24111-7"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-020-d6435a59b8a9",
+      "analyzerCode": "EV",
+      "displayName": "EV",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "29558-4"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-021-72044f7ab484",
+      "analyzerCode": "CDIFF",
+      "displayName": "CDIFF",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "54067-4"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-022-08cbbb063bb6",
+      "analyzerCode": "MRSA",
+      "displayName": "MRSA",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "35492-8"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-023-a65376011fe6",
+      "analyzerCode": "SA",
+      "displayName": "SA",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94512-1"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-024-236eae573246",
+      "analyzerCode": "TV",
+      "displayName": "TV",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "69937-1"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-025-c5f5d7cc717b",
+      "analyzerCode": "VANA",
+      "displayName": "VANA",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "62261-3"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-026-41e3123eedd5",
+      "analyzerCode": "VANB",
+      "displayName": "VANB",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "62261-3"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-027-e7ce5d3dc0f2",
+      "analyzerCode": "Mpox",
+      "displayName": "Mpox",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "100383-9"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    },
+    {
+      "sourceRowKey": "test-028-005748c3bc4c",
+      "analyzerCode": "WB",
+      "displayName": "WB",
+      "resultType": "QUALITATIVE",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "53601-1"
+      },
+      "resultValues": [
+        {
+          "rawValue": "DETECTED",
+          "displayName": "DETECTED"
+        },
+        {
+          "rawValue": "NOT DETECTED",
+          "displayName": "NOT DETECTED"
+        }
+      ]
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-e66ce674b99d",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "O.12",
+      "operand": "Q"
+    }
+  ],
+  "identity": {
+    "senderPattern": "GENEXPERT|CEPHEID",
+    "manufacturer": "Cepheid"
+  }
+}

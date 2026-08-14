@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "mindray-ba88a",
+  "revision": 1,
+  "displayName": "Mindray BA-88A",
+  "category": "CHEMISTRY",
+  "confidence": "LOW",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "ASTM",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-7795d1c15dcc",
+      "analyzerCode": "GLU",
+      "displayName": "Glucose",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "2345-7",
+        "display": "Glucose"
+      },
+      "resultValues": [],
+      "unit": "mg/dL"
+    },
+    {
+      "sourceRowKey": "test-002-750afa32f165",
+      "analyzerCode": "CREA",
+      "displayName": "Creatinine",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "2160-0",
+        "display": "Creatinine"
+      },
+      "resultValues": [],
+      "unit": "mg/dL"
+    },
+    {
+      "sourceRowKey": "test-003-aaee4346ace3",
+      "analyzerCode": "ALT",
+      "displayName": "Alanine Aminotransferase",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "1742-6",
+        "display": "Alanine Aminotransferase"
+      },
+      "resultValues": [],
+      "unit": "U/L"
+    },
+    {
+      "sourceRowKey": "test-004-514cbb47ed57",
+      "analyzerCode": "AST",
+      "displayName": "Aspartate Aminotransferase",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "1920-8",
+        "display": "Aspartate Aminotransferase"
+      },
+      "resultValues": [],
+      "unit": "U/L"
+    },
+    {
+      "sourceRowKey": "test-005-14d578338ecd",
+      "analyzerCode": "ALB",
+      "displayName": "Albumin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "1751-7",
+        "display": "Albumin"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-fb660d05220c",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "O.12",
+      "operand": "Q"
+    }
+  ],
+  "identity": {
+    "senderPattern": "MINDRAY.*BA-88A|BA88A",
+    "manufacturer": "Mindray"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "genexpert-hl7",
+  "revision": 1,
+  "displayName": "Cepheid GeneXpert (HL7 Mode)",
+  "category": "MOLECULAR",
+  "confidence": "MEDIUM",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "HL7",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": true,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-b670d0ac3068",
+      "analyzerCode": "MTB",
+      "displayName": "Mycobacterium tuberculosis DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85362-2",
+        "display": "Mycobacterium tuberculosis DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-002-c97efb376940",
+      "analyzerCode": "RIF",
+      "displayName": "Rifampin Resistance",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "46244-0",
+        "display": "Rifampin Resistance"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-003-68662637becd",
+      "analyzerCode": "COVID19",
+      "displayName": "SARS-CoV-2 RNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "94500-6",
+        "display": "SARS-CoV-2 RNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-004-1e440500c885",
+      "analyzerCode": "HIV",
+      "displayName": "HIV-1 RNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9",
+        "display": "HIV-1 RNA"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    }
+  ],
+  "qcIdentification": [],
+  "identity": {
+    "senderPattern": "GENEXPERT|CEPHEID",
+    "manufacturer": "Cepheid"
+  }
+}

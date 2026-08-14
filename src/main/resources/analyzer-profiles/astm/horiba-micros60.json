@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "horiba-micros60",
+  "revision": 1,
+  "displayName": "Horiba ABX Micros 60",
+  "category": "HEMATOLOGY",
+  "confidence": "MEDIUM",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "ASTM",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-0e99a908d216",
+      "analyzerCode": "WBC",
+      "displayName": "White Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "6690-2",
+        "display": "White Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    },
+    {
+      "sourceRowKey": "test-002-5b8e59602b34",
+      "analyzerCode": "RBC",
+      "displayName": "Red Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "789-8",
+        "display": "Red Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^6/uL"
+    },
+    {
+      "sourceRowKey": "test-003-a508a389541a",
+      "analyzerCode": "HGB",
+      "displayName": "Hemoglobin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "718-7",
+        "display": "Hemoglobin"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    },
+    {
+      "sourceRowKey": "test-004-b54b1846e38a",
+      "analyzerCode": "HCT",
+      "displayName": "Hematocrit",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "4544-3",
+        "display": "Hematocrit"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-005-127195c549e5",
+      "analyzerCode": "PLT",
+      "displayName": "Platelet Count",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "777-3",
+        "display": "Platelet Count"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    },
+    {
+      "sourceRowKey": "test-006-7b4068773643",
+      "analyzerCode": "LYMPH",
+      "displayName": "Lymphocytes",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "736-9",
+        "display": "Lymphocytes"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-007-ee51ab585d21",
+      "analyzerCode": "MID",
+      "displayName": "Mid Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "35058-2",
+        "display": "Mid Cells"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-008-a7bb95f72f47",
+      "analyzerCode": "GRAN",
+      "displayName": "Granulocytes",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "19023-1",
+        "display": "Granulocytes"
+      },
+      "resultValues": [],
+      "unit": "%"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-f64f86b05bec",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "O.12",
+      "operand": "Q"
+    }
+  ],
+  "identity": {
+    "senderPattern": "ABX.*MICROS.*60|MICROS.*60",
+    "manufacturer": "Horiba ABX"
+  }
+}

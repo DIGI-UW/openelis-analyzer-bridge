@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "stago-start4",
+  "revision": 1,
+  "displayName": "Stago STart 4",
+  "category": "COAGULATION",
+  "confidence": "MEDIUM",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "ASTM",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-6702f23914be",
+      "analyzerCode": "PT",
+      "displayName": "Prothrombin Time",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "5902-2",
+        "display": "Prothrombin Time"
+      },
+      "resultValues": [],
+      "unit": "s"
+    },
+    {
+      "sourceRowKey": "test-002-7710d4740bd1",
+      "analyzerCode": "INR",
+      "displayName": "INR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "6301-6",
+        "display": "INR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-003-1a92a13bbcfd",
+      "analyzerCode": "APTT",
+      "displayName": "Activated Partial Thromboplastin Time",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "3173-2",
+        "display": "Activated Partial Thromboplastin Time"
+      },
+      "resultValues": [],
+      "unit": "s"
+    },
+    {
+      "sourceRowKey": "test-004-ad361a69f0d8",
+      "analyzerCode": "FIB",
+      "displayName": "Fibrinogen",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "3255-7",
+        "display": "Fibrinogen"
+      },
+      "resultValues": [],
+      "unit": "mg/dL"
+    },
+    {
+      "sourceRowKey": "test-005-27a323314062",
+      "analyzerCode": "DDIMER",
+      "displayName": "D-Dimer",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "48065-7",
+        "display": "D-Dimer"
+      },
+      "resultValues": [],
+      "unit": "mg/L FEU"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-61b8a57feab2",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "O.12",
+      "operand": "Q"
+    }
+  ],
+  "identity": {
+    "senderPattern": "STAGO.*START.*4|START4",
+    "manufacturer": "Stago"
+  }
+}

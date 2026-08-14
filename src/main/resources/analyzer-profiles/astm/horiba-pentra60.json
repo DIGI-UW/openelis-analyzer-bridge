@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "horiba-pentra60",
+  "revision": 1,
+  "displayName": "Horiba ABX Pentra 60 C+",
+  "category": "HEMATOLOGY",
+  "confidence": "MEDIUM",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "ASTM",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-dc3e4e66abde",
+      "analyzerCode": "WBC",
+      "displayName": "White Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "6690-2",
+        "display": "White Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    },
+    {
+      "sourceRowKey": "test-002-cd6481731591",
+      "analyzerCode": "RBC",
+      "displayName": "Red Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "789-8",
+        "display": "Red Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^6/uL"
+    },
+    {
+      "sourceRowKey": "test-003-00bc7150d38a",
+      "analyzerCode": "HGB",
+      "displayName": "Hemoglobin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "718-7",
+        "display": "Hemoglobin"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    },
+    {
+      "sourceRowKey": "test-004-236a7d12024a",
+      "analyzerCode": "HCT",
+      "displayName": "Hematocrit",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "4544-3",
+        "display": "Hematocrit"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-005-6b0e1c8a7131",
+      "analyzerCode": "PLT",
+      "displayName": "Platelet Count",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "777-3",
+        "display": "Platelet Count"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    },
+    {
+      "sourceRowKey": "test-006-359bae02fbef",
+      "analyzerCode": "NEUT",
+      "displayName": "Neutrophils",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "751-8",
+        "display": "Neutrophils"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-007-61ef25b0a4b5",
+      "analyzerCode": "LYMPH",
+      "displayName": "Lymphocytes",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "736-9",
+        "display": "Lymphocytes"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-008-80d536a590bd",
+      "analyzerCode": "MONO",
+      "displayName": "Monocytes",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "742-7",
+        "display": "Monocytes"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-009-abcce6242f8e",
+      "analyzerCode": "EOS",
+      "displayName": "Eosinophils",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "711-2",
+        "display": "Eosinophils"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-010-215090fabe80",
+      "analyzerCode": "BASO",
+      "displayName": "Basophils",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "704-7",
+        "display": "Basophils"
+      },
+      "resultValues": [],
+      "unit": "%"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-17bbcf5e3689",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "O.12",
+      "operand": "Q"
+    }
+  ],
+  "identity": {
+    "senderPattern": "ABX.*PENTRA.*60|PENTRA.*60",
+    "manufacturer": "Horiba ABX"
+  }
+}

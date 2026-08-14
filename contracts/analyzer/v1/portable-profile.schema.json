@@ -21,6 +21,28 @@
     "profileId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
     "revision": { "type": "integer", "minimum": 1 },
     "displayName": { "type": "string", "minLength": 1 },
+    "category": {
+      "enum": [
+        "HEMATOLOGY",
+        "CHEMISTRY",
+        "IMMUNOLOGY",
+        "MICROBIOLOGY",
+        "MOLECULAR",
+        "COAGULATION"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "VALIDATED",
+        "HIGH",
+        "MEDIUM_HIGH",
+        "MEDIUM",
+        "ESTIMATED",
+        "LOW",
+        "NA"
+      ]
+    },
+    "legacyVersion": { "type": "string", "minLength": 1 },
     "source": { "enum": ["SHIPPED", "SITE"] },
     "status": { "enum": ["ACTIVE", "INACTIVE"] },
     "lineage": {
@@ -108,7 +130,8 @@
           "uniqueItems": true
         },
         "displayName": { "type": "string", "minLength": 1 },
-        "resultType": { "enum": ["NUMERIC", "QUALITATIVE", "TEXT"] },
+        "resultType": { "enum": ["NUMERIC", "QUALITATIVE", "TEXT", "UNKNOWN"] },
+        "unit": { "type": "string" },
         "normalizedCoding": { "$ref": "#/$defs/coding" },
         "resultValues": {
           "type": "array",
@@ -140,7 +163,7 @@
       "additionalProperties": false,
       "required": ["format", "filePattern", "columnMappings"],
       "properties": {
-        "format": { "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS"] },
+        "format": { "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS", "XML"] },
         "filePattern": { "type": "string", "minLength": 1 },
         "delimiter": { "type": "string", "minLength": 1, "maxLength": 1 },
         "skipRows": { "type": "integer", "minimum": 0 },
@@ -150,13 +173,36 @@
           "additionalProperties": {
             "enum": [
               "sampleId",
+              "patientId",
               "testCode",
               "result",
               "units",
               "interpretation",
               "qcTask",
               "testDate",
-              "ctValue"
+              "dateTime",
+              "ctValue",
+              "position",
+              "assayName",
+              "comments",
+              "correctedOD",
+              "deviceSerialNumber",
+              "endPt",
+              "errorCode",
+              "errorStatus",
+              "notes",
+              "probeCheckCt",
+              "quantityRaw",
+              "reagentLot",
+              "reagentLotId",
+              "referenceOD",
+              "referenceRange",
+              "cartridgeSerial",
+              "instrumentSerial",
+              "moduleSerial",
+              "qcStatus",
+              "testEndTime",
+              "ctMean"
             ]
           }
         }

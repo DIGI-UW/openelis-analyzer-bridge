@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "mindray-bc2000",
+  "revision": 1,
+  "displayName": "Mindray BC2000",
+  "category": "HEMATOLOGY",
+  "confidence": "MEDIUM",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "HL7",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-e9d5abfbeac3",
+      "analyzerCode": "WBC",
+      "displayName": "White Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "6690-2",
+        "display": "White Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    },
+    {
+      "sourceRowKey": "test-002-8218a8ae81e1",
+      "analyzerCode": "RBC",
+      "displayName": "Red Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "789-8",
+        "display": "Red Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^6/uL"
+    },
+    {
+      "sourceRowKey": "test-003-1c5f521ca42f",
+      "analyzerCode": "HGB",
+      "displayName": "Hemoglobin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "718-7",
+        "display": "Hemoglobin"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    },
+    {
+      "sourceRowKey": "test-004-bb3f7c974b3a",
+      "analyzerCode": "HCT",
+      "displayName": "Hematocrit",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "4544-3",
+        "display": "Hematocrit"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-005-c500f45d637a",
+      "analyzerCode": "PLT",
+      "displayName": "Platelet Count",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "777-3",
+        "display": "Platelet Count"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    }
+  ],
+  "qcIdentification": [],
+  "identity": {
+    "senderPattern": "MINDRAY.*BC.?2000",
+    "manufacturer": "Mindray"
+  }
+}

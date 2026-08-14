@@ -1,0 +1,128 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "mindray-bs300",
+  "revision": 1,
+  "displayName": "Mindray BS-300",
+  "category": "CHEMISTRY",
+  "confidence": "HIGH",
+  "legacyVersion": "1.0.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "HL7",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": true,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-4501df6e80f9",
+      "analyzerCode": "GLU",
+      "displayName": "Glucose",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "2345-7",
+        "display": "Glucose"
+      },
+      "resultValues": [],
+      "unit": "mg/dL"
+    },
+    {
+      "sourceRowKey": "test-002-2754947c3ad7",
+      "analyzerCode": "CREA",
+      "displayName": "Creatinine",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "2160-0",
+        "display": "Creatinine"
+      },
+      "resultValues": [],
+      "unit": "mg/dL"
+    },
+    {
+      "sourceRowKey": "test-003-e4d24b2ebadd",
+      "analyzerCode": "ALT",
+      "displayName": "Alanine Aminotransferase",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "1742-6",
+        "display": "Alanine Aminotransferase"
+      },
+      "resultValues": [],
+      "unit": "U/L"
+    },
+    {
+      "sourceRowKey": "test-004-4d8f5232f7f2",
+      "analyzerCode": "AST",
+      "displayName": "Aspartate Aminotransferase",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "1920-8",
+        "display": "Aspartate Aminotransferase"
+      },
+      "resultValues": [],
+      "unit": "U/L"
+    },
+    {
+      "sourceRowKey": "test-005-adb6d6e5e953",
+      "analyzerCode": "ALB",
+      "displayName": "Albumin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "1751-7",
+        "display": "Albumin"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    },
+    {
+      "sourceRowKey": "test-006-5f91c439f061",
+      "analyzerCode": "TP",
+      "displayName": "Total Protein",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "2885-2",
+        "display": "Total Protein"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    },
+    {
+      "sourceRowKey": "test-007-529da51fbc51",
+      "analyzerCode": "TBIL",
+      "displayName": "Total Bilirubin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "1975-2",
+        "display": "Total Bilirubin"
+      },
+      "resultValues": [],
+      "unit": "mg/dL"
+    },
+    {
+      "sourceRowKey": "test-008-2d6fb4ac1975",
+      "analyzerCode": "UREA",
+      "displayName": "Blood Urea Nitrogen",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "3094-0",
+        "display": "Blood Urea Nitrogen"
+      },
+      "resultValues": [],
+      "unit": "mg/dL"
+    }
+  ],
+  "qcIdentification": [],
+  "identity": {
+    "senderPattern": "MINDRAY.*BS.?300|BS300",
+    "manufacturer": "Mindray"
+  }
+}

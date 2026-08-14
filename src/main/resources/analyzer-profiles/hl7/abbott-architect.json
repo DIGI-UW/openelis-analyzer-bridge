@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "abbott-architect",
+  "revision": 1,
+  "displayName": "Abbott Architect",
+  "category": "IMMUNOLOGY",
+  "confidence": "LOW",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "HL7",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-d9e3cecbe432",
+      "analyzerCode": "HIV",
+      "displayName": "HIV Antigen/Antibody",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "75622-1",
+        "display": "HIV Antigen/Antibody"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-002-597e3982fed6",
+      "analyzerCode": "HBsAg",
+      "displayName": "Hepatitis B Surface Antigen",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "5196-1",
+        "display": "Hepatitis B Surface Antigen"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-003-90c98edac767",
+      "analyzerCode": "HCV",
+      "displayName": "Hepatitis C Antibody",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "16128-1",
+        "display": "Hepatitis C Antibody"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-004-90a131950611",
+      "analyzerCode": "TSH",
+      "displayName": "Thyroid Stimulating Hormone",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "3016-3",
+        "display": "Thyroid Stimulating Hormone"
+      },
+      "resultValues": [],
+      "unit": "mIU/L"
+    },
+    {
+      "sourceRowKey": "test-005-e17b31bf9a61",
+      "analyzerCode": "FERR",
+      "displayName": "Ferritin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "2276-4",
+        "display": "Ferritin"
+      },
+      "resultValues": [],
+      "unit": "ng/mL"
+    }
+  ],
+  "qcIdentification": [],
+  "identity": {
+    "senderPattern": "ABBOTT|ARCHITECT",
+    "manufacturer": "Abbott"
+  }
+}

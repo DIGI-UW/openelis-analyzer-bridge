@@ -1,0 +1,200 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "sysmex-xn",
+  "revision": 1,
+  "displayName": "Sysmex XN Series (XN-L, XN-1000)",
+  "category": "HEMATOLOGY",
+  "confidence": "HIGH",
+  "legacyVersion": "1.2.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "ASTM",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-04f9f1e97d30",
+      "analyzerCode": "WBC",
+      "displayName": "White Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "6690-2",
+        "display": "White Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    },
+    {
+      "sourceRowKey": "test-002-03db7f616701",
+      "analyzerCode": "RBC",
+      "displayName": "Red Blood Cells",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "789-8",
+        "display": "Red Blood Cells"
+      },
+      "resultValues": [],
+      "unit": "10^6/uL"
+    },
+    {
+      "sourceRowKey": "test-003-485bb5cd6ce3",
+      "analyzerCode": "HGB",
+      "displayName": "Hemoglobin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "718-7",
+        "display": "Hemoglobin"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    },
+    {
+      "sourceRowKey": "test-004-ea5a9791ddb5",
+      "analyzerCode": "HCT",
+      "displayName": "Hematocrit",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "4544-3",
+        "display": "Hematocrit"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-005-dc6616ccfc6b",
+      "analyzerCode": "MCV",
+      "displayName": "Mean Corpuscular Volume",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "787-2",
+        "display": "Mean Corpuscular Volume"
+      },
+      "resultValues": [],
+      "unit": "fL"
+    },
+    {
+      "sourceRowKey": "test-006-9e18b3ba27f7",
+      "analyzerCode": "MCH",
+      "displayName": "Mean Corpuscular Hemoglobin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "785-6",
+        "display": "Mean Corpuscular Hemoglobin"
+      },
+      "resultValues": [],
+      "unit": "pg"
+    },
+    {
+      "sourceRowKey": "test-007-14bc23229b64",
+      "analyzerCode": "MCHC",
+      "displayName": "Mean Corpuscular Hemoglobin Concentration",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "786-4",
+        "display": "Mean Corpuscular Hemoglobin Concentration"
+      },
+      "resultValues": [],
+      "unit": "g/dL"
+    },
+    {
+      "sourceRowKey": "test-008-bcc6972df064",
+      "analyzerCode": "PLT",
+      "displayName": "Platelet Count",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "777-3",
+        "display": "Platelet Count"
+      },
+      "resultValues": [],
+      "unit": "10^3/uL"
+    },
+    {
+      "sourceRowKey": "test-009-2530925f3a38",
+      "analyzerCode": "NEUT",
+      "displayName": "Neutrophils",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "751-8",
+        "display": "Neutrophils"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-010-0bfd0b77bef6",
+      "analyzerCode": "LYMPH",
+      "displayName": "Lymphocytes",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "736-9",
+        "display": "Lymphocytes"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-011-0c73883c4c72",
+      "analyzerCode": "MONO",
+      "displayName": "Monocytes",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "742-7",
+        "display": "Monocytes"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-012-8b33bb097245",
+      "analyzerCode": "EOS",
+      "displayName": "Eosinophils",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "711-2",
+        "display": "Eosinophils"
+      },
+      "resultValues": [],
+      "unit": "%"
+    },
+    {
+      "sourceRowKey": "test-013-692d469e8552",
+      "analyzerCode": "BASO",
+      "displayName": "Basophils",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "704-7",
+        "display": "Basophils"
+      },
+      "resultValues": [],
+      "unit": "%"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-827fb4156afd",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "O.12",
+      "operand": "Q"
+    }
+  ],
+  "identity": {
+    "senderPattern": "SYSMEX.*XN-L|XN-1000|XN.*Series",
+    "manufacturer": "Sysmex"
+  }
+}

@@ -68,5 +68,29 @@ class ShippedPortableProfilesTest {
     assertThat(report.path("profiles").findValuesAsText("sourceSha256")).allSatisfy(
       hash -> assertThat(hash).matches("^[a-f0-9]{64}$")
     );
+
+    report
+      .path("profiles")
+      .fields()
+      .forEachRemaining(profileReport -> {
+        JsonNode issue = profileReport
+          .getValue()
+          .path("issues")
+          .findParents("code")
+          .stream()
+          .filter(candidate -> "RESULT_TYPE_UNSPECIFIED".equals(candidate.path("code").asText()))
+          .findFirst()
+          .orElse(null);
+        int expectedUnknownRows = issue == null ? 0 : issue.path("count").asInt();
+        long actualUnknownRows = byId
+          .get(profileReport.getKey())
+          .profile()
+          .path("tests")
+          .findValuesAsText("resultType")
+          .stream()
+          .filter("UNKNOWN"::equals)
+          .count();
+        assertThat(actualUnknownRows).isEqualTo(expectedUnknownRows);
+      });
   }
 }

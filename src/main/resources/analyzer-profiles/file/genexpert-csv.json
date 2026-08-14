@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "genexpert-csv",
+  "revision": 1,
+  "displayName": "Cepheid GeneXpert (CSV Export)",
+  "category": "MOLECULAR",
+  "confidence": "HIGH",
+  "legacyVersion": "1.0.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "FILE",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-ba397aab8fed",
+      "analyzerCode": "MTB-RIF",
+      "displayName": "Mycobacterium tuberculosis DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85362-2",
+        "display": "Mycobacterium tuberculosis DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-002-c4fb0c431a8e",
+      "analyzerCode": "RIF",
+      "displayName": "Rifampin Resistance",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "46244-0",
+        "display": "Rifampin Resistance"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-003-c3c8bfb4f85a",
+      "analyzerCode": "MTB-RIF-ULTRA",
+      "displayName": "MTB/RIF Ultra",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85362-2",
+        "display": "MTB/RIF Ultra"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-004-d1b5ca417b01",
+      "analyzerCode": "HIV-VL",
+      "displayName": "HIV-1 RNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9",
+        "display": "HIV-1 RNA"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-4e63aa8a3dbf",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "CNEG"
+    },
+    {
+      "ruleKey": "qc-002-abae37ec3c53",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "CPOS"
+    },
+    {
+      "ruleKey": "qc-003-c4a05a9fd7e7",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NTC"
+    },
+    {
+      "ruleKey": "qc-004-a08a0a907a7a",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "PTC"
+    }
+  ],
+  "identity": {
+    "manufacturer": "Cepheid"
+  },
+  "file": {
+    "format": "CSV",
+    "filePattern": "(?i).*\\.(csv|txt)$",
+    "columnMappings": {
+      "Sample ID": "sampleId",
+      "Patient ID": "patientId",
+      "Assay": "assayName",
+      "Test Result": "result",
+      "Test Type": "testCode",
+      "Ct": "ctValue",
+      "End Pt": "endPt",
+      "Probe Check Ct": "probeCheckCt",
+      "Error": "errorCode",
+      "Error Status": "errorStatus",
+      "Reagent Lot ID": "reagentLotId",
+      "Start Time": "testDate",
+      "End Time": "testEndTime",
+      "Module Serial Number": "moduleSerial",
+      "Cartridge Serial Number": "cartridgeSerial",
+      "Instrument Serial Number": "instrumentSerial",
+      "Notes": "notes"
+    },
+    "delimiter": ","
+  }
+}

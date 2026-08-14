@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "wondfo-csv",
+  "revision": 1,
+  "displayName": "Wondfo Finecare FS-205 (CSV)",
+  "category": "IMMUNOLOGY",
+  "confidence": "HIGH",
+  "legacyVersion": "1.0.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "FILE",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-91015160150c",
+      "analyzerCode": "TSH",
+      "displayName": "Thyroid Stimulating Hormone",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "11580-8",
+        "display": "Thyroid Stimulating Hormone"
+      },
+      "resultValues": [],
+      "unit": "mIU/L"
+    },
+    {
+      "sourceRowKey": "test-002-aaebe9e2589a",
+      "analyzerCode": "β-hCG",
+      "displayName": "Beta-Human Chorionic Gonadotropin",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "21198-7",
+        "display": "Beta-Human Chorionic Gonadotropin"
+      },
+      "resultValues": [],
+      "unit": "mIU/mL"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-fa56f2d3d120",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NEG"
+    },
+    {
+      "ruleKey": "qc-002-45d1736ae965",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "POS"
+    },
+    {
+      "ruleKey": "qc-003-3dd8bf5222ca",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NC"
+    },
+    {
+      "ruleKey": "qc-004-55dd0c9c0b06",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "PC"
+    },
+    {
+      "ruleKey": "qc-005-dc207612f048",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "BLANC"
+    }
+  ],
+  "identity": {
+    "manufacturer": "Wondfo Biotech"
+  },
+  "file": {
+    "format": "CSV",
+    "filePattern": "(?i).*\\.(csv)$",
+    "columnMappings": {
+      "Serial Number": "deviceSerialNumber",
+      "SerialNumber": "deviceSerialNumber",
+      "Sample Number": "sampleId",
+      "SampleNumber": "sampleId",
+      "Sample ID": "sampleId",
+      "Test Name": "testCode",
+      "TestName": "testCode",
+      "Result": "result",
+      "Unit": "units",
+      "Reference Range": "referenceRange",
+      "ReferenceRange": "referenceRange",
+      "Date/Time": "dateTime",
+      "Date Time": "dateTime",
+      "Reagent Lot": "reagentLot",
+      "ReagentLot": "reagentLot",
+      "QC Status": "qcStatus"
+    },
+    "delimiter": ";",
+    "skipRows": 1
+  }
+}

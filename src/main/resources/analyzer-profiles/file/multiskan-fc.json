@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "multiskan-fc",
+  "revision": 1,
+  "displayName": "Thermo Multiskan FC",
+  "category": "IMMUNOLOGY",
+  "confidence": "MEDIUM_HIGH",
+  "legacyVersion": "2.0.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "FILE",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-a5a73b75b4df",
+      "analyzerCode": "HIV ELISA",
+      "displayName": "HIV ELISA (OD)",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "68961-2",
+        "display": "HIV ELISA (OD)"
+      },
+      "resultValues": [],
+      "unit": "S/CO"
+    },
+    {
+      "sourceRowKey": "test-002-49f4d1b7166c",
+      "analyzerCode": "Dengue IgG",
+      "displayName": "Dengue virus IgG Ab [Presence] in Serum",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "7854-3",
+        "display": "Dengue virus IgG Ab [Presence] in Serum"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-003-0c84c4ba1b03",
+      "analyzerCode": "Dengue IgM",
+      "displayName": "Dengue virus IgM Ab [Presence] in Serum",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "7852-7",
+        "display": "Dengue virus IgM Ab [Presence] in Serum"
+      },
+      "resultValues": []
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-2a501c5e8bc9",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NEG"
+    },
+    {
+      "ruleKey": "qc-002-3696143975ef",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "POS"
+    },
+    {
+      "ruleKey": "qc-003-a6257e22053b",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NC"
+    },
+    {
+      "ruleKey": "qc-004-79ef8e890ca6",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "PC"
+    },
+    {
+      "ruleKey": "qc-005-1000dc2ff2d8",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "BLANC"
+    },
+    {
+      "ruleKey": "qc-006-3b6b088b073b",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "BLANK"
+    }
+  ],
+  "identity": {
+    "manufacturer": "Thermo Fisher"
+  },
+  "file": {
+    "format": "CSV",
+    "filePattern": "(?i).*\\.(csv|tsv|txt|xlsx)$",
+    "columnMappings": {
+      "WellPosition": "position",
+      "SampleID": "sampleId",
+      "Abs": "result",
+      "Interpretation": "interpretation",
+      "TestCode": "testCode"
+    },
+    "delimiter": ";"
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "tecan-f50",
+  "revision": 1,
+  "displayName": "Tecan Infinite F50",
+  "category": "IMMUNOLOGY",
+  "confidence": "MEDIUM_HIGH",
+  "legacyVersion": "2.0.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "FILE",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-4f56dd9c99af",
+      "analyzerCode": "HIV ELISA",
+      "displayName": "HIV ELISA (OD)",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "68961-2",
+        "display": "HIV ELISA (OD)"
+      },
+      "resultValues": [],
+      "unit": "S/CO"
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-1e62710b77d9",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NEG"
+    },
+    {
+      "ruleKey": "qc-002-5685f6f33182",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "POS"
+    },
+    {
+      "ruleKey": "qc-003-78af2b2d2aa2",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "NC"
+    },
+    {
+      "ruleKey": "qc-004-1e911c1be0e8",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "PC"
+    },
+    {
+      "ruleKey": "qc-005-a0c3abea16c5",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "BLANC"
+    },
+    {
+      "ruleKey": "qc-006-3a380c9b421e",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "BLANK"
+    }
+  ],
+  "identity": {
+    "manufacturer": "Tecan"
+  },
+  "file": {
+    "format": "CSV",
+    "filePattern": "(?i).*\\.(csv|tsv|txt|xlsx)$",
+    "columnMappings": {
+      "WellPosition": "position",
+      "SampleID": "sampleId",
+      "OD_450": "result",
+      "OD_620": "referenceOD",
+      "CorrectedOD": "correctedOD",
+      "Interpretation": "interpretation",
+      "TestCode": "testCode"
+    },
+    "delimiter": ","
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "fluorocycler-xt",
+  "revision": 1,
+  "displayName": "Bruker FluoroCycler XT",
+  "category": "MOLECULAR",
+  "confidence": "MEDIUM_HIGH",
+  "legacyVersion": "3.0.0",
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "protocol": "FILE",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [
+    {
+      "sourceRowKey": "test-001-bfa48fe28e34",
+      "analyzerCode": "VIH-1",
+      "displayName": "HIV-1 Viral Load",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "20447-9",
+        "display": "HIV-1 Viral Load"
+      },
+      "resultValues": [],
+      "unit": "copies/mL"
+    },
+    {
+      "sourceRowKey": "test-002-bc6f699c4a77",
+      "analyzerCode": "MPXV",
+      "displayName": "Monkeypox virus DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "100383-9",
+        "display": "Monkeypox virus DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-003-327adf369a35",
+      "analyzerCode": "Mpox",
+      "displayName": "Monkeypox virus DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "100383-9",
+        "display": "Monkeypox virus DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-004-0b30aeda0671",
+      "analyzerCode": "MPox",
+      "displayName": "Monkeypox virus DNA",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "100383-9",
+        "display": "Monkeypox virus DNA"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-005-2eb3de69a23c",
+      "analyzerCode": "CHIKV",
+      "displayName": "Chikungunya PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "60260-7",
+        "display": "Chikungunya PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-006-d53f7d6b79d7",
+      "analyzerCode": "DENV",
+      "displayName": "Dengue PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "7855-0",
+        "display": "Dengue PCR"
+      },
+      "resultValues": []
+    },
+    {
+      "sourceRowKey": "test-007-7e565f44df06",
+      "analyzerCode": "ZIKV",
+      "displayName": "Zika PCR",
+      "resultType": "UNKNOWN",
+      "normalizedCoding": {
+        "system": "http://loinc.org",
+        "code": "85622-9",
+        "display": "Zika PCR"
+      },
+      "resultValues": []
+    }
+  ],
+  "qcIdentification": [
+    {
+      "ruleKey": "qc-001-42c7b0973f5c",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "QC_TASK",
+      "operand": "Positive"
+    },
+    {
+      "ruleKey": "qc-002-1bd862f0d66f",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "QC_TASK",
+      "operand": "Negative"
+    },
+    {
+      "ruleKey": "qc-003-fad73fb87a1f",
+      "ruleType": "FIELD_EQUALS",
+      "targetField": "QC_TASK",
+      "operand": "Standard"
+    },
+    {
+      "ruleKey": "qc-004-d3e517857da8",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "C+"
+    },
+    {
+      "ruleKey": "qc-005-ef98ad6fef63",
+      "ruleType": "SPECIMEN_ID_PREFIX",
+      "operand": "C-"
+    }
+  ],
+  "identity": {
+    "manufacturer": "Bruker"
+  },
+  "file": {
+    "format": "XLSX",
+    "filePattern": "(?i).*\\.(ods|xlsx|xls)$",
+    "columnMappings": {
+      "Sample ID": "sampleId",
+      "SampleID": "sampleId",
+      "Type": "qcTask",
+      "Calc. Conc.": "result",
+      "CalcConc": "result",
+      "Result": "interpretation",
+      "Interpretation": "interpretation",
+      "TargetName": "testCode",
+      "testCode": "testCode",
+      "WellPosition": "position"
+    }
+  }
+}

@@ -1,0 +1,329 @@
+{
+  "schemaVersion": "1.0",
+  "generatedBy": "scripts/migrate-legacy-profiles.mjs",
+  "sourceAuthority": "OpenELIS transitional analyzer profile catalog",
+  "targetAuthority": "Analyzer Bridge portable profile catalog",
+  "summary": {
+    "profileCount": 20,
+    "sourceTestRows": 154,
+    "portableTestRows": 154,
+    "sourceQcRows": 45,
+    "portableQcRows": 45,
+    "inactiveProfiles": 1
+  },
+  "profiles": {
+    "abbott-architect": {
+      "sourcePath": "hl7/abbott-architect.json",
+      "sourceSha256": "80c178326e5b064f5ff4ab69e20b9c4b96d5af8e9720c1ed5c013d9ad5891cda",
+      "sourceTestRows": 5,
+      "portableTestRows": 5,
+      "sourceQcRows": 0,
+      "portableQcRows": 0,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 5,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "dtprime": {
+      "sourcePath": "file/dtprime.json",
+      "sourceSha256": "e508535d5d0e699fe6e677e36842ce91dae6d3eb82f2edc024a747515659924b",
+      "sourceTestRows": 0,
+      "portableTestRows": 0,
+      "sourceQcRows": 4,
+      "portableQcRows": 4,
+      "status": "INACTIVE",
+      "issues": [
+        {
+          "code": "UNSUPPORTED_RUNTIME_FORMAT",
+          "detail": "Bridge FILE runtime does not parse XML; profile is shipped inactive until a tested parser exists."
+        }
+      ]
+    },
+    "fluorocycler-xt": {
+      "sourcePath": "file/fluorocycler-xt.json",
+      "sourceSha256": "4ccbd57fffba8d084958831a9529a5eaad1526bd219218228bbf21e55917cca3",
+      "sourceTestRows": 7,
+      "portableTestRows": 7,
+      "sourceQcRows": 5,
+      "portableQcRows": 5,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 7,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "genexpert-astm": {
+      "sourcePath": "astm/genexpert-astm.json",
+      "sourceSha256": "ab1b8294cea18085e54ce936bb9c64e6655c34e4d037f0e5c47b287bc42341fd",
+      "sourceTestRows": 28,
+      "portableTestRows": 28,
+      "sourceQcRows": 1,
+      "portableQcRows": 1,
+      "status": "ACTIVE",
+      "issues": []
+    },
+    "genexpert-csv": {
+      "sourcePath": "file/genexpert-csv.json",
+      "sourceSha256": "b3191967da46114ffe819b52e37a8297d0ddebf0667868ec84b66e6ad7627f2b",
+      "sourceTestRows": 4,
+      "portableTestRows": 4,
+      "sourceQcRows": 4,
+      "portableQcRows": 4,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 4,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "genexpert-hl7": {
+      "sourcePath": "hl7/genexpert-hl7.json",
+      "sourceSha256": "74f9e9cd6764b65453f7be9e399cad20f4a8234633db0e77f3e95dcad58eb9a1",
+      "sourceTestRows": 4,
+      "portableTestRows": 4,
+      "sourceQcRows": 0,
+      "portableQcRows": 0,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 4,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "horiba-micros60": {
+      "sourcePath": "astm/horiba-micros60.json",
+      "sourceSha256": "881bf73f91eac855b3e5ced178c4eab78b097ffdbc73145cc65284fd9a617087",
+      "sourceTestRows": 8,
+      "portableTestRows": 8,
+      "sourceQcRows": 1,
+      "portableQcRows": 1,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 8,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "horiba-pentra60": {
+      "sourcePath": "astm/horiba-pentra60.json",
+      "sourceSha256": "0d6c7edd7a0873ec8e2df406e0c225ddc55a6697097ecec9a8826b862d682d9d",
+      "sourceTestRows": 10,
+      "portableTestRows": 10,
+      "sourceQcRows": 1,
+      "portableQcRows": 1,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 10,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "mindray-ba88a": {
+      "sourcePath": "astm/mindray-ba88a.json",
+      "sourceSha256": "e454f8b50d7664cac6f86af4b4ca4d58fc3d601099fa7a89c1014f730669adc1",
+      "sourceTestRows": 5,
+      "portableTestRows": 5,
+      "sourceQcRows": 1,
+      "portableQcRows": 1,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 5,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "mindray-bc2000": {
+      "sourcePath": "hl7/mindray-bc2000.json",
+      "sourceSha256": "e7e101eb39d57010c030cee040135c66ba5084c2194d0e8f181a19aa57d217f8",
+      "sourceTestRows": 5,
+      "portableTestRows": 5,
+      "sourceQcRows": 0,
+      "portableQcRows": 0,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 5,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "mindray-bc5380": {
+      "sourcePath": "hl7/mindray-bc5380.json",
+      "sourceSha256": "6c93e19746c6538b4fbffa6981bda744b9e5c5b69ba4dd87828b12d0cfaffbe3",
+      "sourceTestRows": 13,
+      "portableTestRows": 13,
+      "sourceQcRows": 0,
+      "portableQcRows": 0,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 13,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "mindray-bs200": {
+      "sourcePath": "hl7/mindray-bs200.json",
+      "sourceSha256": "39d4c2a67b2bcf2719b8c5cdbf02e836cc8c3323f24baf44ea21499c2d105a82",
+      "sourceTestRows": 8,
+      "portableTestRows": 8,
+      "sourceQcRows": 1,
+      "portableQcRows": 1,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 8,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "mindray-bs300": {
+      "sourcePath": "hl7/mindray-bs300.json",
+      "sourceSha256": "5c3de05cc8643732c3a3093d1a3d45f020bf8b322a03db7fd908f7a07157ea58",
+      "sourceTestRows": 8,
+      "portableTestRows": 8,
+      "sourceQcRows": 0,
+      "portableQcRows": 0,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 8,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "mindray-bs360e": {
+      "sourcePath": "hl7/mindray-bs360e.json",
+      "sourceSha256": "d2e0001fd3675da3b8ef3e66843a72b511537a518ff9bf033d537ae120e5ee67",
+      "sourceTestRows": 8,
+      "portableTestRows": 8,
+      "sourceQcRows": 0,
+      "portableQcRows": 0,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 8,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "multiskan-fc": {
+      "sourcePath": "file/multiskan-fc.json",
+      "sourceSha256": "e7a65d97632e79b3bf0f486c39cbaecd14ffb5157b40e01d38b2dbbf6259f205",
+      "sourceTestRows": 3,
+      "portableTestRows": 3,
+      "sourceQcRows": 6,
+      "portableQcRows": 6,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 3,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "quantstudio": {
+      "sourcePath": "file/quantstudio.json",
+      "sourceSha256": "1c9489b3bdd791f51285523985d3e28d6b509da953d42ad2f616a8ca2572a198",
+      "sourceTestRows": 17,
+      "portableTestRows": 17,
+      "sourceQcRows": 8,
+      "portableQcRows": 8,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 17,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "stago-start4": {
+      "sourcePath": "astm/stago-start4.json",
+      "sourceSha256": "512b36dc920f42ffea90ef93b8c61c3386ad471309e005d93a64417f0bd2863b",
+      "sourceTestRows": 5,
+      "portableTestRows": 5,
+      "sourceQcRows": 1,
+      "portableQcRows": 1,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 5,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "sysmex-xn": {
+      "sourcePath": "astm/sysmex-xn.json",
+      "sourceSha256": "675f5ce04c2e265a3e3fbeb0f3e4c008bed4e3861dd4460c06d229888730b898",
+      "sourceTestRows": 13,
+      "portableTestRows": 13,
+      "sourceQcRows": 1,
+      "portableQcRows": 1,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 13,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "tecan-f50": {
+      "sourcePath": "file/tecan-f50.json",
+      "sourceSha256": "868a60271eb9c1782eba70062e34bfcb58a38c937a6dea4247d8c52801b9b2dd",
+      "sourceTestRows": 1,
+      "portableTestRows": 1,
+      "sourceQcRows": 6,
+      "portableQcRows": 6,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 1,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    },
+    "wondfo-csv": {
+      "sourcePath": "file/wondfo-csv.json",
+      "sourceSha256": "4e007768c827da92f54e2b83a3970aaa5d32947694df9edc08aa97ac5bf6bc11",
+      "sourceTestRows": 2,
+      "portableTestRows": 2,
+      "sourceQcRows": 5,
+      "portableQcRows": 5,
+      "status": "ACTIVE",
+      "issues": [
+        {
+          "code": "RESULT_TYPE_UNSPECIFIED",
+          "count": 2,
+          "detail": "Legacy rows without a declared result type remain UNKNOWN instead of inferring clinical semantics."
+        }
+      ]
+    }
+  }
+}
