@@ -76,7 +76,7 @@ public class FileUploadController {
     @GetMapping("/analyzers")
     public ResponseEntity<List<Map<String, Object>>> listFileAnalyzers() {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Map.Entry<String, AnalyzerEntry> entry : registry.getRegisteredAnalyzers().entrySet()) {
+        for (Map.Entry<String, AnalyzerEntry> entry : registry.getActiveRegisteredAnalyzers().entrySet()) {
             AnalyzerEntry a = entry.getValue();
             if (!"FILE".equalsIgnoreCase(a.getExpectedProtocol())) {
                 continue;
@@ -169,7 +169,7 @@ public class FileUploadController {
         }
 
         String watchDir = null;
-        for (Map.Entry<String, AnalyzerEntry> rentry : registry.getRegisteredAnalyzers().entrySet()) {
+        for (Map.Entry<String, AnalyzerEntry> rentry : registry.getActiveRegisteredAnalyzers().entrySet()) {
             if (analyzerId.equals(rentry.getValue().getId())
                     && "FILE".equalsIgnoreCase(rentry.getValue().getExpectedProtocol())) {
                 watchDir = rentry.getKey();
@@ -411,7 +411,7 @@ public class FileUploadController {
 
     private AnalyzerEntry findEntryById(String analyzerId) {
         if (analyzerId == null || analyzerId.isBlank()) return null;
-        for (AnalyzerEntry e : registry.getRegisteredAnalyzers().values()) {
+        for (AnalyzerEntry e : registry.getActiveRegisteredAnalyzers().values()) {
             if (analyzerId.equals(e.getId())) {
                 return e;
             }

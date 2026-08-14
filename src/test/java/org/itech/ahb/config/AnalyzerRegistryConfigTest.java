@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -72,6 +73,23 @@ class AnalyzerRegistryConfigTest {
 
         assertTrue(result.isPresent());
         assertEquals("MINDRAY-001", result.get());
+    }
+
+    @Test
+    @DisplayName("Active runtime view excludes inactive desired state without deleting it")
+    void activeRuntimeViewPreservesInactiveDesiredState() {
+        AnalyzerRegistryConfig config = new AnalyzerRegistryConfig();
+        AnalyzerRegistryConfig.AnalyzerEntry active = entry("ACTIVE-001");
+        AnalyzerRegistryConfig.AnalyzerEntry inactive = entry("INACTIVE-001");
+        inactive.setActive(false);
+        config.setAnalyzers(new LinkedHashMap<>(Map.of(
+                "active-source", active,
+                "inactive-source", inactive)));
+
+        assertEquals(Set.of("active-source"), config.getActiveRegisteredAnalyzers().keySet());
+        assertEquals(Set.of("active-source", "inactive-source"),
+                config.getRegisteredAnalyzers().keySet(),
+                "inactive desired state must remain available for reconciliation");
     }
 
     // -------------------------------------------------------------------------

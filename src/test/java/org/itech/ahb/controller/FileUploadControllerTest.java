@@ -73,7 +73,7 @@ class FileUploadControllerTest {
 
     @BeforeEach
     void setUp() {
-        registry = org.mockito.Mockito.mock(AnalyzerRegistryConfig.class);
+        registry = new AnalyzerRegistryConfig();
         fileMessageHandler = org.mockito.Mockito.mock(FileMessageHandler.class);
         scanner = org.mockito.Mockito.mock(FileNameSelfDeclarationScanner.class);
         fileWatcher = org.mockito.Mockito.mock(FileWatcher.class);
@@ -88,7 +88,7 @@ class FileUploadControllerTest {
 
         Map<String, AnalyzerEntry> registered = new LinkedHashMap<>();
         registered.put(tempDir.toString(), analyzerEntry);
-        when(registry.getRegisteredAnalyzers()).thenReturn(registered);
+        registry.setAnalyzers(registered);
         when(fileWatcher.getStateStore()).thenReturn(stateStore);
 
         controller = new FileUploadController(registry, fileMessageHandler, scanner, fileWatcher);

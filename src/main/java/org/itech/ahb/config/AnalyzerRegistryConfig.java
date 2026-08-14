@@ -236,6 +236,23 @@ public class AnalyzerRegistryConfig {
     }
 
     /**
+     * Returns the active registrations that are allowed to route analyzer traffic.
+     * Inactive desired state remains available through {@link #getRegisteredAnalyzers()}
+     * for reconciliation and diagnostics, but runtime consumers must use this view.
+     *
+     * @return immutable, insertion-ordered active registration snapshot
+     */
+    public Map<String, AnalyzerEntry> getActiveRegisteredAnalyzers() {
+        Map<String, AnalyzerEntry> activeAnalyzers = new LinkedHashMap<>();
+        for (Map.Entry<String, AnalyzerEntry> registration : analyzers.entrySet()) {
+            if (registration.getValue().isActive()) {
+                activeAnalyzers.put(registration.getKey(), registration.getValue());
+            }
+        }
+        return Collections.unmodifiableMap(activeAnalyzers);
+    }
+
+    /**
      * Analyzer entry with metadata.
      * <p>
      * Contains analyzer identification and configuration information.

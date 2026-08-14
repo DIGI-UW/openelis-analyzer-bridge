@@ -115,6 +115,12 @@ public class FileMessageHandler {
             throw new FileProcessingException("analyzerId is required for FILE delivery: " + filePath);
         }
 
+        AnalyzerEntry analyzerEntry = findActiveAnalyzerEntry(analyzerId);
+        if (analyzerEntry == null) {
+            throw new FileProcessingException(
+                    "Analyzer " + analyzerId + " is not active or registered for FILE delivery");
+        }
+
         long fileSize = Files.size(filePath);
         if (fileSize > MAX_FILE_SIZE_BYTES) {
             log.warn("File size ({} bytes) exceeds max ({}), processing with caution", fileSize, MAX_FILE_SIZE_BYTES);
@@ -133,7 +139,7 @@ public class FileMessageHandler {
                     "FILE transport requires bridge.routing.useFhir=true; legacy direct import path has been removed");
         }
 
-        postFileAsFhir(filePath, analyzerId, content, perFileTestCode, progress);
+        postFileAsFhir(filePath, analyzerId, analyzerEntry, content, perFileTestCode, progress);
 
         return MessageEnvelope.builder()
                 .protocol(Protocol.CSV)
@@ -160,21 +166,23 @@ public class FileMessageHandler {
                 parsed.accessionNumber(), analyzerId, parsed.results(), null, codeToLoinc);
     }
 
-    private void postFileAsFhir(Path filePath, String analyzerId, byte[] content, String perFileTestCode,
-            ProgressCallback progress)
-            throws IOException, FileProcessingException {
-        // Resolve analyzer entry from registry
-        AnalyzerEntry analyzerEntry = null;
-        if (registry != null) {
-            for (Map.Entry<String, AnalyzerEntry> entry : registry.getRegisteredAnalyzers().entrySet()) {
-                if (analyzerId.equals(entry.getValue().getId())) {
-                    analyzerEntry = entry.getValue();
-                    break;
-                }
+    private AnalyzerEntry findActiveAnalyzerEntry(String analyzerId) {
+        if (registry == null) {
+            return null;
+        }
+        for (AnalyzerEntry entry : registry.getActiveRegisteredAnalyzers().values()) {
+            if (analyzerId.equals(entry.getId())) {
+                return entry;
             }
         }
+        return null;
+    }
 
-        Map<String, String> columnMappings = analyzerEntry != null ? analyzerEntry.getColumnMappings() : null;
+    private void postFileAsFhir(Path filePath, String analyzerId, AnalyzerEntry analyzerEntry,
+            byte[] content, String perFileTestCode,
+            ProgressCallback progress)
+            throws IOException, FileProcessingException {
+        Map<String, String> columnMappings = analyzerEntry.getColumnMappings();
         if (columnMappings == null || columnMappings.isEmpty()) {
             throw new FileProcessingException(
                     "No column mappings registered for analyzer " + analyzerId + " — refusing FILE fallback");
