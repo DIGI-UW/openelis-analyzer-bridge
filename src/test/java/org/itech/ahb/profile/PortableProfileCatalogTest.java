@@ -92,6 +92,19 @@ class PortableProfileCatalogTest {
   }
 
   @Test
+  void requiresForkBeforeEditingShippedProfileContent() throws Exception {
+    ObjectNode edited = (ObjectNode) profile("genexpert-astm", "Edited shipped profile", "SHIPPED");
+
+    assertThatThrownBy(() -> catalog.revise("genexpert-astm", edited, "oe-admin"))
+      .isInstanceOf(ProfileCatalogException.class)
+      .hasMessageContaining("forked");
+
+    assertThat(catalog.history("genexpert-astm"))
+      .extracting(entry -> entry.profile().path("revision").asInt())
+      .containsExactly(1);
+  }
+
+  @Test
   void appendsAuditedLifecycleRevisionsWithoutDeletingHistory() throws Exception {
     catalog.createSite(profile("site-chemistry", "Site Chemistry", "SITE"), "creator");
 
