@@ -49,6 +49,18 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("profile catalog entry fixture conforms to the versioned API envelope")
+  void profileCatalogEntryFixtureConforms() throws IOException {
+    assertConforms("profile-catalog-entry.schema.json", "profile-catalog-entry.json");
+    assertTrue(
+      validationMessages(
+        "portable-profile.schema.json",
+        fixture("profile-catalog-entry.json").path("profile")
+      ).isEmpty()
+    );
+  }
+
+  @Test
   @DisplayName("both sides of registration reconciliation conform to one versioned schema")
   void registrationReconciliationFixturesConform() throws IOException {
     assertConforms("registration-sync.schema.json", "registration-initial.json");

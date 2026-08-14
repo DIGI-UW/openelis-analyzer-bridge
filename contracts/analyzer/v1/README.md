@@ -1,9 +1,8 @@
 # Analyzer Contract v1
 
-This directory is the executable BR-E0 contract boundary for OGC-1054. It
-defines target wire shapes and canonical compatibility fixtures without
-implementing the Bridge profile lifecycle (BR-M1) or safe-traffic runtime
-changes (BR-M4).
+This directory is the executable BR-E0 contract boundary for OGC-1054. BR-M1
+extends it compatibly with the profile catalog entry envelope used by the
+Bridge profile lifecycle API. Safe-traffic runtime changes remain BR-M4 work.
 
 ## Authority boundary
 
@@ -24,6 +23,7 @@ changes (BR-M4).
 | Artifact                               | Direction          | Runtime owner |
 | -------------------------------------- | ------------------ | ------------- |
 | `portable-profile.schema.json`         | Bridge -> OpenELIS | BR-M1         |
+| `profile-catalog-entry.schema.json`    | Bridge -> OpenELIS | BR-M1         |
 | `registration-sync.schema.json`        | OpenELIS -> Bridge | BR-M1         |
 | `registration-sync-result.schema.json` | Bridge -> OpenELIS | BR-M1         |
 | `normalized-fhir-bundle.schema.json`   | Bridge -> OpenELIS | BR-M4         |
@@ -32,6 +32,11 @@ The files under `fixtures/` are canonical producer/consumer inputs. Bridge and
 OpenELIS must run the same fixtures. A later milestone may add fields
 compatibly, but changing required meaning or removing a field requires a new
 major contract directory.
+
+The `profile` member of each catalog entry independently conforms to
+`portable-profile.schema.json`. The envelope adds immutable fingerprint and
+latest lifecycle audit evidence without transferring local OpenELIS bindings
+into the portable profile.
 
 ## Registration transport
 
