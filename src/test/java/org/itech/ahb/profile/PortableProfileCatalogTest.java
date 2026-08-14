@@ -124,6 +124,36 @@ class PortableProfileCatalogTest {
       .hasMessageContaining("already inactive");
   }
 
+  @Test
+  void rejectsOpenElisOnlyFieldsThroughThePublishedSchema() throws Exception {
+    ObjectNode candidate = (ObjectNode) profile("invalid-local-id", "Invalid local ID", "SITE");
+    candidate.put("openelisTestId", "42");
+
+    assertThatThrownBy(() -> catalog.createSite(candidate, "creator"))
+      .isInstanceOf(ProfileCatalogException.class)
+      .hasMessageContaining("openelisTestId");
+  }
+
+  @Test
+  void rejectsIncompleteCapabilitiesThroughThePublishedSchema() throws Exception {
+    ObjectNode candidate = (ObjectNode) profile("invalid-capabilities", "Invalid capabilities", "SITE");
+    ((ObjectNode) candidate.path("capabilities")).remove("outboundOrders");
+
+    assertThatThrownBy(() -> catalog.createSite(candidate, "creator"))
+      .isInstanceOf(ProfileCatalogException.class)
+      .hasMessageContaining("outboundOrders");
+  }
+
+  @Test
+  void rejectsFileProfilesWithoutAFileDefinitionThroughThePublishedSchema() throws Exception {
+    ObjectNode candidate = (ObjectNode) profile("invalid-file", "Invalid FILE profile", "SITE");
+    candidate.put("protocol", "FILE");
+
+    assertThatThrownBy(() -> catalog.createSite(candidate, "creator"))
+      .isInstanceOf(ProfileCatalogException.class)
+      .hasMessageContaining("file");
+  }
+
   private Resource resource(JsonNode profile) throws Exception {
     return new ByteArrayResource(objectMapper.writeValueAsBytes(profile)) {
       @Override
