@@ -68,6 +68,7 @@ class UnifiedRoutingTest {
     private AnalyzerInputController httpController;
     private ASTMBridgeAdapter astmAdapter;
     private HapiReceivingApplication mllpApplication;
+    private AnalyzerRegistryConfig registry;
 
     private AtomicReference<CapturedRequest> lastRequest;
     private CountDownLatch requestLatch;
@@ -122,7 +123,7 @@ class UnifiedRoutingTest {
         HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        registry = new AnalyzerRegistryConfig();
         HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null, registry);
         Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
         analyzers.put("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
@@ -250,6 +251,24 @@ class UnifiedRoutingTest {
                     "Path should end with /analyzer/fhir, got: " + req.path());
             assertEquals("QUANTSTUDIO-001", req.analyzerId());
             assertTrue(req.body().contains("\"resourceType\":\"Bundle\""), "Expected FHIR bundle body");
+        }
+
+        @Test
+        @DisplayName("Inactive FILE analyzer cannot route a direct processing request")
+        void inactiveFileAnalyzerDoesNotRoute() throws Exception {
+            registry.getRegisteredAnalyzers().get("/tmp/quantstudio").setActive(false);
+            Path workbookFile = createFileWorkbook(
+                    tempDir.resolve("inactive-results.xlsx"),
+                    new String[]{"Sample Name", "Target", "CT", "Units"},
+                    new String[][]{{"12345", "WBC", "7.5", "10^3/uL"}});
+
+            FileMessageHandler.FileProcessingException error = assertThrows(
+                    FileMessageHandler.FileProcessingException.class,
+                    () -> fileHandler.processFile(workbookFile, "QUANTSTUDIO-001"));
+
+            assertTrue(error.getMessage().contains("not active"),
+                    "rejection must explain that the analyzer is inactive");
+            assertNull(lastRequest.get(), "inactive FILE analyzers must not send traffic to OpenELIS");
         }
     }
 

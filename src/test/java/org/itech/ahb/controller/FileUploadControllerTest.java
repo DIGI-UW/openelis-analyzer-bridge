@@ -67,6 +67,7 @@ class FileUploadControllerTest {
     private FileNameSelfDeclarationScanner scanner;
     private FileWatcher fileWatcher;
     private FileStateStore stateStore;
+    private AnalyzerEntry analyzerEntry;
 
     private FileUploadController controller;
 
@@ -79,18 +80,43 @@ class FileUploadControllerTest {
         stateStore = org.mockito.Mockito.mock(FileStateStore.class);
 
         // Seed a minimal registry entry so path resolution succeeds.
-        AnalyzerEntry entry = new AnalyzerEntry();
-        entry.setId(ANALYZER_ID);
-        entry.setName("QuantStudio 5 Arbo");
-        entry.setExpectedProtocol("FILE");
-        entry.setMappedTestCodes(Set.of(TEST_CODE));
+        analyzerEntry = new AnalyzerEntry();
+        analyzerEntry.setId(ANALYZER_ID);
+        analyzerEntry.setName("QuantStudio 5 Arbo");
+        analyzerEntry.setExpectedProtocol("FILE");
+        analyzerEntry.setMappedTestCodes(Set.of(TEST_CODE));
 
         Map<String, AnalyzerEntry> registered = new LinkedHashMap<>();
-        registered.put(tempDir.toString(), entry);
+        registered.put(tempDir.toString(), analyzerEntry);
         when(registry.getRegisteredAnalyzers()).thenReturn(registered);
         when(fileWatcher.getStateStore()).thenReturn(stateStore);
 
         controller = new FileUploadController(registry, fileMessageHandler, scanner, fileWatcher);
+    }
+
+    @Nested
+    @DisplayName("Inactive analyzer routing")
+    class InactiveAnalyzerRouting {
+
+        @Test
+        @DisplayName("Inactive FILE analyzer is neither listed nor addressable by upload APIs")
+        void inactiveAnalyzerIsNotListedOrAddressable() throws Exception {
+            analyzerEntry.setActive(false);
+
+            assertTrue(controller.listFileAnalyzers().getBody().isEmpty(),
+                    "inactive FILE analyzers must not be discoverable");
+            assertEquals(404, controller.listTestCodes(ANALYZER_ID).getStatusCode().value(),
+                    "inactive FILE analyzers must not expose mapped test codes");
+
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            controller.uploadFile(ANALYZER_ID, TEST_CODE, multipart("x"), response);
+
+            assertEquals(400, response.getStatus(),
+                    "inactive FILE analyzers must reject direct uploads");
+            verify(fileMessageHandler, never()).processFile(any(Path.class), anyString(),
+                    any(), any(FileMessageHandler.ProgressCallback.class));
+            verify(stateStore, never()).upsertRetrying(anyString(), anyString(), any(Path.class));
+        }
     }
 
     private MockMultipartFile multipart(String content) {
