@@ -41,6 +41,10 @@ class AnalyzerContractArtifactsTest {
     "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-revision";
   private static final String SOURCE_PROTOCOL_EXTENSION =
     "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-protocol";
+  private static final String RESULT_CLASSIFICATION_EXTENSION =
+    "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification";
+  private static final String CONTROL_RECOGNITION_EXTENSION =
+    "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition";
 
   @Test
   @DisplayName("portable profile fixture conforms to the versioned profile schema")
@@ -89,6 +93,31 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("portable profile identity is fingerprinted and field rules are protocol evaluable")
+  void portableProfileIdentityAndProtocolFieldsAreDeterministic() throws IOException {
+    JsonNode profile = fixture("portable-profile.json");
+    assertTrue(profile.path("revisionFingerprint").asText().matches("sha256:[0-9a-f]{64}"));
+    assertTrue(
+      profile.path("controlResultRecognition").path("recognitionFingerprint").asText().matches("sha256:[0-9a-f]{64}")
+    );
+
+    com.fasterxml.jackson.databind.node.ObjectNode fieldRule = JSON.createObjectNode();
+    fieldRule.put("ruleType", "FIELD_EQUALS");
+    fieldRule.put("targetField", "O.12");
+    fieldRule.put("operand", "Q");
+
+    JsonNode astmProfile = profile.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) astmProfile
+        .path("controlResultRecognition")
+        .path("rules")).set("astm-order-action", fieldRule);
+    assertTrue(validationMessages("portable-profile.schema.json", astmProfile).isEmpty());
+
+    JsonNode invalidHl7Profile = astmProfile.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) invalidHl7Profile).put("protocol", "HL7");
+    assertFalse(validationMessages("portable-profile.schema.json", invalidHl7Profile).isEmpty());
+  }
+
+  @Test
   @DisplayName("both sides of registration reconciliation conform to one versioned schema")
   void registrationReconciliationFixturesConform() throws IOException {
     assertConforms("registration-sync.schema.json", "registration-initial.json");
@@ -105,19 +134,34 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("registration acknowledgement identifies the exact pinned candidate")
+  void registrationAcknowledgementPinsExactCandidate() throws IOException {
+    JsonNode requested = fixture("registration-next.json").path("analyzers").path(0);
+    JsonNode acknowledged = fixture("registration-result.json").path("registrations").path(0);
+
+    assertEquals(requested.path("oeAnalyzerId"), acknowledged.path("oeAnalyzerId"));
+    assertEquals(requested.path("profileRef"), acknowledged.path("profileRef"));
+    assertEquals(requested.path("desiredStateFingerprint"), acknowledged.path("desiredStateFingerprint"));
+    assertTrue(requested.path("desiredStateFingerprint").asText().matches("sha256:[0-9a-f]{64}"));
+    assertFalse(requested.has("siteBindingRevision"));
+  }
+
+  @Test
   @DisplayName("legacy registration fixture remains an explicit migration input")
   void legacyRegistrationFixtureConforms() throws IOException {
     assertConforms("legacy-registration.schema.json", "legacy-registration.json");
   }
 
   @Test
-  @DisplayName("known, unknown, QC, and FILE traffic conform to normalized FHIR v1")
+  @DisplayName("known, unknown, control, non-match, NONE, and FILE traffic conform to normalized FHIR v1")
   void normalizedTrafficFixturesConform() throws IOException {
     for (String fixture : new String[] {
       "normalized-known-test.fhir.json",
       "normalized-unknown-test.fhir.json",
       "normalized-unknown-value.fhir.json",
       "normalized-qc.fhir.json",
+      "normalized-nonmatch.fhir.json",
+      "normalized-none.fhir.json",
       "normalized-file.fhir.json"
     }) {
       assertConforms("normalized-fhir-bundle.schema.json", fixture);
@@ -132,6 +176,10 @@ class AnalyzerContractArtifactsTest {
       assertTrue(hasExtension(device, PROFILE_ID_EXTENSION));
       assertTrue(hasExtension(device, PROFILE_REVISION_EXTENSION));
       assertTrue(hasExtension(device, SOURCE_PROTOCOL_EXTENSION));
+
+      JsonNode observation = firstObservation(fixture(fixture));
+      assertTrue(hasExtension(observation, RESULT_CLASSIFICATION_EXTENSION));
+      assertTrue(hasExtension(observation, CONTROL_RECOGNITION_EXTENSION));
     }
   }
 
@@ -160,6 +208,18 @@ class AnalyzerContractArtifactsTest {
         tag -> "QC".equals(tag.path("code").asText())
       )
     );
+    assertEquals("CONTROL", extensionValueCode(qc, RESULT_CLASSIFICATION_EXTENSION));
+
+    JsonNode nonmatch = firstObservation(fixture("normalized-nonmatch.fhir.json"));
+    assertEquals("PATIENT", extensionValueCode(nonmatch, RESULT_CLASSIFICATION_EXTENSION));
+    assertFalse(
+      StreamSupport.stream(nonmatch.path("meta").path("tag").spliterator(), false).anyMatch(
+        tag -> "QC".equals(tag.path("code").asText())
+      )
+    );
+
+    JsonNode none = firstObservation(fixture("normalized-none.fhir.json"));
+    assertEquals("PATIENT", extensionValueCode(none, RESULT_CLASSIFICATION_EXTENSION));
 
     JsonNode file = firstObservation(fixture("normalized-file.fhir.json"));
     assertTrue(
@@ -260,6 +320,14 @@ class AnalyzerContractArtifactsTest {
     return StreamSupport.stream(resource.path("extension").spliterator(), false).anyMatch(
       extension -> url.equals(extension.path("url").asText())
     );
+  }
+
+  private static String extensionValueCode(JsonNode resource, String url) {
+    return StreamSupport.stream(resource.path("extension").spliterator(), false)
+      .filter(extension -> url.equals(extension.path("url").asText()))
+      .map(extension -> extension.path("valueCode").asText())
+      .findFirst()
+      .orElse("");
   }
 
   private static boolean hasCoding(JsonNode observation, String system, String code) {
