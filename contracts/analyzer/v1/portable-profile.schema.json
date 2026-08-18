@@ -124,10 +124,12 @@
           "properties": {
             "mode": { "const": "RULES" },
             "rules": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": { "$ref": "#/$defs/controlRecognitionRule" }
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": { "pattern": ".*\\S.*" },
+              "additionalProperties": {
+                "$ref": "#/$defs/controlRecognitionRule"
+              }
             }
           }
         },
@@ -145,9 +147,8 @@
     "controlRecognitionRule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ruleKey", "ruleType", "operand"],
+      "required": ["ruleType", "operand"],
       "properties": {
-        "ruleKey": { "type": "string", "pattern": ".*\\S.*" },
         "ruleType": {
           "enum": [
             "SPECIMEN_ID_PREFIX",

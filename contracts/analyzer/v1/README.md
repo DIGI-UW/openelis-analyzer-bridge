@@ -22,11 +22,11 @@ changes (BR-M4).
   normalized coding is known.
 
 Every portable profile revision declares one `controlResultRecognition` mode.
-`RULES` contains one or more OR matchers with stable unique `ruleKey` values;
-field matchers require `targetField`. `NONE` contains no rules and requires
+`RULES` contains an object of one or more OR matchers keyed by stable rule key;
+the object shape makes duplicate keys invalid, and field matchers require
+`targetField`. `NONE` contains no rules and requires
 `affirmedNoControlResults: true`. Missing, unknown, empty, or unaffirmed modes
-are invalid. Rule keys are semantically unique within a revision even though
-JSON Schema can enforce only whole-object array uniqueness.
+are invalid.
 
 ## Versioned artifacts
 
