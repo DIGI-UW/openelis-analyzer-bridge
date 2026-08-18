@@ -49,13 +49,12 @@
   ],
   "controlResultRecognition": {
     "mode": "RULES",
-    "rules": [
-      {
-        "ruleKey": "control-prefix",
+    "rules": {
+      "control-prefix": {
         "ruleType": "SPECIMEN_ID_PREFIX",
         "operand": "QC-",
         "controlLevel": "NORMAL"
       }
-    ]
+    }
   }
 }

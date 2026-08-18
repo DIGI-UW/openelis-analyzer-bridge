@@ -55,6 +55,8 @@ class AnalyzerContractArtifactsTest {
     JsonNode rulesProfile = fixture("portable-profile.json");
     assertEquals("RULES", rulesProfile.path("controlResultRecognition").path("mode").asText());
     assertFalse(rulesProfile.has("qcIdentification"));
+    assertTrue(rulesProfile.path("controlResultRecognition").path("rules").isObject());
+    assertTrue(rulesProfile.path("controlResultRecognition").path("rules").has("control-prefix"));
 
     JsonNode noneProfile = fixture("portable-profile-none.json");
     assertEquals("NONE", noneProfile.path("controlResultRecognition").path("mode").asText());
@@ -66,7 +68,7 @@ class AnalyzerContractArtifactsTest {
     assertFalse(validationMessages("portable-profile.schema.json", missingRecognition).isEmpty());
 
     JsonNode emptyRules = rulesProfile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ArrayNode) emptyRules
+    ((com.fasterxml.jackson.databind.node.ObjectNode) emptyRules
         .path("controlResultRecognition")
         .path("rules")).removeAll();
     assertFalse(validationMessages("portable-profile.schema.json", emptyRules).isEmpty());
