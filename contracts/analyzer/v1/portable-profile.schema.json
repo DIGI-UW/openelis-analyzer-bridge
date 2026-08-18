@@ -14,7 +14,7 @@
     "protocol",
     "capabilities",
     "tests",
-    "qcIdentification"
+    "controlResultRecognition"
   ],
   "properties": {
     "schemaVersion": { "const": "1.0" },
@@ -53,9 +53,8 @@
       }
     },
     "tests": { "type": "array", "items": { "$ref": "#/$defs/testDefinition" } },
-    "qcIdentification": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/qcIdentificationRule" }
+    "controlResultRecognition": {
+      "$ref": "#/$defs/controlResultRecognition"
     },
     "file": { "$ref": "#/$defs/fileDefinition" }
   },
@@ -116,24 +115,74 @@
         }
       }
     },
-    "qcIdentificationRule": {
+    "controlResultRecognition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "rules"],
+          "properties": {
+            "mode": { "const": "RULES" },
+            "rules": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/controlRecognitionRule" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "affirmedNoControlResults"],
+          "properties": {
+            "mode": { "const": "NONE" },
+            "affirmedNoControlResults": { "const": true }
+          }
+        }
+      ]
+    },
+    "controlRecognitionRule": {
       "type": "object",
       "additionalProperties": false,
       "required": ["ruleKey", "ruleType", "operand"],
       "properties": {
-        "ruleKey": { "type": "string", "minLength": 1 },
+        "ruleKey": { "type": "string", "pattern": ".*\\S.*" },
         "ruleType": {
           "enum": [
             "SPECIMEN_ID_PREFIX",
-            "SPECIMEN_ID_REGEX",
+            "SPECIMEN_ID_PATTERN",
             "FIELD_EQUALS",
-            "FIELD_REGEX"
+            "FIELD_CONTAINS"
           ]
         },
-        "targetField": { "type": "string", "minLength": 1 },
-        "operand": { "type": "string", "minLength": 1 },
-        "controlLevel": { "type": "string", "minLength": 1 }
-      }
+        "targetField": { "type": "string", "pattern": ".*\\S.*" },
+        "operand": { "type": "string", "pattern": ".*\\S.*" },
+        "controlLevel": { "type": "string", "pattern": ".*\\S.*" },
+        "controlType": { "type": "string", "pattern": ".*\\S.*" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ruleType": { "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"] }
+            },
+            "required": ["ruleType"]
+          },
+          "then": { "required": ["targetField"] }
+        },
+        {
+          "if": {
+            "properties": {
+              "ruleType": {
+                "enum": ["SPECIMEN_ID_PREFIX", "SPECIMEN_ID_PATTERN"]
+              }
+            },
+            "required": ["ruleType"]
+          },
+          "then": { "not": { "required": ["targetField"] } }
+        }
+      ]
     },
     "fileDefinition": {
       "type": "object",

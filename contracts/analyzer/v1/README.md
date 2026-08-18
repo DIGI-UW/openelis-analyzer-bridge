@@ -8,16 +8,25 @@ changes (BR-M4).
 ## Authority boundary
 
 - Bridge owns portable profile identity, revision, protocol behavior, parsing,
-  normalized analyzer concepts, QC identification, and runtime transport.
+  normalized analyzer concepts, control-result recognition, and runtime
+  transport.
 - OpenELIS owns analyzer instances, laboratory units, local Test and Result
   Option bindings, mapping verification and audit, operational QC, readiness,
   held results, and downstream clinical processing.
 - Portable profiles contain no OpenELIS database identifiers.
-- Registration sends desired analyzer-instance configuration and operational QC
-  evidence/context. It does not send Westgard definitions for Bridge to
-  evaluate and does not transfer local catalog ownership to Bridge.
+- Registration sends desired analyzer-instance configuration. It does not send
+  OpenELIS classifier rules, control lots, Westgard definitions, or any other
+  operational-QC state, and it does not transfer local catalog ownership to
+  Bridge.
 - Normalized FHIR preserves raw analyzer code and value even when a portable
   normalized coding is known.
+
+Every portable profile revision declares one `controlResultRecognition` mode.
+`RULES` contains one or more OR matchers with stable unique `ruleKey` values;
+field matchers require `targetField`. `NONE` contains no rules and requires
+`affirmedNoControlResults: true`. Missing, unknown, empty, or unaffirmed modes
+are invalid. Rule keys are semantically unique within a revision even though
+JSON Schema can enforce only whole-object array uniqueness.
 
 ## Versioned artifacts
 

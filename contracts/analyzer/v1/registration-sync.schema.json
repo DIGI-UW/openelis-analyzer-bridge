@@ -44,17 +44,6 @@
         }
       }
     },
-    "controlLot": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["lotNumber", "controlLevel", "active"],
-      "properties": {
-        "lotNumber": { "type": "string", "minLength": 1 },
-        "controlLevel": { "type": "string", "minLength": 1 },
-        "analyzerCode": { "type": "string", "minLength": 1 },
-        "active": { "type": "boolean" }
-      }
-    },
     "analyzerRegistration": {
       "type": "object",
       "additionalProperties": false,
@@ -66,8 +55,7 @@
         "protocol",
         "desiredStatus",
         "siteBindingRevision",
-        "connection",
-        "operationalQc"
+        "connection"
       ],
       "properties": {
         "oeAnalyzerId": { "type": "string", "minLength": 1 },
@@ -77,30 +65,7 @@
         "protocol": { "enum": ["ASTM", "HL7", "FILE"] },
         "desiredStatus": { "enum": ["INACTIVE", "ACTIVE"] },
         "siteBindingRevision": { "type": "string", "minLength": 1 },
-        "connection": { "$ref": "#/$defs/connection" },
-        "operationalQc": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "contextRevision",
-            "ready",
-            "activeRuleIds",
-            "controlLots"
-          ],
-          "properties": {
-            "contextRevision": { "type": "string", "minLength": 1 },
-            "ready": { "type": "boolean" },
-            "activeRuleIds": {
-              "type": "array",
-              "items": { "type": "string", "minLength": 1 },
-              "uniqueItems": true
-            },
-            "controlLots": {
-              "type": "array",
-              "items": { "$ref": "#/$defs/controlLot" }
-            }
-          }
-        }
+        "connection": { "$ref": "#/$defs/connection" }
       }
     }
   }
