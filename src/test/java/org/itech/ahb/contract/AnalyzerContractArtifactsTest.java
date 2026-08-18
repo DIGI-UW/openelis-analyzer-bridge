@@ -290,6 +290,24 @@ class AnalyzerContractArtifactsTest {
     assertFalse(validationMessages("normalized-fhir-bundle.schema.json", withoutRawValue).isEmpty());
   }
 
+  @Test
+  @DisplayName("normalized classification and recognition evidence cannot contradict each other")
+  void normalizedClassificationAndRecognitionMustAgree() throws IOException {
+    JsonNode controlAsPatient = fixture("normalized-qc.fhir.json").deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) findExtension(
+        firstObservation(controlAsPatient),
+        RESULT_CLASSIFICATION_EXTENSION
+      )).put("valueCode", "PATIENT");
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", controlAsPatient).isEmpty());
+
+    JsonNode nonmatchAsControl = fixture("normalized-nonmatch.fhir.json").deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) findExtension(
+        firstObservation(nonmatchAsControl),
+        RESULT_CLASSIFICATION_EXTENSION
+      )).put("valueCode", "CONTROL");
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", nonmatchAsControl).isEmpty());
+  }
+
   private static void assertConforms(String schemaName, String fixtureName) throws IOException {
     Set<ValidationMessage> messages = validationMessages(schemaName, fixture(fixtureName));
     assertTrue(messages.isEmpty(), () -> fixtureName + " violates " + schemaName + ": " + messages);
@@ -328,6 +346,13 @@ class AnalyzerContractArtifactsTest {
       .map(extension -> extension.path("valueCode").asText())
       .findFirst()
       .orElse("");
+  }
+
+  private static JsonNode findExtension(JsonNode resource, String url) {
+    return StreamSupport.stream(resource.path("extension").spliterator(), false)
+      .filter(extension -> url.equals(extension.path("url").asText()))
+      .findFirst()
+      .orElseThrow();
   }
 
   private static boolean hasCoding(JsonNode observation, String system, String code) {
