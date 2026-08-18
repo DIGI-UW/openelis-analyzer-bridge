@@ -2,6 +2,7 @@
   "schemaVersion": "1.0",
   "profileId": "site.mock-hematology",
   "revision": 1,
+  "revisionFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
   "displayName": "Mock Hematology Analyzer",
   "source": "SITE",
   "status": "ACTIVE",
@@ -49,6 +50,7 @@
   ],
   "controlResultRecognition": {
     "mode": "RULES",
+    "recognitionFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
     "rules": {
       "control-prefix": {
         "ruleType": "SPECIMEN_ID_PREFIX",

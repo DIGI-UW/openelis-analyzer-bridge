@@ -81,6 +81,174 @@
       "type": "object",
       "required": ["url"]
     },
+    "resultClassificationExtension": {
+      "type": "object",
+      "required": ["url", "valueCode"],
+      "properties": {
+        "url": {
+          "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+        },
+        "valueCode": { "enum": ["PATIENT", "CONTROL"] }
+      }
+    },
+    "recognitionEvaluation": {
+      "type": "object",
+      "required": ["url", "extension"],
+      "properties": {
+        "url": { "const": "evaluation" },
+        "extension": {
+          "type": "array",
+          "allOf": [
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "ruleKey" },
+                  "valueString": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueBoolean"],
+                "properties": {
+                  "url": { "const": "matched" },
+                  "valueBoolean": { "type": "boolean" }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "sourceField" },
+                  "valueString": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "rawValue" },
+                  "valueString": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "controlRecognitionExtension": {
+      "type": "object",
+      "required": ["url", "extension"],
+      "properties": {
+        "url": {
+          "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition"
+        },
+        "extension": {
+          "type": "array",
+          "allOf": [
+            {
+              "contains": {
+                "required": ["url", "valueCode"],
+                "properties": {
+                  "url": { "const": "mode" },
+                  "valueCode": { "enum": ["RULES", "NONE"] }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueCode"],
+                "properties": {
+                  "url": { "const": "outcome" },
+                  "valueCode": {
+                    "enum": ["MATCH", "NO_MATCH", "NOT_EVALUATED"]
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "recognitionFingerprint" },
+                  "valueString": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "extension": {
+                "contains": {
+                  "required": ["url", "valueCode"],
+                  "properties": {
+                    "url": { "const": "mode" },
+                    "valueCode": { "const": "RULES" }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "extension": {
+                "contains": { "$ref": "#/$defs/recognitionEvaluation" }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "extension": {
+                "contains": {
+                  "required": ["url", "valueCode"],
+                  "properties": {
+                    "url": { "const": "mode" },
+                    "valueCode": { "const": "NONE" }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "extension": {
+                "allOf": [
+                  {
+                    "contains": {
+                      "required": ["url", "valueCode"],
+                      "properties": {
+                        "url": { "const": "outcome" },
+                        "valueCode": { "const": "NOT_EVALUATED" }
+                      }
+                    }
+                  },
+                  {
+                    "not": {
+                      "contains": {
+                        "properties": { "url": { "const": "evaluation" } },
+                        "required": ["url"]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
     "containsDevice": {
       "properties": {
         "entry": {
@@ -230,10 +398,130 @@
                           },
                           "required": ["url", "valueCode"]
                         }
+                      },
+                      {
+                        "contains": {
+                          "$ref": "#/$defs/resultClassificationExtension"
+                        }
+                      },
+                      {
+                        "contains": {
+                          "$ref": "#/$defs/controlRecognitionExtension"
+                        }
                       }
                     ]
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "extension": {
+                          "contains": {
+                            "required": ["url", "valueCode"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+                              },
+                              "valueCode": { "const": "CONTROL" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": ["meta"],
+                      "properties": {
+                        "meta": {
+                          "properties": {
+                            "tag": {
+                              "contains": {
+                                "required": ["code"],
+                                "properties": { "code": { "const": "QC" } }
+                              }
+                            }
+                          },
+                          "required": ["tag"]
+                        },
+                        "extension": {
+                          "contains": {
+                            "allOf": [
+                              { "$ref": "#/$defs/controlRecognitionExtension" },
+                              {
+                                "properties": {
+                                  "extension": {
+                                    "contains": {
+                                      "required": ["url", "valueCode"],
+                                      "properties": {
+                                        "url": { "const": "outcome" },
+                                        "valueCode": { "const": "MATCH" }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "extension": {
+                          "contains": {
+                            "required": ["url", "valueCode"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+                              },
+                              "valueCode": { "const": "PATIENT" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "meta": {
+                          "properties": {
+                            "tag": {
+                              "not": {
+                                "contains": {
+                                  "required": ["code"],
+                                  "properties": { "code": { "const": "QC" } }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "extension": {
+                          "contains": {
+                            "allOf": [
+                              { "$ref": "#/$defs/controlRecognitionExtension" },
+                              {
+                                "properties": {
+                                  "extension": {
+                                    "contains": {
+                                      "required": ["url", "valueCode"],
+                                      "properties": {
+                                        "url": { "const": "outcome" },
+                                        "valueCode": {
+                                          "enum": ["NO_MATCH", "NOT_EVALUATED"]
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
               }
             }
           }

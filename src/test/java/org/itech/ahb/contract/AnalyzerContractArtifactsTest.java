@@ -107,9 +107,10 @@ class AnalyzerContractArtifactsTest {
     fieldRule.put("operand", "Q");
 
     JsonNode astmProfile = profile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) astmProfile
-        .path("controlResultRecognition")
-        .path("rules")).set("astm-order-action", fieldRule);
+    ((com.fasterxml.jackson.databind.node.ObjectNode) astmProfile.path("controlResultRecognition").path("rules")).set(
+        "astm-order-action",
+        fieldRule
+      );
     assertTrue(validationMessages("portable-profile.schema.json", astmProfile).isEmpty());
 
     JsonNode invalidHl7Profile = astmProfile.deepCopy();

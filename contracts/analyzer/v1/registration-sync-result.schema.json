@@ -39,9 +39,27 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["oeAnalyzerId", "status"],
+        "required": [
+          "oeAnalyzerId",
+          "profileRef",
+          "desiredStateFingerprint",
+          "status"
+        ],
         "properties": {
           "oeAnalyzerId": { "type": "string", "minLength": 1 },
+          "profileRef": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["profileId", "revision"],
+            "properties": {
+              "profileId": { "type": "string", "minLength": 1 },
+              "revision": { "type": "integer", "minimum": 1 }
+            }
+          },
+          "desiredStateFingerprint": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
           "status": { "enum": ["APPLIED", "UNCHANGED", "REJECTED"] },
           "message": { "type": "string" }
         }

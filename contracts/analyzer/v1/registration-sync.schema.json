@@ -54,7 +54,7 @@
         "profileRef",
         "protocol",
         "desiredStatus",
-        "siteBindingRevision",
+        "desiredStateFingerprint",
         "connection"
       ],
       "properties": {
@@ -64,7 +64,10 @@
         "profileRef": { "$ref": "#/$defs/profileRef" },
         "protocol": { "enum": ["ASTM", "HL7", "FILE"] },
         "desiredStatus": { "enum": ["INACTIVE", "ACTIVE"] },
-        "siteBindingRevision": { "type": "string", "minLength": 1 },
+        "desiredStateFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
         "connection": { "$ref": "#/$defs/connection" }
       }
     }

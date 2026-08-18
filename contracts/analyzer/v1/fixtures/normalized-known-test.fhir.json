@@ -77,6 +77,30 @@
         "valueQuantity": { "value": 7.5, "unit": "10*3/uL" },
         "extension": [
           {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification",
+            "valueCode": "PATIENT"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition",
+            "extension": [
+              { "url": "mode", "valueCode": "RULES" },
+              { "url": "outcome", "valueCode": "NO_MATCH" },
+              {
+                "url": "recognitionFingerprint",
+                "valueString": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+              },
+              {
+                "url": "evaluation",
+                "extension": [
+                  { "url": "ruleKey", "valueString": "control-prefix" },
+                  { "url": "matched", "valueBoolean": false },
+                  { "url": "sourceField", "valueString": "specimenId" },
+                  { "url": "rawValue", "valueString": "ACC-KNOWN-001" }
+                ]
+              }
+            ]
+          },
+          {
             "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value",
             "valueString": "7.5"
           },

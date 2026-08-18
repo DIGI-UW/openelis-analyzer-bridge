@@ -77,6 +77,30 @@
         "valueQuantity": { "value": 7.1, "unit": "10*3/uL" },
         "extension": [
           {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification",
+            "valueCode": "CONTROL"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition",
+            "extension": [
+              { "url": "mode", "valueCode": "RULES" },
+              { "url": "outcome", "valueCode": "MATCH" },
+              {
+                "url": "recognitionFingerprint",
+                "valueString": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+              },
+              {
+                "url": "evaluation",
+                "extension": [
+                  { "url": "ruleKey", "valueString": "control-prefix" },
+                  { "url": "matched", "valueBoolean": true },
+                  { "url": "sourceField", "valueString": "specimenId" },
+                  { "url": "rawValue", "valueString": "QC-LOT-WBC-2026-08" }
+                ]
+              }
+            ]
+          },
+          {
             "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value",
             "valueString": "7.1"
           },

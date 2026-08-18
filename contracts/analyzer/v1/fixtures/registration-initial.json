@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "desiredStateRevision": "sha256:registration-initial",
+  "desiredStateRevision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "generatedAt": "2026-08-13T20:00:00Z",
   "analyzers": [
     {
@@ -10,7 +10,7 @@
       "profileRef": { "profileId": "site.mock-hematology", "revision": 1 },
       "protocol": "ASTM",
       "desiredStatus": "ACTIVE",
-      "siteBindingRevision": "binding:42:3",
+      "desiredStateFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
       "connection": {
         "mode": "TCP",
         "role": "RECEIVER",

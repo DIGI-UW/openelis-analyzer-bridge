@@ -28,6 +28,25 @@ the object shape makes duplicate keys invalid, and field matchers require
 `affirmedNoControlResults: true`. Missing, unknown, empty, or unaffirmed modes
 are invalid.
 
+Published profile content carries a canonical revision fingerprint, and the
+recognition definition carries its own fingerprint. Field matchers must use a
+field syntax evaluable by the declared protocol: ASTM record fields, HL7
+segment fields, or the FILE profile's normalized `QC_TASK` field. Specimen-ID
+matchers remain protocol-neutral.
+
+Each desired analyzer registration carries the canonical fingerprint of the
+exact activation candidate. Bridge reconciliation acknowledges that fingerprint
+with the analyzer ID and pinned profile ID/revision. The registration contract
+does not send OpenELIS site-binding internals; the fingerprint is the opaque
+identity needed to prove that Bridge applied the candidate OpenELIS verified.
+
+Every normalized Observation explicitly says `PATIENT` or `CONTROL` and carries
+the pinned recognition fingerprint and outcome. `RULES` traffic includes the
+raw field/value evaluated for each rule; `NONE` is `NOT_EVALUATED` and contains
+no invented evaluation. `CONTROL` requires a matching rule and the QC tag,
+while patient traffic requires `NO_MATCH` or `NOT_EVALUATED` and cannot carry
+that tag.
+
 ## Versioned artifacts
 
 | Artifact                               | Direction          | Runtime owner |
@@ -45,4 +64,5 @@ major contract directory.
 `compatibility.json` records when current unversioned registration and FHIR
 behavior are read during migration and names the one-writer cutovers. Contract
 publication is not a claim that the current runtime already emits every target
-field.
+field. Red/green history, test results, and review evidence live in the pull
+request and CI rather than a duplicate in-repository ledger.

@@ -8,6 +8,7 @@
     "schemaVersion",
     "profileId",
     "revision",
+    "revisionFingerprint",
     "displayName",
     "source",
     "status",
@@ -20,6 +21,7 @@
     "schemaVersion": { "const": "1.0" },
     "profileId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
     "revision": { "type": "integer", "minimum": 1 },
+    "revisionFingerprint": { "$ref": "#/$defs/fingerprint" },
     "displayName": { "type": "string", "minLength": 1 },
     "source": { "enum": ["SHIPPED", "SITE"] },
     "status": { "enum": ["ACTIVE", "INACTIVE"] },
@@ -65,9 +67,40 @@
         "required": ["protocol"]
       },
       "then": { "required": ["file"] }
+    },
+    {
+      "if": {
+        "properties": { "protocol": { "const": "ASTM" } },
+        "required": ["protocol"]
+      },
+      "then": {
+        "$ref": "#/$defs/astmRecognitionFields"
+      }
+    },
+    {
+      "if": {
+        "properties": { "protocol": { "const": "HL7" } },
+        "required": ["protocol"]
+      },
+      "then": {
+        "$ref": "#/$defs/hl7RecognitionFields"
+      }
+    },
+    {
+      "if": {
+        "properties": { "protocol": { "const": "FILE" } },
+        "required": ["protocol"]
+      },
+      "then": {
+        "$ref": "#/$defs/fileRecognitionFields"
+      }
     }
   ],
   "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "coding": {
       "type": "object",
       "additionalProperties": false,
@@ -120,9 +153,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode", "rules"],
+          "required": ["mode", "recognitionFingerprint", "rules"],
           "properties": {
             "mode": { "const": "RULES" },
+            "recognitionFingerprint": { "$ref": "#/$defs/fingerprint" },
             "rules": {
               "type": "object",
               "minProperties": 1,
@@ -136,9 +170,14 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode", "affirmedNoControlResults"],
+          "required": [
+            "mode",
+            "recognitionFingerprint",
+            "affirmedNoControlResults"
+          ],
           "properties": {
             "mode": { "const": "NONE" },
+            "recognitionFingerprint": { "$ref": "#/$defs/fingerprint" },
             "affirmedNoControlResults": { "const": true }
           }
         }
@@ -184,6 +223,85 @@
           "then": { "not": { "required": ["targetField"] } }
         }
       ]
+    },
+    "astmRecognitionFields": {
+      "properties": {
+        "controlResultRecognition": {
+          "properties": {
+            "rules": {
+              "additionalProperties": {
+                "if": {
+                  "properties": {
+                    "ruleType": {
+                      "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"]
+                    }
+                  },
+                  "required": ["ruleType"]
+                },
+                "then": {
+                  "properties": {
+                    "targetField": {
+                      "pattern": "^[A-Z][0-9]?\\.[1-9][0-9]*(?:\\.[1-9][0-9]*){0,2}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "hl7RecognitionFields": {
+      "properties": {
+        "controlResultRecognition": {
+          "properties": {
+            "rules": {
+              "additionalProperties": {
+                "if": {
+                  "properties": {
+                    "ruleType": {
+                      "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"]
+                    }
+                  },
+                  "required": ["ruleType"]
+                },
+                "then": {
+                  "properties": {
+                    "targetField": {
+                      "pattern": "^[A-Z0-9]{3}\\.[1-9][0-9]*(?:\\.[1-9][0-9]*){0,2}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "fileRecognitionFields": {
+      "properties": {
+        "controlResultRecognition": {
+          "properties": {
+            "rules": {
+              "additionalProperties": {
+                "if": {
+                  "properties": {
+                    "ruleType": {
+                      "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"]
+                    }
+                  },
+                  "required": ["ruleType"]
+                },
+                "then": {
+                  "properties": {
+                    "targetField": { "const": "QC_TASK" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "fileDefinition": {
       "type": "object",

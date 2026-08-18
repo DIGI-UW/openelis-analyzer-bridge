@@ -2,6 +2,7 @@
   "schemaVersion": "1.0",
   "profileId": "site.mock-no-controls",
   "revision": 1,
+  "revisionFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
   "displayName": "Mock Analyzer Without Control Results",
   "source": "SITE",
   "status": "ACTIVE",
@@ -14,6 +15,7 @@
   "tests": [],
   "controlResultRecognition": {
     "mode": "NONE",
+    "recognitionFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
     "affirmedNoControlResults": true
   }
 }
