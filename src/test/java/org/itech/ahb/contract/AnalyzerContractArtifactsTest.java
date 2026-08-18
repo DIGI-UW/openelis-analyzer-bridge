@@ -46,6 +46,44 @@ class AnalyzerContractArtifactsTest {
   @DisplayName("portable profile fixture conforms to the versioned profile schema")
   void portableProfileFixtureConforms() throws IOException {
     assertConforms("portable-profile.schema.json", "portable-profile.json");
+    assertConforms("portable-profile.schema.json", "portable-profile-none.json");
+  }
+
+  @Test
+  @DisplayName("portable profiles require explicit RULES or affirmed NONE control recognition")
+  void portableProfileRequiresDiscriminatedControlRecognition() throws IOException {
+    JsonNode rulesProfile = fixture("portable-profile.json");
+    assertEquals("RULES", rulesProfile.path("controlResultRecognition").path("mode").asText());
+    assertFalse(rulesProfile.has("qcIdentification"));
+
+    JsonNode noneProfile = fixture("portable-profile-none.json");
+    assertEquals("NONE", noneProfile.path("controlResultRecognition").path("mode").asText());
+    assertTrue(noneProfile.path("controlResultRecognition").path("affirmedNoControlResults").asBoolean());
+    assertFalse(noneProfile.path("controlResultRecognition").has("rules"));
+
+    JsonNode missingRecognition = rulesProfile.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) missingRecognition).remove("controlResultRecognition");
+    assertFalse(validationMessages("portable-profile.schema.json", missingRecognition).isEmpty());
+
+    JsonNode emptyRules = rulesProfile.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ArrayNode) emptyRules
+        .path("controlResultRecognition")
+        .path("rules")).removeAll();
+    assertFalse(validationMessages("portable-profile.schema.json", emptyRules).isEmpty());
+
+    JsonNode unaffirmedNone = noneProfile.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) unaffirmedNone.path("controlResultRecognition")).put(
+        "affirmedNoControlResults",
+        false
+      );
+    assertFalse(validationMessages("portable-profile.schema.json", unaffirmedNone).isEmpty());
+
+    JsonNode noneWithRules = noneProfile.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) noneWithRules.path("controlResultRecognition")).set(
+        "rules",
+        rulesProfile.path("controlResultRecognition").path("rules")
+      );
+    assertFalse(validationMessages("portable-profile.schema.json", noneWithRules).isEmpty());
   }
 
   @Test
@@ -160,14 +198,20 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
-  @DisplayName("registration carries operational QC evidence without transferring rule evaluation")
-  void registrationKeepsOperationalQcInOpenElis() throws IOException {
+  @DisplayName("registration excludes OpenELIS operational QC and classifier state")
+  void registrationExcludesOperationalQcAndClassifierState() throws IOException {
     String registrationSchema = Files.readString(CONTRACT_ROOT.resolve("registration-sync.schema.json"));
-    assertTrue(registrationSchema.contains("operationalQc"));
-    assertTrue(registrationSchema.contains("activeRuleIds"));
-    assertFalse(registrationSchema.contains("WESTGARD"));
-    assertFalse(registrationSchema.contains("mean"));
-    assertFalse(registrationSchema.contains("standardDeviation"));
+    assertFalse(registrationSchema.contains("operationalQc"));
+    assertFalse(registrationSchema.contains("activeRuleIds"));
+    assertFalse(registrationSchema.contains("controlLots"));
+    assertFalse(registrationSchema.contains("qcRules"));
+
+    JsonNode invalid = fixture("registration-initial.json").deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("analyzers").path(0)).set(
+        "operationalQc",
+        JSON.createObjectNode()
+      );
+    assertFalse(validationMessages("registration-sync.schema.json", invalid).isEmpty());
   }
 
   @Test

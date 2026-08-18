@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "profileId": "site.mock-no-controls",
+  "revision": 1,
+  "displayName": "Mock Analyzer Without Control Results",
+  "source": "SITE",
+  "status": "ACTIVE",
+  "protocol": "HL7",
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "tests": [],
+  "controlResultRecognition": {
+    "mode": "NONE",
+    "affirmedNoControlResults": true
+  }
+}

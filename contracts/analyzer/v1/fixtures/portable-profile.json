@@ -47,12 +47,15 @@
       ]
     }
   ],
-  "qcIdentification": [
-    {
-      "ruleKey": "control-prefix",
-      "ruleType": "SPECIMEN_ID_PREFIX",
-      "operand": "QC-",
-      "controlLevel": "NORMAL"
-    }
-  ]
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": [
+      {
+        "ruleKey": "control-prefix",
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "QC-",
+        "controlLevel": "NORMAL"
+      }
+    ]
+  }
 }

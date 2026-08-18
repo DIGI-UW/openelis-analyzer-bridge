@@ -15,19 +15,6 @@
         "mode": "TCP",
         "role": "RECEIVER",
         "settings": { "listenPort": 12001 }
-      },
-      "operationalQc": {
-        "contextRevision": "qc:42:2",
-        "ready": true,
-        "activeRuleIds": ["oe-qc-rule-7"],
-        "controlLots": [
-          {
-            "lotNumber": "LOT-WBC-2026-08",
-            "controlLevel": "NORMAL",
-            "analyzerCode": "WBC",
-            "active": true
-          }
-        ]
       }
     },
     {
@@ -45,12 +32,6 @@
           "directory": "/mnt/analyzer-import/quantstudio-43",
           "filePattern": "*.csv"
         }
-      },
-      "operationalQc": {
-        "contextRevision": "qc:43:0",
-        "ready": false,
-        "activeRuleIds": [],
-        "controlLots": []
       }
     }
   ]

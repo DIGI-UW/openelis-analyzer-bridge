@@ -15,12 +15,6 @@
         "mode": "TCP",
         "role": "RECEIVER",
         "settings": { "listenPort": 12001 }
-      },
-      "operationalQc": {
-        "contextRevision": "qc:42:0",
-        "ready": false,
-        "activeRuleIds": [],
-        "controlLots": []
       }
     }
   ]
