@@ -278,6 +278,23 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("registration settings cannot hide OpenELIS QC or classifier state")
+  void registrationSettingsRejectOperationalQcAndClassifierAliases() throws IOException {
+    for (String reservedKey : new String[] { "controlLot", "qcRule", "westgardEnabled", "classifierState" }) {
+      JsonNode invalid = fixture("registration-initial.json").deepCopy();
+      ((com.fasterxml.jackson.databind.node.ObjectNode) invalid
+          .path("analyzers")
+          .path(0)
+          .path("connection")
+          .path("settings")).put(reservedKey, "must-not-cross-boundary");
+      assertFalse(
+        validationMessages("registration-sync.schema.json", invalid).isEmpty(),
+        () -> "registration settings accepted reserved key " + reservedKey
+      );
+    }
+  }
+
+  @Test
   @DisplayName("normalized traffic rejects loss of raw analyzer code or value")
   void normalizedTrafficRequiresRawContext() throws IOException {
     JsonNode withoutRawCode = fixture("normalized-known-test.fhir.json").deepCopy();
@@ -307,6 +324,55 @@ class AnalyzerContractArtifactsTest {
         RESULT_CLASSIFICATION_EXTENSION
       )).put("valueCode", "CONTROL");
     assertFalse(validationMessages("normalized-fhir-bundle.schema.json", nonmatchAsControl).isEmpty());
+  }
+
+  @Test
+  @DisplayName("every Observation carries normalized analyzer provenance")
+  void normalizedSchemaConstrainsEveryObservation() throws IOException {
+    JsonNode invalid = fixture("normalized-known-test.fhir.json").deepCopy();
+    com.fasterxml.jackson.databind.node.ArrayNode entries =
+      (com.fasterxml.jackson.databind.node.ArrayNode) invalid.path("entry");
+    com.fasterxml.jackson.databind.node.ObjectNode extraObservation = StreamSupport.stream(entries.spliterator(), false)
+      .filter(entry -> "Observation".equals(entry.path("resource").path("resourceType").asText()))
+      .map(JsonNode::deepCopy)
+      .map(com.fasterxml.jackson.databind.node.ObjectNode.class::cast)
+      .findFirst()
+      .orElseThrow();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) extraObservation.path("resource")).remove("extension");
+    entries.add(extraObservation);
+
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", invalid).isEmpty());
+  }
+
+  @Test
+  @DisplayName("RULES outcomes agree with every rule evaluation")
+  void rulesOutcomeRequiresConsistentEvaluationEvidence() throws IOException {
+    JsonNode matchWithoutMatchedRule = fixture("normalized-qc.fhir.json").deepCopy();
+    setFirstEvaluationMatched(firstObservation(matchWithoutMatchedRule), false);
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", matchWithoutMatchedRule).isEmpty());
+
+    JsonNode noMatchWithMatchedRule = fixture("normalized-nonmatch.fhir.json").deepCopy();
+    setFirstEvaluationMatched(firstObservation(noMatchWithMatchedRule), true);
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", noMatchWithMatchedRule).isEmpty());
+
+    JsonNode rulesNotEvaluated = fixture("normalized-nonmatch.fhir.json").deepCopy();
+    recognitionPart(firstObservation(rulesNotEvaluated), "outcome").put("valueCode", "NOT_EVALUATED");
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", rulesNotEvaluated).isEmpty());
+  }
+
+  @Test
+  @DisplayName("NONE recognition has exactly one NOT_EVALUATED outcome")
+  void noneRecognitionRejectsAdditionalOutcome() throws IOException {
+    JsonNode invalid = fixture("normalized-none.fhir.json").deepCopy();
+    com.fasterxml.jackson.databind.node.ObjectNode extraOutcome = JSON.createObjectNode();
+    extraOutcome.put("url", "outcome");
+    extraOutcome.put("valueCode", "MATCH");
+    ((com.fasterxml.jackson.databind.node.ArrayNode) findExtension(
+        firstObservation(invalid),
+        CONTROL_RECOGNITION_EXTENSION
+      ).path("extension")).add(extraOutcome);
+
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", invalid).isEmpty());
   }
 
   private static void assertConforms(String schemaName, String fixtureName) throws IOException {
@@ -354,6 +420,25 @@ class AnalyzerContractArtifactsTest {
       .filter(extension -> url.equals(extension.path("url").asText()))
       .findFirst()
       .orElseThrow();
+  }
+
+  private static com.fasterxml.jackson.databind.node.ObjectNode recognitionPart(JsonNode observation, String url) {
+    JsonNode recognition = findExtension(observation, CONTROL_RECOGNITION_EXTENSION);
+    return StreamSupport.stream(recognition.path("extension").spliterator(), false)
+      .filter(extension -> url.equals(extension.path("url").asText()))
+      .map(com.fasterxml.jackson.databind.node.ObjectNode.class::cast)
+      .findFirst()
+      .orElseThrow();
+  }
+
+  private static void setFirstEvaluationMatched(JsonNode observation, boolean matched) {
+    JsonNode evaluation = recognitionPart(observation, "evaluation");
+    StreamSupport.stream(evaluation.path("extension").spliterator(), false)
+      .filter(part -> "matched".equals(part.path("url").asText()))
+      .map(com.fasterxml.jackson.databind.node.ObjectNode.class::cast)
+      .findFirst()
+      .orElseThrow()
+      .put("valueBoolean", matched);
   }
 
   private static boolean hasCoding(JsonNode observation, String system, String code) {
