@@ -150,9 +150,7 @@ class AnalyzerProfileContractTest {
     assertFalse(semanticViolations(duplicateCode).isEmpty());
 
     ObjectNode duplicateValue = fixture(PROFILE_FIXTURES.get(0)).deepCopy();
-    JsonNode qualitative = duplicateValue
-      .withArray("default_test_mappings")
-      .findValue("values");
+    JsonNode qualitative = duplicateValue.withArray("default_test_mappings").findValue("values");
     ((com.fasterxml.jackson.databind.node.ArrayNode) qualitative).add(qualitative.path(0).asText());
     assertFalse(semanticViolations(duplicateValue).isEmpty());
   }
@@ -197,9 +195,9 @@ class AnalyzerProfileContractTest {
 
   private static JsonSchema loadSchema(String name) {
     try {
-      return JsonSchemaFactory
-        .getInstance(SpecVersion.VersionFlag.V202012)
-        .getSchema(JSON.readTree(CONTRACT_ROOT.resolve(name).toFile()));
+      return JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012).getSchema(
+        JSON.readTree(CONTRACT_ROOT.resolve(name).toFile())
+      );
     } catch (IOException exception) {
       throw new ExceptionInInitializerError(exception);
     }
