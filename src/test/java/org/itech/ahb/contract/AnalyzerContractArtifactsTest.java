@@ -126,6 +126,8 @@ class AnalyzerContractArtifactsTest {
 
     JsonNode initial = fixture("registration-initial.json");
     JsonNode next = fixture("registration-next.json");
+    assertTrue(initial.path("analyzers").isObject());
+    assertTrue(next.path("analyzers").isObject());
     assertEquals("1.0", initial.path("schemaVersion").asText());
     assertEquals("1.0", next.path("schemaVersion").asText());
     assertFalse(initial.path("desiredStateRevision").asText().isBlank());
@@ -137,10 +139,9 @@ class AnalyzerContractArtifactsTest {
   @Test
   @DisplayName("registration acknowledgement identifies the exact pinned candidate")
   void registrationAcknowledgementPinsExactCandidate() throws IOException {
-    JsonNode requested = fixture("registration-next.json").path("analyzers").path(0);
-    JsonNode acknowledged = fixture("registration-result.json").path("registrations").path(0);
+    JsonNode requested = keyedOrArrayEntry(fixture("registration-next.json").path("analyzers"), "42");
+    JsonNode acknowledged = keyedOrArrayEntry(fixture("registration-result.json").path("registrations"), "42");
 
-    assertEquals(requested.path("oeAnalyzerId"), acknowledged.path("oeAnalyzerId"));
     assertEquals(requested.path("profileRef"), acknowledged.path("profileRef"));
     assertEquals(requested.path("desiredStateFingerprint"), acknowledged.path("desiredStateFingerprint"));
     assertTrue(requested.path("desiredStateFingerprint").asText().matches("sha256:[0-9a-f]{64}"));
@@ -280,11 +281,17 @@ class AnalyzerContractArtifactsTest {
   @Test
   @DisplayName("registration settings cannot hide OpenELIS QC or classifier state")
   void registrationSettingsRejectOperationalQcAndClassifierAliases() throws IOException {
-    for (String reservedKey : new String[] { "controlLot", "qcRule", "westgardEnabled", "classifierState" }) {
+    for (String reservedKey : new String[] {
+      "controlLot",
+      "qcRule",
+      "westgardEnabled",
+      "classifierState",
+      "openelisTestId",
+      "labUnitId",
+      "testCodeLoinc"
+    }) {
       JsonNode invalid = fixture("registration-initial.json").deepCopy();
-      ((com.fasterxml.jackson.databind.node.ObjectNode) invalid
-          .path("analyzers")
-          .path(0)
+      ((com.fasterxml.jackson.databind.node.ObjectNode) keyedOrArrayEntry(invalid.path("analyzers"), "42")
           .path("connection")
           .path("settings")).put(reservedKey, "must-not-cross-boundary");
       assertFalse(
@@ -361,6 +368,51 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("a matching recognition evaluation carries complete rule and source evidence")
+  void matchedRecognitionEvaluationRequiresCompleteEvidence() throws IOException {
+    JsonNode invalid = fixture("normalized-qc.fhir.json").deepCopy();
+    setFirstEvaluationMatched(firstObservation(invalid), false);
+
+    com.fasterxml.jackson.databind.node.ObjectNode incompleteMatch = JSON.createObjectNode();
+    incompleteMatch.put("url", "evaluation");
+    com.fasterxml.jackson.databind.node.ArrayNode parts = incompleteMatch.putArray("extension");
+    parts.addObject().put("url", "matched").put("valueBoolean", true);
+    ((com.fasterxml.jackson.databind.node.ArrayNode) findExtension(
+        firstObservation(invalid),
+        CONTROL_RECOGNITION_EXTENSION
+      ).path("extension")).add(incompleteMatch);
+
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", invalid).isEmpty());
+  }
+
+  @Test
+  @DisplayName("each Observation has exactly one control recognition extension")
+  void controlRecognitionExtensionIsSingular() throws IOException {
+    JsonNode invalid = fixture("normalized-qc.fhir.json").deepCopy();
+    JsonNode observation = firstObservation(invalid);
+    ((com.fasterxml.jackson.databind.node.ArrayNode) observation.path("extension")).add(
+        findExtension(observation, CONTROL_RECOGNITION_EXTENSION).deepCopy()
+      );
+
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", invalid).isEmpty());
+  }
+
+  @Test
+  @DisplayName("registration acknowledgement has one result per OpenELIS analyzer")
+  void registrationAcknowledgementIsKeyedByAnalyzer() throws IOException {
+    JsonNode result = fixture("registration-result.json");
+    assertTrue(result.path("registrations").isObject());
+    assertEquals(2, result.path("registrations").size());
+
+    JsonNode invalid = result.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid).set(
+        "registrations",
+        JSON.createArrayNode().add(result.path("registrations").path("42"))
+      );
+    assertFalse(validationMessages("registration-sync-result.schema.json", invalid).isEmpty());
+  }
+
+  @Test
   @DisplayName("NONE recognition has exactly one NOT_EVALUATED outcome")
   void noneRecognitionRejectsAdditionalOutcome() throws IOException {
     JsonNode invalid = fixture("normalized-none.fhir.json").deepCopy();
@@ -391,6 +443,16 @@ class AnalyzerContractArtifactsTest {
 
   private static JsonNode firstObservation(JsonNode bundle) {
     return firstResource(bundle, "Observation");
+  }
+
+  private static JsonNode keyedOrArrayEntry(JsonNode collection, String key) {
+    if (collection.isObject()) {
+      return collection.path(key);
+    }
+    return StreamSupport.stream(collection.spliterator(), false)
+      .filter(entry -> key.equals(entry.path("oeAnalyzerId").asText()))
+      .findFirst()
+      .orElseThrow();
   }
 
   private static JsonNode firstResource(JsonNode bundle, String resourceType) {
