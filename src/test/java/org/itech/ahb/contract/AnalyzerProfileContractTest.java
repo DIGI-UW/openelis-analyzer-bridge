@@ -55,19 +55,43 @@ class AnalyzerProfileContractTest {
       assertTrue(profile.path("configDefaults").isObject(), fixtureName);
       assertTrue(profile.path("configDefaults").size() > 0, fixtureName);
       assertTrue(profile.path("default_test_mappings").isArray(), fixtureName);
-      assertTrue(profile.path("default_test_mappings").size() > 0, fixtureName);
 
       if ("FILE".equals(profile.path("protocol").path("name").asText())) {
         assertTrue(profile.path("supported_extensions").size() > 0, fixtureName);
         assertTrue(profile.path("column_mapping").size() > 0, fixtureName);
         assertFalse(profile.path("configDefaults").path("filePattern").asText().isBlank(), fixtureName);
       } else {
+        assertTrue(profile.path("default_test_mappings").size() > 0, fixtureName);
         assertFalse(profile.path("protocol").path("version").asText().isBlank(), fixtureName);
         assertTrue(profile.path("transport").size() > 0, fixtureName);
         assertFalse(profile.path("communication").path("mode").asText().isBlank(), fixtureName);
         assertFalse(profile.path("configDefaults").path("connectionRole").asText().isBlank(), fixtureName);
       }
     }
+  }
+
+  @Test
+  @DisplayName("the evolved contract does not invent a model requirement for socket profiles")
+  void socketProfileDoesNotRequireAnInventedModel() throws IOException {
+    ObjectNode profile = fixture("analyzer-profile-astm.json").deepCopy();
+    profile.remove("model");
+
+    assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), PROFILE_SCHEMA.validate(profile).toString());
+  }
+
+  @Test
+  @DisplayName("FILE profiles retain established metadata identity and column-only defaults")
+  void fileProfileMayBeColumnOnly() throws IOException {
+    ObjectNode profile = fixture("analyzer-profile-file.json").deepCopy();
+    profile.remove(List.of("analyzer_name", "manufacturer", "model"));
+    ((ObjectNode) profile.path("profileMeta")).put("manufacturer", "fixture-manufacturer");
+    profile.withArray("default_test_mappings").removeAll();
+    ((ObjectNode) profile.path("protocol")).put("format", "XML");
+    ObjectNode defaults = (ObjectNode) profile.path("configDefaults");
+    defaults.put("fileFormat", "XML");
+    defaults.remove("hasHeader");
+
+    assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), PROFILE_SCHEMA.validate(profile).toString());
   }
 
   @Test
