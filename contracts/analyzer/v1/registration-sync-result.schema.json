@@ -13,7 +13,10 @@
   ],
   "properties": {
     "schemaVersion": { "const": "1.0" },
-    "appliedStateRevision": { "type": "string", "minLength": 8 },
+    "appliedStateRevision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "counts": {
       "type": "object",
       "additionalProperties": false,
@@ -35,36 +38,38 @@
       }
     },
     "registrations": {
+      "type": "object",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "$ref": "#/$defs/registrationResult" }
+    },
+    "errors": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "oeAnalyzerId",
-          "profileRef",
-          "desiredStateFingerprint",
-          "status"
-        ],
-        "properties": {
-          "oeAnalyzerId": { "type": "string", "minLength": 1 },
-          "profileRef": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["profileId", "revision"],
-            "properties": {
-              "profileId": { "type": "string", "minLength": 1 },
-              "revision": { "type": "integer", "minimum": 1 }
-            }
-          },
-          "desiredStateFingerprint": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
-          },
-          "status": { "enum": ["APPLIED", "UNCHANGED", "REJECTED"] },
-          "message": { "type": "string" }
-        }
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "revision"],
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 1 }
       }
     },
-    "errors": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+    "registrationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileRef", "desiredStateFingerprint", "status"],
+      "properties": {
+        "profileRef": { "$ref": "#/$defs/profileRef" },
+        "desiredStateFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "status": { "enum": ["APPLIED", "UNCHANGED", "REJECTED"] },
+        "message": { "type": "string" }
+      }
+    }
   }
 }

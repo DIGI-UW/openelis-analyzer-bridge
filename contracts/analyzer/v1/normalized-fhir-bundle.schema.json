@@ -142,21 +142,22 @@
       }
     },
     "matchedRecognitionEvaluation": {
-      "type": "object",
-      "required": ["url", "extension"],
-      "properties": {
-        "url": { "const": "evaluation" },
-        "extension": {
-          "type": "array",
-          "contains": {
-            "required": ["url", "valueBoolean"],
-            "properties": {
-              "url": { "const": "matched" },
-              "valueBoolean": { "const": true }
+      "allOf": [
+        { "$ref": "#/$defs/recognitionEvaluation" },
+        {
+          "properties": {
+            "extension": {
+              "contains": {
+                "required": ["url", "valueBoolean"],
+                "properties": {
+                  "url": { "const": "matched" },
+                  "valueBoolean": { "const": true }
+                }
+              }
             }
           }
         }
-      }
+      ]
     },
     "controlRecognitionExtension": {
       "type": "object",
@@ -500,7 +501,8 @@
                       {
                         "contains": {
                           "$ref": "#/$defs/controlRecognitionExtension"
-                        }
+                        },
+                        "maxContains": 1
                       }
                     ]
                   }

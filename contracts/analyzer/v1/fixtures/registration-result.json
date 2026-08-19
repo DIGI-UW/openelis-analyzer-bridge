@@ -9,19 +9,17 @@
     "unchanged": 0,
     "rejected": 0
   },
-  "registrations": [
-    {
-      "oeAnalyzerId": "42",
+  "registrations": {
+    "42": {
       "profileRef": { "profileId": "site.mock-hematology", "revision": 1 },
       "desiredStateFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
       "status": "APPLIED"
     },
-    {
-      "oeAnalyzerId": "43",
+    "43": {
       "profileRef": { "profileId": "site.quantstudio-hiv", "revision": 2 },
       "desiredStateFingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
       "status": "APPLIED"
     }
-  ],
+  },
   "errors": []
 }

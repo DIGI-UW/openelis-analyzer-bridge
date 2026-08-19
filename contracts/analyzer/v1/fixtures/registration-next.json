@@ -2,9 +2,8 @@
   "schemaVersion": "1.0",
   "desiredStateRevision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "generatedAt": "2026-08-13T20:05:00Z",
-  "analyzers": [
-    {
-      "oeAnalyzerId": "42",
+  "analyzers": {
+    "42": {
       "sourceId": "10.20.30.40",
       "name": "Hematology 1",
       "profileRef": { "profileId": "site.mock-hematology", "revision": 1 },
@@ -17,8 +16,7 @@
         "settings": { "listenPort": 12001 }
       }
     },
-    {
-      "oeAnalyzerId": "43",
+    "43": {
       "sourceId": "/mnt/analyzer-import/quantstudio-43",
       "name": "QuantStudio 43",
       "profileRef": { "profileId": "site.quantstudio-hiv", "revision": 2 },
@@ -29,10 +27,9 @@
         "mode": "FILE",
         "role": "RECEIVER",
         "settings": {
-          "directory": "/mnt/analyzer-import/quantstudio-43",
-          "filePattern": "*.csv"
+          "directory": "/mnt/analyzer-import/quantstudio-43"
         }
       }
     }
-  ]
+  }
 }

@@ -271,7 +271,7 @@ class AnalyzerContractArtifactsTest {
     assertFalse(registrationSchema.contains("qcRules"));
 
     JsonNode invalid = fixture("registration-initial.json").deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("analyzers").path(0)).set(
+    ((com.fasterxml.jackson.databind.node.ObjectNode) keyedOrArrayEntry(invalid.path("analyzers"), "42")).set(
         "operationalQc",
         JSON.createObjectNode()
       );

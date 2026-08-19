@@ -2,9 +2,8 @@
   "schemaVersion": "1.0",
   "desiredStateRevision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "generatedAt": "2026-08-13T20:00:00Z",
-  "analyzers": [
-    {
-      "oeAnalyzerId": "42",
+  "analyzers": {
+    "42": {
       "sourceId": "10.20.30.40",
       "name": "Hematology 1",
       "profileRef": { "profileId": "site.mock-hematology", "revision": 1 },
@@ -17,5 +16,5 @@
         "settings": { "listenPort": 12001 }
       }
     }
-  ]
+  }
 }
