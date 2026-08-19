@@ -74,6 +74,7 @@
     { "$ref": "#/$defs/containsDevice" },
     { "$ref": "#/$defs/containsSpecimen" },
     { "$ref": "#/$defs/containsObservation" },
+    { "$ref": "#/$defs/everyObservation" },
     { "$ref": "#/$defs/containsDiagnosticReport" }
   ],
   "$defs": {
@@ -115,7 +116,8 @@
                   "url": { "const": "matched" },
                   "valueBoolean": { "type": "boolean" }
                 }
-              }
+              },
+              "maxContains": 1
             },
             {
               "contains": {
@@ -139,6 +141,23 @@
         }
       }
     },
+    "matchedRecognitionEvaluation": {
+      "type": "object",
+      "required": ["url", "extension"],
+      "properties": {
+        "url": { "const": "evaluation" },
+        "extension": {
+          "type": "array",
+          "contains": {
+            "required": ["url", "valueBoolean"],
+            "properties": {
+              "url": { "const": "matched" },
+              "valueBoolean": { "const": true }
+            }
+          }
+        }
+      }
+    },
     "controlRecognitionExtension": {
       "type": "object",
       "required": ["url", "extension"],
@@ -156,7 +175,8 @@
                   "url": { "const": "mode" },
                   "valueCode": { "enum": ["RULES", "NONE"] }
                 }
-              }
+              },
+              "maxContains": 1
             },
             {
               "contains": {
@@ -167,7 +187,8 @@
                     "enum": ["MATCH", "NO_MATCH", "NOT_EVALUATED"]
                   }
                 }
-              }
+              },
+              "maxContains": 1
             },
             {
               "contains": {
@@ -179,7 +200,8 @@
                     "pattern": "^sha256:[0-9a-f]{64}$"
                   }
                 }
-              }
+              },
+              "maxContains": 1
             }
           ]
         }
@@ -202,7 +224,56 @@
           "then": {
             "properties": {
               "extension": {
-                "contains": { "$ref": "#/$defs/recognitionEvaluation" }
+                "allOf": [
+                  {
+                    "contains": { "$ref": "#/$defs/recognitionEvaluation" }
+                  },
+                  {
+                    "not": {
+                      "contains": {
+                        "required": ["url", "valueCode"],
+                        "properties": {
+                          "url": { "const": "outcome" },
+                          "valueCode": { "const": "NOT_EVALUATED" }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "contains": {
+                        "required": ["url", "valueCode"],
+                        "properties": {
+                          "url": { "const": "outcome" },
+                          "valueCode": { "const": "MATCH" }
+                        }
+                      }
+                    },
+                    "then": {
+                      "contains": {
+                        "$ref": "#/$defs/matchedRecognitionEvaluation"
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "contains": {
+                        "required": ["url", "valueCode"],
+                        "properties": {
+                          "url": { "const": "outcome" },
+                          "valueCode": { "const": "NO_MATCH" }
+                        }
+                      }
+                    },
+                    "then": {
+                      "not": {
+                        "contains": {
+                          "$ref": "#/$defs/matchedRecognitionEvaluation"
+                        }
+                      }
+                    }
+                  }
+                ]
               }
             }
           }
@@ -336,6 +407,28 @@
               "resource": {
                 "properties": { "resourceType": { "const": "Specimen" } }
               }
+            }
+          }
+        }
+      }
+    },
+    "everyObservation": {
+      "properties": {
+        "entry": {
+          "items": {
+            "if": {
+              "required": ["resource"],
+              "properties": {
+                "resource": {
+                  "required": ["resourceType"],
+                  "properties": {
+                    "resourceType": { "const": "Observation" }
+                  }
+                }
+              }
+            },
+            "then": {
+              "$ref": "#/$defs/containsObservation/properties/entry/contains"
             }
           }
         }

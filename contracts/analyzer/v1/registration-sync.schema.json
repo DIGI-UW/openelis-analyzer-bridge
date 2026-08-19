@@ -38,6 +38,11 @@
         "role": { "enum": ["RECEIVER", "INITIATOR"] },
         "settings": {
           "type": "object",
+          "propertyNames": {
+            "not": {
+              "pattern": "(?i)(qc|quality.?control|control.?lot|westgard|classifier|recognition|rule|assigned.?mean|standard.?deviation|release.?policy|hold.?policy)"
+            }
+          },
           "additionalProperties": {
             "type": ["string", "number", "integer", "boolean"]
           }
