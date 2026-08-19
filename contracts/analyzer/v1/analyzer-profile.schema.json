@@ -9,13 +9,9 @@
     "$schema",
     "schemaVersion",
     "profileMeta",
-    "analyzer_name",
-    "manufacturer",
-    "model",
     "category",
     "protocol",
     "capabilities",
-    "default_test_mappings",
     "configDefaults",
     "controlResultRecognition",
     "catalog"
@@ -88,7 +84,6 @@
     },
     "default_test_mappings": {
       "type": "array",
-      "minItems": 1,
       "items": { "$ref": "#/$defs/testMapping" }
     },
     "configDefaults": { "type": "object" },
@@ -109,12 +104,20 @@
       },
       "then": {
         "required": [
+          "analyzer_name",
+          "manufacturer",
           "identifier_pattern",
           "transport",
           "transport_config",
-          "communication"
+          "communication",
+          "default_test_mappings"
         ],
         "properties": {
+          "default_test_mappings": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/testMapping" }
+          },
           "configDefaults": { "$ref": "#/$defs/socketDefaults" },
           "controlResultRecognition": {
             "$ref": "#/$defs/astmControlResultRecognition"
@@ -134,12 +137,20 @@
       },
       "then": {
         "required": [
+          "analyzer_name",
+          "manufacturer",
           "identifier_pattern",
           "transport",
           "transport_config",
-          "communication"
+          "communication",
+          "default_test_mappings"
         ],
         "properties": {
+          "default_test_mappings": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/testMapping" }
+          },
           "configDefaults": { "$ref": "#/$defs/socketDefaults" },
           "controlResultRecognition": {
             "$ref": "#/$defs/hl7ControlResultRecognition"
@@ -185,6 +196,7 @@
         },
         "version": { "$ref": "#/$defs/nonBlank" },
         "displayName": { "$ref": "#/$defs/nonBlank" },
+        "manufacturer": { "$ref": "#/$defs/nonBlank" },
         "confidence": {
           "enum": [
             "VALIDATED",
@@ -326,7 +338,7 @@
     "fileDefaults": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fileFormat", "filePattern", "hasHeader"],
+      "required": ["fileFormat", "filePattern"],
       "properties": {
         "fileFormat": { "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS", "XML"] },
         "filePattern": { "$ref": "#/$defs/nonBlank" },
@@ -335,7 +347,20 @@
         "encoding": { "$ref": "#/$defs/nonBlank" },
         "sheetIndex": { "type": "integer", "minimum": 0 },
         "skipRows": { "type": "integer", "minimum": 0 }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "fileFormat": {
+                "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS"]
+              }
+            },
+            "required": ["fileFormat"]
+          },
+          "then": { "required": ["hasHeader"] }
+        }
+      ]
     },
     "controlResultRecognition": {
       "oneOf": [
