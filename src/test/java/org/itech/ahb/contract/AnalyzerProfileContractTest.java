@@ -141,6 +141,21 @@ class AnalyzerProfileContractTest {
   }
 
   @Test
+  @DisplayName("no parallel thin profile or runtime compatibility contract remains")
+  void parallelProfileAndCompatibilityContractsAreAbsent() {
+    for (String removedArtifact : List.of(
+      "portable-profile.schema.json",
+      "legacy-registration.schema.json",
+      "compatibility.json",
+      "fixtures/portable-profile.json",
+      "fixtures/portable-profile-none.json",
+      "fixtures/legacy-registration.json"
+    )) {
+      assertFalse(Files.exists(CONTRACT_ROOT.resolve(removedArtifact)), removedArtifact);
+    }
+  }
+
+  @Test
   @DisplayName("semantic validation rejects duplicate raw identities and qualitative values")
   void mappingSemanticsAreDeterministic() throws IOException {
     ObjectNode duplicateCode = fixture(PROFILE_FIXTURES.get(0)).deepCopy();
