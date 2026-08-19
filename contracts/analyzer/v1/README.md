@@ -1,68 +1,70 @@
 # Analyzer Contract v1
 
-This directory is the executable BR-E0 contract boundary for OGC-1054. It
-defines target wire shapes and canonical compatibility fixtures without
-implementing the Bridge profile lifecycle (BR-M1) or safe-traffic runtime
-changes (BR-M4).
+This directory is the executable BR-E0 boundary for OGC-1054. It evolves the
+established `analyzer-defaults` profile system into one strict contract without
+implementing profile lifecycle or runtime cutover.
 
-## Authority boundary
+## Profile contract
 
-- Bridge owns portable profile identity, revision, protocol behavior, parsing,
-  normalized analyzer concepts, control-result recognition, and runtime
-  transport.
-- OpenELIS owns analyzer instances, laboratory units, local Test and Result
-  Option bindings, mapping verification and audit, operational QC, readiness,
-  held results, and downstream clinical processing.
-- Portable profiles contain no OpenELIS database identifiers.
-- Registration sends desired analyzer-instance configuration. It does not send
-  OpenELIS classifier rules, control lots, Westgard definitions, or any other
-  operational-QC state, and it does not transfer local catalog ownership to
-  Bridge.
-- Normalized FHIR preserves raw analyzer code and value even when a portable
-  normalized coding is known.
+An analyzer profile has exactly two jobs:
 
-Every portable profile revision declares one `controlResultRecognition` mode.
-`RULES` contains an object of one or more OR matchers keyed by stable rule key;
-the object shape makes duplicate keys invalid, and field matchers require
-`targetField`. `NONE` contains no rules and requires
-`affirmedNoControlResults: true`. Missing, unknown, empty, or unaffirmed modes
-are invalid.
+1. define communication and runtime behavior for an analyzer type;
+2. define the profile-owned defaults used to create an OpenELIS analyzer
+   instance of that type.
 
-Published profile content carries a canonical revision fingerprint, and the
-recognition definition carries its own fingerprint. Field matchers must use a
-field syntax evaluable by the declared protocol: ASTM record fields, HL7
-segment fields, or the FILE profile's normalized `QC_TASK` field. Specimen-ID
-matchers remain protocol-neutral.
+`analyzer-profile.schema.json` preserves the established profile field families
+and discriminates ASTM, HL7, and FILE requirements. Catalog-generated revision,
+fingerprint, publication, lifecycle, and lineage values are isolated under
+`catalog`; they are not authored runtime/default fields.
 
-Each desired analyzer registration carries the canonical fingerprint of the
-exact activation candidate. Bridge reconciliation acknowledges that fingerprint
-with the analyzer ID and pinned profile ID/revision. The registration contract
-does not send OpenELIS site-binding internals; the fingerprint is the opaque
-identity needed to prove that Bridge applied the candidate OpenELIS verified.
+The complete ASTM and FILE fixtures are blocking compatibility inputs. Their
+names and values are profile data only. Validator, catalog, runtime, consumer,
+and mock code must remain generic and may not hardcode a profile ID/revision,
+analyzer/model/manufacturer name, analyzer code, vendor value, mapping,
+recognition rule, connection value, or profile-owned default.
 
-Every normalized Observation explicitly says `PATIENT` or `CONTROL` and carries
-the pinned recognition fingerprint and outcome. `RULES` traffic includes the
-raw field/value evaluated for each rule; `NONE` is `NOT_EVALUATED` and contains
-no invented evaluation. `CONTROL` requires a matching rule and the QC tag,
-while patient traffic requires `NO_MATCH` or `NOT_EVALUATED` and cannot carry
-that tag.
+`controlResultRecognition` describes only how Bridge recognizes analyzer
+messages as controls. `RULES` contains OR matchers keyed by stable rule key;
+`NONE` requires an explicit affirmation. It is not operational QC. Profiles and
+registration contain no OpenELIS catalog IDs, control lots, Westgard state,
+release policy, site lab units, credentials, or instance watch directory.
+
+## Ownership boundary
+
+- Bridge owns profile revisions and analyzer-facing runtime: protocols,
+  listeners, parsing, probes, control recognition, and FILE watching/transport.
+- OpenELIS owns analyzer orchestration, lab units, site-entered instance values,
+  local Test/Result Option bindings, verification/audit, activation, held
+  results, review, alerts, and separate operational QC.
+- An OpenELIS analyzer pins one profile ID/revision. Updating or duplicating a
+  profile never moves a configured analyzer implicitly.
+- OpenELIS sends desired effective instance configuration. It does not send a
+  copied profile, classifier rules, local bindings, or operational-QC state.
+
+## Registration and traffic
+
+Desired registrations and acknowledgements are objects keyed by OpenELIS
+analyzer ID, so one candidate cannot receive contradictory outcomes. Connection
+settings are protocol/mode-discriminated allowlists; arbitrary scalar settings
+cannot carry foreign authority across the boundary.
+
+Normalized FHIR preserves raw analyzer code/value and identifies the pinned
+profile revision. Every Observation has exactly one patient/control
+classification and one control-recognition extension. A matching rule evaluation
+must carry its complete rule and source evidence; explicit `NONE` never invents
+an evaluation.
 
 ## Versioned artifacts
 
 | Artifact                               | Direction          | Runtime owner |
 | -------------------------------------- | ------------------ | ------------- |
-| `portable-profile.schema.json`         | Bridge -> OpenELIS | BR-M1         |
+| `analyzer-profile.schema.json`         | Bridge -> OpenELIS | BR-M1         |
 | `registration-sync.schema.json`        | OpenELIS -> Bridge | BR-M1         |
 | `registration-sync-result.schema.json` | Bridge -> OpenELIS | BR-M1         |
 | `normalized-fhir-bundle.schema.json`   | Bridge -> OpenELIS | BR-M4         |
 
-The files under `fixtures/` are canonical producer/consumer inputs. Bridge and
-OpenELIS must run the same fixtures. A later milestone may add fields
-compatibly, but changing required meaning or removing a field requires a new
-major contract directory.
-
-`compatibility.json` records when current unversioned registration and FHIR
-behavior are read during migration and names the one-writer cutovers. Contract
-publication is not a claim that the current runtime already emits every target
-field. Red/green history, test results, and review evidence live in the pull
-request and CI rather than a duplicate in-repository ledger.
+Files under `fixtures/` are canonical producer/consumer inputs. A later
+milestone may add optional fields compatibly; removing a field or changing its
+required meaning requires a new major contract directory. There is no parallel
+thin-profile schema, compatibility reader/writer, or legacy registration
+contract in the target path.

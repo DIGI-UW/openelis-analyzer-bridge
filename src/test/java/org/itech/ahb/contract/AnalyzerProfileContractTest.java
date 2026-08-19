@@ -149,7 +149,8 @@ class AnalyzerProfileContractTest {
       "compatibility.json",
       "fixtures/portable-profile.json",
       "fixtures/portable-profile-none.json",
-      "fixtures/legacy-registration.json"
+      "fixtures/legacy-registration.json",
+      "../../../src/test/java/org/itech/ahb/contract/AnalyzerRegistrationCompatibilityContractTest.java"
     )) {
       assertFalse(Files.exists(CONTRACT_ROOT.resolve(removedArtifact)), removedArtifact);
     }

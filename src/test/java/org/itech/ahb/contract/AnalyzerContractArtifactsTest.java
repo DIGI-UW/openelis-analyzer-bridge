@@ -47,78 +47,6 @@ class AnalyzerContractArtifactsTest {
     "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition";
 
   @Test
-  @DisplayName("portable profile fixture conforms to the versioned profile schema")
-  void portableProfileFixtureConforms() throws IOException {
-    assertConforms("portable-profile.schema.json", "portable-profile.json");
-    assertConforms("portable-profile.schema.json", "portable-profile-none.json");
-  }
-
-  @Test
-  @DisplayName("portable profiles require explicit RULES or affirmed NONE control recognition")
-  void portableProfileRequiresDiscriminatedControlRecognition() throws IOException {
-    JsonNode rulesProfile = fixture("portable-profile.json");
-    assertEquals("RULES", rulesProfile.path("controlResultRecognition").path("mode").asText());
-    assertFalse(rulesProfile.has("qcIdentification"));
-    assertTrue(rulesProfile.path("controlResultRecognition").path("rules").isObject());
-    assertTrue(rulesProfile.path("controlResultRecognition").path("rules").has("control-prefix"));
-
-    JsonNode noneProfile = fixture("portable-profile-none.json");
-    assertEquals("NONE", noneProfile.path("controlResultRecognition").path("mode").asText());
-    assertTrue(noneProfile.path("controlResultRecognition").path("affirmedNoControlResults").asBoolean());
-    assertFalse(noneProfile.path("controlResultRecognition").has("rules"));
-
-    JsonNode missingRecognition = rulesProfile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) missingRecognition).remove("controlResultRecognition");
-    assertFalse(validationMessages("portable-profile.schema.json", missingRecognition).isEmpty());
-
-    JsonNode emptyRules = rulesProfile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) emptyRules
-        .path("controlResultRecognition")
-        .path("rules")).removeAll();
-    assertFalse(validationMessages("portable-profile.schema.json", emptyRules).isEmpty());
-
-    JsonNode unaffirmedNone = noneProfile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) unaffirmedNone.path("controlResultRecognition")).put(
-        "affirmedNoControlResults",
-        false
-      );
-    assertFalse(validationMessages("portable-profile.schema.json", unaffirmedNone).isEmpty());
-
-    JsonNode noneWithRules = noneProfile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) noneWithRules.path("controlResultRecognition")).set(
-        "rules",
-        rulesProfile.path("controlResultRecognition").path("rules")
-      );
-    assertFalse(validationMessages("portable-profile.schema.json", noneWithRules).isEmpty());
-  }
-
-  @Test
-  @DisplayName("portable profile identity is fingerprinted and field rules are protocol evaluable")
-  void portableProfileIdentityAndProtocolFieldsAreDeterministic() throws IOException {
-    JsonNode profile = fixture("portable-profile.json");
-    assertTrue(profile.path("revisionFingerprint").asText().matches("sha256:[0-9a-f]{64}"));
-    assertTrue(
-      profile.path("controlResultRecognition").path("recognitionFingerprint").asText().matches("sha256:[0-9a-f]{64}")
-    );
-
-    com.fasterxml.jackson.databind.node.ObjectNode fieldRule = JSON.createObjectNode();
-    fieldRule.put("ruleType", "FIELD_EQUALS");
-    fieldRule.put("targetField", "O.12");
-    fieldRule.put("operand", "Q");
-
-    JsonNode astmProfile = profile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) astmProfile.path("controlResultRecognition").path("rules")).set(
-        "astm-order-action",
-        fieldRule
-      );
-    assertTrue(validationMessages("portable-profile.schema.json", astmProfile).isEmpty());
-
-    JsonNode invalidHl7Profile = astmProfile.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) invalidHl7Profile).put("protocol", "HL7");
-    assertFalse(validationMessages("portable-profile.schema.json", invalidHl7Profile).isEmpty());
-  }
-
-  @Test
   @DisplayName("both sides of registration reconciliation conform to one versioned schema")
   void registrationReconciliationFixturesConform() throws IOException {
     assertConforms("registration-sync.schema.json", "registration-initial.json");
@@ -146,12 +74,6 @@ class AnalyzerContractArtifactsTest {
     assertEquals(requested.path("desiredStateFingerprint"), acknowledged.path("desiredStateFingerprint"));
     assertTrue(requested.path("desiredStateFingerprint").asText().matches("sha256:[0-9a-f]{64}"));
     assertFalse(requested.has("siteBindingRevision"));
-  }
-
-  @Test
-  @DisplayName("legacy registration fixture remains an explicit migration input")
-  void legacyRegistrationFixtureConforms() throws IOException {
-    assertConforms("legacy-registration.schema.json", "legacy-registration.json");
   }
 
   @Test
@@ -231,34 +153,6 @@ class AnalyzerContractArtifactsTest {
           "FILE".equals(extension.path("valueCode").asText())
       )
     );
-  }
-
-  @Test
-  @DisplayName("compatibility manifest identifies the legacy read path and one-writer cutover")
-  void compatibilityManifestIsExplicit() throws IOException {
-    JsonNode compatibility = JSON.readTree(CONTRACT_ROOT.resolve("compatibility.json").toFile());
-    assertEquals("1.0", compatibility.path("contractVersion").asText());
-    assertEquals("ACTIVE_UNVERSIONED_SYNC", compatibility.path("legacyRegistration").path("currentState").asText());
-    assertEquals(
-      "READ_ONLY_MIGRATION_INPUT",
-      compatibility.path("legacyRegistration").path("statusAfterCutover").asText()
-    );
-    assertEquals("OE-M1", compatibility.path("legacyRegistration").path("oneWriterCutover").asText());
-    assertEquals("BR-M1", compatibility.path("oneWriterCutover").path("portableProfileOwnerFrom").asText());
-    assertEquals("BR-M4", compatibility.path("normalizedTraffic").path("runtimeConformanceFrom").asText());
-  }
-
-  @Test
-  @DisplayName("portable profile contract cannot contain OpenELIS local catalog identifiers")
-  void portableProfileExcludesLocalCatalogOwnership() throws IOException {
-    String profileSchema = Files.readString(CONTRACT_ROOT.resolve("portable-profile.schema.json"));
-    assertFalse(profileSchema.contains("openelisTestId"));
-    assertFalse(profileSchema.contains("openelisResultOptionId"));
-    assertFalse(profileSchema.contains("labUnitId"));
-
-    JsonNode invalid = fixture("portable-profile.json").deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("tests").path(0)).put("openelisTestId", "123");
-    assertFalse(validationMessages("portable-profile.schema.json", invalid).isEmpty());
   }
 
   @Test
