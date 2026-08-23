@@ -129,8 +129,10 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Profile Catalog** | | |
 | `bridge.profile-catalog.directory` | Durable site-profile revision store | `/data/openelis-analyzer-bridge/profile-catalog` |
 | `bridge.profile-catalog.shipped-pattern` | Packaged profile resource pattern | `classpath*:/analyzer-profiles/**/*.json` |
+| **Connectivity** | | |
+| `bridge.connectivity.advertised-host` | Bridge host that receiver analyzers should be configured to reach | Required for receiver probes |
 | **Security (M7.1)** | | |
-| `bridge.security.enabled` | Enable HTTP Basic auth on `/input` and profile management | true |
+| `bridge.security.enabled` | Enable HTTP Basic auth on `/input` and management APIs | true |
 | `bridge.security.username` | HTTP Basic username | bridge |
 | `bridge.security.password` | HTTP Basic password: plaintext or `{bcrypt}...` (use env var in prod) | changeme |
 | **Server** | | |
@@ -246,9 +248,9 @@ readinessProbe:
 
 ## Security
 
-The `/input` HTTP endpoint and `/api/profiles` profile-management API are
-protected with HTTP Basic authentication. Non-HTTP transports (ASTM/TCP, MLLP,
-Serial, File) are unaffected.
+The `/input` HTTP endpoint and the `/api/profiles` and `/api/analyzers`
+management APIs are protected with HTTP Basic authentication. Non-HTTP
+transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
 
 ### Configuration
 

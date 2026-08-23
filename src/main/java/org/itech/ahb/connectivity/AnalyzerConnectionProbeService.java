@@ -9,8 +9,11 @@ import java.util.Map;
 import java.util.Optional;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 /** Builds versioned probe evidence from one registered analyzer candidate. */
+@Service
 public final class AnalyzerConnectionProbeService {
 
   private static final int REMOTE_TIMEOUT_MS = 5000;
@@ -22,6 +25,7 @@ public final class AnalyzerConnectionProbeService {
   public AnalyzerConnectionProbeService(
     AnalyzerRegistryConfig registry,
     ConnectionProbeExecutor executor,
+    @Value("${bridge.connectivity.advertised-host:}")
     String advertisedHost
   ) {
     this.registry = registry;

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.itech.ahb.normalizer.MessageEnvelope;
@@ -101,6 +102,35 @@ class SecurityConfigTest {
             mockMvc.perform(get("/api/profiles")
                     .with(httpBasic("testuser", "testpass")))
                     .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("/api/analyzers management authentication")
+    class AnalyzerProbeApiTests {
+
+        @Test
+        @DisplayName("Unauthenticated analyzer registration sync returns 401")
+        void unauthenticatedAnalyzerRegistrationSyncReturns401() throws Exception {
+            mockMvc.perform(put("/api/analyzers/sync")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("Unauthenticated analyzer probe returns 401")
+        void unauthenticatedAnalyzerProbeReturns401() throws Exception {
+            mockMvc.perform(post("/api/analyzers/77/probe"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("Authenticated analyzer probe reaches the controller")
+        void authenticatedAnalyzerProbeReachesController() throws Exception {
+            mockMvc.perform(post("/api/analyzers/missing/probe")
+                    .with(httpBasic("testuser", "testpass")))
+                    .andExpect(status().isNotFound());
         }
     }
 

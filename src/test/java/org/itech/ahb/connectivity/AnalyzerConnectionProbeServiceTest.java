@@ -6,6 +6,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.networknt.schema.JsonSchema;
+import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SpecVersion;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
@@ -17,6 +23,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class AnalyzerConnectionProbeServiceTest {
+
+  private static final JsonSchema PROBE_SCHEMA = probeSchema();
 
   @Mock
   ConnectionProbeExecutor executor;
@@ -40,6 +48,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("analyzerId").asText()).isEqualTo("77");
     assertThat(result.path("profileRef").path("profileId").asText())
       .isEqualTo("genexpert-astm");
@@ -78,6 +87,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("TIMEOUT");
     assertThat(result.path("resultsOnlyAvailable").asBoolean()).isTrue();
     assertThat(result.path("checks")).hasSize(2);
@@ -93,6 +103,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("MISSING_CONFIGURATION");
     assertThat(result.path("resultsOnlyAvailable").asBoolean()).isTrue();
     assertThat(result.path("checks").path(1).path("kind").asText())
@@ -118,6 +129,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
     assertThat(result.path("configureEndpoint").path("kind").asText())
       .isEqualTo("NETWORK");
@@ -140,6 +152,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
     assertThat(result.path("configureEndpoint").path("kind").asText())
       .isEqualTo("DIRECTORY");
@@ -164,6 +177,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
     assertThat(result.path("configureEndpoint").path("kind").asText())
       .isEqualTo("DEVICE");
@@ -184,6 +198,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
     assertThat(result.path("configureEndpoint").path("kind").asText())
       .isEqualTo("HTTP");
@@ -199,6 +214,7 @@ class AnalyzerConnectionProbeServiceTest {
 
     ObjectNode result = service.probe("77").orElseThrow();
 
+    assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("MISSING_CONFIGURATION");
     assertThat(result.path("configureEndpoint").isNull()).isTrue();
     assertThat(result.path("checks").path(0).path("code").asText())
@@ -230,5 +246,28 @@ class AnalyzerConnectionProbeServiceTest {
     long responseTimeMs
   ) {
     return new ProbeCheck(kind, status, code, responseTimeMs, Map.of());
+  }
+
+  private static void assertConforms(ObjectNode result) {
+    assertThat(PROBE_SCHEMA.validate(result)).isEmpty();
+  }
+
+  private static JsonSchema probeSchema() {
+    try {
+      return JsonSchemaFactory
+        .getInstance(SpecVersion.VersionFlag.V202012)
+        .getSchema(
+          new ObjectMapper().readTree(
+            Path.of(
+              "contracts",
+              "analyzer",
+              "v1",
+              "connection-probe-result.schema.json"
+            ).toFile()
+          )
+        );
+    } catch (IOException exception) {
+      throw new ExceptionInInitializerError(exception);
+    }
   }
 }

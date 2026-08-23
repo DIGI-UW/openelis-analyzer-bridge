@@ -23,3 +23,5 @@ bridge:
   profile-catalog:
     directory: ${BRIDGE_PROFILE_CATALOG_DIRECTORY:/data/openelis-analyzer-bridge/profile-catalog}
     shipped-pattern: classpath*:/analyzer-profiles/**/*.json
+  connectivity:
+    advertised-host: ${BRIDGE_CONNECTIVITY_ADVERTISED_HOST:}
