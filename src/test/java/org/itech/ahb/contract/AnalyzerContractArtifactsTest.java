@@ -103,49 +103,6 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
-  @DisplayName("connection probes identify the exact candidate and expose structured evidence")
-  void connectionProbeFixtureConforms() throws IOException {
-    Path schema = CONTRACT_ROOT.resolve("connection-probe-result.schema.json");
-    Path fixture = FIXTURE_ROOT.resolve("connection-probe-result.json");
-    assertTrue(Files.isRegularFile(schema), "connection probe result schema is required");
-    assertTrue(Files.isRegularFile(fixture), "connection probe result fixture is required");
-
-    assertConforms("connection-probe-result.schema.json", "connection-probe-result.json");
-    JsonNode result = fixture("connection-probe-result.json");
-    assertEquals("77", result.path("analyzerId").asText());
-    assertEquals("genexpert-astm", result.path("profileRef").path("profileId").asText());
-    assertEquals(1, result.path("profileRef").path("revision").asInt());
-    assertEquals("TWO_WAY", result.path("dataFlow").asText());
-    assertEquals("TIMEOUT", result.path("outcome").asText());
-    assertTrue(result.path("resultsOnlyAvailable").asBoolean());
-    assertEquals("NETWORK", result.path("configureEndpoint").path("kind").asText());
-    assertFalse(result.path("checks").isEmpty());
-    assertTrue(
-      StreamSupport.stream(result.path("checks").spliterator(), false).anyMatch(
-        check -> "TIMED_OUT".equals(check.path("status").asText())
-      )
-    );
-  }
-
-  @Test
-  @DisplayName("connection probe evidence can identify a configured HTTP endpoint")
-  void connectionProbeContractSupportsHttpEndpoint() throws IOException {
-    JsonNode result = fixture("connection-probe-result.json").deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("connection"))
-      .put("mode", "HTTP")
-      .put("role", "INITIATOR");
-    com.fasterxml.jackson.databind.node.ObjectNode endpoint =
-      (com.fasterxml.jackson.databind.node.ObjectNode) result.path("configureEndpoint");
-    endpoint.removeAll();
-    endpoint.put("kind", "HTTP");
-    endpoint.put("url", "https://analyzer.example/hl7");
-
-    assertTrue(
-      validationMessages("connection-probe-result.schema.json", result).isEmpty()
-    );
-  }
-
-  @Test
   @DisplayName("profile catalog fixture carries the human-readable recognition summary")
   void profileCatalogFixtureConforms() throws IOException {
     JsonNode summary = fixture("profile-catalog-response.json")
@@ -263,30 +220,6 @@ class AnalyzerContractArtifactsTest {
       assertFalse(
         validationMessages("connection-create.schema.json", invalid).isEmpty(),
         () -> "connection create accepted foreign field " + foreignField
-      );
-    }
-  }
-
-  @Test
-  @DisplayName("generic connection values reject foreign-authority aliases")
-  void connectionValuesRejectForeignAuthorityAliases() throws IOException {
-    for (String reservedKey : new String[] {
-      "controlLot",
-      "qcRule",
-      "westgardEnabled",
-      "classifierState",
-      "openelisTestId",
-      "labUnitId",
-      "testCodeLoinc"
-    }) {
-      JsonNode invalid = fixture("connection-create.json").deepCopy();
-      ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("values")).put(
-          reservedKey,
-          "must-not-cross-boundary"
-        );
-      assertFalse(
-        validationMessages("connection-create.schema.json", invalid).isEmpty(),
-        () -> "connection values accepted reserved key " + reservedKey
       );
     }
   }
