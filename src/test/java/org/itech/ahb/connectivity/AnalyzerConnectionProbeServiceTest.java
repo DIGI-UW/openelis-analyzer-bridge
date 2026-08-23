@@ -107,6 +107,105 @@ class AnalyzerConnectionProbeServiceTest {
     );
   }
 
+  @Test
+  void initiatorUsesOnlyTheConfiguredRemoteProtocolEndpoint() {
+    analyzer.setConnectionRole("INITIATOR");
+    analyzer.setConnectionSettings(
+      Map.of("remoteHost", "10.42.20.10", "remotePort", 9600L)
+    );
+    when(executor.probeRemote("ASTM", "10.42.20.10", 9600, 5000))
+      .thenReturn(check("REMOTE_PROTOCOL", "PASSED", "remote.ready", 4));
+
+    ObjectNode result = service.probe("77").orElseThrow();
+
+    assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
+    assertThat(result.path("configureEndpoint").path("kind").asText())
+      .isEqualTo("NETWORK");
+    assertThat(result.path("configureEndpoint").path("host").asText())
+      .isEqualTo("10.42.20.10");
+    assertThat(result.path("configureEndpoint").path("port").asInt()).isEqualTo(9600);
+    assertThat(result.path("checks")).hasSize(1);
+    assertThat(result.path("checks").path(0).path("kind").asText())
+      .isEqualTo("REMOTE_PROTOCOL");
+    verify(executor, never()).probeListener(org.mockito.ArgumentMatchers.anyInt());
+  }
+
+  @Test
+  void fileUsesOnlyTheRegisteredWatchDirectory() {
+    analyzer.setExpectedProtocol("FILE");
+    analyzer.setConnectionMode("FILE");
+    analyzer.setConnectionSettings(Map.of("directory", "/data/analyzers/incoming"));
+    when(executor.probeDirectory("/data/analyzers/incoming"))
+      .thenReturn(check("DIRECTORY", "PASSED", "directory.ready", 1));
+
+    ObjectNode result = service.probe("77").orElseThrow();
+
+    assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
+    assertThat(result.path("configureEndpoint").path("kind").asText())
+      .isEqualTo("DIRECTORY");
+    assertThat(result.path("configureEndpoint").path("path").asText())
+      .isEqualTo("/data/analyzers/incoming");
+    assertThat(result.path("checks")).hasSize(1);
+    verify(executor, never()).probeListener(org.mockito.ArgumentMatchers.anyInt());
+    verify(executor, never()).probeRemote(
+      org.mockito.ArgumentMatchers.anyString(),
+      org.mockito.ArgumentMatchers.anyString(),
+      org.mockito.ArgumentMatchers.anyInt(),
+      org.mockito.ArgumentMatchers.anyInt()
+    );
+  }
+
+  @Test
+  void serialUsesOnlyTheRegisteredDevice() {
+    analyzer.setConnectionMode("SERIAL");
+    analyzer.setConnectionSettings(Map.of("device", "/dev/ttyUSB0"));
+    when(executor.probeSerialDevice("/dev/ttyUSB0"))
+      .thenReturn(check("SERIAL_DEVICE", "PASSED", "serial.ready", 1));
+
+    ObjectNode result = service.probe("77").orElseThrow();
+
+    assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
+    assertThat(result.path("configureEndpoint").path("kind").asText())
+      .isEqualTo("DEVICE");
+    assertThat(result.path("configureEndpoint").path("path").asText())
+      .isEqualTo("/dev/ttyUSB0");
+    assertThat(result.path("checks")).hasSize(1);
+    verify(executor, never()).probeListener(org.mockito.ArgumentMatchers.anyInt());
+  }
+
+  @Test
+  void httpInitiatorUsesOnlyTheRegisteredBaseUrl() {
+    analyzer.setExpectedProtocol("HL7");
+    analyzer.setConnectionMode("HTTP");
+    analyzer.setConnectionRole("INITIATOR");
+    analyzer.setConnectionSettings(Map.of("baseUrl", "https://analyzer.example/hl7"));
+    when(executor.probeHttpEndpoint("https://analyzer.example/hl7", 5000))
+      .thenReturn(check("HTTP_ENDPOINT", "PASSED", "http.ready", 7));
+
+    ObjectNode result = service.probe("77").orElseThrow();
+
+    assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
+    assertThat(result.path("configureEndpoint").path("kind").asText())
+      .isEqualTo("HTTP");
+    assertThat(result.path("configureEndpoint").path("url").asText())
+      .isEqualTo("https://analyzer.example/hl7");
+    assertThat(result.path("checks")).hasSize(1);
+    verify(executor, never()).probeListener(org.mockito.ArgumentMatchers.anyInt());
+  }
+
+  @Test
+  void receiverWithoutAnAdvertisedBridgeHostReportsMissingConfiguration() {
+    service = new AnalyzerConnectionProbeService(registry, executor, " ");
+
+    ObjectNode result = service.probe("77").orElseThrow();
+
+    assertThat(result.path("outcome").asText()).isEqualTo("MISSING_CONFIGURATION");
+    assertThat(result.path("configureEndpoint").isNull()).isTrue();
+    assertThat(result.path("checks").path(0).path("code").asText())
+      .isEqualTo("listener.endpoint.missing");
+    verify(executor, never()).probeListener(org.mockito.ArgumentMatchers.anyInt());
+  }
+
   private static AnalyzerEntry analyzer(String dataFlow, Map<String, Object> settings) {
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId("77");
