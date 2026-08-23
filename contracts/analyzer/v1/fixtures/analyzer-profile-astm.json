@@ -20,7 +20,17 @@
   "transport": ["RS-232", "TCP/IP"],
   "transport_config": {
     "RS-232": {
-      "default_baud_rate": 9600
+      "default_baud_rate": 9600,
+      "data_bits": 8,
+      "stop_bits": 1,
+      "parity": "NONE",
+      "flow_control": "NONE",
+      "read_timeout_ms": 1000,
+      "message_timeout_ms": 30000,
+      "reconnect_interval_ms": 5000,
+      "max_reconnect_attempts": -1,
+      "rts_enabled": true,
+      "dtr_enabled": true
     },
     "TCP/IP": {}
   },
@@ -144,7 +154,7 @@
   },
   "catalog": {
     "revision": 1,
-    "revisionFingerprint": "sha256:c2168ff7438aaea72eb4dcd646e2348601899b4b401b3c235fae07b5804081b2",
+    "revisionFingerprint": "sha256:57fb4fdee4db022236defb64a9fd5822b7714687031a895861f018b4875eafbb",
     "recognitionFingerprint": "sha256:68a4cf6c695d3a23662a7a5dc97983bbc78e38726f932517d09238d47aad701e",
     "source": "SHIPPED",
     "status": "ACTIVE",

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,16 +21,19 @@ public final class AnalyzerConnectionProbeService {
 
   private final AnalyzerRegistryConfig registry;
   private final ConnectionProbeExecutor executor;
+  private final ReceiverListenerPortResolver listenerPorts;
   private final String advertisedHost;
 
   public AnalyzerConnectionProbeService(
     AnalyzerRegistryConfig registry,
     ConnectionProbeExecutor executor,
+    ReceiverListenerPortResolver listenerPorts,
     @Value("${bridge.connectivity.advertised-host:}")
     String advertisedHost
   ) {
     this.registry = registry;
     this.executor = executor;
+    this.listenerPorts = listenerPorts;
     this.advertisedHost = advertisedHost;
   }
 
@@ -89,15 +93,15 @@ public final class AnalyzerConnectionProbeService {
       return probeRemote(analyzer, checks);
     }
 
-    Integer listenPort = integerSetting(analyzer, "listenPort");
+    OptionalInt listenPort = listenerPorts.resolve(analyzer);
     Endpoint endpoint = null;
     if (advertisedHost == null || advertisedHost.isBlank()) {
       checks.add(missing("LISTENER", "listener.endpoint.missing"));
-    } else if (listenPort == null) {
-      checks.add(missing("LISTENER", "listener.port.missing"));
+    } else if (listenPort.isEmpty()) {
+      checks.add(missing("LISTENER", "listener.profile.unsupported"));
     } else {
-      checks.add(executor.probeListener(listenPort));
-      endpoint = Endpoint.network(advertisedHost, listenPort);
+      checks.add(executor.probeListener(listenPort.getAsInt()));
+      endpoint = Endpoint.network(advertisedHost, listenPort.getAsInt());
     }
 
     if ("TWO_WAY".equals(analyzer.getDataFlow())) {

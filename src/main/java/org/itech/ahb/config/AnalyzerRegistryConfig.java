@@ -106,15 +106,23 @@ public class AnalyzerRegistryConfig {
 
         // Strategy 1: Direct match (IP address, serial port path)
         AnalyzerEntry entry = analyzers.get(sourceId);
-        if (entry != null) {
+        if (entry != null && entry.isRuntimeActive()) {
             log.debug("Direct match for source '{}': analyzer '{}'", sourceId, entry.getId());
             return Optional.of(entry);
+        }
+
+        // Full-state registrations retain sourceId on the entry so more than one
+        // FILE analyzer may watch the same directory under distinct internal keys.
+        for (AnalyzerEntry candidate : analyzers.values()) {
+            if (candidate.isRuntimeActive() && sourceId.equals(candidate.getSourceId())) {
+                return Optional.of(candidate);
+            }
         }
 
         // Strategy 2: Pattern match (file paths with wildcards)
         for (Map.Entry<String, AnalyzerEntry> e : analyzers.entrySet()) {
             String pattern = e.getKey();
-            if (pattern.contains("*") && matchesGlob(sourceId, pattern)) {
+            if (e.getValue().isRuntimeActive() && pattern.contains("*") && matchesGlob(sourceId, pattern)) {
                 log.debug("Pattern match for source '{}' using pattern '{}': analyzer '{}'",
                     sourceId, pattern, e.getValue().getId());
                 return Optional.of(e.getValue());
@@ -168,9 +176,72 @@ public class AnalyzerRegistryConfig {
      * @param entry    the analyzer entry to register
      */
     public void register(String sourceId, AnalyzerEntry entry) {
+        entry.setSourceId(sourceId);
         analyzers.put(sourceId, entry);
         log.info("Registered analyzer '{}' (id={}) for source '{}'",
                 entry.getName(), entry.getId(), sourceId);
+    }
+
+    /**
+     * Unregisters an analyzer by OE analyzer ID.
+     * Removes all source mappings that point to this analyzer.
+     *
+     * @param oeAnalyzerId the OE analyzer ID to unregister
+     * @return true if at least one mapping was removed
+     */
+    public boolean unregisterByAnalyzerId(String oeAnalyzerId) {
+        boolean removed = analyzers.entrySet()
+                .removeIf(e -> oeAnalyzerId.equals(e.getValue().getId()));
+        if (removed) {
+            log.info("Unregistered analyzer with OE ID '{}'", oeAnalyzerId);
+        }
+        return removed;
+    }
+
+    /**
+     * Replace the entire registry with a new set of registrations.
+     * This is the idempotent full-state sync — OE pushes its complete
+     * analyzer state, and the bridge replaces its in-memory registry.
+     *
+     * @param newRegistry map of sourceId → AnalyzerEntry
+     * @return sync result with counts of added, removed, and unchanged entries
+     */
+    public SyncResult syncAll(Map<String, AnalyzerEntry> newRegistry) {
+        newRegistry.forEach((sourceKey, entry) -> {
+            if (entry.getSourceId() == null || entry.getSourceId().isBlank()) {
+                entry.setSourceId(sourceKey);
+            }
+        });
+        Map<String, AnalyzerEntry> previous = Map.copyOf(analyzers);
+
+        // Atomic swap: build new map, then replace reference (thread-safe vs clear+putAll)
+        Map<String, AnalyzerEntry> replacement = new LinkedHashMap<>(newRegistry);
+        this.analyzers = replacement;
+
+        int added = 0;
+        int updated = 0;
+        for (Map.Entry<String, AnalyzerEntry> entry : newRegistry.entrySet()) {
+            if (!previous.containsKey(entry.getKey())) {
+                added++;
+            } else if (!entry.getValue().equals(previous.get(entry.getKey()))) {
+                updated++;
+            }
+            // else: unchanged — not counted
+        }
+        // Removed = keys in previous that are absent from new registry
+        int removed = 0;
+        for (String key : previous.keySet()) {
+            if (!newRegistry.containsKey(key)) {
+                removed++;
+            }
+        }
+
+        log.info("Registry sync: {} total ({} added, {} updated, {} removed)",
+                analyzers.size(), added, updated, removed);
+        return new SyncResult(analyzers.size(), added, updated, removed);
+    }
+
+    public record SyncResult(int total, int added, int updated, int removed) {
     }
 
     /**
@@ -195,6 +266,9 @@ public class AnalyzerRegistryConfig {
          */
         private String id;
 
+        /** Site-owned source identity used to route traffic to this analyzer. */
+        private String sourceId;
+
         /**
          * Human-readable analyzer name (e.g., "Mindray BC-5380")
          */
@@ -204,6 +278,36 @@ public class AnalyzerRegistryConfig {
          * Expected protocol (ASTM, HL7, CSV) for validation
          */
         private String expectedProtocol;
+
+        /** Exact immutable Bridge profile revision that materialized this entry. */
+        private String profileId;
+
+        private int profileRevision;
+
+        private String profileRevisionFingerprint;
+
+        /** Profile-owned ASTM lower-layer selection used to resolve Bridge listeners. */
+        private String profileLowerLayerVersion;
+
+        /** Fingerprint of the OpenELIS-owned desired instance state. */
+        private String desiredStateFingerprint;
+
+        /** ACTIVE entries route traffic; INACTIVE entries retain their pin only. */
+        private String desiredStatus;
+
+        private String connectionMode;
+
+        private String connectionRole;
+
+        /** User-selected result flow, separate from which side opens the connection. */
+        private String dataFlow;
+
+        /** Validated site-owned settings from the versioned registration contract. */
+        private Map<String, Object> connectionSettings = Collections.emptyMap();
+
+        public boolean isRuntimeActive() {
+            return desiredStatus == null || "ACTIVE".equals(desiredStatus);
+        }
 
         /**
          * Optional file pattern for additional validation (regex)

@@ -29,6 +29,9 @@ class AnalyzerConnectionProbeServiceTest {
   @Mock
   ConnectionProbeExecutor executor;
 
+  @Mock
+  ReceiverListenerPortResolver listenerPorts;
+
   private AnalyzerRegistryConfig registry;
   private AnalyzerConnectionProbeService service;
   private AnalyzerEntry analyzer;
@@ -36,13 +39,14 @@ class AnalyzerConnectionProbeServiceTest {
   @BeforeEach
   void setUp() {
     registry = new AnalyzerRegistryConfig();
-    service = new AnalyzerConnectionProbeService(registry, executor, "bridge.lab.example");
-    analyzer = analyzer("RESULTS_ONLY", Map.of("listenPort", 12001L));
+    service = new AnalyzerConnectionProbeService(registry, executor, listenerPorts, "bridge.lab.example");
+    analyzer = analyzer("RESULTS_ONLY", Map.of());
     registry.register(analyzer.getSourceId(), analyzer);
   }
 
   @Test
   void resultsOnlyReceiverChecksTheListenerAndReturnsTheEndpointToConfigure() {
+    when(listenerPorts.resolve(analyzer)).thenReturn(java.util.OptionalInt.of(12001));
     when(executor.probeListener(12001))
       .thenReturn(check("LISTENER", "PASSED", "listener.ready", 3));
 
@@ -75,11 +79,11 @@ class AnalyzerConnectionProbeServiceTest {
     analyzer.setDataFlow("TWO_WAY");
     analyzer.setConnectionSettings(
       Map.of(
-        "listenPort", 12001L,
         "remoteHost", "10.42.20.10",
         "remotePort", 9600L
       )
     );
+    when(listenerPorts.resolve(analyzer)).thenReturn(java.util.OptionalInt.of(12001));
     when(executor.probeListener(12001))
       .thenReturn(check("LISTENER", "PASSED", "listener.ready", 2));
     when(executor.probeRemote("ASTM", "10.42.20.10", 9600, 5000))
@@ -98,6 +102,7 @@ class AnalyzerConnectionProbeServiceTest {
   @Test
   void missingTwoWaySettingsAreReportedWithoutAConnectionAttempt() {
     analyzer.setDataFlow("TWO_WAY");
+    when(listenerPorts.resolve(analyzer)).thenReturn(java.util.OptionalInt.of(12001));
     when(executor.probeListener(12001))
       .thenReturn(check("LISTENER", "PASSED", "listener.ready", 2));
 
@@ -210,7 +215,7 @@ class AnalyzerConnectionProbeServiceTest {
 
   @Test
   void receiverWithoutAnAdvertisedBridgeHostReportsMissingConfiguration() {
-    service = new AnalyzerConnectionProbeService(registry, executor, " ");
+    service = new AnalyzerConnectionProbeService(registry, executor, listenerPorts, " ");
 
     ObjectNode result = service.probe("77").orElseThrow();
 
@@ -230,6 +235,7 @@ class AnalyzerConnectionProbeServiceTest {
     entry.setExpectedProtocol("ASTM");
     entry.setProfileId("genexpert-astm");
     entry.setProfileRevision(1);
+    entry.setProfileLowerLayerVersion("LIS01_A");
     entry.setDesiredStateFingerprint("sha256:" + "6".repeat(64));
     entry.setDesiredStatus("ACTIVE");
     entry.setConnectionMode("TCP");

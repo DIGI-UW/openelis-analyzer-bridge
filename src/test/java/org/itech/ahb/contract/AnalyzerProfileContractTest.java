@@ -74,6 +74,21 @@ class AnalyzerProfileContractTest {
   }
 
   @Test
+  @DisplayName("ASTM profiles declare the Bridge lower-layer listener they require")
+  void astmProfilesRequireASupportedLowerLayerVersion() throws IOException {
+    ObjectNode profile = fixture("analyzer-profile-astm.json").deepCopy();
+    ObjectNode protocol = (ObjectNode) profile.path("protocol");
+
+    assertEquals("LIS01_A", protocol.path("lowerLayerVersion").asText());
+
+    protocol.remove("lowerLayerVersion");
+    assertFalse(PROFILE_SCHEMA.validate(profile).isEmpty());
+
+    protocol.put("lowerLayerVersion", "UNKNOWN");
+    assertFalse(PROFILE_SCHEMA.validate(profile).isEmpty());
+  }
+
+  @Test
   @DisplayName("the evolved contract does not invent a model requirement for socket profiles")
   void socketProfileDoesNotRequireAnInventedModel() throws IOException {
     ObjectNode profile = fixture("analyzer-profile-astm.json").deepCopy();
