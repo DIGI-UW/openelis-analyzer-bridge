@@ -128,6 +128,24 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("connection probe evidence can identify a configured HTTP endpoint")
+  void connectionProbeContractSupportsHttpEndpoint() throws IOException {
+    JsonNode result = fixture("connection-probe-result.json").deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("connection"))
+      .put("mode", "HTTP")
+      .put("role", "INITIATOR");
+    com.fasterxml.jackson.databind.node.ObjectNode endpoint =
+      (com.fasterxml.jackson.databind.node.ObjectNode) result.path("configureEndpoint");
+    endpoint.removeAll();
+    endpoint.put("kind", "HTTP");
+    endpoint.put("url", "https://analyzer.example/hl7");
+
+    assertTrue(
+      validationMessages("connection-probe-result.schema.json", result).isEmpty()
+    );
+  }
+
+  @Test
   @DisplayName("profile catalog fixture carries the human-readable recognition summary")
   void profileCatalogFixtureConforms() throws IOException {
     JsonNode summary = fixture("profile-catalog-response.json")
