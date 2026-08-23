@@ -47,31 +47,16 @@ public final class AnalyzerConnectionProbeService {
 
   private ObjectNode probe(AnalyzerEntry analyzer) {
     List<ProbeCheck> checks = new ArrayList<>();
-    Integer listenPort = integerSetting(analyzer, "listenPort");
-    ProbeCheck listenerCheck;
-    if (listenPort == null) {
-      listenerCheck = missing("LISTENER", "listener.port.missing");
-    } else {
-      listenerCheck = executor.probeListener(listenPort);
-    }
-    checks.add(listenerCheck);
-
-    if ("TWO_WAY".equals(analyzer.getDataFlow())) {
-      String remoteHost = textSetting(analyzer, "remoteHost");
-      Integer remotePort = integerSetting(analyzer, "remotePort");
-      if (remoteHost == null || remotePort == null) {
-        checks.add(missing("REMOTE_PROTOCOL", "remote.configuration.missing"));
-      } else {
-        checks.add(
-          executor.probeRemote(
-            analyzer.getExpectedProtocol(),
-            remoteHost,
-            remotePort,
-            REMOTE_TIMEOUT_MS
-          )
-        );
+    Endpoint endpoint = switch (analyzer.getConnectionMode()) {
+      case "FILE" -> probeDirectory(analyzer, checks);
+      case "SERIAL" -> probeSerialDevice(analyzer, checks);
+      case "HTTP" -> probeHttpEndpoint(analyzer, checks);
+      case "TCP", "MLLP" -> probeNetwork(analyzer, checks);
+      default -> {
+        checks.add(missing("REMOTE_PROTOCOL", "connection.mode.unsupported"));
+        yield null;
       }
-    }
+    };
 
     ObjectNode result = JsonNodeFactory.instance.objectNode();
     result.put("schemaVersion", "1.0");
@@ -85,27 +70,128 @@ public final class AnalyzerConnectionProbeService {
     connection.put("role", analyzer.getConnectionRole());
     result.put("dataFlow", analyzer.getDataFlow());
     result.put("outcome", outcome(checks));
-    putConfigureEndpoint(result, listenPort);
+    putConfigureEndpoint(result, endpoint);
     result.put(
       "resultsOnlyAvailable",
-      "TWO_WAY".equals(analyzer.getDataFlow()) &&
-      "PASSED".equals(listenerCheck.status()) &&
-      checks.stream().anyMatch(check -> !"PASSED".equals(check.status()))
+      resultsOnlyAvailable(analyzer, checks)
     );
     ArrayNode checkNodes = result.putArray("checks");
     checks.forEach(check -> checkNodes.add(toJson(check)));
     return result;
   }
 
-  private void putConfigureEndpoint(ObjectNode result, Integer listenPort) {
-    if (listenPort == null || advertisedHost == null || advertisedHost.isBlank()) {
+  private Endpoint probeNetwork(AnalyzerEntry analyzer, List<ProbeCheck> checks) {
+    if ("INITIATOR".equals(analyzer.getConnectionRole())) {
+      return probeRemote(analyzer, checks);
+    }
+
+    Integer listenPort = integerSetting(analyzer, "listenPort");
+    Endpoint endpoint = null;
+    if (advertisedHost == null || advertisedHost.isBlank()) {
+      checks.add(missing("LISTENER", "listener.endpoint.missing"));
+    } else if (listenPort == null) {
+      checks.add(missing("LISTENER", "listener.port.missing"));
+    } else {
+      checks.add(executor.probeListener(listenPort));
+      endpoint = Endpoint.network(advertisedHost, listenPort);
+    }
+
+    if ("TWO_WAY".equals(analyzer.getDataFlow())) {
+      probeRemote(analyzer, checks);
+    }
+    return endpoint;
+  }
+
+  private Endpoint probeRemote(AnalyzerEntry analyzer, List<ProbeCheck> checks) {
+    String remoteHost = textSetting(analyzer, "remoteHost");
+    Integer remotePort = integerSetting(analyzer, "remotePort");
+    if (remoteHost == null || remotePort == null) {
+      checks.add(missing("REMOTE_PROTOCOL", "remote.configuration.missing"));
+      return null;
+    }
+    checks.add(
+      executor.probeRemote(
+        analyzer.getExpectedProtocol(),
+        remoteHost,
+        remotePort,
+        timeoutSetting(analyzer)
+      )
+    );
+    return Endpoint.network(remoteHost, remotePort);
+  }
+
+  private Endpoint probeDirectory(AnalyzerEntry analyzer, List<ProbeCheck> checks) {
+    String directory = textSetting(analyzer, "directory");
+    if (directory == null) {
+      checks.add(missing("DIRECTORY", "directory.configuration.missing"));
+      return null;
+    }
+    checks.add(executor.probeDirectory(directory));
+    return Endpoint.path("DIRECTORY", directory);
+  }
+
+  private Endpoint probeSerialDevice(AnalyzerEntry analyzer, List<ProbeCheck> checks) {
+    String device = textSetting(analyzer, "device");
+    if (device == null) {
+      checks.add(missing("SERIAL_DEVICE", "serial.configuration.missing"));
+      return null;
+    }
+    checks.add(executor.probeSerialDevice(device));
+    return Endpoint.path("DEVICE", device);
+  }
+
+  private Endpoint probeHttpEndpoint(AnalyzerEntry analyzer, List<ProbeCheck> checks) {
+    String baseUrl = textSetting(analyzer, "baseUrl");
+    if (baseUrl == null) {
+      checks.add(missing("HTTP_ENDPOINT", "http.configuration.missing"));
+      return null;
+    }
+    checks.add(executor.probeHttpEndpoint(baseUrl, timeoutSetting(analyzer)));
+    return Endpoint.http(baseUrl);
+  }
+
+  private static boolean resultsOnlyAvailable(
+    AnalyzerEntry analyzer,
+    List<ProbeCheck> checks
+  ) {
+    if (
+      !"TWO_WAY".equals(analyzer.getDataFlow()) ||
+      !"RECEIVER".equals(analyzer.getConnectionRole()) ||
+      !("TCP".equals(analyzer.getConnectionMode()) ||
+        "MLLP".equals(analyzer.getConnectionMode()))
+    ) {
+      return false;
+    }
+    boolean listenerPassed = checks
+      .stream()
+      .anyMatch(
+        check -> "LISTENER".equals(check.kind()) && "PASSED".equals(check.status())
+      );
+    boolean remoteFailed = checks
+      .stream()
+      .anyMatch(
+        check ->
+          "REMOTE_PROTOCOL".equals(check.kind()) &&
+          !"PASSED".equals(check.status())
+      );
+    return listenerPassed && remoteFailed;
+  }
+
+  private static void putConfigureEndpoint(ObjectNode result, Endpoint endpoint) {
+    if (endpoint == null) {
       result.putNull("configureEndpoint");
       return;
     }
-    ObjectNode endpoint = result.putObject("configureEndpoint");
-    endpoint.put("kind", "NETWORK");
-    endpoint.put("host", advertisedHost);
-    endpoint.put("port", listenPort);
+    ObjectNode node = result.putObject("configureEndpoint");
+    node.put("kind", endpoint.kind());
+    if (endpoint.host() != null) {
+      node.put("host", endpoint.host());
+      node.put("port", endpoint.port());
+    } else if (endpoint.path() != null) {
+      node.put("path", endpoint.path());
+    } else {
+      node.put("url", endpoint.url());
+    }
   }
 
   private static ObjectNode toJson(ProbeCheck check) {
@@ -167,5 +253,34 @@ public final class AnalyzerConnectionProbeService {
     }
     int result = number.intValue();
     return result > 0 && result <= 65535 ? result : null;
+  }
+
+  private static int timeoutSetting(AnalyzerEntry analyzer) {
+    Object value = analyzer.getConnectionSettings().get("connectTimeoutMillis");
+    if (value instanceof Number number && number.intValue() > 0) {
+      return number.intValue();
+    }
+    return REMOTE_TIMEOUT_MS;
+  }
+
+  private record Endpoint(
+    String kind,
+    String host,
+    Integer port,
+    String path,
+    String url
+  ) {
+
+    private static Endpoint network(String host, int port) {
+      return new Endpoint("NETWORK", host, port, null, null);
+    }
+
+    private static Endpoint path(String kind, String path) {
+      return new Endpoint(kind, null, null, path, null);
+    }
+
+    private static Endpoint http(String url) {
+      return new Endpoint("HTTP", null, null, null, url);
+    }
   }
 }
