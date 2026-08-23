@@ -103,6 +103,31 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("connection probes identify the exact candidate and expose structured evidence")
+  void connectionProbeFixtureConforms() throws IOException {
+    Path schema = CONTRACT_ROOT.resolve("connection-probe-result.schema.json");
+    Path fixture = FIXTURE_ROOT.resolve("connection-probe-result.json");
+    assertTrue(Files.isRegularFile(schema), "connection probe result schema is required");
+    assertTrue(Files.isRegularFile(fixture), "connection probe result fixture is required");
+
+    assertConforms("connection-probe-result.schema.json", "connection-probe-result.json");
+    JsonNode result = fixture("connection-probe-result.json");
+    assertEquals("77", result.path("analyzerId").asText());
+    assertEquals("genexpert-astm", result.path("profileRef").path("profileId").asText());
+    assertEquals(1, result.path("profileRef").path("revision").asInt());
+    assertEquals("TWO_WAY", result.path("dataFlow").asText());
+    assertEquals("TIMEOUT", result.path("outcome").asText());
+    assertTrue(result.path("resultsOnlyAvailable").asBoolean());
+    assertEquals("NETWORK", result.path("configureEndpoint").path("kind").asText());
+    assertFalse(result.path("checks").isEmpty());
+    assertTrue(
+      StreamSupport.stream(result.path("checks").spliterator(), false).anyMatch(
+        check -> "TIMED_OUT".equals(check.path("status").asText())
+      )
+    );
+  }
+
+  @Test
   @DisplayName("profile catalog fixture carries the human-readable recognition summary")
   void profileCatalogFixtureConforms() throws IOException {
     JsonNode summary = fixture("profile-catalog-response.json")
