@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0",
+  "commandId": "activate-fixture-004",
+  "connectionId": "bridge-connection-7f3c",
+  "action": "ACTIVATE",
+  "expectedConfigRevision": 4
+}

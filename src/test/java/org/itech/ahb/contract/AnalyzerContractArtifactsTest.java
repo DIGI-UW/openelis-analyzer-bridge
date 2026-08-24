@@ -47,33 +47,49 @@ class AnalyzerContractArtifactsTest {
     "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition";
 
   @Test
-  @DisplayName("both sides of registration reconciliation conform to one versioned schema")
-  void registrationReconciliationFixturesConform() throws IOException {
-    assertConforms("registration-sync.schema.json", "registration-initial.json");
-    assertConforms("registration-sync.schema.json", "registration-next.json");
+  @DisplayName("durable connection create, read, and update use one versioned boundary")
+  void durableConnectionFixturesConform() throws IOException {
+    assertConforms("connection-create.schema.json", "connection-create.json");
+    assertConforms("analyzer-connection.schema.json", "analyzer-connection.json");
+    assertConforms("connection-update.schema.json", "connection-update.json");
 
-    JsonNode initial = fixture("registration-initial.json");
-    JsonNode next = fixture("registration-next.json");
-    assertTrue(initial.path("analyzers").isObject());
-    assertTrue(next.path("analyzers").isObject());
-    assertEquals("1.0", initial.path("schemaVersion").asText());
-    assertEquals("1.0", next.path("schemaVersion").asText());
-    assertFalse(initial.path("desiredStateRevision").asText().isBlank());
-    assertFalse(next.path("desiredStateRevision").asText().isBlank());
-    assertFalse(initial.path("desiredStateRevision").asText().equals(next.path("desiredStateRevision").asText()));
-    assertConforms("registration-sync-result.schema.json", "registration-result.json");
+    JsonNode create = fixture("connection-create.json");
+    JsonNode update = fixture("connection-update.json");
+    JsonNode connection = fixture("analyzer-connection.json");
+    assertEquals("1.0", create.path("schemaVersion").asText());
+    assertEquals(create.path("clientAnalyzerId"), connection.path("clientAnalyzerId"));
+    assertEquals(create.path("profileRef"), connection.path("profileRef"));
+    assertEquals(3, update.path("expectedConfigRevision").asInt());
+    assertEquals(4, connection.path("configRevision").asInt());
+    assertFalse(connection.path("configFingerprint").asText().isBlank());
+    assertTrue(connection.path("fields").isArray());
+    assertTrue(connection.path("fields").size() > 0);
   }
 
   @Test
-  @DisplayName("registration acknowledgement identifies the exact pinned candidate")
-  void registrationAcknowledgementPinsExactCandidate() throws IOException {
-    JsonNode requested = keyedOrArrayEntry(fixture("registration-next.json").path("analyzers"), "42");
-    JsonNode acknowledged = keyedOrArrayEntry(fixture("registration-result.json").path("registrations"), "42");
+  @DisplayName("probe and runtime commands identify an exact saved connection revision")
+  void commandFixturesConform() throws IOException {
+    assertConforms("connection-probe-request.schema.json", "connection-probe-request.json");
+    assertConforms("connection-probe-result.schema.json", "connection-probe-result.json");
+    assertConforms("connection-runtime-command.schema.json", "connection-activate.json");
+    assertConforms("connection-runtime-command.schema.json", "connection-deactivate.json");
+    assertConforms("connection-runtime-ack.schema.json", "connection-activate-ack.json");
+    assertConforms("connection-runtime-ack.schema.json", "connection-deactivate-ack.json");
 
-    assertEquals(requested.path("profileRef"), acknowledged.path("profileRef"));
-    assertEquals(requested.path("desiredStateFingerprint"), acknowledged.path("desiredStateFingerprint"));
-    assertTrue(requested.path("desiredStateFingerprint").asText().matches("sha256:[0-9a-f]{64}"));
-    assertFalse(requested.has("siteBindingRevision"));
+    JsonNode probeRequest = fixture("connection-probe-request.json");
+    JsonNode probeResult = fixture("connection-probe-result.json");
+    assertEquals(probeRequest.path("requestId"), probeResult.path("requestId"));
+    assertEquals(probeRequest.path("connectionId"), probeResult.path("connectionId"));
+    assertEquals(probeRequest.path("expectedConfigRevision"), probeResult.path("configRevision"));
+    assertTrue(probeResult.path("nonMutating").asBoolean());
+
+    JsonNode command = fixture("connection-activate.json");
+    JsonNode acknowledgement = fixture("connection-activate-ack.json");
+    assertEquals(command.path("commandId"), acknowledgement.path("commandId"));
+    assertEquals(command.path("connectionId"), acknowledgement.path("connectionId"));
+    assertEquals(command.path("expectedConfigRevision"), acknowledgement.path("configRevision"));
+    assertEquals("ACTIVE", acknowledgement.path("actualRuntimeState").asText());
+    assertTrue(acknowledgement.path("runtimeFingerprint").asText().matches("sha256:[0-9a-f]{64}"));
   }
 
   @Test
@@ -156,25 +172,29 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
-  @DisplayName("registration excludes OpenELIS operational QC and classifier state")
-  void registrationExcludesOperationalQcAndClassifierState() throws IOException {
-    String registrationSchema = Files.readString(CONTRACT_ROOT.resolve("registration-sync.schema.json"));
-    assertFalse(registrationSchema.contains("operationalQc"));
-    assertFalse(registrationSchema.contains("activeRuleIds"));
-    assertFalse(registrationSchema.contains("controlLots"));
-    assertFalse(registrationSchema.contains("qcRules"));
-
-    JsonNode invalid = fixture("registration-initial.json").deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) keyedOrArrayEntry(invalid.path("analyzers"), "42")).set(
-        "operationalQc",
-        JSON.createObjectNode()
+  @DisplayName("connection contracts exclude OpenELIS binding and operational QC authority")
+  void connectionContractsExcludeOpenElisAuthority() throws IOException {
+    for (String foreignField : new String[] {
+      "openelisTestId",
+      "openelisResultOptionId",
+      "labUnitId",
+      "controlLots",
+      "qcRules",
+      "westgard",
+      "operationalQc"
+    }) {
+      JsonNode invalid = fixture("connection-create.json").deepCopy();
+      ((com.fasterxml.jackson.databind.node.ObjectNode) invalid).set(foreignField, JSON.createObjectNode());
+      assertFalse(
+        validationMessages("connection-create.schema.json", invalid).isEmpty(),
+        () -> "connection create accepted foreign field " + foreignField
       );
-    assertFalse(validationMessages("registration-sync.schema.json", invalid).isEmpty());
+    }
   }
 
   @Test
-  @DisplayName("registration settings cannot hide OpenELIS QC or classifier state")
-  void registrationSettingsRejectOperationalQcAndClassifierAliases() throws IOException {
+  @DisplayName("generic connection values reject foreign-authority aliases")
+  void connectionValuesRejectForeignAuthorityAliases() throws IOException {
     for (String reservedKey : new String[] {
       "controlLot",
       "qcRule",
@@ -184,15 +204,32 @@ class AnalyzerContractArtifactsTest {
       "labUnitId",
       "testCodeLoinc"
     }) {
-      JsonNode invalid = fixture("registration-initial.json").deepCopy();
-      ((com.fasterxml.jackson.databind.node.ObjectNode) keyedOrArrayEntry(invalid.path("analyzers"), "42")
-          .path("connection")
-          .path("settings")).put(reservedKey, "must-not-cross-boundary");
+      JsonNode invalid = fixture("connection-create.json").deepCopy();
+      ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("values")).put(
+          reservedKey,
+          "must-not-cross-boundary"
+        );
       assertFalse(
-        validationMessages("registration-sync.schema.json", invalid).isEmpty(),
-        () -> "registration settings accepted reserved key " + reservedKey
+        validationMessages("connection-create.schema.json", invalid).isEmpty(),
+        () -> "connection values accepted reserved key " + reservedKey
       );
     }
+  }
+
+  @Test
+  @DisplayName("secret values are masked and never returned as current values")
+  void connectionResponseMasksSecrets() throws IOException {
+    JsonNode connection = fixture("analyzer-connection.json");
+    JsonNode secret = StreamSupport.stream(connection.path("fields").spliterator(), false)
+      .filter(field -> "SECRET".equals(field.path("inputKind").asText()))
+      .findFirst()
+      .orElseThrow();
+    assertTrue(secret.path("isSet").asBoolean());
+    assertFalse(secret.path("maskedValue").asText().isBlank());
+    assertFalse(secret.has("currentValue"));
+
+    ((com.fasterxml.jackson.databind.node.ObjectNode) secret).put("currentValue", "exposed-secret");
+    assertFalse(validationMessages("analyzer-connection.schema.json", connection).isEmpty());
   }
 
   @Test
@@ -292,18 +329,17 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
-  @DisplayName("registration acknowledgement has one result per OpenELIS analyzer")
-  void registrationAcknowledgementIsKeyedByAnalyzer() throws IOException {
-    JsonNode result = fixture("registration-result.json");
-    assertTrue(result.path("registrations").isObject());
-    assertEquals(2, result.path("registrations").size());
-
-    JsonNode invalid = result.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid).set(
-        "registrations",
-        JSON.createArrayNode().add(result.path("registrations").path("42"))
-      );
-    assertFalse(validationMessages("registration-sync-result.schema.json", invalid).isEmpty());
+  @DisplayName("bulk full-state registration artifacts are absent")
+  void fullStateRegistrationArtifactsAreAbsent() {
+    for (String removed : new String[] {
+      "registration-sync.schema.json",
+      "registration-sync-result.schema.json",
+      "fixtures/registration-initial.json",
+      "fixtures/registration-next.json",
+      "fixtures/registration-result.json"
+    }) {
+      assertFalse(Files.exists(CONTRACT_ROOT.resolve(removed)), removed);
+    }
   }
 
   @Test
@@ -337,16 +373,6 @@ class AnalyzerContractArtifactsTest {
 
   private static JsonNode firstObservation(JsonNode bundle) {
     return firstResource(bundle, "Observation");
-  }
-
-  private static JsonNode keyedOrArrayEntry(JsonNode collection, String key) {
-    if (collection.isObject()) {
-      return collection.path(key);
-    }
-    return StreamSupport.stream(collection.spliterator(), false)
-      .filter(entry -> key.equals(entry.path("oeAnalyzerId").asText()))
-      .findFirst()
-      .orElseThrow();
   }
 
   private static JsonNode firstResource(JsonNode bundle, String resourceType) {

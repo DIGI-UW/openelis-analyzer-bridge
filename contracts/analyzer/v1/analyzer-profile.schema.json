@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
   "title": "OpenELIS Analyzer Bridge profile revision v1",
-  "description": "Strict evolution of the established analyzer-defaults profile. The profile defines analyzer runtime communication and defaults for a new OpenELIS analyzer instance; catalog metadata is generated separately under catalog.",
+  "description": "Strict evolution of the established analyzer-defaults profile. The profile defines analyzer runtime communication and defaults for a new Bridge connection; catalog metadata is generated separately under catalog.",
   "type": "object",
   "additionalProperties": false,
   "required": [

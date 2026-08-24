@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/connection-runtime-ack.schema.json",
+  "title": "Exact Bridge connection runtime acknowledgement v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "action",
+    "outcome",
+    "connectionId",
+    "profileRef",
+    "configRevision",
+    "configFingerprint",
+    "runtimeRevision",
+    "runtimeFingerprint",
+    "desiredRuntimeState",
+    "actualRuntimeState",
+    "blockers",
+    "acknowledgedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "commandId": { "type": "string", "minLength": 1 },
+    "action": { "enum": ["ACTIVATE", "DEACTIVATE"] },
+    "outcome": { "enum": ["APPLIED", "ALREADY_APPLIED", "REJECTED"] },
+    "connectionId": { "type": "string", "minLength": 1 },
+    "profileRef": { "$ref": "#/$defs/profileRef" },
+    "configRevision": { "type": "integer", "minimum": 1 },
+    "configFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "runtimeRevision": { "type": "integer", "minimum": 1 },
+    "runtimeFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "desiredRuntimeState": { "$ref": "#/$defs/runtimeState" },
+    "actualRuntimeState": { "$ref": "#/$defs/runtimeState" },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "messageKey"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "messageKey": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "acknowledgedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "revision", "fingerprint"],
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "runtimeState": {
+      "enum": ["INACTIVE", "ACTIVATING", "ACTIVE", "DEACTIVATING", "ERROR"]
+    }
+  }
+}

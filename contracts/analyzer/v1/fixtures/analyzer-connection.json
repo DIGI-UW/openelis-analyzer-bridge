@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "1.0",
+  "connectionId": "bridge-connection-7f3c",
+  "clientAnalyzerId": "oe-analyzer-42",
+  "displayName": "Synthetic chemistry analyzer",
+  "profileRef": {
+    "profileId": "fixture.synthetic-socket",
+    "revision": 2,
+    "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "configRevision": 4,
+  "configFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "fields": [
+    {
+      "key": "connectionRole",
+      "labelKey": "analyzer.connection.role",
+      "inputKind": "SELECT",
+      "required": true,
+      "defaultValue": "LISTENER",
+      "currentValue": "LISTENER",
+      "choices": [
+        {
+          "value": "LISTENER",
+          "labelKey": "analyzer.connection.role.listener"
+        },
+        {
+          "value": "INITIATOR",
+          "labelKey": "analyzer.connection.role.initiator"
+        }
+      ],
+      "validationErrors": []
+    },
+    {
+      "key": "listenerPort",
+      "labelKey": "analyzer.connection.listenerPort",
+      "inputKind": "NUMBER",
+      "required": true,
+      "defaultValue": 5000,
+      "currentValue": 5001,
+      "choices": [],
+      "visibleWhen": {
+        "fieldKey": "connectionRole",
+        "operator": "EQUALS",
+        "value": "LISTENER"
+      },
+      "validationErrors": []
+    },
+    {
+      "key": "apiToken",
+      "labelKey": "analyzer.connection.apiToken",
+      "inputKind": "SECRET",
+      "required": true,
+      "defaultValue": null,
+      "isSet": true,
+      "maskedValue": "********",
+      "choices": [],
+      "validationErrors": []
+    }
+  ],
+  "readiness": {
+    "ready": true,
+    "blockers": []
+  },
+  "latestProbe": {
+    "requestId": "probe-fixture-004",
+    "configRevision": 4,
+    "status": "SUCCEEDED",
+    "completedAt": "2026-08-24T19:05:04Z"
+  },
+  "desiredRuntimeState": "ACTIVE",
+  "actualRuntimeState": "ACTIVE",
+  "activeRuntimeRef": {
+    "connectionId": "bridge-connection-7f3c",
+    "profileRef": {
+      "profileId": "fixture.synthetic-socket",
+      "revision": 2,
+      "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "configRevision": 4,
+    "configFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "runtimeRevision": 9,
+    "runtimeFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "updatedAt": "2026-08-24T19:05:05Z"
+}

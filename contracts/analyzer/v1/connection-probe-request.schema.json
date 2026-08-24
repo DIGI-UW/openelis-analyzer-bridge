@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/connection-probe-request.schema.json",
+  "title": "Probe one saved Bridge connection revision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "connectionId",
+    "expectedConfigRevision"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "requestId": { "type": "string", "minLength": 1 },
+    "connectionId": { "type": "string", "minLength": 1 },
+    "expectedConfigRevision": { "type": "integer", "minimum": 1 }
+  }
+}
