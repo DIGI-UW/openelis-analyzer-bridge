@@ -13,8 +13,8 @@ import com.networknt.schema.SpecVersion;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.registration.AnalyzerRegistrationSyncService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,16 +32,19 @@ class AnalyzerConnectionProbeServiceTest {
   @Mock
   ReceiverListenerPortResolver listenerPorts;
 
-  private AnalyzerRegistryConfig registry;
+  @Mock
+  AnalyzerRegistrationSyncService registrations;
+
   private AnalyzerConnectionProbeService service;
   private AnalyzerEntry analyzer;
+  private ObjectNode candidate;
 
   @BeforeEach
   void setUp() {
-    registry = new AnalyzerRegistryConfig();
-    service = new AnalyzerConnectionProbeService(registry, executor, listenerPorts, "bridge.lab.example");
+    service = new AnalyzerConnectionProbeService(registrations, executor, listenerPorts, "bridge.lab.example");
     analyzer = analyzer("RESULTS_ONLY", Map.of());
-    registry.register(analyzer.getSourceId(), analyzer);
+    candidate = new ObjectMapper().createObjectNode();
+    when(registrations.materializeCandidate("77", candidate)).thenReturn(analyzer);
   }
 
   @Test
@@ -50,7 +53,7 @@ class AnalyzerConnectionProbeServiceTest {
     when(executor.probeListener(12001))
       .thenReturn(check("LISTENER", "PASSED", "listener.ready", 3));
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("analyzerId").asText()).isEqualTo("77");
@@ -89,7 +92,7 @@ class AnalyzerConnectionProbeServiceTest {
     when(executor.probeRemote("ASTM", "10.42.20.10", 9600, 5000))
       .thenReturn(check("REMOTE_PROTOCOL", "TIMED_OUT", "remote.timeout", 5000));
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("TIMEOUT");
@@ -106,7 +109,7 @@ class AnalyzerConnectionProbeServiceTest {
     when(executor.probeListener(12001))
       .thenReturn(check("LISTENER", "PASSED", "listener.ready", 2));
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("MISSING_CONFIGURATION");
@@ -132,7 +135,7 @@ class AnalyzerConnectionProbeServiceTest {
     when(executor.probeRemote("ASTM", "10.42.20.10", 9600, 5000))
       .thenReturn(check("REMOTE_PROTOCOL", "PASSED", "remote.ready", 4));
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
@@ -155,7 +158,7 @@ class AnalyzerConnectionProbeServiceTest {
     when(executor.probeDirectory("/data/analyzers/incoming"))
       .thenReturn(check("DIRECTORY", "PASSED", "directory.ready", 1));
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
@@ -180,7 +183,7 @@ class AnalyzerConnectionProbeServiceTest {
     when(executor.probeSerialDevice("/dev/ttyUSB0"))
       .thenReturn(check("SERIAL_DEVICE", "PASSED", "serial.ready", 1));
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
@@ -201,7 +204,7 @@ class AnalyzerConnectionProbeServiceTest {
     when(executor.probeHttpEndpoint("https://analyzer.example/hl7", 5000))
       .thenReturn(check("HTTP_ENDPOINT", "PASSED", "http.ready", 7));
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("SUCCESS");
@@ -215,9 +218,9 @@ class AnalyzerConnectionProbeServiceTest {
 
   @Test
   void receiverWithoutAnAdvertisedBridgeHostReportsMissingConfiguration() {
-    service = new AnalyzerConnectionProbeService(registry, executor, listenerPorts, " ");
+    service = new AnalyzerConnectionProbeService(registrations, executor, listenerPorts, " ");
 
-    ObjectNode result = service.probe("77").orElseThrow();
+    ObjectNode result = probe();
 
     assertConforms(result);
     assertThat(result.path("outcome").asText()).isEqualTo("MISSING_CONFIGURATION");
@@ -225,6 +228,22 @@ class AnalyzerConnectionProbeServiceTest {
     assertThat(result.path("checks").path(0).path("code").asText())
       .isEqualTo("listener.endpoint.missing");
     verify(executor, never()).probeListener(org.mockito.ArgumentMatchers.anyInt());
+  }
+
+  @Test
+  void materializesTheExactCandidateWithoutSynchronizingRuntime() {
+    when(listenerPorts.resolve(analyzer)).thenReturn(java.util.OptionalInt.of(12001));
+    when(executor.probeListener(12001))
+      .thenReturn(check("LISTENER", "PASSED", "listener.ready", 3));
+
+    probe();
+
+    verify(registrations).materializeCandidate("77", candidate);
+    verify(registrations, never()).synchronize(org.mockito.ArgumentMatchers.any());
+  }
+
+  private ObjectNode probe() {
+    return service.probe("77", candidate);
   }
 
   private static AnalyzerEntry analyzer(String dataFlow, Map<String, Object> settings) {
