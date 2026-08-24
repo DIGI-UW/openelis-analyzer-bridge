@@ -225,6 +225,30 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("generic connection values reject foreign-authority aliases")
+  void connectionValuesRejectForeignAuthorityAliases() throws IOException {
+    for (String reservedKey : new String[] {
+      "controlLot",
+      "qcRule",
+      "westgardEnabled",
+      "classifierState",
+      "openelisTestId",
+      "labUnitId",
+      "testCodeLoinc"
+    }) {
+      JsonNode invalid = fixture("connection-create.json").deepCopy();
+      ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("values")).put(
+          reservedKey,
+          "must-not-cross-boundary"
+        );
+      assertFalse(
+        validationMessages("connection-create.schema.json", invalid).isEmpty(),
+        () -> "connection values accepted reserved key " + reservedKey
+      );
+    }
+  }
+
+  @Test
   @DisplayName("secret values are masked and never returned as current values")
   void connectionResponseMasksSecrets() throws IOException {
     JsonNode connection = fixture("analyzer-connection.json");
@@ -334,6 +358,20 @@ class AnalyzerContractArtifactsTest {
       );
 
     assertFalse(validationMessages("normalized-fhir-bundle.schema.json", invalid).isEmpty());
+  }
+
+  @Test
+  @DisplayName("bulk full-state registration artifacts are absent")
+  void fullStateRegistrationArtifactsAreAbsent() {
+    for (String removed : new String[] {
+      "registration-sync.schema.json",
+      "registration-sync-result.schema.json",
+      "fixtures/registration-initial.json",
+      "fixtures/registration-next.json",
+      "fixtures/registration-result.json"
+    }) {
+      assertFalse(Files.exists(CONTRACT_ROOT.resolve(removed)), removed);
+    }
   }
 
   @Test
