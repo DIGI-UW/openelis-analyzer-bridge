@@ -1,6 +1,7 @@
 package org.itech.ahb.connectivity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -242,6 +243,23 @@ class AnalyzerConnectionProbeServiceTest {
     verify(registrations, never()).synchronize(org.mockito.ArgumentMatchers.any());
   }
 
+  @Test
+  void rejectsAnActiveCandidateBeforePerformingConnectionWork() {
+    analyzer.setDesiredStatus("ACTIVE");
+
+    assertThatThrownBy(this::probe)
+      .isInstanceOf(org.itech.ahb.registration.RegistrationContractException.class)
+      .hasMessageContaining("must be INACTIVE");
+
+    verify(executor, never()).probeListener(org.mockito.ArgumentMatchers.anyInt());
+    verify(executor, never()).probeRemote(
+      org.mockito.ArgumentMatchers.anyString(),
+      org.mockito.ArgumentMatchers.anyString(),
+      org.mockito.ArgumentMatchers.anyInt(),
+      org.mockito.ArgumentMatchers.anyInt()
+    );
+  }
+
   private ObjectNode probe() {
     return service.probe("77", candidate);
   }
@@ -256,7 +274,7 @@ class AnalyzerConnectionProbeServiceTest {
     entry.setProfileRevision(1);
     entry.setProfileLowerLayerVersion("LIS01_A");
     entry.setDesiredStateFingerprint("sha256:" + "6".repeat(64));
-    entry.setDesiredStatus("ACTIVE");
+    entry.setDesiredStatus("INACTIVE");
     entry.setConnectionMode("TCP");
     entry.setConnectionRole("RECEIVER");
     entry.setDataFlow(dataFlow);

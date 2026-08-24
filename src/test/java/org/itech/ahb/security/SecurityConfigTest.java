@@ -128,9 +128,11 @@ class SecurityConfigTest {
         @Test
         @DisplayName("Authenticated analyzer probe reaches the controller")
         void authenticatedAnalyzerProbeReachesController() throws Exception {
-            mockMvc.perform(post("/api/analyzers/missing/probe")
-                    .with(httpBasic("testuser", "testpass")))
-                    .andExpect(status().isNotFound());
+            mockMvc.perform(post("/api/analyzers/77/probe")
+                    .with(httpBasic("testuser", "testpass"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}"))
+                    .andExpect(status().isBadRequest());
         }
     }
 

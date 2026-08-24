@@ -1,56 +1,51 @@
 package org.itech.ahb.connectivity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.OptionalInt;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.registration.AnalyzerRegistrationSyncService;
+import org.itech.ahb.registration.RegistrationContractException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-/** Builds versioned probe evidence from one registered analyzer candidate. */
+/** Builds versioned probe evidence from one transient analyzer candidate. */
 @Service
 public final class AnalyzerConnectionProbeService {
 
   private static final int REMOTE_TIMEOUT_MS = 5000;
 
-  private final AnalyzerRegistryConfig registry;
+  private final AnalyzerRegistrationSyncService registrations;
   private final ConnectionProbeExecutor executor;
   private final ReceiverListenerPortResolver listenerPorts;
   private final String advertisedHost;
 
   public AnalyzerConnectionProbeService(
-    AnalyzerRegistryConfig registry,
+    AnalyzerRegistrationSyncService registrations,
     ConnectionProbeExecutor executor,
     ReceiverListenerPortResolver listenerPorts,
     @Value("${bridge.connectivity.advertised-host:}")
     String advertisedHost
   ) {
-    this.registry = registry;
+    this.registrations = registrations;
     this.executor = executor;
     this.listenerPorts = listenerPorts;
     this.advertisedHost = advertisedHost;
   }
 
-  public Optional<ObjectNode> probe(String analyzerId) {
-    return findAnalyzer(analyzerId).map(this::probe);
-  }
-
-  private Optional<AnalyzerEntry> findAnalyzer(String analyzerId) {
-    if (analyzerId == null || analyzerId.isBlank()) {
-      return Optional.empty();
+  public ObjectNode probe(String analyzerId, JsonNode candidate) {
+    AnalyzerEntry analyzer = registrations.materializeCandidate(analyzerId, candidate);
+    if (!"INACTIVE".equals(analyzer.getDesiredStatus())) {
+      throw new RegistrationContractException(
+        "Connection probe candidate desiredStatus must be INACTIVE"
+      );
     }
-    return registry
-      .getRegisteredAnalyzers()
-      .values()
-      .stream()
-      .filter(entry -> analyzerId.equals(entry.getId()))
-      .findFirst();
+    return probe(analyzer);
   }
 
   private ObjectNode probe(AnalyzerEntry analyzer) {

@@ -1,15 +1,18 @@
 package org.itech.ahb.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
 import org.itech.ahb.connectivity.AnalyzerConnectionProbeService;
-import org.springframework.http.HttpStatus;
+import org.itech.ahb.registration.RegistrationContractException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Exposes connection evidence for one registered OpenELIS analyzer. */
+/** Exposes connection evidence for one transient OpenELIS analyzer candidate. */
 @RestController
 @RequestMapping("/api/analyzers")
 public final class AnalyzerConnectionProbeController {
@@ -23,19 +26,17 @@ public final class AnalyzerConnectionProbeController {
   }
 
   @PostMapping("/{analyzerId}/probe")
-  public ResponseEntity<?> probe(@PathVariable String analyzerId) {
-    return service
-      .probe(analyzerId)
-      .<ResponseEntity<?>>map(ResponseEntity::ok)
-      .orElseGet(() ->
-        ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-          Map.of(
-            "error",
-            "analyzer_not_registered",
-            "analyzerId",
-            analyzerId
-          )
-        )
-      );
+  public ResponseEntity<?> probe(
+    @PathVariable String analyzerId,
+    @RequestBody JsonNode candidate
+  ) {
+    return ResponseEntity.ok(service.probe(analyzerId, candidate));
+  }
+
+  @ExceptionHandler(RegistrationContractException.class)
+  public ResponseEntity<Map<String, String>> handleContractError(
+    RegistrationContractException exception
+  ) {
+    return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
   }
 }
