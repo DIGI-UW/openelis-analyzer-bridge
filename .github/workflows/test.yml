@@ -38,12 +38,8 @@ jobs:
           mvn clean install
 
       - name: Run tests
-        run: mvn clean test
-
-      - name: Verify shipped profiles against analyzer mock fixtures
         run: >-
-          mvn
-          -Dtest=org.itech.ahb.profile.PriorityProfileMockFixtureIT,org.itech.ahb.profile.QuantStudioProfileFixtureIT
+          mvn clean
           -DanalyzerMockDir=${{ github.workspace }}/analyzer-mock-server
           test
 
