@@ -47,6 +47,38 @@
     },
     "acknowledgedAt": { "type": "string", "format": "date-time" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": { "const": "ACTIVATE" },
+          "outcome": { "enum": ["APPLIED", "ALREADY_APPLIED"] }
+        },
+        "required": ["action", "outcome"]
+      },
+      "then": {
+        "properties": {
+          "desiredRuntimeState": { "const": "ACTIVE" },
+          "actualRuntimeState": { "const": "ACTIVE" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": { "const": "DEACTIVATE" },
+          "outcome": { "enum": ["APPLIED", "ALREADY_APPLIED"] }
+        },
+        "required": ["action", "outcome"]
+      },
+      "then": {
+        "properties": {
+          "desiredRuntimeState": { "const": "INACTIVE" },
+          "actualRuntimeState": { "const": "INACTIVE" }
+        }
+      }
+    }
+  ],
   "$defs": {
     "fingerprint": {
       "type": "string",

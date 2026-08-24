@@ -93,6 +93,16 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("applied runtime acknowledgements cannot contradict their command")
+  void appliedRuntimeAcknowledgementMatchesCommand() throws IOException {
+    JsonNode invalid = fixture("connection-activate-ack.json").deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid).put("desiredRuntimeState", "INACTIVE");
+    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid).put("actualRuntimeState", "INACTIVE");
+
+    assertFalse(validationMessages("connection-runtime-ack.schema.json", invalid).isEmpty());
+  }
+
+  @Test
   @DisplayName("known, unknown, control, non-match, NONE, and FILE traffic conform to normalized FHIR v1")
   void normalizedTrafficFixturesConform() throws IOException {
     for (String fixture : new String[] {
