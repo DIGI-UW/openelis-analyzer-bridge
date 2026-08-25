@@ -13,6 +13,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -437,6 +438,7 @@ public final class AnalyzerConnectionCatalog {
   private ArrayNode fields(ObjectNode record, ObjectNode profile) {
     ObjectNode values = (ObjectNode) record.path("values");
     ObjectNode defaults = profileDefaults(profile);
+    Map<String, JsonNode> descriptors = fieldDescriptors(profile);
     ArrayNode fields = objectMapper.createArrayNode();
     for (JsonNode descriptor : profile.path("connectionFields")) {
       String key = descriptor.path("key").asText();
@@ -466,7 +468,7 @@ public final class AnalyzerConnectionCatalog {
         field.set("visibleWhen", descriptor.path("visibleWhen").deepCopy());
       }
       ArrayNode validationErrors = field.putArray("validationErrors");
-      if (required && isVisible(descriptor, values) && !hasValue(currentValue)) {
+      if (required && isVisible(descriptor, values, descriptors) && !hasValue(currentValue)) {
         validationErrors.add("analyzer.connection.validation.required");
       }
     }
@@ -475,12 +477,13 @@ public final class AnalyzerConnectionCatalog {
 
   private ArrayList<String> missingRequiredFields(ObjectNode record, ObjectNode profile) {
     ObjectNode values = (ObjectNode) record.path("values");
+    Map<String, JsonNode> descriptors = fieldDescriptors(profile);
     ArrayList<String> missing = new ArrayList<>();
     for (JsonNode descriptor : profile.path("connectionFields")) {
       String key = descriptor.path("key").asText();
       if (
         descriptor.path("required").asBoolean() &&
-        isVisible(descriptor, values) &&
+        isVisible(descriptor, values, descriptors) &&
         !hasValue(values.path(key))
       ) {
         missing.add(key);
@@ -494,20 +497,49 @@ public final class AnalyzerConnectionCatalog {
     return !value.isMissingNode() && !value.isNull() && (!value.isTextual() || !value.asText().isBlank());
   }
 
-  private static boolean isVisible(JsonNode descriptor, ObjectNode values) {
-    JsonNode condition = descriptor.path("visibleWhen");
-    if (!condition.isObject()) {
-      return true;
+  private static boolean isVisible(
+    JsonNode descriptor,
+    ObjectNode values,
+    Map<String, JsonNode> descriptors
+  ) {
+    return isVisible(descriptor, values, descriptors, new HashSet<>());
+  }
+
+  private static boolean isVisible(
+    JsonNode descriptor,
+    ObjectNode values,
+    Map<String, JsonNode> descriptors,
+    Set<String> visiting
+  ) {
+    String key = descriptor.path("key").asText();
+    if (!visiting.add(key)) {
+      return false;
     }
-    JsonNode actual = values.path(condition.path("fieldKey").asText());
-    JsonNode expected = condition.path("value");
-    return switch (condition.path("operator").asText()) {
-      case "EQUALS" -> actual.equals(expected);
-      case "NOT_EQUALS" -> !actual.equals(expected);
-      case "IN" -> expected.isArray() && contains(expected, actual);
-      case "NOT_IN" -> expected.isArray() && !contains(expected, actual);
-      default -> false;
-    };
+    try {
+      JsonNode condition = descriptor.path("visibleWhen");
+      if (!condition.isObject()) {
+        return true;
+      }
+      String controllingKey = condition.path("fieldKey").asText();
+      JsonNode controllingField = descriptors.get(controllingKey);
+      if (
+        controllingField != null &&
+        !isVisible(controllingField, values, descriptors, visiting)
+      ) {
+        return false;
+      }
+      JsonNode actual = values.path(controllingKey);
+      JsonNode expected = condition.path("value");
+      return switch (condition.path("operator").asText()) {
+        case "EQUALS" -> actual.equals(expected);
+        case "NOT_EQUALS" -> !actual.equals(expected);
+        case "IN" -> expected.isArray() && contains(expected, actual);
+        case "NOT_IN" -> expected.isArray() && !contains(expected, actual);
+        default -> false;
+      };
+    } finally {
+      visiting.remove(key);
+    }
   }
 
   private static boolean contains(JsonNode values, JsonNode sought) {
@@ -520,8 +552,7 @@ public final class AnalyzerConnectionCatalog {
   }
 
   private void validateValues(ObjectNode profile, ObjectNode values) {
-    Map<String, JsonNode> descriptors = new HashMap<>();
-    profile.path("connectionFields").forEach(field -> descriptors.put(field.path("key").asText(), field));
+    Map<String, JsonNode> descriptors = fieldDescriptors(profile);
     Iterator<String> keys = values.fieldNames();
     while (keys.hasNext()) {
       String key = keys.next();
@@ -537,6 +568,12 @@ public final class AnalyzerConnectionCatalog {
       }
       validateValueType(key, descriptor, values.path(key));
     }
+  }
+
+  private static Map<String, JsonNode> fieldDescriptors(ObjectNode profile) {
+    Map<String, JsonNode> descriptors = new HashMap<>();
+    profile.path("connectionFields").forEach(field -> descriptors.put(field.path("key").asText(), field));
+    return descriptors;
   }
 
   private static void validateValueType(String key, JsonNode descriptor, JsonNode value) {

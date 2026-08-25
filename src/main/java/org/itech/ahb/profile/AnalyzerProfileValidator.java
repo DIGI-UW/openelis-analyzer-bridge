@@ -14,8 +14,10 @@ import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -66,11 +68,13 @@ final class AnalyzerProfileValidator {
   private void validateConnectionFields(JsonNode profile, List<String> failures) {
     Set<String> fieldKeys = new LinkedHashSet<>();
     Set<String> duplicateKeys = new LinkedHashSet<>();
+    Map<String, JsonNode> fieldsByKey = new LinkedHashMap<>();
     for (JsonNode field : profile.path("connectionFields")) {
       String key = field.path("key").asText();
       if (!fieldKeys.add(key)) {
         duplicateKeys.add(key);
       }
+      fieldsByKey.putIfAbsent(key, field);
       if (
         "SECRET".equals(field.path("inputKind").asText()) &&
         profile.path("configDefaults").has(key)
@@ -91,6 +95,48 @@ final class AnalyzerProfileValidator {
         );
       }
     }
+    if (hasVisibilityDependencyCycle(fieldsByKey)) {
+      failures.add("$.connectionFields.visibleWhen must not contain dependency cycles");
+    }
+  }
+
+  private static boolean hasVisibilityDependencyCycle(Map<String, JsonNode> fieldsByKey) {
+    Set<String> complete = new HashSet<>();
+    for (String key : fieldsByKey.keySet()) {
+      if (hasVisibilityDependencyCycle(key, fieldsByKey, new HashSet<>(), complete)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasVisibilityDependencyCycle(
+    String key,
+    Map<String, JsonNode> fieldsByKey,
+    Set<String> visiting,
+    Set<String> complete
+  ) {
+    if (complete.contains(key)) {
+      return false;
+    }
+    if (!visiting.add(key)) {
+      return true;
+    }
+    JsonNode field = fieldsByKey.get(key);
+    JsonNode condition = field == null ? null : field.path("visibleWhen");
+    String dependency = condition != null && condition.isObject()
+      ? condition.path("fieldKey").asText()
+      : null;
+    if (
+      dependency != null &&
+      fieldsByKey.containsKey(dependency) &&
+      hasVisibilityDependencyCycle(dependency, fieldsByKey, visiting, complete)
+    ) {
+      return true;
+    }
+    visiting.remove(key);
+    complete.add(key);
+    return false;
   }
 
   private void validateTabularResultSelection(JsonNode profile, List<String> failures) {

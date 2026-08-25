@@ -155,6 +155,26 @@ class AnalyzerProfileValidatorTest {
   }
 
   @Test
+  void rejectsCircularConnectionVisibilityDependencies() throws Exception {
+    ObjectNode profile = fileProfile();
+    ObjectNode directory = (ObjectNode) profile.path("connectionFields").get(0);
+    ObjectNode filePattern = (ObjectNode) profile.path("connectionFields").get(1);
+    directory
+      .putObject("visibleWhen")
+      .put("fieldKey", "filePattern")
+      .put("operator", "EQUALS")
+      .put("value", "*.csv");
+    filePattern
+      .putObject("visibleWhen")
+      .put("fieldKey", "directory")
+      .put("operator", "EQUALS")
+      .put("value", "/data/instruments");
+
+    assertThat(validator.validationIssues(profile))
+      .contains("$.connectionFields.visibleWhen must not contain dependency cycles");
+  }
+
+  @Test
   void rejectsSecretDefaultsBecausePublishedProfilesMustNotContainCredentials() throws Exception {
     ObjectNode profile = fileProfile();
     ((ObjectNode) profile.path("connectionFields").get(1)).put("inputKind", "SECRET");

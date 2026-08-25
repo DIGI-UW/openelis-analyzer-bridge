@@ -148,6 +148,26 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
+  void hidesDependentFieldsWhenTheirControllingFieldIsHidden() {
+    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode request = createRequest(profile, "create-genexpert-serial", "oe-serial");
+    request
+      .withObject("values")
+      .put("transport", "RS-232")
+      .put("connectionRole", "CLIENT")
+      .put("serialPort", "/dev/ttyUSB0");
+
+    ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000089"))
+      .create(request);
+
+    assertThat(field(created, "host").path("validationErrors")).isEmpty();
+    assertThat(field(created, "port").path("validationErrors")).isEmpty();
+    assertThat(field(created, "serialPort").path("validationErrors")).isEmpty();
+    assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
+    assertThat(created.path("readiness").path("blockers")).isEmpty();
+  }
+
+  @Test
   void rendersAnUnfamiliarFieldDirectlyFromThePinnedProfile() throws Exception {
     ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
     ArrayNode fields = (ArrayNode) profile.path("connectionFields");
