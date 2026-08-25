@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.routing.HttpForwardingRouter;
@@ -50,7 +50,7 @@ public class MessageNormalizer implements MessageRouter {
 
     private final HttpForwardingRouter forwardingRouter;  // Inject by CONCRETE TYPE
     private final AnalyzerIdentifier identifier;
-    private final AnalyzerRegistryConfig registry;  // optional — for diagnostic validation only
+    private final AnalyzerRuntimeRegistry registry;  // optional — for diagnostic validation only
     private final MetricsService metricsService;  // nullable — optional dependency
     private final OeApiClient oeApiClient;  // nullable — for discovered-source reporting
     private final DeadLetterWriter deadLetterWriter;  // nullable — for DLQ on unknown sources
@@ -70,7 +70,7 @@ public class MessageNormalizer implements MessageRouter {
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
-            @Autowired(required = false) AnalyzerRegistryConfig registry,
+            @Autowired(required = false) AnalyzerRuntimeRegistry registry,
             @Autowired(required = false) MetricsService metricsService,
             @Autowired(required = false) OeApiClient oeApiClient,
             @Autowired(required = false) DeadLetterWriter deadLetterWriter) {
@@ -82,7 +82,7 @@ public class MessageNormalizer implements MessageRouter {
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
-            AnalyzerRegistryConfig registry,
+            AnalyzerRuntimeRegistry registry,
             MetricsService metricsService,
             OeApiClient oeApiClient,
             DeadLetterWriter deadLetterWriter,
@@ -193,7 +193,7 @@ public class MessageNormalizer implements MessageRouter {
                 envelope.getSourceId(), protocolHint);
         }
 
-        AnalyzerRegistryConfig.AnalyzerEntry registryEntry = registry != null
+        AnalyzerRuntimeRegistry.AnalyzerEntry registryEntry = registry != null
             ? registry.findAnalyzerEntry(envelope.getSourceId()).orElse(null)
             : null;
 
@@ -207,8 +207,8 @@ public class MessageNormalizer implements MessageRouter {
         boolean haveIp = resolvedAnalyzerId != null && !resolvedAnalyzerId.isBlank();
         boolean haveHint = protocolHint != null && !protocolHint.isBlank();
         if (haveIp && haveHint) {
-            boolean agrees = protocolHint.equals(resolvedAnalyzerId)
-                || (registryEntry != null && protocolHintMatchesRegistration(protocolHint, registryEntry));
+            boolean agrees = registryEntry != null
+                && protocolHintMatchesRegistration(protocolHint, registryEntry);
             if (agrees) {
                 recordIdentity(protocol, transport, "corroborated");
                 log.info("Analyzer identity corroborated for source '{}': resolved='{}', protocolHint='{}', registeredName='{}'",
@@ -308,41 +308,14 @@ public class MessageNormalizer implements MessageRouter {
 
     private boolean protocolHintMatchesRegistration(
             String protocolHint,
-            AnalyzerRegistryConfig.AnalyzerEntry registryEntry) {
+            AnalyzerRuntimeRegistry.AnalyzerEntry registryEntry) {
         if (protocolHint == null || protocolHint.isBlank() || registryEntry == null) {
             return false;
         }
 
-        // Primary: corroborate against the SAME regex OE uses to identify the
-        // sender (Analyzer.identifierPattern). This is authoritative and keeps the
-        // two identity signals consistent — it matches ASTM caret-delimited
-        // senders ("GENEXPERT^GeneXpert^4.6.0") and HL7 MSH-3/4 hints alike,
-        // without the false-positive risk of a manufacturer-substring heuristic.
-        // The pattern is compiled once at registration/sync time and cached on the
-        // entry (CASE_INSENSITIVE); invalid patterns are rejected/ignored there and
-        // never reach here, so this is a pure matcher().find() per message.
+        // The pinned profile's identifier pattern is the only content signal that
+        // can corroborate the source-bound connection.
         Pattern idPattern = registryEntry.getCompiledIdentifierPattern();
-        if (idPattern != null && idPattern.matcher(protocolHint).find()) {
-            return true;
-        }
-
-        // Fallback for analyzers registered without a pattern: normalized name/id.
-        String normalizedHint = normalizeIdentityToken(protocolHint);
-        String normalizedName = normalizeIdentityToken(registryEntry.getName());
-        String normalizedId = normalizeIdentityToken(registryEntry.getId());
-
-        if (normalizedHint.isEmpty()) {
-            return false;
-        }
-
-        return (!normalizedName.isEmpty() && normalizedName.contains(normalizedHint))
-            || (!normalizedId.isEmpty() && normalizedId.equals(normalizedHint));
-    }
-
-    private String normalizeIdentityToken(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
+        return idPattern != null && idPattern.matcher(protocolHint).find();
     }
 }

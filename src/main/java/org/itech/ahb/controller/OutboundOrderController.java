@@ -5,8 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.mllp.OutboundMllpClient;
 import org.itech.ahb.order.OrderBuilder;
 import org.itech.ahb.order.OutboundAstmClient;
@@ -32,11 +32,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 public class OutboundOrderController {
 
-    private final AnalyzerRegistryConfig registry;
+    private final AnalyzerRuntimeRegistry registry;
     private final OutboundMllpClient outboundMllpClient;
     private final OutboundAstmClient outboundAstmClient;
 
-    public OutboundOrderController(AnalyzerRegistryConfig registry,
+    public OutboundOrderController(AnalyzerRuntimeRegistry registry,
             OutboundMllpClient outboundMllpClient, OutboundAstmClient outboundAstmClient) {
         this.registry = registry;
         this.outboundMllpClient = outboundMllpClient;

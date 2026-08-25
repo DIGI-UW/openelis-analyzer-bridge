@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.fhir.FileNameSelfDeclarationScanner;
 import org.itech.ahb.fhir.FileNameSelfDeclarationScanner.ScanResult;
 import org.itech.ahb.file.FileMessageHandler;
@@ -58,12 +58,12 @@ public class FileUploadController {
      */
     static final long UPLOAD_LEASE_SECONDS = 60;
 
-    private final AnalyzerRegistryConfig registry;
+    private final AnalyzerRuntimeRegistry registry;
     private final FileMessageHandler fileMessageHandler;
     private final FileNameSelfDeclarationScanner scanner;
     private final FileWatcher fileWatcher;
 
-    public FileUploadController(AnalyzerRegistryConfig registry,
+    public FileUploadController(AnalyzerRuntimeRegistry registry,
             FileMessageHandler fileMessageHandler,
             FileNameSelfDeclarationScanner scanner,
             FileWatcher fileWatcher) {

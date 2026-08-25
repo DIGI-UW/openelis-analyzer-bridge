@@ -89,6 +89,35 @@ class AnalyzerProfileContractTest {
   }
 
   @Test
+  @DisplayName("RS-232 support declares every runtime setting in the profile")
+  void rs232TransportSettingsAreCompleteAndClosed() throws IOException {
+    ObjectNode profile = fixture("analyzer-profile-astm.json").deepCopy();
+    ObjectNode settings = (ObjectNode) profile.path("transport_config").path("RS-232");
+    List<String> requiredSettings = List.of(
+      "default_baud_rate",
+      "data_bits",
+      "stop_bits",
+      "parity",
+      "flow_control",
+      "read_timeout_ms",
+      "message_timeout_ms",
+      "reconnect_interval_ms",
+      "max_reconnect_attempts",
+      "rts_enabled",
+      "dtr_enabled"
+    );
+
+    for (String setting : requiredSettings) {
+      ObjectNode missing = profile.deepCopy();
+      ((ObjectNode) missing.path("transport_config").path("RS-232")).remove(setting);
+      assertFalse(PROFILE_SCHEMA.validate(missing).isEmpty(), setting + " must be required");
+    }
+
+    settings.put("invented_setting", true);
+    assertFalse(PROFILE_SCHEMA.validate(profile).isEmpty());
+  }
+
+  @Test
   @DisplayName("the evolved contract does not invent a model requirement for socket profiles")
   void socketProfileDoesNotRequireAnInventedModel() throws IOException {
     ObjectNode profile = fixture("analyzer-profile-astm.json").deepCopy();

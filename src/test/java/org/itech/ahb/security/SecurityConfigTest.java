@@ -6,7 +6,6 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.itech.ahb.normalizer.MessageEnvelope;
@@ -33,7 +32,6 @@ import org.springframework.test.web.servlet.MockMvc;
     "bridge.security.username=testuser",
     "bridge.security.password=testpass",
     "org.itech.ahb.mllp.enabled=false",
-    "org.itech.ahb.serial.enabled=false",
     "bridge.file.enabled=false",
     "management.endpoints.web.exposure.include=health,info,prometheus,metrics,loggers"
 })
@@ -106,13 +104,13 @@ class SecurityConfigTest {
     }
 
     @Nested
-    @DisplayName("/api/analyzers management authentication")
-    class AnalyzerProbeApiTests {
+    @DisplayName("/api/connections management authentication")
+    class AnalyzerConnectionApiTests {
 
         @Test
-        @DisplayName("Unauthenticated analyzer registration sync returns 401")
-        void unauthenticatedAnalyzerRegistrationSyncReturns401() throws Exception {
-            mockMvc.perform(put("/api/analyzers/sync")
+        @DisplayName("Unauthenticated connection create returns 401")
+        void unauthenticatedConnectionCreateReturns401() throws Exception {
+            mockMvc.perform(post("/api/connections")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{}"))
                     .andExpect(status().isUnauthorized());
@@ -121,14 +119,14 @@ class SecurityConfigTest {
         @Test
         @DisplayName("Unauthenticated analyzer probe returns 401")
         void unauthenticatedAnalyzerProbeReturns401() throws Exception {
-            mockMvc.perform(post("/api/analyzers/77/probe"))
+            mockMvc.perform(post("/api/connections/77/probe"))
                     .andExpect(status().isUnauthorized());
         }
 
         @Test
         @DisplayName("Authenticated analyzer probe reaches the controller")
         void authenticatedAnalyzerProbeReachesController() throws Exception {
-            mockMvc.perform(post("/api/analyzers/77/probe")
+            mockMvc.perform(post("/api/connections/77/probe")
                     .with(httpBasic("testuser", "testpass"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{}"))

@@ -103,9 +103,9 @@ public class SecurityConfig {
                 // Analyzer profile reads and lifecycle writes are an internal
                 // OpenELIS-to-Bridge management API.
                 .requestMatchers("/api/profiles", "/api/profiles/**").authenticated()
-                // Analyzer registration and connection probes are also
+                // Durable analyzer connections and their probes are also
                 // OpenELIS-to-Bridge management operations.
-                .requestMatchers("/api/analyzers", "/api/analyzers/**").authenticated()
+                .requestMatchers("/api/connections", "/api/connections/**").authenticated()
                 // All other endpoints (ASTM query forwarding, etc.) are permitted
                 .anyRequest().permitAll()
             )

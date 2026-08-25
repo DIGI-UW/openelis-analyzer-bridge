@@ -1,4 +1,4 @@
-package org.itech.ahb.config;
+package org.itech.ahb.connection;
 
 import lombok.AccessLevel;
 import lombok.Data;
@@ -8,73 +8,32 @@ import org.itech.ahb.fhir.TabularFileLayout;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Configuration properties for analyzer identification registry.
- * <p>
- * Maps source identifiers (IP addresses, serial ports, file paths) to analyzer IDs
- * for the {@link org.itech.ahb.normalizer.AnalyzerIdentifier} service.
- * </p>
- * <p>
- * Configuration format in {@code configuration.yml}:
- * <pre>
- * bridge:
- *   analyzers:
- *     "192.168.1.10":
- *       id: MINDRAY-BC5380-001
- *       name: "Mindray BC-5380"
- *       expectedProtocol: ASTM
- *     "/dev/ttyUSB0":
- *       id: HORIBA-PENTRA60-001
- *       name: "Horiba Pentra 60"
- *       expectedProtocol: ASTM
- *     "quantstudio-*":
- *       id: QUANTSTUDIO-001
- *       name: "QuantStudio 7 Flex"
- *       expectedProtocol: CSV
- *       filePattern: ".*\\/quantstudio-.*\\.csv"
- * </pre>
- * </p>
- * <p>
- * Keys can be:
- * <ul>
- *   <li><strong>IP addresses:</strong> Exact match (e.g., "192.168.1.10")</li>
- *   <li><strong>Serial port paths:</strong> Exact match (e.g., "/dev/ttyUSB0")</li>
- *   <li><strong>Glob patterns:</strong> Wildcard match for file paths (e.g., "quantstudio-*")</li>
- * </ul>
- * </p>
+ * In-memory projection of active, durable analyzer connections.
  *
- * @see org.itech.ahb.normalizer.AnalyzerIdentifier
+ * <p>The connection catalog is the sole writer. This registry gives inbound protocol handlers
+ * fast source-to-analyzer lookup without creating a second configuration authority.
  */
-@Configuration
-@ConfigurationProperties(prefix = "bridge")
-@Data
+@Component
 @Slf4j
-public class AnalyzerRegistryConfig {
+public class AnalyzerRuntimeRegistry {
 
-    /**
-     * Map of source identifiers to analyzer entries.
-     * <p>
-     * Keys are source identifiers (IP addresses, serial ports, glob patterns).
-     * Values are {@link AnalyzerEntry} objects with analyzer metadata.
-     * </p>
-     */
-    private Map<String, AnalyzerEntry> analyzers = new LinkedHashMap<>();
+    private final Map<String, AnalyzerEntry> analyzers = new ConcurrentHashMap<>();
 
     /**
      * Finds an analyzer ID by source identifier.
@@ -106,23 +65,15 @@ public class AnalyzerRegistryConfig {
 
         // Strategy 1: Direct match (IP address, serial port path)
         AnalyzerEntry entry = analyzers.get(sourceId);
-        if (entry != null && entry.isRuntimeActive()) {
+        if (entry != null) {
             log.debug("Direct match for source '{}': analyzer '{}'", sourceId, entry.getId());
             return Optional.of(entry);
-        }
-
-        // Full-state registrations retain sourceId on the entry so more than one
-        // FILE analyzer may watch the same directory under distinct internal keys.
-        for (AnalyzerEntry candidate : analyzers.values()) {
-            if (candidate.isRuntimeActive() && sourceId.equals(candidate.getSourceId())) {
-                return Optional.of(candidate);
-            }
         }
 
         // Strategy 2: Pattern match (file paths with wildcards)
         for (Map.Entry<String, AnalyzerEntry> e : analyzers.entrySet()) {
             String pattern = e.getKey();
-            if (e.getValue().isRuntimeActive() && pattern.contains("*") && matchesGlob(sourceId, pattern)) {
+            if (pattern.contains("*") && matchesGlob(sourceId, pattern)) {
                 log.debug("Pattern match for source '{}' using pattern '{}': analyzer '{}'",
                     sourceId, pattern, e.getValue().getId());
                 return Optional.of(e.getValue());
@@ -175,73 +126,18 @@ public class AnalyzerRegistryConfig {
      * @param sourceId the source identifier (IP address, serial port, glob pattern)
      * @param entry    the analyzer entry to register
      */
-    public void register(String sourceId, AnalyzerEntry entry) {
-        entry.setSourceId(sourceId);
+    public synchronized void register(String sourceId, AnalyzerEntry entry) {
         analyzers.put(sourceId, entry);
         log.info("Registered analyzer '{}' (id={}) for source '{}'",
                 entry.getName(), entry.getId(), sourceId);
     }
 
-    /**
-     * Unregisters an analyzer by OE analyzer ID.
-     * Removes all source mappings that point to this analyzer.
-     *
-     * @param oeAnalyzerId the OE analyzer ID to unregister
-     * @return true if at least one mapping was removed
-     */
-    public boolean unregisterByAnalyzerId(String oeAnalyzerId) {
-        boolean removed = analyzers.entrySet()
-                .removeIf(e -> oeAnalyzerId.equals(e.getValue().getId()));
-        if (removed) {
-            log.info("Unregistered analyzer with OE ID '{}'", oeAnalyzerId);
+    public synchronized void unregister(String sourceId, String analyzerId) {
+        AnalyzerEntry current = analyzers.get(sourceId);
+        if (current != null && java.util.Objects.equals(current.getId(), analyzerId)) {
+            analyzers.remove(sourceId);
+            log.info("Unregistered analyzer '{}' from source '{}'", analyzerId, sourceId);
         }
-        return removed;
-    }
-
-    /**
-     * Replace the entire registry with a new set of registrations.
-     * This is the idempotent full-state sync — OE pushes its complete
-     * analyzer state, and the bridge replaces its in-memory registry.
-     *
-     * @param newRegistry map of sourceId → AnalyzerEntry
-     * @return sync result with counts of added, removed, and unchanged entries
-     */
-    public SyncResult syncAll(Map<String, AnalyzerEntry> newRegistry) {
-        newRegistry.forEach((sourceKey, entry) -> {
-            if (entry.getSourceId() == null || entry.getSourceId().isBlank()) {
-                entry.setSourceId(sourceKey);
-            }
-        });
-        Map<String, AnalyzerEntry> previous = Map.copyOf(analyzers);
-
-        // Atomic swap: build new map, then replace reference (thread-safe vs clear+putAll)
-        Map<String, AnalyzerEntry> replacement = new LinkedHashMap<>(newRegistry);
-        this.analyzers = replacement;
-
-        int added = 0;
-        int updated = 0;
-        for (Map.Entry<String, AnalyzerEntry> entry : newRegistry.entrySet()) {
-            if (!previous.containsKey(entry.getKey())) {
-                added++;
-            } else if (!entry.getValue().equals(previous.get(entry.getKey()))) {
-                updated++;
-            }
-            // else: unchanged — not counted
-        }
-        // Removed = keys in previous that are absent from new registry
-        int removed = 0;
-        for (String key : previous.keySet()) {
-            if (!newRegistry.containsKey(key)) {
-                removed++;
-            }
-        }
-
-        log.info("Registry sync: {} total ({} added, {} updated, {} removed)",
-                analyzers.size(), added, updated, removed);
-        return new SyncResult(analyzers.size(), added, updated, removed);
-    }
-
-    public record SyncResult(int total, int added, int updated, int removed) {
     }
 
     /**
@@ -266,9 +162,6 @@ public class AnalyzerRegistryConfig {
          */
         private String id;
 
-        /** Site-owned source identity used to route traffic to this analyzer. */
-        private String sourceId;
-
         /**
          * Human-readable analyzer name (e.g., "Mindray BC-5380")
          */
@@ -279,55 +172,22 @@ public class AnalyzerRegistryConfig {
          */
         private String expectedProtocol;
 
-        /** Exact immutable Bridge profile revision that materialized this entry. */
-        private String profileId;
-
-        private int profileRevision;
-
-        private String profileRevisionFingerprint;
-
-        /** Profile-owned ASTM lower-layer selection used to resolve Bridge listeners. */
-        private String profileLowerLayerVersion;
-
-        /** Fingerprint of the OpenELIS-owned desired instance state. */
-        private String desiredStateFingerprint;
-
-        /** ACTIVE entries route traffic; INACTIVE entries retain their pin only. */
-        private String desiredStatus;
-
-        private String connectionMode;
-
-        private String connectionRole;
-
-        /** User-selected result flow, separate from which side opens the connection. */
-        private String dataFlow;
-
-        /** Validated site-owned settings from the versioned registration contract. */
-        private Map<String, Object> connectionSettings = Collections.emptyMap();
-
-        public boolean isRuntimeActive() {
-            return desiredStatus == null || "ACTIVE".equals(desiredStatus);
-        }
-
         /**
          * Optional file pattern for additional validation (regex)
          */
         private String filePattern;
 
         /**
-         * Regex OE uses to identify an inbound message by its sender (HL7 MSH-3/4,
-         * ASTM H-record). Pushed from OE's {@code Analyzer.identifierPattern} so the
-         * bridge corroborates the source-IP identity against the same authoritative
-         * pattern OE matches with — see {@code MessageNormalizer}.
+         * Profile-owned expression used to identify an inbound sender (HL7 MSH-3/4,
+         * ASTM H-record).
          */
         private String identifierPattern;
 
         /**
          * Compiled form of {@link #identifierPattern}, built once when the pattern is
          * set so {@code MessageNormalizer} reuses it on every inbound message instead
-         * of recompiling the regex per message. {@code null} when no pattern is set, or
-         * when the supplied regex was invalid — registration/sync validation decides
-         * whether an invalid pattern is rejected (register → 400) or ignored (sync).
+         * of recompiling the regex per message. {@code null} when no pattern is set or
+         * when the supplied regex is invalid.
          */
         @Setter(AccessLevel.NONE)
         private transient Pattern compiledIdentifierPattern;
@@ -346,8 +206,7 @@ public class AnalyzerRegistryConfig {
                 try {
                     compiled = Pattern.compile(identifierPattern, Pattern.CASE_INSENSITIVE);
                 } catch (PatternSyntaxException e) {
-                    // Leave compiled null; the registration/sync path validates and
-                    // rejects (register) or ignores (sync) the bad pattern.
+                    // Leave compiled null so the owning contract validator can reject it.
                 }
             }
             this.compiledIdentifierPattern = compiled;

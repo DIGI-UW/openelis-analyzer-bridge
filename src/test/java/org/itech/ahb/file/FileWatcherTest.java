@@ -72,13 +72,11 @@ class FileWatcherTest {
 
         fileConfig = new FileConfig();
         fileConfig.setEnabled(true);
-        fileConfig.setWatchDirectories(List.of(watchDir.toString()));
         fileConfig.setStateStorePath(stateStorePath.toString());
         fileConfig.setFileStabilityTimeoutMs(100);
         fileConfig.setPollIntervalMs(100);
         fileConfig.setMaxRetryAttempts(3);
         fileConfig.setRetryDelayMs(100);
-        fileConfig.setFilePatterns(List.of("*.csv", "*.hl7", "*.txt"));
 
         mockMessageHandler = mock(FileMessageHandler.class);
 
@@ -86,6 +84,8 @@ class FileWatcherTest {
         // Keep a field reference so tests can assert on its rows directly.
         stateStore = new SqliteFileStateStore(stateStorePath);
         fileWatcher = new FileWatcher(fileConfig, mockMessageHandler, stateStore);
+        fileWatcher.start();
+        fileWatcher.addWatchDirectory(watchDir, "*.{csv,hl7,txt}", "TEST-ANALYZER");
     }
 
     @AfterEach
@@ -132,16 +132,6 @@ class FileWatcherTest {
         assertFalse(result);
     }
 
-    @Test
-    void shouldProcessFile_legacyErrorSidecar_stillSkipped() {
-        // The bridge no longer writes .error sidecars, but legacy ones from
-        // a previous destructive bridge version may still exist in the mount.
-        // shouldProcessFile must continue to skip them for backward compat.
-        Path errorFile = watchDir.resolve("test.csv.error");
-        boolean result = (boolean) ReflectionTestUtils.invokeMethod(fileWatcher, "shouldProcessFile", errorFile);
-        assertFalse(result);
-    }
-
     // ------------------------------------------------------------------
     // Hashing
     // ------------------------------------------------------------------
@@ -173,10 +163,10 @@ class FileWatcherTest {
     // ------------------------------------------------------------------
 
     @Test
-    void determineAnalyzerId_fromParentDirName() {
+    void determineAnalyzerId_doesNotInventAnOwnerFromTheDirectoryName() {
         Path fileInSubdir = tempDir.resolve("quantstudio/results.csv");
         String analyzerId = (String) ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", fileInSubdir);
-        assertEquals("QUANTSTUDIO", analyzerId);
+        assertNull(analyzerId);
     }
 
     @Test
@@ -194,6 +184,7 @@ class FileWatcherTest {
     void processFileWithRetry_successfulParse_fileStaysInPlaceAndStateIsProcessed() throws Exception {
         Path testFile = tempDir.resolve("quantstudio/results.csv");
         Files.createDirectories(testFile.getParent());
+        fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
         when(mockMessageHandler.processFile(any(), any())).thenReturn(null);
@@ -204,9 +195,6 @@ class FileWatcherTest {
         // CORE INVARIANT: the file remains in the watched directory
         assertTrue(Files.exists(testFile),
                 "File must remain in the watched directory after successful processing — bridge is read-only");
-        // No legacy sidecars were written
-        assertFalse(Files.exists(testFile.resolveSibling("results.csv.error")));
-        assertFalse(Files.exists(testFile.resolveSibling("results.csv.failed")));
 
         // State store has a PROCESSED row for this content
         String hash = (String) ReflectionTestUtils.invokeMethod(fileWatcher, "calculateFileHash", testFile);
@@ -219,6 +207,7 @@ class FileWatcherTest {
     void processFileWithRetry_reObservation_isIdempotentAndSkipsReprocessing() throws Exception {
         Path testFile = tempDir.resolve("quantstudio/results.csv");
         Files.createDirectories(testFile.getParent());
+        fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
         when(mockMessageHandler.processFile(any(), any())).thenReturn(null);
@@ -236,6 +225,7 @@ class FileWatcherTest {
     void processFileWithRetry_correctedContent_processesAsNewRow() throws Exception {
         Path testFile = tempDir.resolve("quantstudio/results.csv");
         Files.createDirectories(testFile.getParent());
+        fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
         when(mockMessageHandler.processFile(any(), any())).thenReturn(null);
@@ -265,6 +255,7 @@ class FileWatcherTest {
     void processFileWithRetry_eventualSuccessAcrossRetries_fileStaysInPlace() throws Exception {
         Path testFile = tempDir.resolve("quantstudio/flaky.csv");
         Files.createDirectories(testFile.getParent());
+        fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
         when(mockMessageHandler.processFile(any(), any()))
@@ -279,8 +270,6 @@ class FileWatcherTest {
         verify(mockMessageHandler, times(3)).processFile(any(), any());
         // CORE INVARIANT
         assertTrue(Files.exists(testFile), "file must remain in watched dir after eventual success");
-        assertFalse(Files.exists(testFile.resolveSibling("flaky.csv.error")));
-        assertFalse(Files.exists(testFile.resolveSibling("flaky.csv.failed")));
 
         String hash = (String) ReflectionTestUtils.invokeMethod(fileWatcher, "calculateFileHash", testFile);
         Optional<FileProcessingState> row = stateStore.get("QUANTSTUDIO", hash);
@@ -292,6 +281,7 @@ class FileWatcherTest {
     void processFileWithRetry_maxRetriesExceeded_fileStaysInPlaceAndStateIsFailedNeedsHandling() throws Exception {
         Path testFile = tempDir.resolve("quantstudio/doomed.csv");
         Files.createDirectories(testFile.getParent());
+        fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
         when(mockMessageHandler.processFile(any(), any()))
@@ -305,9 +295,6 @@ class FileWatcherTest {
         // CORE INVARIANT: file stays in place even after exhausted retries
         assertTrue(Files.exists(testFile),
                 "file must remain in watched dir even after FAILED_NEEDS_HANDLING");
-        // No legacy sidecars
-        assertFalse(Files.exists(testFile.resolveSibling("doomed.csv.error")));
-        assertFalse(Files.exists(testFile.resolveSibling("doomed.csv.failed")));
 
         String hash = (String) ReflectionTestUtils.invokeMethod(fileWatcher, "calculateFileHash", testFile);
         Optional<FileProcessingState> row = stateStore.get("QUANTSTUDIO", hash);
@@ -377,10 +364,7 @@ class FileWatcherTest {
                 ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", hivFile));
         assertEquals("FLUOROCYCLER-ARBO",
                 ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", arboFile));
-        // A file matching neither registered glob falls back to the
-        // parent-directory-name heuristic (last resort in determineAnalyzerId).
-        assertEquals("FLUOROCYCLER-SHARED",
-                ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", unrelatedFile));
+        assertNull(ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", unrelatedFile));
     }
 
     @Test
@@ -401,9 +385,7 @@ class FileWatcherTest {
 
         assertTrue((boolean) ReflectionTestUtils.invokeMethod(fileWatcher, "shouldProcessFile", hivFile));
         assertTrue((boolean) ReflectionTestUtils.invokeMethod(fileWatcher, "shouldProcessFile", arboFile));
-        // A directory with per-registration globs is opinionated: files
-        // matching no glob are rejected even if they match fileConfig's
-        // legacy filePatterns list.
+        // Files not claimed by a durable connection are ignored.
         assertFalse((boolean) ReflectionTestUtils.invokeMethod(fileWatcher, "shouldProcessFile", mismatchFile));
     }
 
@@ -425,14 +407,10 @@ class FileWatcherTest {
         assertEquals("FLUOROCYCLER-ARBO",
                 ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", arboFile));
 
-        // HIV registration is gone — HIV file falls through to the
-        // directory-name fallback since no glob matches.
+        // HIV registration is gone, so no connection owns this file.
         Path hivFile = sharedDir.resolve("HIV-result.csv");
         Files.writeString(hivFile, CSV_CONTENT);
-        // HIV*.csv no longer matches, ARBO*.csv doesn't match HIV-result.csv
-        // either, so determineAnalyzerId falls back to the dir name.
-        assertEquals("FLUOROCYCLER-SHARED",
-                ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", hivFile));
+        assertNull(ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", hivFile));
     }
 
     @Test
@@ -473,12 +451,9 @@ class FileWatcherTest {
 
         // Old-pattern-only file no longer matches (the registration was
         // replaced, not augmented):
-        Path oldPatternFile = sharedDir.resolve("HIV-only-legacy.csv");
+        Path oldPatternFile = sharedDir.resolve("HIV-only.csv");
         Files.writeString(oldPatternFile, CSV_CONTENT);
-        // HIV*.csv no longer registered, HIVVL*.csv doesn't match
-        // HIV-only-legacy.csv, so it falls back to the dir name.
-        assertEquals("FLUOROCYCLER-SHARED",
-                ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", oldPatternFile));
+        assertNull(ReflectionTestUtils.invokeMethod(fileWatcher, "determineAnalyzerId", oldPatternFile));
 
         // Only ONE registration exists (the replacement, not an additional one)
         int removed = fileWatcher.removeWatchDirectoriesByAnalyzerId("FLUOROCYCLER-HIV");

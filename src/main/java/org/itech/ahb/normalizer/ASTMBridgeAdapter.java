@@ -39,6 +39,7 @@ import org.itech.ahb.model.Transport;
 public class ASTMBridgeAdapter implements ASTMHandler {
 
     private final MessageNormalizer normalizer;
+    private final String sourceBindingId;
 
     /**
      * Constructs a new ASTMBridgeAdapter.
@@ -46,7 +47,13 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * @param normalizer the message normalizer for routing
      */
     public ASTMBridgeAdapter(MessageNormalizer normalizer) {
+        this(normalizer, null);
+    }
+
+    /** Creates an adapter bound to one durable Bridge connection listener. */
+    public ASTMBridgeAdapter(MessageNormalizer normalizer, String sourceBindingId) {
         this.normalizer = normalizer;
+        this.sourceBindingId = sourceBindingId;
     }
 
     /**
@@ -87,7 +94,9 @@ public class ASTMBridgeAdapter implements ASTMHandler {
         MessageEnvelope envelope = MessageEnvelope.builder()
             .protocol(Protocol.ASTM)
             .transport(Transport.TCP)
-            .sourceId(sourceIp != null ? sourceIp : "unknown")
+            .sourceId(sourceBindingId != null && !sourceBindingId.isBlank()
+                ? sourceBindingId
+                : sourceIp != null ? sourceIp : "unknown")
             .rawMessage(message.getMessage())
             .protocolAnalyzerHint(analyzerId)
             .build();

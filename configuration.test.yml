@@ -10,23 +10,13 @@ bridge:
       maxAttempts: 1
       backoffMs: 500
 
-  analyzers: {}
-  # Analyzer identification is optional — messages route without explicit mappings.
-  # OpenELIS identifies analyzers from message content (e.g., MSH-3/MSH-4 for HL7).
-
   file:
     enabled: true
-    watchDirectories:
-      - /mnt/analyzer-import
-    archiveDirectory: /mnt/analyzer-archive
-    errorDirectory: /mnt/analyzer-error
+    stateStorePath: /tmp/openelis-analyzer-bridge/file-state.db
     pollIntervalMs: 2000
     fileStabilityTimeoutMs: 2000
     maxRetryAttempts: 2
     retryDelayMs: 500
-    filePatterns:
-      - "*.csv"
-      - "*.hl7"
 
 org:
   itech:

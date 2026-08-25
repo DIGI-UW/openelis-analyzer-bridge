@@ -3,7 +3,7 @@ package org.itech.ahb.normalizer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,8 +11,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -25,7 +23,7 @@ import java.util.Optional;
 class AnalyzerIdentifierTest {
 
     private AnalyzerIdentifier identifier;
-    private AnalyzerRegistryConfig mockRegistry;
+    private AnalyzerRuntimeRegistry mockRegistry;
 
     @Nested
     @DisplayName("Protocol Hint Compatibility Tests")
@@ -33,7 +31,7 @@ class AnalyzerIdentifierTest {
 
         @BeforeEach
         void setUp() {
-            mockRegistry = mock(AnalyzerRegistryConfig.class);
+            mockRegistry = mock(AnalyzerRuntimeRegistry.class);
             identifier = new AnalyzerIdentifier(mockRegistry);
         }
 
@@ -82,7 +80,7 @@ class AnalyzerIdentifierTest {
 
         @BeforeEach
         void setUp() {
-            mockRegistry = mock(AnalyzerRegistryConfig.class);
+            mockRegistry = mock(AnalyzerRuntimeRegistry.class);
             identifier = new AnalyzerIdentifier(mockRegistry);
         }
 
@@ -157,54 +155,12 @@ class AnalyzerIdentifierTest {
     }
 
     @Nested
-    @DisplayName("Null Registry Tests")
-    class NullRegistryTests {
-
-        @BeforeEach
-        void setUp() {
-            // Create identifier with null registry (not configured)
-            identifier = new AnalyzerIdentifier(null);
-        }
-
-        @Test
-        @DisplayName("Should return null when registry is not configured")
-        void shouldReturnNullWhenRegistryIsNull() {
-            MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.TCP)
-                .sourceId("192.168.1.10")
-                .rawMessage("H|\\^&|||TEST")
-                .build();
-
-            String result = identifier.identify(envelope);
-
-            assertNull(result);
-        }
-
-        @Test
-        @DisplayName("Should return null with null registry even if envelope has analyzerId")
-        void shouldReturnNullWhenRegistryIsNullEvenWithEnvelopeAnalyzerId() {
-            MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.SERIAL)
-                .sourceId("/dev/ttyUSB0")
-                .rawMessage("H|\\^&|||TEST")
-                .analyzerId("MINDRAY-001")
-                .build();
-
-            String result = identifier.identify(envelope);
-
-            assertNull(result);
-        }
-    }
-
-    @Nested
     @DisplayName("Edge Case Tests")
     class EdgeCaseTests {
 
         @BeforeEach
         void setUp() {
-            mockRegistry = mock(AnalyzerRegistryConfig.class);
+            mockRegistry = mock(AnalyzerRuntimeRegistry.class);
             identifier = new AnalyzerIdentifier(mockRegistry);
         }
 
@@ -265,34 +221,31 @@ class AnalyzerIdentifierTest {
     @DisplayName("Integration with Real Registry Tests")
     class RealRegistryTests {
 
-        private AnalyzerRegistryConfig realRegistry;
+        private AnalyzerRuntimeRegistry realRegistry;
 
         @BeforeEach
         void setUp() {
-            realRegistry = new AnalyzerRegistryConfig();
-            Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
+            realRegistry = new AnalyzerRuntimeRegistry();
 
-            // Add test entries
-            AnalyzerRegistryConfig.AnalyzerEntry mindray = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry mindray = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             mindray.setId("MINDRAY-001");
             mindray.setName("Mindray BC-5380");
             mindray.setExpectedProtocol("ASTM");
-            analyzers.put("192.168.1.10", mindray);
+            realRegistry.register("192.168.1.10", mindray);
 
-            AnalyzerRegistryConfig.AnalyzerEntry horiba = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry horiba = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             horiba.setId("HORIBA-001");
             horiba.setName("Horiba Pentra 60");
             horiba.setExpectedProtocol("ASTM");
-            analyzers.put("/dev/ttyUSB0", horiba);
+            realRegistry.register("/dev/ttyUSB0", horiba);
 
-            AnalyzerRegistryConfig.AnalyzerEntry quantstudio = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry quantstudio = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             quantstudio.setId("QUANTSTUDIO-001");
             quantstudio.setName("QuantStudio 7 Flex");
             quantstudio.setExpectedProtocol("CSV");
             quantstudio.setFilePattern(".*/quantstudio-.*\\.csv");
-            analyzers.put("quantstudio-*", quantstudio);
+            realRegistry.register("quantstudio-*", quantstudio);
 
-            realRegistry.setAnalyzers(analyzers);
             identifier = new AnalyzerIdentifier(realRegistry);
         }
 

@@ -3,7 +3,6 @@ package org.itech.ahb.serial;
 import com.fazecast.jSerialComm.SerialPort;
 import com.fazecast.jSerialComm.SerialPortDataListener;
 import com.fazecast.jSerialComm.SerialPortEvent;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.List;
@@ -13,461 +12,364 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.properties.SerialConfigurationProperties;
-import org.itech.ahb.config.properties.SerialConfigurationProperties.FlowControl;
-import org.itech.ahb.config.properties.SerialConfigurationProperties.Parity;
-import org.itech.ahb.config.properties.SerialConfigurationProperties.SerialPortConfig;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.itech.ahb.connection.AnalyzerConnectionException;
+import org.itech.ahb.connection.SerialConnectionListeners;
+import org.itech.ahb.connection.SerialConnectionSettings;
+import org.itech.ahb.model.Protocol;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-/**
- * Listens for data on configured serial ports and processes incoming messages.
- * <p>
- * This component:
- * <ul>
- *   <li>Opens and manages serial port connections using jSerialComm</li>
- *   <li>Buffers incoming data and detects complete messages</li>
- *   <li>Sends ACK/NAK responses for ASTM and HL7 protocols</li>
- *   <li>Handles disconnection and automatic reconnection</li>
- * </ul>
- * </p>
- */
-@Slf4j
+/** Owns serial ports opened for active, profile-pinned Bridge connections. */
 @Component
-@ConditionalOnProperty(prefix = "org.itech.ahb.serial", name = "enabled", havingValue = "true")
-@EnableConfigurationProperties(SerialConfigurationProperties.class)
-public class SerialPortListener {
+@Slf4j
+public final class SerialPortListener implements SerialConnectionListeners {
 
-    private final SerialConfigurationProperties config;
-    private final SerialMessageHandler messageHandler;
-    private final Map<String, ManagedSerialPort> managedPorts;
-    private final ScheduledExecutorService scheduler;
-    private ScheduledFuture<?> timeoutCheckerFuture;
-    private ScheduledFuture<?> reconnectionCheckerFuture;
+  private final SerialMessageHandler messageHandler;
+  private final Function<String, SerialPort> portFactory;
+  private final Map<String, ManagedSerialPort> managedPorts = new ConcurrentHashMap<>();
+  private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
 
-    /**
-     * Creates a new SerialPortListener.
-     *
-     * @param config the serial port configuration
-     * @param messageHandler the handler for complete messages
-     */
-    public SerialPortListener(
-        SerialConfigurationProperties config,
-        SerialMessageHandler messageHandler
+  @Autowired
+  public SerialPortListener(SerialMessageHandler messageHandler) {
+    this(messageHandler, SerialPort::getCommPort);
+  }
+
+  SerialPortListener(
+    SerialMessageHandler messageHandler,
+    Function<String, SerialPort> portFactory
+  ) {
+    this.messageHandler = messageHandler;
+    this.portFactory = portFactory;
+  }
+
+  @Override
+  public synchronized void start(
+    String connectionId,
+    String sourceBindingId,
+    String analyzerId,
+    String portPath,
+    SerialConnectionSettings settings
+  ) {
+    ManagedSerialPort current = managedPorts.get(connectionId);
+    if (
+      current != null &&
+      current.matches(sourceBindingId, analyzerId, portPath, settings) &&
+      current.isOpen()
     ) {
-        this.config = config;
-        this.messageHandler = messageHandler;
-        this.managedPorts = new ConcurrentHashMap<>();
-        this.scheduler = Executors.newScheduledThreadPool(2);
+      return;
+    }
+    stop(connectionId);
+    if (managedPorts.values().stream().anyMatch(candidate -> candidate.portPath.equals(portPath))) {
+      throw new AnalyzerConnectionException("Serial port " + portPath + " is already assigned to another connection");
     }
 
-    /**
-     * Initializes and opens all configured serial ports.
-     */
-    @PostConstruct
-    public void start() {
-        // @ConditionalOnProperty ensures this bean only loads when enabled=true
-        // No need to check isEnabled() here
+    ManagedSerialPort managed = new ManagedSerialPort(
+      connectionId,
+      sourceBindingId,
+      analyzerId,
+      portPath,
+      settings
+    );
+    managedPorts.put(connectionId, managed);
+    try {
+      open(managed);
+      long timeoutCheckMs = Math.max(1, settings.messageTimeoutMs() / 2L);
+      managed.timeoutFuture = scheduler.scheduleAtFixedRate(
+        () -> checkTimeout(connectionId),
+        settings.messageTimeoutMs(),
+        timeoutCheckMs,
+        TimeUnit.MILLISECONDS
+      );
+    } catch (RuntimeException exception) {
+      managedPorts.remove(connectionId);
+      close(managed);
+      throw new AnalyzerConnectionException(
+        "Cannot activate serial listener for Bridge connection " + connectionId,
+        exception
+      );
+    }
+  }
 
-        List<SerialPortConfig> ports = config.getPorts();
-        if (ports == null || ports.isEmpty()) {
-            log.warn("Serial port listener enabled but no ports configured");
-            return;
+  @Override
+  public synchronized void stop(String connectionId) {
+    ManagedSerialPort managed = managedPorts.remove(connectionId);
+    if (managed == null) {
+      return;
+    }
+    if (managed.timeoutFuture != null) {
+      managed.timeoutFuture.cancel(false);
+    }
+    if (managed.reconnectFuture != null) {
+      managed.reconnectFuture.cancel(false);
+    }
+    close(managed);
+  }
+
+  boolean isRunning(String connectionId) {
+    ManagedSerialPort managed = managedPorts.get(connectionId);
+    return managed != null && managed.isOpen();
+  }
+
+  public List<String> getOpenPorts() {
+    return managedPorts.values().stream()
+      .filter(ManagedSerialPort::isOpen)
+      .map(managed -> managed.portPath)
+      .toList();
+  }
+
+  public PortStatus getPortStatus(String portPath) {
+    return managedPorts.values().stream()
+      .filter(managed -> managed.portPath.equals(portPath))
+      .findFirst()
+      .map(managed ->
+        new PortStatus(
+          portPath,
+          managed.isOpen(),
+          managed.reconnectFuture != null && !managed.reconnectFuture.isDone(),
+          managed.reconnectAttempts
+        )
+      )
+      .orElseGet(() -> new PortStatus(portPath, false, false, 0));
+  }
+
+  public List<PortStatus> getPortStatuses() {
+    return managedPorts.values().stream()
+      .map(managed ->
+        new PortStatus(
+          managed.portPath,
+          managed.isOpen(),
+          managed.reconnectFuture != null && !managed.reconnectFuture.isDone(),
+          managed.reconnectAttempts
+        )
+      )
+      .toList();
+  }
+
+  @PreDestroy
+  public synchronized void stopAll() {
+    for (String connectionId : List.copyOf(managedPorts.keySet())) {
+      stop(connectionId);
+    }
+    scheduler.shutdownNow();
+  }
+
+  private void open(ManagedSerialPort managed) {
+    SerialPort port = portFactory.apply(managed.portPath);
+    SerialConnectionSettings settings = managed.settings;
+    port.setBaudRate(settings.baudRate());
+    port.setNumDataBits(settings.dataBits());
+    port.setNumStopBits(stopBits(settings.stopBits()));
+    port.setParity(parity(settings.parity()));
+    port.setFlowControl(flowControl(settings.flowControl()));
+    port.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, settings.readTimeoutMs(), 0);
+    if (settings.rtsEnabled()) {
+      port.setRTS();
+    }
+    if (settings.dtrEnabled()) {
+      port.setDTR();
+    }
+    if (!port.openPort()) {
+      throw new AnalyzerConnectionException("Serial port " + managed.portPath + " could not be opened");
+    }
+
+    managed.port = port;
+    managed.frameBuffer = new SerialFrameBuffer(protocol(settings.protocol()));
+    port.addDataListener(new SerialPortDataListener() {
+      @Override
+      public int getListeningEvents() {
+        return SerialPort.LISTENING_EVENT_DATA_AVAILABLE;
+      }
+
+      @Override
+      public void serialEvent(SerialPortEvent event) {
+        if (event.getEventType() == SerialPort.LISTENING_EVENT_DATA_AVAILABLE) {
+          handleDataAvailable(managed.connectionId);
         }
+      }
+    });
+    managed.reconnectAttempts = 0;
+    managed.reconnectFuture = null;
+    log.info("Serial port {} opened for Bridge connection {}", managed.portPath, managed.connectionId);
+  }
 
-        log.info("Starting serial port listener with {} configured port(s)", ports.size());
-
-        for (SerialPortConfig portConfig : ports) {
-            openPort(portConfig);
-        }
-
-        // Schedule timeout checker
-        timeoutCheckerFuture = scheduler.scheduleAtFixedRate(
-            this::checkTimeouts,
-            config.getMessageTimeoutMs(),
-            config.getMessageTimeoutMs() / 2,
-            TimeUnit.MILLISECONDS
+  private synchronized void handleDataAvailable(String connectionId) {
+    ManagedSerialPort managed = managedPorts.get(connectionId);
+    if (managed == null || !managed.isOpen() || managed.frameBuffer == null) {
+      return;
+    }
+    try {
+      int available = managed.port.bytesAvailable();
+      if (available <= 0) {
+        return;
+      }
+      byte[] data = new byte[available];
+      int bytesRead = managed.port.readBytes(data, available);
+      if (bytesRead <= 0) {
+        return;
+      }
+      for (byte[] response : managed.frameBuffer.appendData(data)) {
+        managed.port.writeBytes(response, response.length);
+      }
+      for (String message : managed.frameBuffer.getCompletedMessages()) {
+        SerialMessageHandler.HandleResult result = messageHandler.handleMessage(
+          message,
+          managed.sourceBindingId,
+          managed.analyzerId,
+          protocol(managed.settings.protocol())
         );
-
-        // Schedule reconnection checker
-        reconnectionCheckerFuture = scheduler.scheduleAtFixedRate(
-            this::checkReconnections,
-            config.getReconnectIntervalMs(),
-            config.getReconnectIntervalMs(),
-            TimeUnit.MILLISECONDS
-        );
-    }
-
-    /**
-     * Opens a serial port with the specified configuration.
-     */
-    private void openPort(SerialPortConfig portConfig) {
-        String portPath = portConfig.getPath();
-        String portName = portConfig.getName() != null ? portConfig.getName() : portPath;
-
-        log.info("Opening serial port {} ({})", portName, portPath);
-
-        try {
-            SerialPort serialPort = SerialPort.getCommPort(portPath);
-
-            // Configure port parameters
-            serialPort.setBaudRate(portConfig.getBaudRate());
-            serialPort.setNumDataBits(portConfig.getDataBits());
-            serialPort.setNumStopBits(mapStopBits(portConfig.getStopBits()));
-            serialPort.setParity(mapParity(portConfig.getParity()));
-            serialPort.setFlowControl(mapFlowControl(portConfig.getFlowControl()));
-
-            // Set timeouts
-            serialPort.setComPortTimeouts(
-                SerialPort.TIMEOUT_READ_SEMI_BLOCKING,
-                portConfig.getReadTimeoutMs(),
-                0
-            );
-
-            // Set RTS/DTR signals
-            if (portConfig.isRtsEnabled()) {
-                serialPort.setRTS();
-            }
-            if (portConfig.isDtrEnabled()) {
-                serialPort.setDTR();
-            }
-
-            // Open the port
-            if (!serialPort.openPort()) {
-                log.error("Failed to open serial port {}", portPath);
-                scheduleReconnect(portConfig);
-                return;
-            }
-
-            log.info("Serial port {} opened successfully: {}baud, {}{}{}",
-                portPath,
-                portConfig.getBaudRate(),
-                portConfig.getDataBits(),
-                portConfig.getParity().name().charAt(0),
-                portConfig.getStopBits()
-            );
-
-            try {
-                // Create frame buffer
-                SerialFrameBuffer frameBuffer = new SerialFrameBuffer(portConfig.getProtocol());
-
-                // Create managed port
-                ManagedSerialPort managedPort = new ManagedSerialPort(
-                    serialPort,
-                    portConfig,
-                    frameBuffer,
-                    0
-                );
-                managedPorts.put(portPath, managedPort);
-
-                // Add data listener
-                serialPort.addDataListener(new SerialPortDataListener() {
-                    @Override
-                    public int getListeningEvents() {
-                        return SerialPort.LISTENING_EVENT_DATA_AVAILABLE;
-                    }
-
-                    @Override
-                    public void serialEvent(SerialPortEvent event) {
-                        if (event.getEventType() == SerialPort.LISTENING_EVENT_DATA_AVAILABLE) {
-                            handleDataAvailable(portPath);
-                        }
-                    }
-                });
-
-            } catch (Exception e) {
-                // Clean up port if listener setup fails
-                log.error("Error setting up serial port listener for {}: {}", portPath, e.getMessage(), e);
-                try {
-                    serialPort.closePort();
-                } catch (Exception closeEx) {
-                    log.warn("Error closing port after setup failure: {}", closeEx.getMessage());
-                }
-                scheduleReconnect(portConfig);
-                return;
-            }
-
-        } catch (Exception e) {
-            log.error("Error opening serial port {}: {}", portPath, e.getMessage(), e);
-            scheduleReconnect(portConfig);
+        if (!result.success()) {
+          log.warn("Serial message routing failed for Bridge connection {}: {}", connectionId, result.message());
         }
+      }
+    } catch (RuntimeException exception) {
+      log.error("Serial read failed for Bridge connection {}", connectionId, exception);
+      close(managed);
+      scheduleReconnect(managed);
+    }
+  }
+
+  private synchronized void checkTimeout(String connectionId) {
+    ManagedSerialPort managed = managedPorts.get(connectionId);
+    if (
+      managed == null ||
+      managed.frameBuffer == null ||
+      managed.frameBuffer.getBufferSize() == 0
+    ) {
+      return;
+    }
+    Duration timeout = Duration.ofMillis(managed.settings.messageTimeoutMs());
+    if (managed.frameBuffer.timeSinceLastData().compareTo(timeout) > 0) {
+      managed.frameBuffer.reset();
+    }
+  }
+
+  private void scheduleReconnect(ManagedSerialPort managed) {
+    int maximum = managed.settings.maxReconnectAttempts();
+    if (maximum >= 0 && managed.reconnectAttempts >= maximum) {
+      log.error("Serial reconnect limit reached for Bridge connection {}", managed.connectionId);
+      return;
+    }
+    managed.reconnectAttempts++;
+    managed.reconnectFuture = scheduler.schedule(
+      () -> reconnect(managed.connectionId),
+      managed.settings.reconnectIntervalMs(),
+      TimeUnit.MILLISECONDS
+    );
+  }
+
+  private synchronized void reconnect(String connectionId) {
+    ManagedSerialPort managed = managedPorts.get(connectionId);
+    if (managed == null) {
+      return;
+    }
+    try {
+      open(managed);
+    } catch (RuntimeException exception) {
+      log.warn("Serial reconnect failed for Bridge connection {}", connectionId);
+      scheduleReconnect(managed);
+    }
+  }
+
+  private static void close(ManagedSerialPort managed) {
+    if (managed.port == null) {
+      return;
+    }
+    try {
+      managed.port.removeDataListener();
+      managed.port.closePort();
+    } finally {
+      managed.port = null;
+      managed.frameBuffer = null;
+    }
+  }
+
+  private static Protocol protocol(String protocol) {
+    try {
+      return Protocol.valueOf(protocol);
+    } catch (IllegalArgumentException exception) {
+      throw new AnalyzerConnectionException("Serial framing is unsupported for profile protocol " + protocol, exception);
+    }
+  }
+
+  private static int parity(String value) {
+    return switch (value) {
+      case "NONE" -> SerialPort.NO_PARITY;
+      case "ODD" -> SerialPort.ODD_PARITY;
+      case "EVEN" -> SerialPort.EVEN_PARITY;
+      case "MARK" -> SerialPort.MARK_PARITY;
+      case "SPACE" -> SerialPort.SPACE_PARITY;
+      default -> throw new AnalyzerConnectionException("Unsupported serial parity " + value);
+    };
+  }
+
+  private static int stopBits(int value) {
+    return switch (value) {
+      case 1 -> SerialPort.ONE_STOP_BIT;
+      case 2 -> SerialPort.TWO_STOP_BITS;
+      case 3 -> SerialPort.ONE_POINT_FIVE_STOP_BITS;
+      default -> throw new AnalyzerConnectionException("Unsupported serial stop bits " + value);
+    };
+  }
+
+  private static int flowControl(String value) {
+    return switch (value) {
+      case "NONE" -> SerialPort.FLOW_CONTROL_DISABLED;
+      case "RTS_CTS" -> SerialPort.FLOW_CONTROL_RTS_ENABLED | SerialPort.FLOW_CONTROL_CTS_ENABLED;
+      case "XON_XOFF" -> SerialPort.FLOW_CONTROL_XONXOFF_IN_ENABLED | SerialPort.FLOW_CONTROL_XONXOFF_OUT_ENABLED;
+      default -> throw new AnalyzerConnectionException("Unsupported serial flow control " + value);
+    };
+  }
+
+  private static final class ManagedSerialPort {
+
+    private final String connectionId;
+    private final String sourceBindingId;
+    private final String analyzerId;
+    private final String portPath;
+    private final SerialConnectionSettings settings;
+    private SerialPort port;
+    private SerialFrameBuffer frameBuffer;
+    private int reconnectAttempts;
+    private ScheduledFuture<?> timeoutFuture;
+    private ScheduledFuture<?> reconnectFuture;
+
+    private ManagedSerialPort(
+      String connectionId,
+      String sourceBindingId,
+      String analyzerId,
+      String portPath,
+      SerialConnectionSettings settings
+    ) {
+      this.connectionId = connectionId;
+      this.sourceBindingId = sourceBindingId;
+      this.analyzerId = analyzerId;
+      this.portPath = portPath;
+      this.settings = settings;
     }
 
-    /**
-     * Handles incoming data on a serial port.
-     */
-    private void handleDataAvailable(String portPath) {
-        ManagedSerialPort managedPort = managedPorts.get(portPath);
-        if (managedPort == null || managedPort.serialPort == null || managedPort.frameBuffer == null) {
-            log.trace("Port {} not ready for data (null port or buffer)", portPath);
-            return;
-        }
-
-        SerialPort serialPort = managedPort.serialPort;
-        SerialFrameBuffer buffer = managedPort.frameBuffer;
-        SerialPortConfig portConfig = managedPort.portConfig;
-
-        try {
-            int available = serialPort.bytesAvailable();
-            if (available <= 0) {
-                return;
-            }
-
-            byte[] data = new byte[available];
-            int bytesRead = serialPort.readBytes(data, available);
-
-            if (bytesRead > 0) {
-                log.trace("Read {} bytes from {}", bytesRead, portPath);
-
-                // Append data and get responses to send
-                List<byte[]> responses = buffer.appendData(data);
-
-                // Send any ACK/NAK responses
-                for (byte[] response : responses) {
-                    serialPort.writeBytes(response, response.length);
-                    log.trace("Sent {} byte response to {}", response.length, portPath);
-                }
-
-                // Process any completed messages
-                List<String> messages = buffer.getCompletedMessages();
-                for (String message : messages) {
-                    processMessage(message, portConfig);
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error reading from serial port {}: {}", portPath, e.getMessage(), e);
-            handlePortError(portPath);
-        }
+    private boolean matches(
+      String expectedSourceBindingId,
+      String expectedAnalyzerId,
+      String expectedPortPath,
+      SerialConnectionSettings expectedSettings
+    ) {
+      return sourceBindingId.equals(expectedSourceBindingId) &&
+      analyzerId.equals(expectedAnalyzerId) &&
+      portPath.equals(expectedPortPath) &&
+      settings.equals(expectedSettings);
     }
 
-    /**
-     * Processes a complete message.
-     */
-    private void processMessage(String message, SerialPortConfig portConfig) {
-        try {
-            SerialMessageHandler.HandleResult result = messageHandler.handleMessage(
-                message,
-                portConfig.getPath(),
-                portConfig.getAnalyzerId()
-            );
-
-            if (result.success()) {
-                log.info("Successfully processed message from {}", portConfig.getPath());
-            } else {
-                log.warn("Failed to process message from {}: {}",
-                    portConfig.getPath(), result.message());
-            }
-        } catch (Exception e) {
-            log.error("Error processing message from {}: {}",
-                portConfig.getPath(), e.getMessage(), e);
-        }
+    private boolean isOpen() {
+      return port != null && port.isOpen();
     }
+  }
 
-    /**
-     * Handles a port error by closing and scheduling reconnection.
-     */
-    private void handlePortError(String portPath) {
-        ManagedSerialPort managedPort = managedPorts.remove(portPath);
-        if (managedPort != null && managedPort.serialPort != null) {
-            try {
-                // Remove listeners before closing port
-                managedPort.serialPort.removeDataListener();
-                managedPort.serialPort.closePort();
-                log.debug("Closed port {} after error", portPath);
-            } catch (Exception e) {
-                log.warn("Error closing port {}: {}", portPath, e.getMessage());
-            }
-            scheduleReconnect(managedPort.portConfig);
-        }
-    }
-
-    /**
-     * Schedules a reconnection attempt for a port.
-     */
-    private void scheduleReconnect(SerialPortConfig portConfig) {
-        String portPath = portConfig.getPath();
-        ManagedSerialPort existing = managedPorts.get(portPath);
-        int attempts = existing != null ? existing.reconnectAttempts : 0;
-
-        if (config.getMaxReconnectAttempts() >= 0 &&
-            attempts >= config.getMaxReconnectAttempts()) {
-            log.error("Max reconnection attempts reached for port {}", portPath);
-            return;
-        }
-
-        log.info("Scheduling reconnection for port {} (attempt {})", portPath, attempts + 1);
-
-        // Store reconnection state
-        managedPorts.put(portPath, new ManagedSerialPort(
-            null,
-            portConfig,
-            null,
-            attempts + 1
-        ));
-    }
-
-    /**
-     * Checks for message timeouts and clears stale buffers.
-     */
-    private void checkTimeouts() {
-        Duration timeout = Duration.ofMillis(config.getMessageTimeoutMs());
-
-        for (ManagedSerialPort managedPort : managedPorts.values()) {
-            if (managedPort.frameBuffer != null) {
-                if (managedPort.frameBuffer.timeSinceLastData().compareTo(timeout) > 0 &&
-                    managedPort.frameBuffer.getBufferSize() > 0) {
-                    log.warn("Message timeout on port {}, clearing buffer",
-                        managedPort.portConfig.getPath());
-                    managedPort.frameBuffer.reset();
-                }
-            }
-        }
-    }
-
-    /**
-     * Checks for ports needing reconnection.
-     */
-    private void checkReconnections() {
-        // Collect ports needing reconnection to avoid ConcurrentModificationException
-        List<String> portsToReconnect = managedPorts.entrySet().stream()
-            .filter(e -> e.getValue().serialPort == null)
-            .map(Map.Entry::getKey)
-            .toList();
-
-        for (String portPath : portsToReconnect) {
-            log.debug("Attempting reconnection for port {}", portPath);
-            ManagedSerialPort managedPort = managedPorts.remove(portPath);
-            if (managedPort != null) {
-                openPort(managedPort.portConfig);
-            }
-        }
-    }
-
-    /**
-     * Closes all serial ports and shuts down the listener.
-     */
-    @PreDestroy
-    public void stop() {
-        log.info("Stopping serial port listener");
-
-        // Cancel scheduled tasks explicitly to prevent race conditions
-        if (timeoutCheckerFuture != null) {
-            timeoutCheckerFuture.cancel(false);
-            log.debug("Cancelled timeout checker task");
-        }
-        if (reconnectionCheckerFuture != null) {
-            reconnectionCheckerFuture.cancel(false);
-            log.debug("Cancelled reconnection checker task");
-        }
-
-        // Shutdown scheduler gracefully
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                List<Runnable> droppedTasks = scheduler.shutdownNow();
-                if (!droppedTasks.isEmpty()) {
-                    log.warn("Dropped {} pending tasks during shutdown", droppedTasks.size());
-                }
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-
-        for (ManagedSerialPort managedPort : managedPorts.values()) {
-            if (managedPort.serialPort != null && managedPort.serialPort.isOpen()) {
-                try {
-                    // Remove data listener before closing port
-                    managedPort.serialPort.removeDataListener();
-                    managedPort.serialPort.closePort();
-                    log.info("Closed serial port {}", managedPort.portConfig.getPath());
-                } catch (Exception e) {
-                    log.warn("Error closing port {}: {}",
-                        managedPort.portConfig.getPath(), e.getMessage());
-                }
-            }
-        }
-        managedPorts.clear();
-    }
-
-    /**
-     * Gets the list of currently open port paths.
-     */
-    public List<String> getOpenPorts() {
-        return managedPorts.entrySet().stream()
-            .filter(e -> e.getValue().serialPort != null && e.getValue().serialPort.isOpen())
-            .map(Map.Entry::getKey)
-            .toList();
-    }
-
-    /**
-     * Gets the status of a specific port.
-     */
-    public PortStatus getPortStatus(String portPath) {
-        ManagedSerialPort managedPort = managedPorts.get(portPath);
-        if (managedPort == null) {
-            return new PortStatus(portPath, false, false, 0);
-        }
-        boolean isOpen = managedPort.serialPort != null && managedPort.serialPort.isOpen();
-        boolean isPending = managedPort.serialPort == null;
-        return new PortStatus(portPath, isOpen, isPending, managedPort.reconnectAttempts);
-    }
-
-    /**
-     * Maps our Parity enum to jSerialComm values.
-     */
-    private int mapParity(Parity parity) {
-        return switch (parity) {
-            case NONE -> SerialPort.NO_PARITY;
-            case ODD -> SerialPort.ODD_PARITY;
-            case EVEN -> SerialPort.EVEN_PARITY;
-            case MARK -> SerialPort.MARK_PARITY;
-            case SPACE -> SerialPort.SPACE_PARITY;
-        };
-    }
-
-    /**
-     * Maps stop bits to jSerialComm values.
-     */
-    private int mapStopBits(int stopBits) {
-        return switch (stopBits) {
-            case 1 -> SerialPort.ONE_STOP_BIT;
-            case 2 -> SerialPort.TWO_STOP_BITS;
-            case 3 -> SerialPort.ONE_POINT_FIVE_STOP_BITS;
-            default -> SerialPort.ONE_STOP_BIT;
-        };
-    }
-
-    /**
-     * Maps FlowControl enum to jSerialComm values.
-     */
-    private int mapFlowControl(FlowControl flowControl) {
-        return switch (flowControl) {
-            case NONE -> SerialPort.FLOW_CONTROL_DISABLED;
-            case RTS_CTS -> SerialPort.FLOW_CONTROL_RTS_ENABLED | SerialPort.FLOW_CONTROL_CTS_ENABLED;
-            case XON_XOFF -> SerialPort.FLOW_CONTROL_XONXOFF_IN_ENABLED | SerialPort.FLOW_CONTROL_XONXOFF_OUT_ENABLED;
-        };
-    }
-
-    /**
-     * Internal record for managing serial port state.
-     */
-    private record ManagedSerialPort(
-        SerialPort serialPort,
-        SerialPortConfig portConfig,
-        SerialFrameBuffer frameBuffer,
-        int reconnectAttempts
-    ) {}
-
-    /**
-     * Status information for a serial port.
-     */
-    public record PortStatus(
-        String path,
-        boolean isOpen,
-        boolean isPendingReconnect,
-        int reconnectAttempts
-    ) {}
+  public record PortStatus(
+    String path,
+    boolean isOpen,
+    boolean isPendingReconnect,
+    int reconnectAttempts
+  ) {}
 }

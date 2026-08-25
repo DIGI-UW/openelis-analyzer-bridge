@@ -113,22 +113,22 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `org.itech.ahb.forward-http-server.max-attempts` | Outbound retry attempts | 3 |
 | `org.itech.ahb.forward-http-server.backoff-ms` | Initial outbound retry backoff in ms | 1000 |
 | **ASTM TCP** | | |
-| `org.itech.ahb.astm.enabled` | Enable ASTM TCP listeners | true |
-| `org.itech.ahb.listen-astm-server.port` | ASTM LIS1-A listen port | 12001 |
-| `org.itech.ahb.listen-astm-e1381-95-server.port` | E1381-95 listen port | 12011 |
 | **MLLP (HL7)** | | |
 | `org.itech.ahb.mllp.enabled` | Enable MLLP listener | false |
 | `org.itech.ahb.mllp.port` | MLLP listen port | 2575 |
 | **Serial** | | |
-| `org.itech.ahb.serial.enabled` | Enable serial listener | false |
 | **File Watcher** | | |
-| `bridge.file.enabled` | Enable file watcher | false |
-| `bridge.file.watchDirectories` | Directories to watch | [] |
-| `bridge.file.archiveDirectory` | Processed files archive | Required if enabled |
+| `bridge.file.enabled` | Enable FILE connection runtime | true |
+| `bridge.file.stateStorePath` | Durable file-processing state database | JVM temporary directory |
 | `bridge.file.pollIntervalMs` | Poll interval | 5000 |
+| `bridge.file.fileStabilityTimeoutMs` | Stable-file wait | 3000 |
+| `bridge.file.maxRetryAttempts` | Processing attempts | 3 |
+| `bridge.file.retryDelayMs` | Initial retry backoff | 1000 |
 | **Profile Catalog** | | |
 | `bridge.profile-catalog.directory` | Durable site-profile revision store | `/data/openelis-analyzer-bridge/profile-catalog` |
 | `bridge.profile-catalog.shipped-pattern` | Packaged profile resource pattern | `classpath*:/analyzer-profiles/**/*.json` |
+| **Connection Catalog** | | |
+| `bridge.connection-catalog.directory` | Durable analyzer connection store | `/data/openelis-analyzer-bridge/connections` |
 | **Connectivity** | | |
 | `bridge.connectivity.advertised-host` | Bridge host that receiver analyzers should be configured to reach | Required for receiver probes |
 | **Security (M7.1)** | | |
@@ -140,26 +140,11 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 
 ### Analyzer Identification
 
-Configure analyzer mappings in `bridge.analyzers`:
+Create a durable Bridge connection from a published profile revision. Activating
+that connection materializes its source binding and profile-owned behavior into
+the runtime registry. There is no separate static analyzer map.
 
-```yaml
-bridge:
-  analyzers:
-    "192.168.1.10":
-      id: MINDRAY-BC5380-001
-      name: "Mindray BC-5380"
-      expectedProtocol: ASTM
-    "/dev/ttyUSB0":
-      id: HORIBA-PENTRA60-001
-      name: "Horiba Pentra 60"
-      expectedProtocol: ASTM
-    "quantstudio-*":
-      id: QUANTSTUDIO-001
-      name: "QuantStudio 7 Flex"
-      expectedProtocol: CSV
-```
-
-#### Resolution Policy (Current Iteration)
+#### Resolution Policy
 
 Analyzer identification uses three distinct concepts:
 
