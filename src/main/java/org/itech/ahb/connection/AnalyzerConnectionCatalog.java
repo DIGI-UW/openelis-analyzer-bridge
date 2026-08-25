@@ -365,11 +365,7 @@ public final class AnalyzerConnectionCatalog {
     if (existingValues != null) {
       for (JsonNode descriptor : profile.path("connectionFields")) {
         String key = descriptor.path("key").asText();
-        if (
-          "SECRET".equals(descriptor.path("inputKind").asText()) &&
-          !suppliedValues.has(key) &&
-          existingValues.has(key)
-        ) {
+        if (!suppliedValues.has(key) && existingValues.has(key)) {
           values.set(key, existingValues.path(key).deepCopy());
         }
       }

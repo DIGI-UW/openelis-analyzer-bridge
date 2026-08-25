@@ -100,6 +100,31 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
+  void updateChangesOnlySuppliedValuesAndRetainsTheDurableBridgeConfiguration() {
+    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    AnalyzerConnectionCatalog catalog = catalog(() ->
+      UUID.fromString("00000000-0000-0000-0000-000000000098")
+    );
+    ObjectNode create = createRequest(profile, "create-genexpert-patch", "oe-98");
+    create.withObject("values").put("host", "192.0.2.10").put("port", 5000);
+    ObjectNode created = catalog.create(create);
+
+    ObjectNode update = objectMapper.createObjectNode();
+    update.put("schemaVersion", "1.0");
+    update.put("requestId", "update-genexpert-port-only");
+    update.put("connectionId", created.path("connectionId").asText());
+    update.put("expectedConfigRevision", 1);
+    update.set("profileRef", create.path("profileRef").deepCopy());
+    update.put("displayName", created.path("displayName").asText());
+    update.putObject("values").put("port", 5001);
+
+    ObjectNode changed = catalog.update(update);
+
+    assertThat(currentValue(changed, "host").asText()).isEqualTo("192.0.2.10");
+    assertThat(currentValue(changed, "port").asInt()).isEqualTo(5001);
+  }
+
+  @Test
   void createRejectsAProfileFingerprintThatDoesNotIdentifyThePinnedRevision() {
     ObjectNode profile = profiles.require("quantstudio", 1).profile();
     ObjectNode request = createRequest(profile, "create-quantstudio-1", "oe-100");
