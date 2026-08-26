@@ -122,6 +122,10 @@
                     "valueString": "specimenId"
                   },
                   {
+                    "url": "sourcePresent",
+                    "valueBoolean": true
+                  },
+                  {
                     "url": "rawValue",
                     "valueString": "LEGACY-CONTROL-001"
                   }

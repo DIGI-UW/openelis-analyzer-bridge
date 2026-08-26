@@ -1,8 +1,6 @@
-version: '3.8'
-
-# E2E test environment for Universal Analyzer Bridge
-# Exercises all transport types: ASTM TCP, MLLP, File, HTTP
-# Uses WireMock as capture server for request verification
+# Cross-process acceptance environment for priority analyzer result traffic.
+# analyzer-mock sends real GeneXpert ASTM traffic and writes a real
+# FluoroCycler file; WireMock captures the normalized OpenELIS request.
 
 services:
   # OpenELIS Analyzer Bridge (under test)
@@ -14,13 +12,14 @@ services:
       - "2575:2575"     # MLLP HL7 listener
       - "8443:8443"     # HTTP /input endpoint + actuator
     environment:
+      SPRING_PROFILE: test
       LOGGING_LEVEL_ORG_ITECH: DEBUG
       LOGGING_LEVEL_ROOT: INFO
     volumes:
       - ./configuration.test.yml:/app/configuration.yml:ro
-      - ./test-data/file-input:/mnt/analyzer-import
-      - ./test-data/file-archive:/mnt/analyzer-archive
-      - ./test-data/file-error:/mnt/analyzer-error
+      - analyzer-input:/mnt/analyzer-import
+    tmpfs:
+      - /data/openelis-analyzer-bridge:uid=9257,gid=9257,mode=0770
     networks:
       astm-test-net:
         ipv4_address: 172.28.0.100
@@ -33,6 +32,26 @@ services:
     depends_on:
       wiremock:
         condition: service_healthy
+
+  analyzer-mock:
+    build:
+      context: ${ANALYZER_MOCK_CONTEXT:?Set ANALYZER_MOCK_CONTEXT to the analyzer-mock-server checkout}
+    command: ["python", "-u", "server.py", "--api-port", "8080"]
+    environment:
+      ANALYZER_BRIDGE_PROFILES_DIR: /bridge-profiles
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./src/main/resources/analyzer-profiles:/bridge-profiles:ro
+      - analyzer-input:/data/analyzer-imports
+    networks:
+      astm-test-net:
+        ipv4_address: 172.28.0.150
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # WireMock — captures forwarded messages for verification
   # Query API: GET http://localhost:8080/__admin/requests
@@ -63,3 +82,6 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/24
+
+volumes:
+  analyzer-input:

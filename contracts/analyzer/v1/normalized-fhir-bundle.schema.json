@@ -130,16 +130,59 @@
             },
             {
               "contains": {
-                "required": ["url", "valueString"],
+                "required": ["url", "valueBoolean"],
                 "properties": {
-                  "url": { "const": "rawValue" },
-                  "valueString": { "type": "string", "minLength": 1 }
+                  "url": { "const": "sourcePresent" },
+                  "valueBoolean": { "type": "boolean" }
                 }
-              }
+              },
+              "maxContains": 1
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "extension": {
+                "contains": {
+                  "required": ["url", "valueBoolean"],
+                  "properties": {
+                    "url": { "const": "sourcePresent" },
+                    "valueBoolean": { "const": true }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "extension": {
+                "contains": {
+                  "required": ["url", "valueString"],
+                  "properties": {
+                    "url": { "const": "rawValue" },
+                    "valueString": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "extension": {
+                "not": {
+                  "contains": {
+                    "required": ["url"],
+                    "properties": { "url": { "const": "rawValue" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "matchedRecognitionEvaluation": {
       "allOf": [

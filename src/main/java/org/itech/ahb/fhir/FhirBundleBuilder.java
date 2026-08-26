@@ -127,16 +127,17 @@ public class FhirBundleBuilder {
                 new org.hl7.fhir.r4.model.CodeType(assessment.outcome().name()));
         for (org.itech.ahb.profile.ControlResultRecognitionEvaluator.RuleEvaluation evaluation
                 : assessment.evaluations()) {
-            if (evaluation.rawValue().isBlank()) {
-                throw new IllegalStateException(
-                        "RULES control recognition requires the evaluated raw source value");
-            }
             org.hl7.fhir.r4.model.Extension evidence = new org.hl7.fhir.r4.model.Extension("evaluation");
             evidence.addExtension("ruleKey", new StringType(evaluation.rule().key()));
             evidence.addExtension("matched",
                     new org.hl7.fhir.r4.model.BooleanType(evaluation.matched()));
             evidence.addExtension("sourceField", new StringType(evaluation.sourceField()));
-            evidence.addExtension("rawValue", new StringType(evaluation.rawValue()));
+            boolean sourcePresent = !evaluation.rawValue().isBlank();
+            evidence.addExtension("sourcePresent",
+                    new org.hl7.fhir.r4.model.BooleanType(sourcePresent));
+            if (sourcePresent) {
+                evidence.addExtension("rawValue", new StringType(evaluation.rawValue()));
+            }
             recognition.addExtension(evidence);
         }
         return recognition;

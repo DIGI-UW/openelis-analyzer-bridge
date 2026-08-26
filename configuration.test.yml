@@ -2,6 +2,18 @@
 # WireMock at 172.28.0.200:8080 acts as OpenELIS capture server
 
 bridge:
+  security:
+    enabled: true
+    username: bridge
+    password: changeme
+
+  profile-catalog:
+    directory: /data/openelis-analyzer-bridge/profile-catalog
+    shipped-pattern: classpath*:/analyzer-profiles/**/*.json
+
+  connection-catalog:
+    directory: /data/openelis-analyzer-bridge/connections
+
   openelis:
     url: http://172.28.0.200:8080
     connectTimeoutSeconds: 10
@@ -37,7 +49,7 @@ org:
         port: 5000
 
       mllp:
-        enabled: true
+        enabled: false
         port: 2575
 
 server:
@@ -58,7 +70,7 @@ management:
       show-details: always
   health:
     mllp:
-      enabled: true
+      enabled: false
     serial:
       enabled: true
     filewatcher:

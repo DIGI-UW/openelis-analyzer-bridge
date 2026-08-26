@@ -99,6 +99,7 @@
                   { "url": "ruleKey", "valueString": "control-prefix" },
                   { "url": "matched", "valueBoolean": false },
                   { "url": "sourceField", "valueString": "specimenId" },
+                  { "url": "sourcePresent", "valueBoolean": true },
                   { "url": "rawValue", "valueString": "ACC-KNOWN-001" }
                 ]
               }

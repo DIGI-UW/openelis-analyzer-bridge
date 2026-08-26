@@ -167,6 +167,52 @@ class FhirBundleBuilderLoincTest {
       .anyMatch(tag -> "QC".equals(tag.getCode()));
   }
 
+  @Test
+  void absentRuleSourceProducesContractConformantPatientEvidence() throws Exception {
+    ControlResultRecognition recognition = ControlResultRecognition.rules(List.of(
+      new ControlRecognitionRule(
+        "order-action-control",
+        "FIELD_EQUALS",
+        "O.12",
+        "Q",
+        null,
+        null
+      )
+    ));
+    ControlResultRecognitionEvaluator.Assessment assessment =
+      ControlResultRecognitionEvaluator.evaluate(recognition, "ACC-4", Map.of());
+    AnalyzerResult patient = AnalyzerResult
+      .text("MTB-RIF", "Xpert MTB/RIF", "NOT DETECTED")
+      .withControlRecognition(assessment);
+
+    String json = FhirBundleBuilder.buildNormalizedBundle(
+      "ACC-4",
+      List.of(patient),
+      new AnalyzerContext(
+        "bridge-connection-7f3c",
+        "oe-analyzer-42",
+        "genexpert-astm",
+        1,
+        "ASTM",
+        "TCP",
+        DeviceInfo.fromSenderToken("10.20.30.40", "GENEXPERT^GeneXpert^4.6.0"),
+        recognition,
+        "sha256:" + "2".repeat(64)
+      ),
+      code -> null
+    );
+
+    assertConforms(json);
+    Observation observation = resource(FHIR.newJsonParser().parseResource(Bundle.class, json), Observation.class);
+    org.hl7.fhir.r4.model.Extension evaluation = observation
+      .getExtensionByUrl(extensionUrl("analyzer-control-recognition"))
+      .getExtensionByUrl("evaluation");
+    assertThat(((org.hl7.fhir.r4.model.BooleanType) evaluation
+      .getExtensionByUrl("sourcePresent")
+      .getValue()).booleanValue()).isFalse();
+    assertThat(evaluation.getExtensionByUrl("rawValue")).isNull();
+  }
+
   private static void assertConforms(String json) throws Exception {
     var schema = JsonSchemaFactory
       .getInstance(SpecVersion.VersionFlag.V202012)

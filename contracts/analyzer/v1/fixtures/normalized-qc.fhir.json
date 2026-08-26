@@ -99,6 +99,7 @@
                   { "url": "ruleKey", "valueString": "control-prefix" },
                   { "url": "matched", "valueBoolean": true },
                   { "url": "sourceField", "valueString": "specimenId" },
+                  { "url": "sourcePresent", "valueBoolean": true },
                   { "url": "rawValue", "valueString": "QC-LOT-WBC-2026-08" }
                 ]
               }
