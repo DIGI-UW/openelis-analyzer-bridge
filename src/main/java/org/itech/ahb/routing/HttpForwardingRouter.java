@@ -332,17 +332,26 @@ public class HttpForwardingRouter implements MessageRouter {
         }
 
         // Build a FHIR Bundle with the registered analyzer identity.
-        String analyzerId = canonicalAnalyzerId(envelope);
         FhirBundleBuilder.DeviceInfo deviceInfo = FhirBundleBuilder.DeviceInfo
                 .fromSenderToken(envelope.getSourceId(), envelope.getProtocolAnalyzerHint());
+        AnalyzerRuntimeRegistry.AnalyzerEntry analyzer = registeredAnalyzer.orElseThrow();
+        FhirBundleBuilder.AnalyzerContext analyzerContext = new FhirBundleBuilder.AnalyzerContext(
+                analyzer.getBridgeConnectionId(),
+                analyzer.getId(),
+                analyzer.getProfileId(),
+                analyzer.getProfileRevision(),
+                envelope.getProtocol().name(),
+                envelope.getTransport().name(),
+                deviceInfo,
+                analyzer.getControlResultRecognition(),
+                analyzer.getRecognitionFingerprint());
         // Resolve analyzer code to LOINC from the same registered profile pin.
         java.util.function.Function<String, String> codeToLoinc =
-                registeredAnalyzer.get()::getLoincForCode;
-        String fhirJson = FhirBundleBuilder.buildBundle(
+                analyzer::getLoincForCode;
+        String fhirJson = FhirBundleBuilder.buildNormalizedBundle(
                 parsed.accessionNumber(),
-                analyzerId,
                 parsed.results(),
-                deviceInfo,
+                analyzerContext,
                 codeToLoinc);
 
         // Build target URI for /analyzer/fhir
@@ -367,9 +376,6 @@ public class HttpForwardingRouter implements MessageRouter {
                         .timeout(Duration.ofSeconds(readTimeoutSeconds))
                         .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
 
-                if (analyzerId != null && !analyzerId.isEmpty()) {
-                    builder.header(HEADER_ANALYZER_ID, analyzerId);
-                }
                 if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
                     addBasicAuth(builder, httpConfig.getUsername(), httpConfig.getPassword());
                 }

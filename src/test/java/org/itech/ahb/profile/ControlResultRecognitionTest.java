@@ -16,20 +16,22 @@ class ControlResultRecognitionTest {
   void explicitNoneNeverRecognizesAControl() {
     ControlResultRecognition recognition = ControlResultRecognition.none();
 
-    assertThat(
-        ControlResultRecognitionEvaluator.findMatchingRule(
-          recognition,
-          "CNEG-2026",
-          Map.of("O.12", "Q", "QC_TASK", "CONTROL")
-        )
-      )
-      .isEmpty();
+    var assessment = ControlResultRecognitionEvaluator.evaluate(
+      recognition,
+      "CNEG-2026",
+      Map.of("O.12", "Q", "QC_TASK", "CONTROL")
+    );
+
+    assertThat(assessment.outcome())
+      .isEqualTo(ControlResultRecognitionEvaluator.Outcome.NOT_EVALUATED);
+    assertThat(assessment.evaluations()).isEmpty();
+    assertThat(assessment.matchedRule()).isEmpty();
   }
 
   @Test
   void missingRecognitionIsRejectedInsteadOfBehavingAsNone() {
     assertThatThrownBy(() ->
-      ControlResultRecognitionEvaluator.findMatchingRule(null, "QC-2026", Map.of())
+      ControlResultRecognitionEvaluator.evaluate(null, "QC-2026", Map.of())
     )
       .isInstanceOf(NullPointerException.class)
       .hasMessage("recognition is required");
@@ -75,14 +77,30 @@ class ControlResultRecognitionTest {
       List.of(fieldRule, prefixRule)
     );
 
-    assertThat(
-        ControlResultRecognitionEvaluator.findMatchingRule(
-          recognition,
-          "QC-2026-001",
-          Map.of("O.12", "Q")
-        )
+    var assessment = ControlResultRecognitionEvaluator.evaluate(
+      recognition,
+      "QC-2026-001",
+      Map.of("O.12", "Q")
+    );
+
+    assertThat(assessment.outcome())
+      .isEqualTo(ControlResultRecognitionEvaluator.Outcome.MATCH);
+    assertThat(assessment.matchedRule()).contains(prefixRule);
+    assertThat(assessment.evaluations()).hasSize(2);
+    assertThat(assessment.evaluations().get(0))
+      .extracting(
+        ControlResultRecognitionEvaluator.RuleEvaluation::sourceField,
+        ControlResultRecognitionEvaluator.RuleEvaluation::rawValue,
+        ControlResultRecognitionEvaluator.RuleEvaluation::matched
       )
-      .contains(prefixRule);
+      .containsExactly("O.12", "Q", false);
+    assertThat(assessment.evaluations().get(1))
+      .extracting(
+        ControlResultRecognitionEvaluator.RuleEvaluation::sourceField,
+        ControlResultRecognitionEvaluator.RuleEvaluation::rawValue,
+        ControlResultRecognitionEvaluator.RuleEvaluation::matched
+      )
+      .containsExactly("specimenId", "QC-2026-001", true);
   }
 
   @Test

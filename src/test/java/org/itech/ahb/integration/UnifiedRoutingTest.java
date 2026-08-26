@@ -229,8 +229,9 @@ class UnifiedRoutingTest {
             CapturedRequest req = awaitRequest();
             assertTrue(req.path().endsWith("/analyzer/fhir"),
                     "Path should end with /analyzer/fhir, got: " + req.path());
-            assertEquals("QUANTSTUDIO-001", req.analyzerId());
+            assertNull(req.analyzerId(), "normalized FILE routing does not use an analyzer-ID header");
             assertTrue(req.body().contains("\"resourceType\":\"Bundle\""), "Expected FHIR bundle body");
+            assertTrue(req.body().contains("bridge-quantstudio-001"));
         }
     }
 
@@ -508,7 +509,11 @@ class UnifiedRoutingTest {
 
     private AnalyzerRuntimeRegistry.AnalyzerEntry fileAnalyzer(String id) {
         AnalyzerRuntimeRegistry.AnalyzerEntry entry = analyzer(id, "FILE");
+        entry.setBridgeConnectionId("bridge-" + id.toLowerCase());
+        entry.setProfileId("site." + id.toLowerCase());
+        entry.setProfileRevision(1);
         entry.setControlResultRecognition(ControlResultRecognition.none());
+        entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
         entry.setTabularResultValueSelection(TabularResultValueSelection.resultOnly());
         entry.setColumnMappings(Map.of(
                 "Sample Name", "sampleId",

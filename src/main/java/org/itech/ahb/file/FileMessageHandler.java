@@ -137,19 +137,23 @@ public class FileMessageHandler {
                 .build();
     }
 
-    /**
-     * Build the FHIR bundle for one parsed file accession, applying the analyzer's
-     * code→LOINC mapping (parity with the ASTM/HL7 inbound path via
-     * HttpForwardingRouter) so OE2 resolves the result by LOINC instead of receiving
-     * a raw analyzer test code. Construction requires the registered analyzer
-     * materialized from its pinned profile revision.
-     */
+    /** Build one normalized FILE result bundle from the pinned saved connection. */
     static String buildFileFhirBundle(AnalyzerEntry analyzerEntry,
-            HL7ResultParser.ParsedResults parsed, String analyzerId) {
+            HL7ResultParser.ParsedResults parsed, String sourceFile) {
         Objects.requireNonNull(analyzerEntry, "analyzerEntry is required");
         java.util.function.Function<String, String> codeToLoinc = analyzerEntry::getLoincForCode;
-        return FhirBundleBuilder.buildBundle(
-                parsed.accessionNumber(), analyzerId, parsed.results(), null, codeToLoinc);
+        FhirBundleBuilder.AnalyzerContext context = new FhirBundleBuilder.AnalyzerContext(
+                analyzerEntry.getBridgeConnectionId(),
+                analyzerEntry.getId(),
+                analyzerEntry.getProfileId(),
+                analyzerEntry.getProfileRevision(),
+                "FILE",
+                "FILE",
+                FhirBundleBuilder.DeviceInfo.fromSenderToken(sourceFile, analyzerEntry.getName()),
+                analyzerEntry.getControlResultRecognition(),
+                analyzerEntry.getRecognitionFingerprint());
+        return FhirBundleBuilder.buildNormalizedBundle(
+                parsed.accessionNumber(), parsed.results(), context, codeToLoinc);
     }
 
     private void postFileAsFhir(Path filePath, String analyzerId, byte[] content, String perFileTestCode,
@@ -245,12 +249,11 @@ public class FileMessageHandler {
             if (progress != null) {
                 progress.onAccession(accessionIndex, allResults.size(), parsed.accessionNumber());
             }
-            String fhirJson = buildFileFhirBundle(analyzerEntry, parsed, analyzerId);
+            String fhirJson = buildFileFhirBundle(analyzerEntry, parsed, filePath.toString());
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(fhirUri)
                     .timeout(Duration.ofSeconds(httpConfig.getReadTimeoutSeconds()))
                     .header("Content-Type", "application/fhir+json")
-                    .header("X-Analyzer-Id", analyzerId)
                     .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
 
             addBasicAuth(requestBuilder);

@@ -298,6 +298,9 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setControlResultRecognition(
       ControlResultRecognition.fromProfile(profile.path("controlResultRecognition"))
     );
+    entry.setRecognitionFingerprint(
+      requiredText(profile.path("catalog"), "recognitionFingerprint", "Recognition fingerprint")
+    );
     return entry;
   }
 

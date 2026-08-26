@@ -266,6 +266,9 @@ public class AnalyzerRuntimeRegistry {
         /** Complete control-result recognition from the pinned Bridge profile. */
         private ControlResultRecognition controlResultRecognition;
 
+        /** Fingerprint of the exact profile-owned recognition definition. */
+        private String recognitionFingerprint;
+
         /** Profile-owned selection of ASTM R records that carry reportable results. */
         private AstmResultRecordSelection astmResultRecordSelection;
 
