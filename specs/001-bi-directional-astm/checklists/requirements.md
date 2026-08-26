@@ -1,5 +1,8 @@
 # Specification Quality Checklist: Bi-Directional ASTM Workflow Support
 
+> Superseded historical checklist. It is not an acceptance gate for current
+> Bridge behavior.
+
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2025-12-03  
 **Feature**: [spec.md](../spec.md)  
@@ -109,4 +112,3 @@
   - Bi-directional communication (push + server modes)
   - HTTP API for automated testing
   - Docker support for integration testing
-

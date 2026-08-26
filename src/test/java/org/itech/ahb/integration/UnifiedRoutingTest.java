@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
-import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.controller.AnalyzerInputController;
 import org.itech.ahb.file.FileMessageHandler;
 import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
@@ -53,7 +52,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
  * authoritative analyzer identity contract.
  * <p>
  * Uses com.sun.net.httpserver.HttpServer to capture forwarded HTTP requests and verify
- * correct path and headers for each listener type.
+ * the normalized body contract for each listener type.
  * </p>
  */
 @ExtendWith(MockitoExtension.class)
@@ -89,21 +88,15 @@ class UnifiedRoutingTest {
 
         var captureHandler = (com.sun.net.httpserver.HttpHandler) exchange -> {
             String path = exchange.getRequestURI().getPath();
-            String sourceProtocol = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_PROTOCOL);
-            String sourceTransport = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_TRANSPORT);
-            String sourceId = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_ID);
-            String analyzerId = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_ANALYZER_ID);
-            String sourceAnalyzerIp = exchange.getRequestHeaders().getFirst(
-                HttpForwardingRouter.HEADER_SOURCE_ANALYZER_IP);
-            String sourcePort = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_PORT);
-
+            boolean hasSourceHeaders = exchange.getRequestHeaders().keySet().stream()
+                .map(String::toLowerCase)
+                .anyMatch(name -> name.startsWith("x-source-") || name.equals("x-analyzer-id"));
             String body;
             try (InputStream is = exchange.getRequestBody()) {
                 body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             }
 
-            lastRequest.set(new CapturedRequest(
-                path, body, sourceProtocol, sourceTransport, sourceId, analyzerId, sourceAnalyzerIp, sourcePort));
+            lastRequest.set(new CapturedRequest(path, body, hasSourceHeaders));
             requestLatch.countDown();
 
             try {
@@ -123,7 +116,7 @@ class UnifiedRoutingTest {
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
         AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-        HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null, registry);
+        HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, registry);
         registry.register("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
         registry.register("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));
         registry.register("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV"));
@@ -142,9 +135,7 @@ class UnifiedRoutingTest {
 
         serialHandler = new SerialMessageHandler(normalizer);
 
-        FhirRoutingConfig fhirRoutingConfig = new FhirRoutingConfig();
-        fhirRoutingConfig.setUseFhir(true);
-        fileHandler = new FileMessageHandler(fhirRoutingConfig, registry, httpConfig);
+        fileHandler = new FileMessageHandler(registry, httpConfig);
 
         httpController = new AnalyzerInputController(normalizer);
 
@@ -169,30 +160,47 @@ class UnifiedRoutingTest {
         return lastRequest.get();
     }
 
+    private void assertNormalizedRequest(
+            CapturedRequest request, String connectionId, String rawAnalyzerCode) {
+        assertTrue(request.path().endsWith("/analyzer/fhir"),
+                "Path should end with /analyzer/fhir, got: " + request.path());
+        assertTrue(request.body().contains("\"resourceType\":\"Bundle\""));
+        assertTrue(request.body().contains(connectionId),
+                "Normalized bundle must carry the exact Bridge connection identity");
+        assertTrue(request.body().contains(rawAnalyzerCode),
+                "Normalized bundle must preserve the raw analyzer code");
+        assertFalse(request.hasSourceHeaders(),
+                "Normalized delivery must carry source context in the closed FHIR body, not routing headers");
+    }
+
+    private String astmResult(String accession, String code, String value) {
+        return "H|\\^&|||TEST|||||||P|1|20260205120000\r"
+                + "P|1||PATIENT-1\r"
+                + "O|1|" + accession + "\r"
+                + "R|1|^^^" + code + "|" + value + "|unit\r"
+                + "L|1|N";
+    }
+
     @Nested
     @DisplayName("Serial Handler Routing")
     class SerialHandlerTests {
 
         @Test
-        @DisplayName("Serial ASTM message routes to /analyzer/astm with correct headers")
+        @DisplayName("Serial ASTM message routes as the normalized result contract")
         void serialAstmRoutesCorrectly() throws Exception {
             resetLatch();
-            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
+            String astmMessage = astmResult("12345", "WBC", "7.5");
 
             serialHandler.handleMessage(astmMessage, "/dev/ttyUSB0", "SERIAL-001", Protocol.ASTM);
 
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/astm"), "Path should end with /astm, got: " + req.path());
-            assertEquals("ASTM", req.sourceProtocol());
-            assertEquals("SERIAL", req.sourceTransport());
-            assertEquals("/dev/ttyUSB0", req.sourceId());
-            assertEquals("SERIAL-001", req.analyzerId());
-            assertNull(req.sourceAnalyzerIp());
-            assertTrue(req.body().contains("H|\\^&"));
+            assertNormalizedRequest(req, "bridge-serial-001", "WBC");
+            assertTrue(req.body().contains("\"valueCode\":\"ASTM\""));
+            assertTrue(req.body().contains("\"valueCode\":\"SERIAL\""));
         }
 
         @Test
-        @DisplayName("Serial HL7 message routes to /analyzer/hl7")
+        @DisplayName("Serial HL7 message routes as the normalized result contract")
         void serialHl7RoutesCorrectly() throws Exception {
             resetLatch();
             String hl7Message = "MSH|^~\\&|TEST|LAB|OPENELIS|LAB|20260205120000||ORU^R01|MSG001|P|2.5.1\r" +
@@ -201,9 +209,9 @@ class UnifiedRoutingTest {
             serialHandler.handleMessage(hl7Message, "/dev/ttyUSB1", null, Protocol.HL7);
 
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/hl7"), "Path should end with /hl7, got: " + req.path());
-            assertEquals("HL7", req.sourceProtocol());
-            assertEquals("SERIAL", req.sourceTransport());
+            assertNormalizedRequest(req, "bridge-serial-hl7-001", "WBC");
+            assertTrue(req.body().contains("\"valueCode\":\"HL7\""));
+            assertTrue(req.body().contains("\"valueCode\":\"SERIAL\""));
         }
 
     }
@@ -229,7 +237,6 @@ class UnifiedRoutingTest {
             CapturedRequest req = awaitRequest();
             assertTrue(req.path().endsWith("/analyzer/fhir"),
                     "Path should end with /analyzer/fhir, got: " + req.path());
-            assertNull(req.analyzerId(), "normalized FILE routing does not use an analyzer-ID header");
             assertTrue(req.body().contains("\"resourceType\":\"Bundle\""), "Expected FHIR bundle body");
             assertTrue(req.body().contains("bridge-quantstudio-001"));
         }
@@ -247,22 +254,19 @@ class UnifiedRoutingTest {
             when(mockHttpRequest.getRemotePort()).thenReturn(0);
             when(mockHttpRequest.getHeader("X-Real-IP")).thenReturn(null);
 
-            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
+            String astmMessage = astmResult("12345", "WBC", "7.5");
 
             var response = httpController.receiveAnalyzerMessage(astmMessage, null, null, null, mockHttpRequest);
 
             assertEquals(200, response.getStatusCode().value());
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/astm"), "Path should end with /astm, got: " + req.path());
-            assertEquals("ASTM", req.sourceProtocol());
-            assertEquals("HTTP", req.sourceTransport());
-            assertEquals("192.168.1.10", req.sourceId());
-            assertEquals("192.168.1.10", req.sourceAnalyzerIp());
-            assertEquals("HTTP-001", req.analyzerId(), "Registered source should determine analyzer identity");
+            assertNormalizedRequest(req, "bridge-http-001", "WBC");
+            assertTrue(req.body().contains("\"valueCode\":\"ASTM\""));
+            assertTrue(req.body().contains("\"valueCode\":\"HTTP\""));
         }
 
         @Test
-        @DisplayName("HTTP POST HL7 routes to /analyzer/hl7")
+        @DisplayName("HTTP HL7 routes as the normalized result contract")
         void httpHl7RoutesCorrectly() throws Exception {
             resetLatch();
             when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.20");
@@ -276,29 +280,11 @@ class UnifiedRoutingTest {
 
             assertEquals(200, response.getStatusCode().value());
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/hl7"), "Path should end with /hl7, got: " + req.path());
-            assertEquals("HL7", req.sourceProtocol());
-            assertEquals("HTTP", req.sourceTransport());
+            assertNormalizedRequest(req, "bridge-http-002", "WBC");
+            assertTrue(req.body().contains("\"valueCode\":\"HL7\""));
+            assertTrue(req.body().contains("\"valueCode\":\"HTTP\""));
         }
 
-        @Test
-        @DisplayName("HTTP POST CSV routes to /analyzer/csv")
-        void httpCsvRoutesCorrectly() throws Exception {
-            resetLatch();
-            when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.30");
-            when(mockHttpRequest.getRemotePort()).thenReturn(0);
-            when(mockHttpRequest.getHeader(anyString())).thenReturn(null);
-
-            String csvMessage = "SampleID,TestCode,Result\n12345,WBC,7.5\n12346,RBC,4.8";
-
-            var response = httpController.receiveAnalyzerMessage(csvMessage, "text/csv", null, null, mockHttpRequest);
-
-            assertEquals(200, response.getStatusCode().value());
-            CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/csv"), "Path should end with /csv, got: " + req.path());
-            assertEquals("CSV", req.sourceProtocol());
-            assertEquals("HTTP", req.sourceTransport());
-        }
     }
 
     @Nested
@@ -306,7 +292,7 @@ class UnifiedRoutingTest {
     class ASTMAdapterTests {
 
         @Test
-        @DisplayName("ASTM TCP message routes to /analyzer/astm via MessageNormalizer")
+        @DisplayName("ASTM TCP message routes as the normalized result contract")
         void astmTcpRoutesCorrectly() throws Exception {
             resetLatch();
             String astmMessage = "H|\\^&|||MINDRAY^BC-5380|||||||P|1|20260205120000\r" +
@@ -319,23 +305,21 @@ class UnifiedRoutingTest {
             astmAdapter.handle(message, "192.168.1.40");
 
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/astm"), "Path should end with /astm, got: " + req.path());
-            assertEquals("ASTM", req.sourceProtocol());
-            assertEquals("TCP", req.sourceTransport());
-            assertEquals("192.168.1.40", req.sourceId());
-            assertTrue(req.body().contains("H|\\^&"));
+            assertNormalizedRequest(req, "bridge-mindray", "WBC");
+            assertTrue(req.body().contains("\"valueCode\":\"ASTM\""));
+            assertTrue(req.body().contains("\"valueCode\":\"TCP\""));
         }
 
         @Test
         @DisplayName("ASTM with null sourceIp uses unknown")
         void astmNullSourceIpUsesUnknown() throws Exception {
             resetLatch();
-            DefaultASTMMessage message = new DefaultASTMMessage("H|\\^&|||TEST\rL|1|N");
+            DefaultASTMMessage message = new DefaultASTMMessage(astmResult("12345", "WBC", "7.5"));
 
             astmAdapter.handle(message, null);
 
             CapturedRequest req = awaitRequest();
-            assertEquals("unknown", req.sourceId());
+            assertNormalizedRequest(req, "bridge-test", "WBC");
         }
     }
 
@@ -344,7 +328,7 @@ class UnifiedRoutingTest {
     class MLLPHandlerTests {
 
         @Test
-        @DisplayName("MLLP HL7 message routes to /analyzer/hl7 with X-Analyzer-Id from MSH")
+        @DisplayName("MLLP HL7 routes by the source-bound Bridge connection")
         void mllpHl7RoutesCorrectly() throws Exception {
             resetLatch();
             String hl7Message = "MSH|^~\\&|ANALYZER-APP|LAB-FAC|OPENELIS|LAB|20260205120000||ORU^R01|MSG001|P|2.5.1\r" +
@@ -360,150 +344,31 @@ class UnifiedRoutingTest {
             mllpApplication.processMessage(message, metadata);
 
             CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/hl7"), "Path should end with /hl7, got: " + req.path());
-            assertEquals("HL7", req.sourceProtocol());
-            assertEquals("MLLP", req.sourceTransport());
-            assertEquals("192.168.1.50", req.sourceId());
-            // Analyzer ID from MSH-3/MSH-4: ANALYZER-APP-LAB-FAC
-            assertNotNull(req.analyzerId());
-            assertTrue(req.analyzerId().contains("ANALYZER-APP"), "X-Analyzer-Id should come from MSH-3");
-        }
-
-        @Test
-        @DisplayName("MLLP message with SENDING_PORT metadata forwards X-Source-Port")
-        void mllpForwardsSourcePort() throws Exception {
-            resetLatch();
-            String hl7Message = "MSH|^~\\&|ANALYZER-APP|LAB-FAC|OPENELIS|LAB|20260205120000||ORU^R01|MSG002|P|2.5.1\r" +
-                    "PID|1||12345||Doe^John\r" +
-                    "OBX|1|NM|WBC||7.5|10^3/uL||||F";
-
-            Message message = new PipeParser().parse(hl7Message);
-            java.util.Map<String, Object> metadata = new java.util.HashMap<>();
-            metadata.put("SENDING_IP", "192.168.1.51");
-            metadata.put("SENDING_PORT", 54321);
-            metadata.put("raw-message", hl7Message);
-
-            mllpApplication.processMessage(message, metadata);
-
-            CapturedRequest req = awaitRequest();
-            assertEquals("54321", req.sourcePort(), "X-Source-Port should be forwarded from SENDING_PORT");
-        }
-    }
-
-    @Nested
-    @DisplayName("X-Source-Port Header Tests")
-    class SourcePortHeaderTests {
-
-        @Test
-        @DisplayName("HTTP direct connection forwards X-Source-Port")
-        void httpDirectConnectionForwardsSourcePort() throws Exception {
-            resetLatch();
-            when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.10");
-            when(mockHttpRequest.getRemotePort()).thenReturn(12345);
-            when(mockHttpRequest.getHeader(anyString())).thenReturn(null);
-
-            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
-
-            httpController.receiveAnalyzerMessage(astmMessage, null, null, null, mockHttpRequest);
-
-            CapturedRequest req = awaitRequest();
-            assertEquals("12345", req.sourcePort(), "X-Source-Port should be set for direct connections");
-        }
-
-        @Test
-        @DisplayName("HTTP proxied connection uses X-Forwarded-Port when available")
-        void httpProxiedConnectionUsesXForwardedPort() throws Exception {
-            resetLatch();
-
-            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
-
-            httpController.receiveAnalyzerMessage(
-                astmMessage, null, "192.168.1.10", "54321", mockHttpRequest);
-
-            CapturedRequest req = awaitRequest();
-            assertEquals("54321", req.sourcePort(), "X-Source-Port should use X-Forwarded-Port for proxied connections");
-        }
-
-        @Test
-        @DisplayName("HTTP proxied connection without X-Forwarded-Port omits X-Source-Port")
-        void httpProxiedConnectionWithoutForwardedPortOmitsSourcePort() throws Exception {
-            resetLatch();
-
-            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
-
-            httpController.receiveAnalyzerMessage(
-                astmMessage, null, "192.168.1.10", null, mockHttpRequest);
-
-            CapturedRequest req = awaitRequest();
-            assertNull(req.sourcePort(), "X-Source-Port should be absent when proxied without X-Forwarded-Port");
-        }
-
-        @Test
-        @DisplayName("HTTP X-Real-IP proxy without X-Forwarded-Port omits X-Source-Port")
-        void httpXRealIpProxyWithoutForwardedPortOmitsSourcePort() throws Exception {
-            resetLatch();
-            when(mockHttpRequest.getHeader("X-Real-IP")).thenReturn("192.168.1.10");
-
-            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
-
-            httpController.receiveAnalyzerMessage(
-                astmMessage, null, null, null, mockHttpRequest);
-
-            CapturedRequest req = awaitRequest();
-            assertNull(req.sourcePort(), "X-Source-Port should be absent when X-Real-IP indicates a proxied request without X-Forwarded-Port");
-        }
-
-        @Test
-        @DisplayName("HTTP proxied connection with out-of-range X-Forwarded-Port omits X-Source-Port")
-        void httpProxiedConnectionWithInvalidForwardedPortOmitsSourcePort() throws Exception {
-            resetLatch();
-
-            String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
-
-            httpController.receiveAnalyzerMessage(
-                astmMessage, null, "192.168.1.10", "65536", mockHttpRequest);
-
-            CapturedRequest req = awaitRequest();
-            assertNull(req.sourcePort(), "X-Source-Port should be absent when X-Forwarded-Port is out of range");
-        }
-
-        @Test
-        @DisplayName("X-Source-Port is preserved through normalizer enrichment when analyzerId is set")
-        void sourcePortPreservedThroughNormalizerEnrichment() throws Exception {
-            resetLatch();
-            when(mockHttpRequest.getRemoteAddr()).thenReturn("192.168.1.60");
-            when(mockHttpRequest.getRemotePort()).thenReturn(9999);
-            when(mockHttpRequest.getHeader(anyString())).thenReturn(null);
-
-            // Use an ASTM message that includes a recognizable sender so the normalizer
-            // may attempt to enrich the envelope with an analyzerId
-            String astmMessage = "H|\\^&|||MINDRAY^BC-5380|||||||P|1|20260205120000\r" +
-                    "P|1||PAT001||DOE^JOHN\r" +
-                    "L|1|N";
-
-            httpController.receiveAnalyzerMessage(astmMessage, null, null, null, mockHttpRequest);
-
-            CapturedRequest req = awaitRequest();
-            // The port must survive any normalizer envelope rebuild
-            assertEquals("9999", req.sourcePort(), "X-Source-Port must be preserved through normalizer enrichment");
+            assertNormalizedRequest(req, "bridge-analyzer-app-lab-fac", "WBC");
+            assertTrue(req.body().contains("\"valueCode\":\"HL7\""));
+            assertTrue(req.body().contains("\"valueCode\":\"MLLP\""));
         }
     }
 
     private record CapturedRequest(
             String path,
             String body,
-            String sourceProtocol,
-            String sourceTransport,
-            String sourceId,
-            String analyzerId,
-            String sourceAnalyzerIp,
-            String sourcePort
+            boolean hasSourceHeaders
     ) {}
 
     private AnalyzerRuntimeRegistry.AnalyzerEntry analyzer(String id, String expectedProtocol) {
         AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
         entry.setId(id);
+        entry.setBridgeConnectionId("bridge-" + id.toLowerCase());
+        entry.setProfileId("site." + id.toLowerCase());
+        entry.setProfileRevision(1);
         entry.setExpectedProtocol(expectedProtocol);
+        entry.setControlResultRecognition(ControlResultRecognition.none());
+        entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+        if (!"HL7".equals(expectedProtocol)) {
+            entry.setAstmResultRecordSelection(org.itech.ahb.profile.AstmResultRecordSelection.all());
+        }
+        entry.setCodeToLoinc(Map.of("WBC", "6690-2", "RBC", "789-8"));
         return entry;
     }
 

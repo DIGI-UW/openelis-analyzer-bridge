@@ -1,5 +1,9 @@
 # Implementation Plan: Bi-Directional ASTM Workflow Support
 
+> Superseded historical plan. Do not use it for dependencies or current
+> implementation direction; use `README.md`, `contracts/analyzer/v1`, and
+> current code.
+
 **Branch**: `001-bi-directional-astm` | **Date**: 2025-12-03 | **Spec**: [spec.md](./spec.md)  
 **Input**: Feature specification from `/specs/001-bi-directional-astm/spec.md`
 

@@ -23,7 +23,6 @@ class MessageEnvelopeTest {
                 .rawMessage(rawMessage)
                 .protocolAnalyzerHint("MINDRAY")
                 .resolvedAnalyzerId("MINDRAY-BC5380-001")
-                .analyzerId("MINDRAY-BC5380-001")
                 .build();
 
         assertNotNull(envelope);
@@ -33,7 +32,6 @@ class MessageEnvelopeTest {
         assertEquals(rawMessage, envelope.getRawMessage());
         assertEquals("MINDRAY", envelope.getProtocolAnalyzerHint());
         assertEquals("MINDRAY-BC5380-001", envelope.getResolvedAnalyzerId());
-        assertEquals("MINDRAY-BC5380-001", envelope.getAnalyzerId());
         assertNotNull(envelope.getReceivedAt());
     }
 
@@ -62,7 +60,6 @@ class MessageEnvelopeTest {
                 .transport(Transport.SERIAL)
                 .sourceId("/dev/ttyUSB0")
                 .rawMessage("H|\\^&|||HORIBA|||...")
-                .analyzerId("HORIBA-PENTRA60-001")
                 .build();
 
         assertEquals(Transport.SERIAL, envelope.getTransport());
@@ -77,7 +74,6 @@ class MessageEnvelopeTest {
                 .transport(Transport.FILE)
                 .sourceId(filePath)
                 .rawMessage("SampleID,TestCode,Result\n12345,GLU,95")
-                .analyzerId("QUANTSTUDIO-001")
                 .build();
 
         assertEquals(Transport.FILE, envelope.getTransport());
@@ -95,11 +91,11 @@ class MessageEnvelopeTest {
                 .build();
 
         assertEquals(Transport.HTTP, envelope.getTransport());
-        assertNull(envelope.getAnalyzerId()); // Not set
+        assertNull(envelope.getResolvedAnalyzerId());
     }
 
     @Test
-    void testEnvelopeWithoutAnalyzerId() {
+    void testEnvelopeWithoutResolvedConnection() {
         MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
                 .transport(Transport.TCP)
@@ -107,7 +103,7 @@ class MessageEnvelopeTest {
                 .rawMessage("H|\\^&|||UNKNOWN|||...")
                 .build();
 
-        assertNull(envelope.getAnalyzerId());
+        assertNull(envelope.getResolvedAnalyzerId());
     }
 
     @Test
@@ -117,7 +113,6 @@ class MessageEnvelopeTest {
                 .transport(Transport.TCP)
                 .sourceId("192.168.1.10")
                 .rawMessage("H|\\^&|||TEST|||...")
-                .analyzerId("TEST-001")
                 .build();
 
         String str = envelope.toString();

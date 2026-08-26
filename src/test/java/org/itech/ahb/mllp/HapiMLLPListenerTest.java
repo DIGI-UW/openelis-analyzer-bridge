@@ -472,8 +472,8 @@ class HapiMLLPListenerTest {
             assertNotNull(envelope.getReceivedAt(), "Received timestamp should be set");
             assertEquals("SYSMEX-XN-LAB1", envelope.getProtocolAnalyzerHint(),
                 "Protocol analyzer hint should be extracted from MSH-3 and MSH-4");
-            assertNull(envelope.getAnalyzerId(),
-                "Canonical analyzer ID is resolved later by MessageNormalizer");
+            assertNull(envelope.getResolvedAnalyzerId(),
+                "Saved connection identity is resolved later by MessageNormalizer");
         }
     }
 

@@ -207,37 +207,6 @@ class ASTMBridgeAdapterTest {
     }
 
     @Nested
-    @DisplayName("Default handle(message) Method Tests")
-    class DefaultHandleMethodTests {
-
-        @Test
-        @DisplayName("Default handle method should call handle(message, null)")
-        void defaultHandleMethodShouldCallHandleWithNullSourceIp() {
-            // Use a real DefaultASTMMessage for this test
-            DefaultASTMMessage message = new DefaultASTMMessage(SAMPLE_ASTM_MESSAGE);
-
-            adapter.handle(message);
-
-            // Verify normalizer was called with "unknown" sourceId (null sourceIp → "unknown")
-            verify(mockNormalizer).process(argThat(envelope ->
-                "unknown".equals(envelope.getSourceId())
-            ));
-        }
-
-        @Test
-        @DisplayName("Default handle method should return same result as handle(message, null)")
-        void defaultHandleMethodShouldReturnSameResultAsHandleWithNull() {
-            DefaultASTMMessage message = new DefaultASTMMessage(SAMPLE_ASTM_MESSAGE);
-            when(mockNormalizer.process(any())).thenReturn(true);
-
-            ASTMHandlerResponse defaultResponse = adapter.handle(message);
-            ASTMHandlerResponse explicitResponse = adapter.handle(message, null);
-
-            assertEquals(defaultResponse.getStatus(), explicitResponse.getStatus());
-        }
-    }
-
-    @Nested
     @DisplayName("Integration Tests with Real Messages")
     class IntegrationTests {
 

@@ -1,5 +1,8 @@
 # Tasks: Bi-Directional ASTM Workflow Support
 
+> Superseded historical task record. These tasks do not define current
+> dependencies or accepted behavior.
+
 **Input**: Design documents from `/specs/001-bi-directional-astm/`  
 **Prerequisites**: plan.md ✅, spec.md ✅, research.md ✅, data-model.md ✅, contracts/ ✅  
 **Tests**: REQUIRED per Constitution Principle IV (TDD)  
@@ -277,4 +280,3 @@ Polish → Final validation → Release
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Constitution compliance verified in plan.md - all principles pass
-

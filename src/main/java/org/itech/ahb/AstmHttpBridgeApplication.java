@@ -50,10 +50,8 @@ public class AstmHttpBridgeApplication {
   /**
    * Bean for creating an ASTM handler service.
    * <p>
-   * After M7 (Message Normalizer) refactoring, the handler service uses
-   * {@link ASTMBridgeAdapter} instead of {@code DefaultForwardingASTMToHTTPHandler}.
-   * The adapter delegates to {@link MessageNormalizer} for unified routing,
-   * retry/backoff, and audit logging.
+   * The handler service uses {@link ASTMBridgeAdapter}, which delegates to
+   * {@link MessageNormalizer} for profile-driven parsing and normalized routing.
    * </p>
    *
    * @param normalizer the message normalizer for routing

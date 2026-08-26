@@ -14,10 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
-import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.fhir.ASTMResultParser;
 import org.itech.ahb.fhir.FhirBundleBuilder;
@@ -33,27 +31,10 @@ import org.springframework.stereotype.Component;
 /**
  * HTTP forwarding implementation of MessageRouter.
  * <p>
- * Routes messages to protocol-specific HTTP endpoints based on the message protocol:
- * <ul>
- *   <li>HL7 messages → /analyzer/hl7</li>
- *   <li>ASTM messages → /analyzer/astm</li>
- *   <li>CSV messages → /analyzer/csv</li>
- * </ul>
- * </p>
- * <p>
- * Includes envelope metadata as HTTP headers:
- * <ul>
- *   <li>X-Analyzer-Id: From canonical resolved analyzer ID in envelope</li>
- *   <li>X-Source-Protocol: From envelope.protocol</li>
- *   <li>X-Source-Transport: From envelope.transport</li>
- *   <li>X-Source-Id: From envelope.sourceId</li>
- *   <li>X-Source-Port: From envelope.sourcePort (when available)</li>
- *   <li>X-Source-Analyzer-IP: From envelope.sourceId (backward compatibility)</li>
- * </ul>
- * </p>
- * <p>
- * This implementation is lightweight and prepares for M7 normalizer milestone,
- * where protocol transformation and multi-destination routing will be added.
+ * Parses registered analyzer traffic using the pinned Bridge profile and sends
+ * the versioned normalized result contract to OpenELIS at
+ * {@code /analyzer/fhir}. The durable Bridge connection identifier in the
+ * bundle is the routing identity consumed by OpenELIS.
  * </p>
  *
  * @see MessageRouter
@@ -63,34 +44,10 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class HttpForwardingRouter implements MessageRouter {
 
-    /** HTTP header for analyzer identification */
-    public static final String HEADER_ANALYZER_ID = "X-Analyzer-Id";
-
-    /** HTTP header for source protocol */
-    public static final String HEADER_SOURCE_PROTOCOL = "X-Source-Protocol";
-
-    /** HTTP header for source transport */
-    public static final String HEADER_SOURCE_TRANSPORT = "X-Source-Transport";
-
-    /** HTTP header for source identifier (IP:port or similar) */
-    public static final String HEADER_SOURCE_ID = "X-Source-Id";
-
-    /** HTTP header for source analyzer IP (for backward compatibility with ASTM) */
-    public static final String HEADER_SOURCE_ANALYZER_IP = "X-Source-Analyzer-IP";
-
-    /** HTTP header for source port number */
-    public static final String HEADER_SOURCE_PORT = "X-Source-Port";
-
-    private static final Pattern IPV4_PATTERN =
-        Pattern.compile("^(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$");
-    private static final Pattern IPV6_PATTERN =
-        Pattern.compile("^[0-9a-fA-F:]+$");
-
     /** Maximum backoff wait time in milliseconds (1 minute cap to prevent overflow) */
     private static final long MAX_BACKOFF_MS = 60_000;
 
     private final HTTPForwardServerConfigurationProperties httpConfig;
-    private final FhirRoutingConfig fhirConfig;
     private final SqliteFileStateStore stateStore;
     private final AnalyzerRuntimeRegistry registry;
     private final int connectTimeoutSeconds;
@@ -101,7 +58,6 @@ public class HttpForwardingRouter implements MessageRouter {
      * Constructs a new HttpForwardingRouter with the specified configuration.
      *
      * @param httpConfig the HTTP forwarding server configuration
-     * @param fhirConfig the FHIR routing configuration (optional)
      * @param stateStore shared SQLite state store (optional — when absent the
      *                   router logs rejections without persisting them, same
      *                   as the pre-B1 behavior)
@@ -109,11 +65,9 @@ public class HttpForwardingRouter implements MessageRouter {
      */
     public HttpForwardingRouter(
             HTTPForwardServerConfigurationProperties httpConfig,
-            @Autowired(required = false) FhirRoutingConfig fhirConfig,
             @Autowired(required = false) SqliteFileStateStore stateStore,
             @Autowired(required = false) AnalyzerRuntimeRegistry registry) {
         this.httpConfig = httpConfig;
-        this.fhirConfig = fhirConfig;
         this.stateStore = stateStore;
         this.registry = registry;
         this.connectTimeoutSeconds = httpConfig.getConnectTimeoutSeconds();
@@ -175,83 +129,7 @@ public class HttpForwardingRouter implements MessageRouter {
         log.debug("Routing {} message from {} via {}",
             envelope.getProtocol(), envelope.getSourceId(), envelope.getTransport());
 
-        // If FHIR routing enabled, transform to FHIR Bundle
-        if (fhirConfig != null && fhirConfig.isUseFhir()) {
-            return routeAsFhir(envelope);
-        }
-
-        int maxAttempts = httpConfig.getMaxAttempts();
-        long backoffMs = httpConfig.getBackoffMs();
-
-        // Determine endpoint based on protocol
-        URI targetUri = buildTargetUri(envelope);
-
-        // Retry loop with exponential backoff
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                // Build HTTP request with envelope metadata as headers
-                HttpRequest request = buildRequest(envelope, targetUri);
-
-                // Forward to HTTP endpoint
-                HttpResponse<String> response = httpClient.send(
-                    request, HttpResponse.BodyHandlers.ofString());
-
-                int statusCode = response.statusCode();
-                log.debug("HTTP forward response (attempt {}/{}): {}",
-                    attempt, maxAttempts, statusCode);
-
-                // Success (2xx)
-                if (statusCode >= 200 && statusCode < 300) {
-                    if (attempt > 1) {
-                        log.info("Successfully routed {} message from {} to {} after {} attempts",
-                            envelope.getProtocol(), envelope.getSourceId(), targetUri, attempt);
-                    } else {
-                        log.info("Successfully routed {} message from {} to {}",
-                            envelope.getProtocol(), envelope.getSourceId(), targetUri);
-                    }
-                    return true;
-                }
-
-                // Non-retryable client errors (4xx) — fail immediately
-                if (statusCode >= 400 && statusCode < 500) {
-                    log.error("Non-retryable HTTP error {}", statusCode);
-                    recordRejection(envelope, envelope.getRawMessage(), statusCode,
-                        "Non-retryable HTTP " + statusCode);
-                    return false;
-                }
-
-                // Server errors (5xx) — retry if attempts remaining
-                log.warn("Server error {} on attempt {}/{}",
-                    statusCode, attempt, maxAttempts);
-
-            } catch (IOException e) {
-                log.warn("IO error on attempt {}/{}: {}", attempt, maxAttempts, e.getMessage());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("Interrupted while routing message");
-                return false;
-            }
-
-            // Retry with exponential backoff if attempts remaining
-            if (attempt < maxAttempts) {
-                long uncappedWaitMs = backoffMs * (1L << (attempt - 1)); // exponential: backoff * 2^(attempt-1)
-                long waitMs = Math.min(uncappedWaitMs, MAX_BACKOFF_MS); // Cap to prevent overflow
-                log.info("Retrying in {}ms (attempt {}/{})", waitMs, attempt + 1, maxAttempts);
-                try {
-                    Thread.sleep(waitMs);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("Interrupted during backoff");
-                    return false;
-                }
-            }
-        }
-
-        log.error("All {} attempts failed for {} message from {}",
-            maxAttempts, envelope.getProtocol(), envelope.getSourceId());
-        recordRejection(envelope, envelope.getRawMessage(), 0,
-            "All " + maxAttempts + " attempts failed (5xx / IO)");
-        return false;
+        return routeNormalized(envelope);
     }
 
     /**
@@ -260,7 +138,7 @@ public class HttpForwardingRouter implements MessageRouter {
      * <p>Parses the raw message using the protocol-specific parser, builds a FHIR
      * Bundle, and POSTs to OE's {@code /analyzer/fhir} endpoint.
      */
-    private boolean routeAsFhir(MessageEnvelope envelope) {
+    private boolean routeNormalized(MessageEnvelope envelope) {
         var registeredAnalyzer = registry == null || envelope.getSourceId() == null
                 ? java.util.Optional.<AnalyzerRuntimeRegistry.AnalyzerEntry>empty()
                 : registry.findAnalyzerEntry(envelope.getSourceId());
@@ -355,7 +233,7 @@ public class HttpForwardingRouter implements MessageRouter {
                 codeToLoinc);
 
         // Build target URI for /analyzer/fhir
-        URI targetUri = buildFhirTargetUri();
+        URI targetUri = buildNormalizedTargetUri();
 
         log.info("FHIR routing {} results for accession {} from {} to {}",
                 parsed.results().size(), parsed.accessionNumber(),
@@ -370,9 +248,6 @@ public class HttpForwardingRouter implements MessageRouter {
                 HttpRequest.Builder builder = HttpRequest.newBuilder()
                         .uri(targetUri)
                         .header("Content-Type", "application/fhir+json")
-                        .header(HEADER_SOURCE_PROTOCOL, envelope.getProtocol().name())
-                        .header(HEADER_SOURCE_TRANSPORT, envelope.getTransport().name())
-                        .header(HEADER_SOURCE_ID, envelope.getSourceId())
                         .timeout(Duration.ofSeconds(readTimeoutSeconds))
                         .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
 
@@ -452,7 +327,7 @@ public class HttpForwardingRouter implements MessageRouter {
         return s.length() <= max ? s : s.substring(0, max);
     }
 
-    private URI buildFhirTargetUri() {
+    private URI buildNormalizedTargetUri() {
         URI baseUri = httpConfig.getUri();
         String basePath = baseUri.getPath();
         if (basePath == null || basePath.isEmpty()) basePath = "/analyzer";
@@ -464,118 +339,6 @@ public class HttpForwardingRouter implements MessageRouter {
             log.error("Failed to build FHIR target URI", e);
             return baseUri;
         }
-    }
-
-    /**
-     * Builds the target URI based on the message protocol.
-     * <p>
-     * Routes messages to protocol-specific endpoints:
-     * <ul>
-     *   <li>HL7 → /analyzer/hl7</li>
-     *   <li>ASTM → /analyzer/astm</li>
-     *   <li>CSV → /analyzer/csv</li>
-     * </ul>
-     * </p>
-     *
-     * @param envelope the message envelope
-     * @return the target URI for this message
-     */
-    private URI buildTargetUri(MessageEnvelope envelope) {
-        URI baseUri = httpConfig.getUri();
-        String basePath = baseUri.getPath();
-
-        // Normalize base path (remove trailing slash)
-        if (basePath == null || basePath.isEmpty()) {
-            basePath = "/analyzer";
-        } else if (basePath.endsWith("/")) {
-            basePath = basePath.substring(0, basePath.length() - 1);
-        }
-
-        // Determine endpoint based on protocol
-        String protocolPath = switch (envelope.getProtocol()) {
-            case HL7 -> "/hl7";
-            case ASTM -> "/astm";
-            case CSV -> "/csv";
-            case UNKNOWN -> "/raw";
-            default -> {
-                log.warn("Unknown protocol {}, using raw endpoint", envelope.getProtocol());
-                yield "/raw";
-            }
-        };
-
-        try {
-            return new URI(
-                baseUri.getScheme(),
-                baseUri.getUserInfo(),
-                baseUri.getHost(),
-                baseUri.getPort(),
-                basePath + protocolPath,
-                baseUri.getQuery(),
-                baseUri.getFragment()
-            );
-        } catch (URISyntaxException e) {
-            log.error("Failed to build target URI, using base URI", e);
-            return baseUri;
-        }
-    }
-
-    /**
-     * Builds an HTTP request with envelope metadata as headers.
-     *
-     * @param envelope the message envelope
-     * @param targetUri the target URI
-     * @return the HTTP request
-     */
-    private HttpRequest buildRequest(MessageEnvelope envelope, URI targetUri) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-            .uri(targetUri)
-            .header("Content-Type", "text/plain")
-            .header(HEADER_SOURCE_PROTOCOL, envelope.getProtocol().name())
-            .header(HEADER_SOURCE_TRANSPORT, envelope.getTransport().name())
-            .header(HEADER_SOURCE_ID, envelope.getSourceId())
-            .timeout(Duration.ofSeconds(readTimeoutSeconds))
-            .POST(HttpRequest.BodyPublishers.ofString(envelope.getRawMessage()));
-
-        // Add analyzer ID header if available
-        String analyzerId = canonicalAnalyzerId(envelope);
-        if (analyzerId != null && !analyzerId.isEmpty()) {
-            builder.header(HEADER_ANALYZER_ID, analyzerId);
-        }
-
-        // Add source port header if available
-        if (envelope.getSourcePort() != null) {
-            builder.header(HEADER_SOURCE_PORT, String.valueOf(envelope.getSourcePort()));
-        }
-
-        // Backward compatibility: only set when sourceId looks like an IP address
-        if (isIpAddress(envelope.getSourceId())) {
-            builder.header(HEADER_SOURCE_ANALYZER_IP, envelope.getSourceId());
-        }
-
-        // Add Basic authentication if configured
-        if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
-            addBasicAuth(builder, httpConfig.getUsername(), httpConfig.getPassword());
-        }
-
-        return builder.build();
-    }
-
-    private boolean isIpAddress(String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return false;
-        }
-        String trimmed = value.trim();
-        if (IPV4_PATTERN.matcher(trimmed).matches()) {
-            return true;
-        }
-        return trimmed.contains(":") && IPV6_PATTERN.matcher(trimmed).matches();
-    }
-
-    private String canonicalAnalyzerId(MessageEnvelope envelope) {
-        if (envelope.getResolvedAnalyzerId() != null && !envelope.getResolvedAnalyzerId().isBlank()) {
-            return envelope.getResolvedAnalyzerId();
-        }
-        return envelope.getAnalyzerId();
     }
 
     /**

@@ -1,8 +1,13 @@
 # Feature Specification: ASTM Analyzer Field Mapping
 
+> Superseded product/technical draft. Do not use it to design current Bridge or
+> OpenELIS behavior. Current implementation direction is defined by the
+> canonical OpenELIS roadmap, this repository's `README.md`,
+> `contracts/analyzer/v1`, and current code.
+
 **Feature Branch**: `004-astm-analyzer-mapping`  
 **Created**: 2025-11-14  
-**Status**: Draft  
+**Status**: Superseded
 **Input**: User description: "ASTM Analyzer Mapping Feature based on OGC-49
 analyzer mapping specification and Figma Analyzer Field Mapping designs."
 

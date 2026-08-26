@@ -1,5 +1,10 @@
 # ASTM Communication Compatibility Analysis Report
 
+> Historical analysis only. It predates Bridge-owned saved connections,
+> profile-driven parsing, and the normalized result contract. Current
+> implementation direction is defined by `README.md`, `contracts/analyzer/v1`,
+> and current code.
+
 **Date**: 2025-12-01  
 **Feature**: 004-astm-analyzer-mapping  
 **Analyzed Components**:
@@ -320,6 +325,5 @@ The communication workflows are **~82.5% specified** with minor gaps around line
 - [Feature Specification](./spec.md)
 - [CLSI LIS1-A Standard](../../.dev-docs/OGC-60/CLSI-LIS1-A.pdf)
 - [ASTM LIS2-A2 Standard](../../.dev-docs/OGC-60/LIS01A2E.pdf)
-
 
 

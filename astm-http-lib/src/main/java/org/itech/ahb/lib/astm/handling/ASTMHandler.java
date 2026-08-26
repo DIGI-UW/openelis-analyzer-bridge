@@ -23,17 +23,6 @@ public interface ASTMHandler {
   ASTMHandlerResponse handle(ASTMMessage message, String sourceIp);
 
   /**
-   * Handles the given ASTM message without source IP information.
-   * This is a backward-compatible default method that calls handle(message, null).
-   *
-   * @param message the ASTM message.
-   * @return the ASTM handler response.
-   */
-  default ASTMHandlerResponse handle(ASTMMessage message) {
-    return handle(message, null);
-  }
-
-  /**
    * Checks if the handler matches the given ASTM message. ie. should this handler be called for this message.
    *
    * @param message the ASTM message.

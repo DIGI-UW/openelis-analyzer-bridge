@@ -1,33 +1,35 @@
 # OpenELIS Analyzer Bridge
 
-Middleware that receives analyzer messages over multiple **protocols/transports** and forwards them to **OpenELIS via HTTP**.
+Middleware that runs analyzer connections, parses analyzer traffic from pinned
+profiles, and sends one normalized result contract to OpenELIS.
 
 This repository was previously named **ASTM-HTTP Bridge**. The internal rename to `openelis-analyzer-bridge` is complete across Maven, Docker, and scripts. The Docker Hub image `itechuw/astm-http-bridge` is still published as a legacy alias via CI.
 
-## FILE Ownership Model (014 Remediation)
+## Ownership Model
 
 Bridge and OpenELIS responsibilities are explicitly separated:
 
-- Bridge owns FILE watcher runtime (directory watch/poll, stability checks,
-  archive/error handling, and delivery to OpenELIS).
-- OpenELIS owns analyzer configuration and ingestion/processing logic.
-
-If older sections describe OpenELIS as primary watcher owner, treat this section
-as the active remediation contract.
+- Bridge owns portable profiles, durable analyzer connections and runtime
+  configuration, listeners, parsing, probes, control recognition, FILE
+  watching, and normalized delivery.
+- OpenELIS owns the lab-facing setup workflow, references to Bridge
+  connections, lab units, local catalog bindings, verification and audit,
+  activation intent, operational QC, held results, and review.
+- A profile defines communication behavior for one analyzer type and supplies
+  defaults for creating a new Bridge connection of that type.
 
 ## Architecture
 
 ```
 Analyzer(s)                                    OpenELIS
 ───────────                                    ────────
-ASTM/TCP    ─┐
-HL7/MLLP    ─┤                                        ┌─ /analyzer/astm
-RS232/Serial─┼─> [OpenELIS Analyzer Bridge] ──HTTP──> ├─ /analyzer/hl7
-Files (CSV) ─┤   │ Protocol Detection      │          ├─ /analyzer/csv
-HTTP /input ─┘   │ Analyzer Identification  │          └─ /analyzer/raw
-                  │ Message Normalization    │
-                  │ Metrics + Health Checks  │
-                  └─────────────────────────┘
+ASTM/TCP     ─┐
+HL7/MLLP     ─┤
+RS232/Serial ─┼─> [OpenELIS Analyzer Bridge] ──FHIR──> /analyzer/fhir
+Files        ─┤   │ Pinned profile parsing  │          normalized result contract
+HTTP /input  ─┘   │ Saved connection lookup │
+                   │ Metrics + health checks │
+                   └─────────────────────────┘
                      │
                      ├─ /actuator/health      (per-transport status)
                      ├─ /actuator/prometheus   (Prometheus metrics)
@@ -150,14 +152,17 @@ Analyzer identification uses three distinct concepts:
 
 - **Source binding**: where a message came from (IP/port, serial port, file directory, HTTP source).
 - **Protocol hint**: what the payload claims (e.g., HL7 sender app/facility, ASTM sender token).
-- **Resolved analyzer ID**: the canonical OpenELIS analyzer ID used for routing.
+- **Bridge connection ID**: the durable identity emitted in every normalized
+  result bundle and used by OpenELIS for exact lookup.
 
 Policy rules:
 
-- Source binding registration is authoritative for routing.
+- The saved connection bound to the source is authoritative for routing.
 - Protocol hints are validation evidence and diagnostics only.
 - Protocol hints alone must not select routing targets.
-- Source/protocol discrepancies must follow an explicit non-routing outcome (warning/error/quarantine path), not silent reroute.
+- An unregistered source is rejected and dead-lettered before delivery.
+- A contradictory hint is recorded but cannot override the source-bound
+  connection.
 
 ## Monitoring & Observability
 
@@ -288,13 +293,19 @@ bridge:
     enabled: false
 ```
 
-## HTTP Behavior (ASTM Stable Path)
+## Result Delivery
 
 ### Analyzer -> OpenELIS (results submission)
 
-- Bridge receives ASTM over TCP.
-- Bridge forwards the raw message to the configured OpenELIS endpoint as `text/plain`.
-- Bridge adds `X-Source-Analyzer-IP` when source IP can be extracted from the TCP socket.
+- Bridge accepts traffic only for an active saved connection.
+- The pinned profile determines parsing, result selection, control recognition,
+  and optional LOINC hints.
+- Bridge posts `application/fhir+json` to `/analyzer/fhir` for ASTM, HL7,
+  serial, HTTP, and FILE traffic.
+- The normalized bundle carries the exact Bridge connection and profile
+  revision, raw analyzer code and value, transport, and control-recognition
+  evidence. OpenELIS does not infer identity from source headers or analyzer
+  names.
 
 ### OpenELIS -> Analyzer (query/config)
 
@@ -318,20 +329,20 @@ mvn test
 mvn verify
 ```
 
-### Docker E2E Tests
+### Protocol Integration
 
 ```bash
-# Run full E2E suite (ASTM TCP, MLLP, File, HTTP)
-./scripts/e2e-tests/run-all.sh
+# Assembled Bridge transport and normalized-contract tests
+mvn -Dtest=UnifiedRoutingTest,HttpForwardingRouterTest test
 
-# Or start manually:
-docker compose -f docker-compose.test.yml up -d --build
-./scripts/e2e-tests/test-astm-tcp.sh
-./scripts/e2e-tests/test-mllp.sh
-./scripts/e2e-tests/test-file-csv.sh
-./scripts/e2e-tests/test-http-input.sh
-docker compose -f docker-compose.test.yml down
+# Virtual serial integration, when socat ports are available
+./scripts/e2e-tests/test-serial.sh
 ```
+
+Cross-process analyzer behavior belongs in
+[DIGI-UW/openelis-analyzer-mock](https://github.com/DIGI-UW/openelis-analyzer-mock),
+which sends real protocol traffic to a running Bridge. Visible OpenELIS user
+stories are tested separately through the browser.
 
 ## Project Structure
 
@@ -352,14 +363,15 @@ openelis-analyzer-bridge/
 ├── astm-http-lib/           # ASTM protocol library
 ├── configuration.yml        # Runtime configuration
 ├── docker-compose.yml       # Production deployment
-├── docker-compose.test.yml  # E2E test environment
-└── scripts/e2e-tests/       # E2E test scripts
+└── scripts/e2e-tests/       # Optional virtual-serial runner
 ```
 
-## Docs
+## Contracts
 
-- `docs/SCOPE_AND_NAMING.md`: canonical naming + compatibility policy
-- `docs/ASTM_MESSAGE_PROCESSING_FLOW.md`: ASTM flow details (OpenELIS-side processing)
+- `contracts/analyzer/v1/normalized-result.schema.json`: normalized result
+  contract consumed by OpenELIS
+- `contracts/analyzer/v1/fixtures/`: canonical ASTM, HL7, and FILE examples
+- `src/main/resources/analyzer-profiles/`: shipped analyzer type profiles
 
 ## License / Contributing
 

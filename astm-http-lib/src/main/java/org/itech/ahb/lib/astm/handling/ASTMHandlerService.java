@@ -45,16 +45,6 @@ public class ASTMHandlerService {
   }
 
   /**
-   * Calls the relevant handler(s) for the given ASTM message without source IP information.
-   *
-   * @param message the ASTM message.
-   * @return the ASTM handler service response.
-   */
-  public ASTMHandlerServiceResponse handle(ASTMMessage message) {
-    return handle(message, (String) null);
-  }
-
-  /**
    * Calls the relevant handler(s) for the given ASTM message with source IP information.
    *
    * @param message the ASTM message.
@@ -63,17 +53,6 @@ public class ASTMHandlerService {
    */
   public ASTMHandlerServiceResponse handle(ASTMMessage message, String sourceIp) {
     return handle(message, sourceIp, Set.of());
-  }
-
-  /**
-   * Handles the given ASTM message with the provided handler information (backward compatibility).
-   *
-   * @param message the ASTM message.
-   * @param handlersInfos the set of handler information.
-   * @return the ASTM handler service response.
-   */
-  public ASTMHandlerServiceResponse handle(ASTMMessage message, Set<ASTMForwardingHandlerInfo> handlersInfos) {
-    return handle(message, null, handlersInfos);
   }
 
   /**

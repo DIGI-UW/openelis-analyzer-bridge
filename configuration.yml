@@ -56,10 +56,10 @@ org:
   itech:
     ahb:
       forward-http-server:
-        # URI of the OpenELIS base endpoint (HttpForwardingRouter appends protocol paths)
-        # Base path only - router appends /astm, /hl7, /csv, /raw per message protocol
-        # FILE forwarding also derives /analyzer/fhir from this same base path.
-        # Example: http://localhost:8080/api/OpenELIS-Global/analyzer → /analyzer/astm, /analyzer/hl7, /analyzer/fhir
+        # Base URI for normalized result delivery. Bridge appends /fhir for all
+        # supported protocols and transports.
+        # Example: http://localhost:8080/api/OpenELIS-Global/analyzer
+        #       -> http://localhost:8080/api/OpenELIS-Global/analyzer/fhir
         uri: http://localhost:8080/api/OpenELIS-Global/analyzer
         username:
         password:

@@ -15,10 +15,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.SerialConnectionSettings;
 import org.itech.ahb.normalizer.AnalyzerIdentifier;
 import org.itech.ahb.normalizer.MessageNormalizer;
 import org.itech.ahb.routing.HttpForwardingRouter;
+import org.itech.ahb.profile.AstmResultRecordSelection;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -81,15 +84,16 @@ class SerialIntegrationTest {
         httpServer.createContext("/api/OpenELIS-Global/analyzer/", exchange -> {
             String path = exchange.getRequestURI().getPath();
             String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-            String sourceId = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_ID);
-            String transport = exchange.getRequestHeaders().getFirst(HttpForwardingRouter.HEADER_SOURCE_TRANSPORT);
+            boolean hasSourceHeaders = exchange.getRequestHeaders().keySet().stream()
+                .map(String::toLowerCase)
+                .anyMatch(name -> name.startsWith("x-source-") || name.equals("x-analyzer-id"));
 
             String body;
             try (InputStream is = exchange.getRequestBody()) {
                 body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             }
 
-            receivedMessages.add(new ReceivedMessage(path, body, contentType, sourceId, transport));
+            receivedMessages.add(new ReceivedMessage(path, body, contentType, hasSourceHeaders));
             messageLatch.countDown();
 
             exchange.sendResponseHeaders(200, 2);
@@ -146,10 +150,7 @@ class SerialIntegrationTest {
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null, null);
-            AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
-            SerialMessageHandler handler = new SerialMessageHandler(normalizer);
+            SerialMessageHandler handler = normalizedHandler(httpConfig, "ASTM");
 
             listener = new SerialPortListener(handler);
             listener.start(
@@ -170,10 +171,11 @@ class SerialIntegrationTest {
             // Verify message
             assertEquals(1, receivedMessages.size());
             ReceivedMessage msg = receivedMessages.get(0);
-            assertEquals("/api/OpenELIS-Global/analyzer/astm", msg.path);
-            assertEquals("SERIAL", msg.transport);
-            assertEquals("connection:serial-it", msg.sourceId);
-            assertTrue(msg.body.contains("H|\\^&"));
+            assertEquals("/api/OpenELIS-Global/analyzer/fhir", msg.path);
+            assertFalse(msg.hasSourceHeaders);
+            assertTrue(msg.body.contains("bridge-serial-it"));
+            assertTrue(msg.body.contains("WBC"));
+            assertTrue(msg.body.contains("\"valueCode\":\"SERIAL\""));
         }
 
         @Test
@@ -185,10 +187,7 @@ class SerialIntegrationTest {
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
             httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null, null);
-            AnalyzerIdentifier identifier = new AnalyzerIdentifier(null);
-            MessageNormalizer normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
-            SerialMessageHandler handler = new SerialMessageHandler(normalizer);
+            SerialMessageHandler handler = normalizedHandler(httpConfig, "HL7");
 
             listener = new SerialPortListener(handler);
             listener.start(
@@ -207,8 +206,30 @@ class SerialIntegrationTest {
 
             assertEquals(1, receivedMessages.size());
             ReceivedMessage msg = receivedMessages.get(0);
-            assertEquals("/api/OpenELIS-Global/analyzer/hl7", msg.path);
-            assertTrue(msg.body.startsWith("MSH|"));
+            assertEquals("/api/OpenELIS-Global/analyzer/fhir", msg.path);
+            assertTrue(msg.body.contains("bridge-serial-it"));
+            assertTrue(msg.body.contains("WBC"));
+        }
+
+        private SerialMessageHandler normalizedHandler(
+                HTTPForwardServerConfigurationProperties httpConfig, String protocol) {
+            AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
+            entry.setId("TEST-ANALYZER");
+            entry.setBridgeConnectionId("bridge-serial-it");
+            entry.setProfileId("site.serial-it");
+            entry.setProfileRevision(1);
+            entry.setExpectedProtocol(protocol);
+            entry.setControlResultRecognition(ControlResultRecognition.none());
+            entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+            if ("ASTM".equals(protocol)) {
+                entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
+            }
+            registry.register("connection:serial-it", entry);
+            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, registry);
+            MessageNormalizer normalizer = new MessageNormalizer(
+                    forwardingRouter, new AnalyzerIdentifier(registry), null);
+            return new SerialMessageHandler(normalizer);
         }
 
         /**
@@ -232,7 +253,8 @@ class SerialIntegrationTest {
                 Thread.sleep(100);
 
                 // Send frame: <STX><FN><data><ETX><checksum><CR><LF>
-                String text = "H|\\^&|||TEST|||||||P|1";
+                String text = "H|\\^&|||TEST|||||||P|1\rP|1||PATIENT-1\r"
+                        + "O|1|12345\rR|1|^^^WBC|7.5|10*3/uL\rL|1|N";
                 byte[] frame = buildASTMFrame(1, text, true);
                 port.writeBytes(frame, frame.length);
                 Thread.sleep(100);
@@ -325,7 +347,6 @@ class SerialIntegrationTest {
         String path,
         String body,
         String contentType,
-        String sourceId,
-        String transport
+        boolean hasSourceHeaders
     ) {}
 }

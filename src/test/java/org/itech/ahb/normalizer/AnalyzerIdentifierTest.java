@@ -26,7 +26,7 @@ class AnalyzerIdentifierTest {
     private AnalyzerRuntimeRegistry mockRegistry;
 
     @Nested
-    @DisplayName("Protocol Hint Compatibility Tests")
+    @DisplayName("Source Registry Authority Tests")
     class ProtocolHintCompatibilityTests {
 
         @BeforeEach
@@ -36,8 +36,8 @@ class AnalyzerIdentifierTest {
         }
 
         @Test
-        @DisplayName("Should prefer registry analyzer ID over envelope analyzerId")
-        void shouldPreferRegistryOverEnvelopeAnalyzerId() {
+        @DisplayName("Should resolve analyzer ID from the source registry")
+        void shouldResolveAnalyzerIdFromSourceRegistry() {
             when(mockRegistry.findAnalyzerId("/dev/ttyUSB0")).thenReturn(Optional.of("HORIBA-001"));
 
             MessageEnvelope envelope = MessageEnvelope.builder()
@@ -45,7 +45,6 @@ class AnalyzerIdentifierTest {
                 .transport(Transport.SERIAL)
                 .sourceId("/dev/ttyUSB0")
                 .rawMessage("H|\\^&|||TEST")
-                .analyzerId("MINDRAY-001")
                 .build();
 
             String result = identifier.identify(envelope);
@@ -55,8 +54,8 @@ class AnalyzerIdentifierTest {
         }
 
         @Test
-        @DisplayName("Should still lookup registry when envelope has analyzer ID")
-        void shouldLookupRegistryWhenEnvelopeHasAnalyzerId() {
+        @DisplayName("Should resolve the registered source independently of message content")
+        void shouldResolveRegisteredSourceIndependentlyOfMessageContent() {
             when(mockRegistry.findAnalyzerId("192.168.1.10")).thenReturn(Optional.of("SYSMEX-001"));
 
             MessageEnvelope envelope = MessageEnvelope.builder()
@@ -64,7 +63,6 @@ class AnalyzerIdentifierTest {
                 .transport(Transport.MLLP)
                 .sourceId("192.168.1.10")
                 .rawMessage("MSH|^~\\&|||")
-                .analyzerId("SYSMEX-001")
                 .build();
 
             String result = identifier.identify(envelope);
@@ -196,25 +194,6 @@ class AnalyzerIdentifierTest {
             verify(mockRegistry, never()).findAnalyzerId(anyString());
         }
 
-        @Test
-        @DisplayName("Should handle empty analyzer ID in envelope as not pre-identified")
-        void shouldHandleEmptyAnalyzerIdAsNotPreIdentified() {
-            when(mockRegistry.findAnalyzerId("192.168.1.10")).thenReturn(Optional.of("MINDRAY-001"));
-
-            MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.TCP)
-                .sourceId("192.168.1.10")
-                .rawMessage("H|\\^&|||TEST")
-                .analyzerId("")  // Empty string, not null
-                .build();
-
-            String result = identifier.identify(envelope);
-
-            // Empty string should trigger registry lookup
-            assertEquals("MINDRAY-001", result);
-            verify(mockRegistry).findAnalyzerId("192.168.1.10");
-        }
     }
 
     @Nested

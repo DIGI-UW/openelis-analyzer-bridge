@@ -1,8 +1,12 @@
 # Feature Specification: Bi-Directional ASTM Workflow Support
 
+> Superseded historical specification. Its raw forwarding and source-header
+> contract is not an available implementation path. Current behavior is defined
+> by `README.md`, `contracts/analyzer/v1`, and current code.
+
 **Feature Branch**: `001-bi-directional-astm`  
 **Created**: 2025-12-03  
-**Status**: Complete  
+**Status**: Superseded
 **Input**: Deep analysis of ASTM bridge documentation and OpenELIS integration requirements  
 **Test Tool**: [ASTM Mock Server](https://github.com/DIGI-UW/astm-mock-server)
 

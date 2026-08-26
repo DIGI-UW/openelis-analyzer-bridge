@@ -1,9 +1,11 @@
 package org.itech.ahb.normalizer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,12 +22,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The bridge corroborates the two analyzer-identity signals — the connection
- * source IP (resolvedAnalyzerId, via {@link AnalyzerIdentifier}) and the
- * in-message sender (protocolHint) — and surfaces the outcome as a
- * {@code bridge.identity.mismatch} metric. Identity NEVER gates routing
- * (transparent-pipe rule): a mismatch is a warning, not a rejection. These tests
- * pin the three outcomes and that routing always proceeds.
+ * The bridge resolves routing authority from the saved connection bound to the
+ * source, then uses an in-message sender hint only to corroborate that identity.
+ * A contradictory hint is observable but does not override a resolved
+ * connection. A hint without a source-bound connection is rejected.
  */
 class MessageNormalizerIdentityCorroborationTest {
 
@@ -45,9 +45,8 @@ class MessageNormalizerIdentityCorroborationTest {
         forwardingRouter = mock(HttpForwardingRouter.class);
         identifier = mock(AnalyzerIdentifier.class);
         when(forwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
-        // Synchronous executor so any async work completes before assertions.
         normalizer = new MessageNormalizer(
-            forwardingRouter, identifier, analyzerRegistry, metrics, null, null, Runnable::run);
+            forwardingRouter, identifier, analyzerRegistry, metrics, null);
     }
 
     private void registerAnalyzer(String id, String name) {
@@ -113,14 +112,14 @@ class MessageNormalizerIdentityCorroborationTest {
     }
 
     @Test
-    @DisplayName("source IP unresolved but sender present -> degraded_content_only; routing proceeds")
-    void degradedContentOnly() {
+    @DisplayName("sender hint cannot replace a source-bound saved connection")
+    void protocolHintDoesNotProvideRoutingAuthority() {
         when(identifier.identify(any())).thenReturn(null); // IP signal absent
 
-        assertTrue(normalizer.process(hl7FromSourceIp("MINDRAY-BS-200")));
+        assertFalse(normalizer.process(hl7FromSourceIp("MINDRAY-BS-200")));
 
-        assertEquals(1.0, identityCount("degraded_content_only"));
-        verify(forwardingRouter).route(any(MessageEnvelope.class));
+        assertEquals(1.0, identityCount("unregistered_source"));
+        verify(forwardingRouter, never()).route(any(MessageEnvelope.class));
     }
 
     private void registerAnalyzerWithPattern(String id, String name, String identifierPattern) {

@@ -19,7 +19,6 @@ import org.hl7.fhir.r4.model.Device;
 import org.hl7.fhir.r4.model.Observation;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
-import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.file.RejectedBundle;
 import org.itech.ahb.file.SqliteFileStateStore;
@@ -50,6 +49,7 @@ class HttpForwardingRouterTest {
     private AtomicInteger statusCodeToReturn;
     private AtomicInteger requestCount;
     private AtomicReference<String> requestBody;
+    private AtomicReference<String> requestPath;
     private SqliteFileStateStore stateStore;
 
     @BeforeEach
@@ -57,10 +57,12 @@ class HttpForwardingRouterTest {
         statusCodeToReturn = new AtomicInteger(200);
         requestCount = new AtomicInteger();
         requestBody = new AtomicReference<>();
+        requestPath = new AtomicReference<>();
         server = HttpServer.create(new InetSocketAddress(0), 0);
         port = server.getAddress().getPort();
         server.createContext("/analyzer", exchange -> {
             requestCount.incrementAndGet();
+            requestPath.set(exchange.getRequestURI().getPath());
             requestBody.set(new String(exchange.getRequestBody().readAllBytes()));
             int code = statusCodeToReturn.get();
             byte[] body = ("status " + code).getBytes();
@@ -81,10 +83,10 @@ class HttpForwardingRouterTest {
     @Test
     void fourHundredOne_persistsRejectedBundleWithHttpStatusAndPayload() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore, null);
+        HttpForwardingRouter router = registeredRouter(httpConfig, stateStore, "100.127.144.150");
 
         statusCodeToReturn.set(401);
-        MessageEnvelope env = envelope("100.127.144.150", "H|... raw astm payload ...");
+        MessageEnvelope env = envelope("100.127.144.150");
         boolean result = router.route(env);
 
         assertFalse(result, "4xx must be reported as a routing failure");
@@ -98,17 +100,17 @@ class HttpForwardingRouterTest {
         assertTrue(r.lastError().contains("401"),
                 "lastError should name the status code for operator triage");
         assertNotNull(r.payloadSnippet());
-        assertTrue(r.payloadSnippet().startsWith("H|"),
-                "payloadSnippet must reflect the raw message the bridge tried to forward");
+        assertTrue(r.payloadSnippet().contains("Bundle"),
+                "payloadSnippet must reflect the normalized bundle the bridge tried to forward");
     }
 
     @Test
     void fiveHundred_exhaustedRetries_persistsWithStatusZero() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore, null);
+        HttpForwardingRouter router = registeredRouter(httpConfig, stateStore, "10.0.0.5");
 
         statusCodeToReturn.set(500);
-        boolean result = router.route(envelope("10.0.0.5", "raw body"));
+        boolean result = router.route(envelope("10.0.0.5"));
 
         assertFalse(result);
         List<RejectedBundle> rows = stateStore.listRejections(10);
@@ -122,10 +124,10 @@ class HttpForwardingRouterTest {
     @Test
     void twoHundred_doesNotPersistAnything() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, stateStore, null);
+        HttpForwardingRouter router = registeredRouter(httpConfig, stateStore, "10.0.0.6");
 
         statusCodeToReturn.set(200);
-        boolean result = router.route(envelope("10.0.0.6", "body"));
+        boolean result = router.route(envelope("10.0.0.6"));
 
         assertTrue(result, "2xx must succeed");
         assertEquals(0, stateStore.listRejections(10).size(),
@@ -135,26 +137,24 @@ class HttpForwardingRouterTest {
     @Test
     void nullStateStore_rejectsPayloadLogsOnly_noThrow() {
         HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = new HttpForwardingRouter(httpConfig, null, null, null);
+        HttpForwardingRouter router = registeredRouter(httpConfig, null, "src");
 
         statusCodeToReturn.set(401);
         // Must not throw; router must still return false; the log line is the
         // only diagnostic available in this path.
-        boolean result = router.route(envelope("src", "body"));
+        boolean result = router.route(envelope("src"));
         assertFalse(result);
     }
 
     @Test
     void fhirRoutingRejectsAnAnalyzerWithoutProfileOwnedRecognition() {
-        FhirRoutingConfig fhirConfig = new FhirRoutingConfig();
-        fhirConfig.setUseFhir(true);
         AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         AnalyzerEntry entry = new AnalyzerEntry();
         entry.setId("analyzer-1");
         entry.setExpectedProtocol("ASTM");
         registry.register("10.0.0.7", entry);
         HttpForwardingRouter router = new HttpForwardingRouter(
-                minimalConfig(), fhirConfig, stateStore, registry);
+                minimalConfig(), stateStore, registry);
 
         MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
@@ -171,8 +171,6 @@ class HttpForwardingRouterTest {
 
     @Test
     void fhirRoutingRejectsAnAstmAnalyzerWithoutProfileOwnedResultSelection() {
-        FhirRoutingConfig fhirConfig = new FhirRoutingConfig();
-        fhirConfig.setUseFhir(true);
         AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         AnalyzerEntry entry = new AnalyzerEntry();
         entry.setId("analyzer-1");
@@ -181,7 +179,7 @@ class HttpForwardingRouterTest {
         entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
         registry.register("10.0.0.8", entry);
         HttpForwardingRouter router = new HttpForwardingRouter(
-                minimalConfig(), fhirConfig, stateStore, registry);
+                minimalConfig(), stateStore, registry);
 
         MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
@@ -197,9 +195,7 @@ class HttpForwardingRouterTest {
     }
 
     @Test
-    void fhirRoutingSendsExactConnectionContextAndPreservesRawAnalyzerCode() {
-        FhirRoutingConfig fhirConfig = new FhirRoutingConfig();
-        fhirConfig.setUseFhir(true);
+    void normalizedRoutingRequiresNoFeatureSwitchAndPreservesExactConnectionContext() {
         AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         AnalyzerEntry entry = new AnalyzerEntry();
         entry.setId("analyzer-1");
@@ -213,7 +209,7 @@ class HttpForwardingRouterTest {
         entry.setCodeToLoinc(java.util.Map.of("WBC", "6690-2"));
         registry.register("10.0.0.9", entry);
         HttpForwardingRouter router = new HttpForwardingRouter(
-                minimalConfig(), fhirConfig, stateStore, registry);
+                minimalConfig(), stateStore, registry);
 
         MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
@@ -225,6 +221,7 @@ class HttpForwardingRouterTest {
                 .build();
 
         assertTrue(router.route(envelope));
+        assertEquals("/analyzer/fhir", requestPath.get());
         Bundle bundle = FhirContext.forR4().newJsonParser().parseResource(Bundle.class, requestBody.get());
         Device device = bundle.getEntry().stream()
                 .map(Bundle.BundleEntryComponent::getResource)
@@ -261,12 +258,32 @@ class HttpForwardingRouterTest {
         return c;
     }
 
-    private MessageEnvelope envelope(String sourceId, String rawBody) {
+    private HttpForwardingRouter registeredRouter(
+            HTTPForwardServerConfigurationProperties config,
+            SqliteFileStateStore rejectionStore,
+            String sourceId) {
+        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+        AnalyzerEntry entry = new AnalyzerEntry();
+        entry.setId("analyzer-1");
+        entry.setBridgeConnectionId("bridge-connection-7f3c");
+        entry.setProfileId("site.mock-hematology");
+        entry.setProfileRevision(3);
+        entry.setExpectedProtocol("ASTM");
+        entry.setControlResultRecognition(ControlResultRecognition.none());
+        entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
+        entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+        registry.register(sourceId, entry);
+        return new HttpForwardingRouter(config, rejectionStore, registry);
+    }
+
+    private MessageEnvelope envelope(String sourceId) {
         return MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
                 .transport(Transport.HTTP)
                 .sourceId(sourceId)
-                .rawMessage(rawBody)
+                .resolvedAnalyzerId("analyzer-1")
+                .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\r"
+                        + "R|1|^^^WBC|7.5|10*3/uL\rL|1")
                 .build();
     }
 }
