@@ -83,6 +83,16 @@ public class AnalyzerRuntimeRegistry {
         return Optional.empty();
     }
 
+    /** Finds the active runtime projection for one durable Bridge connection. */
+    public Optional<AnalyzerEntry> findAnalyzerEntryByConnectionId(String connectionId) {
+        if (connectionId == null || connectionId.isBlank()) {
+            return Optional.empty();
+        }
+        return analyzers.values().stream()
+            .filter(entry -> connectionId.equals(entry.getBridgeConnectionId()))
+            .findFirst();
+    }
+
     /**
      * Checks if a source ID matches a glob pattern.
      * <p>
@@ -180,6 +190,12 @@ public class AnalyzerRuntimeRegistry {
          * Expected protocol (ASTM, HL7, CSV) for validation
          */
         private String expectedProtocol;
+
+        /** Bridge-owned network destination for LIS-initiated orders, when configured. */
+        private String outboundHost;
+
+        /** Bridge-owned network port for LIS-initiated orders, when configured. */
+        private int outboundPort;
 
         /**
          * Optional file pattern for additional validation (regex)

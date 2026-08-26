@@ -261,6 +261,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setProfileRevision(requiredRevision(connection.path("profileRef"), "revision", "Profile revision"));
     entry.setName(requiredText(connection, "displayName", "Connection name"));
     entry.setExpectedProtocol(requiredText(profile.path("protocol"), "name", "Profile protocol"));
+    entry.setOutboundHost(nullableText(values, "host"));
+    entry.setOutboundPort(values.path("port").asInt(0));
     entry.setIdentifierPattern(nullableText(profile, "identifier_pattern"));
     entry.setFilePattern(nullableText(values, "filePattern"));
     entry.setColumnMappings(textMap(profile.path("column_mapping")));

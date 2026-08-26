@@ -192,6 +192,40 @@ class BridgeAnalyzerConnectionRuntimeTest {
   }
 
   @Test
+  void materializesAClientConnectionAsItsBridgeOwnedOutboundEndpoint() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AstmConnectionListeners astmListeners = mock(AstmConnectionListeners.class);
+    SerialConnectionListeners serialListeners = mock(SerialConnectionListeners.class);
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      astmListeners,
+      serialListeners
+    );
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+    );
+    ObjectNode connection = baseConnection(profile, "GeneXpert outbound bench");
+    connection.withObject("values")
+      .setAll((ObjectNode) profile.path("configDefaults").deepCopy());
+    connection.withObject("values")
+      .put("connectionRole", "CLIENT")
+      .put("host", "gene-xpert.lab")
+      .put("port", 9_600);
+
+    runtime.activate(connection, profile);
+
+    AnalyzerEntry entry = registry
+      .findAnalyzerEntryByConnectionId("00000000-0000-0000-0000-000000000042")
+      .orElseThrow();
+    assertThat(entry.getExpectedProtocol()).isEqualTo("ASTM");
+    assertThat(entry.getOutboundHost()).isEqualTo("gene-xpert.lab");
+    assertThat(entry.getOutboundPort()).isEqualTo(9_600);
+    verifyNoInteractions(astmListeners);
+    verifyNoInteractions(serialListeners);
+  }
+
+  @Test
   void activatesAndDeactivatesAProfileDrivenRs232Connection() throws Exception {
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     AstmConnectionListeners astmListeners = mock(AstmConnectionListeners.class);
