@@ -88,6 +88,30 @@ class AnalyzerConnectionProbeTest {
   }
 
   @Test
+  void probesAnActiveAstmServerThroughItsRunningBridgeListener() {
+    when(executor.probeRemote("ASTM", "127.0.0.1", 5001, 5_000))
+      .thenReturn(check("REMOTE_PROTOCOL", "PASSED", "remote.astm.ready", Map.of("port", 5001)));
+    ObjectNode connection = connection();
+    connection.withObject("values")
+      .put("transport", "TCP/IP")
+      .put("connectionRole", "SERVER")
+      .put("port", 5001);
+    connection.put("actualRuntimeState", "ACTIVE");
+    ObjectNode activeRuntimeRef = connection.putObject("activeRuntimeRef");
+    activeRuntimeRef.set("profileRef", connection.path("profileRef").deepCopy());
+    activeRuntimeRef.put("configRevision", 2);
+    activeRuntimeRef.put("configFingerprint", "sha256:" + "3".repeat(64));
+
+    ObjectNode result = probe.execute(request(), connection, profile("ASTM"));
+
+    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
+    assertThat(result.path("checks").get(0).path("key").asText()).isEqualTo("listener");
+    assertThat(result.path("checks").get(0).path("messageKey").asText())
+      .isEqualTo("listener.ready");
+    verify(executor).probeRemote("ASTM", "127.0.0.1", 5001, 5_000);
+  }
+
+  @Test
   void probesAnRs232ConnectionUsingItsSavedSerialPort() {
     when(executor.probeSerialDevice("/dev/ttyUSB0"))
       .thenReturn(check("SERIAL_DEVICE", "PASSED", "serial.ready", Map.of("path", "/dev/ttyUSB0")));

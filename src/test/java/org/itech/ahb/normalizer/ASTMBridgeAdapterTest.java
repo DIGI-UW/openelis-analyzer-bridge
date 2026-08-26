@@ -153,6 +153,17 @@ class ASTMBridgeAdapterTest {
 
             verify(mockNormalizer, times(1)).process(any(MessageEnvelope.class));
         }
+
+        @Test
+        @DisplayName("Handshake-only sessions should not enter result processing")
+        void handshakeOnlySessionsShouldNotEnterResultProcessing() {
+            when(mockAstmMessage.getMessage()).thenReturn("");
+
+            ASTMHandlerResponse response = adapter.handle(mockAstmMessage, "192.168.1.10");
+
+            assertEquals(HandleStatus.SUCCESS, response.getStatus());
+            verify(mockNormalizer, never()).process(any(MessageEnvelope.class));
+        }
     }
 
     @Nested

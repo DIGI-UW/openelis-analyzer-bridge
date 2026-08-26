@@ -29,6 +29,7 @@ public final class DefaultConnectionProbeExecutor
 
   private static final byte ENQ = 0x05;
   private static final byte ACK = 0x06;
+  private static final byte EOT = 0x04;
   private static final byte VT = 0x0b;
   private static final byte FS = 0x1c;
   private static final byte CR = 0x0d;
@@ -280,6 +281,8 @@ public final class DefaultConnectionProbeExecutor
     socket.getOutputStream().write(ENQ);
     socket.getOutputStream().flush();
     if (socket.getInputStream().read() == ACK) {
+      socket.getOutputStream().write(EOT);
+      socket.getOutputStream().flush();
       return check(
         "REMOTE_PROTOCOL",
         "PASSED",

@@ -86,8 +86,14 @@ public class ASTMBridgeAdapter implements ASTMHandler {
     public ASTMHandlerResponse handle(ASTMMessage message, String sourceIp) {
         log.debug("ASTMBridgeAdapter handling message from {}", sourceIp);
 
+        String rawMessage = message.getMessage();
+        if (rawMessage == null || rawMessage.isBlank()) {
+            log.debug("ASTM session from {} completed without a result payload", sourceIp);
+            return new ASTMHandlerResponse("", HandleStatus.SUCCESS, false, this);
+        }
+
         // Extract sender identifier from ASTM H-record field 4 (e.g., "GENEXPERT^GeneXpert^4.6.0")
-        String analyzerId = extractSenderFromHRecord(message.getMessage());
+        String analyzerId = extractSenderFromHRecord(rawMessage);
 
         // Create MessageEnvelope
         MessageEnvelope envelope = MessageEnvelope.builder()
@@ -96,7 +102,7 @@ public class ASTMBridgeAdapter implements ASTMHandler {
             .sourceId(sourceBindingId != null && !sourceBindingId.isBlank()
                 ? sourceBindingId
                 : sourceIp != null ? sourceIp : "unknown")
-            .rawMessage(message.getMessage())
+            .rawMessage(rawMessage)
             .protocolAnalyzerHint(analyzerId)
             .build();
 

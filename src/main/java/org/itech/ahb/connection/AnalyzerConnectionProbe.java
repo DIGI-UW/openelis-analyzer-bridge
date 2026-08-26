@@ -30,7 +30,7 @@ public final class AnalyzerConnectionProbe {
 
   ObjectNode execute(ObjectNode request, ObjectNode connection, ObjectNode profile) {
     String startedAt = clock.instant().toString();
-    ProbeCheck check = check(profile, (ObjectNode) connection.path("values"));
+    ProbeCheck check = check(connection, profile, (ObjectNode) connection.path("values"));
 
     ObjectNode result = objectMapper.createObjectNode();
     result.put("schemaVersion", "1.0");
@@ -47,7 +47,7 @@ public final class AnalyzerConnectionProbe {
     return result;
   }
 
-  private ProbeCheck check(ObjectNode profile, ObjectNode values) {
+  private ProbeCheck check(ObjectNode connection, ObjectNode profile, ObjectNode values) {
     String protocol = profile.path("protocol").path("name").asText();
     if ("FILE".equals(protocol)) {
       String directory = text(values, "directory");
@@ -72,15 +72,47 @@ public final class AnalyzerConnectionProbe {
 
     Integer port = port(values.path("port"));
     if ("SERVER".equals(text(values, "connectionRole"))) {
-      return port == null
-        ? missing("LISTENER", "listener.configuration.missing")
-        : executor.probeListener(port);
+      if (port == null) {
+        return missing("LISTENER", "listener.configuration.missing");
+      }
+      if (currentRuntimeMatchesConfiguration(connection)) {
+        ProbeCheck protocolCheck = executor.probeRemote(
+          protocol,
+          "127.0.0.1",
+          port,
+          timeout(values)
+        );
+        return protocolCheck.status().equals("PASSED")
+          ? new ProbeCheck(
+              "LISTENER",
+              "PASSED",
+              "listener.ready",
+              protocolCheck.responseTimeMs(),
+              Map.of("port", port)
+            )
+          : new ProbeCheck(
+              "LISTENER",
+              protocolCheck.status(),
+              protocolCheck.code(),
+              protocolCheck.responseTimeMs(),
+              protocolCheck.args()
+            );
+      }
+      return executor.probeListener(port);
     }
 
     String host = text(values, "host");
     return host == null || port == null
       ? missing("REMOTE_PROTOCOL", "remote.configuration.missing")
       : executor.probeRemote(protocol, host, port, timeout(values));
+  }
+
+  private static boolean currentRuntimeMatchesConfiguration(ObjectNode connection) {
+    JsonNode active = connection.path("activeRuntimeRef");
+    return "ACTIVE".equals(connection.path("actualRuntimeState").asText()) &&
+    active.isObject() &&
+    active.path("profileRef").equals(connection.path("profileRef")) &&
+    active.path("configFingerprint").asText().equals(connection.path("configFingerprint").asText());
   }
 
   private ObjectNode toContractCheck(ProbeCheck check) {
