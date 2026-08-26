@@ -256,6 +256,9 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
   ) {
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId(analyzerId);
+    entry.setBridgeConnectionId(requiredText(connection, "connectionId", "Connection ID"));
+    entry.setProfileId(requiredText(connection.path("profileRef"), "profileId", "Profile ID"));
+    entry.setProfileRevision(requiredRevision(connection.path("profileRef"), "revision", "Profile revision"));
     entry.setName(requiredText(connection, "displayName", "Connection name"));
     entry.setExpectedProtocol(requiredText(profile.path("protocol"), "name", "Profile protocol"));
     entry.setIdentifierPattern(nullableText(profile, "identifier_pattern"));
@@ -296,6 +299,14 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       ControlResultRecognition.fromProfile(profile.path("controlResultRecognition"))
     );
     return entry;
+  }
+
+  private static int requiredRevision(JsonNode node, String field, String label) {
+    JsonNode value = node.path(field);
+    if (!value.isIntegralNumber() || value.asInt() < 1) {
+      throw new AnalyzerConnectionException(label + " is required");
+    }
+    return value.asInt();
   }
 
   private static String fileTestCode(

@@ -331,7 +331,20 @@
                 "required": ["resourceType", "identifier", "extension"],
                 "properties": {
                   "resourceType": { "const": "Device" },
-                  "identifier": { "type": "array", "minItems": 1 },
+                  "identifier": {
+                    "type": "array",
+                    "minItems": 1,
+                    "contains": {
+                      "type": "object",
+                      "required": ["system", "value"],
+                      "properties": {
+                        "system": {
+                          "const": "https://openelis-global.org/fhir/analyzer-connection-id"
+                        },
+                        "value": { "type": "string", "minLength": 1 }
+                      }
+                    }
+                  },
                   "extension": {
                     "type": "array",
                     "allOf": [

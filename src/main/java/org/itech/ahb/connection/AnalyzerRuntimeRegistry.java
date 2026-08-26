@@ -162,6 +162,15 @@ public class AnalyzerRuntimeRegistry {
          */
         private String id;
 
+        /** Durable Bridge connection identity used for all result and order routing. */
+        private String bridgeConnectionId;
+
+        /** Exact pinned profile identity materialized from the saved connection. */
+        private String profileId;
+
+        /** Exact pinned profile revision materialized from the saved connection. */
+        private int profileRevision;
+
         /**
          * Human-readable analyzer name (e.g., "Mindray BC-5380")
          */
