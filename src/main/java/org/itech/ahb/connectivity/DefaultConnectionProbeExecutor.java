@@ -4,8 +4,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ConnectException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.URI;
@@ -27,7 +27,6 @@ import org.springframework.stereotype.Component;
 public final class DefaultConnectionProbeExecutor
   implements ConnectionProbeExecutor {
 
-  private static final int LISTENER_TIMEOUT_MS = 1000;
   private static final byte ENQ = 0x05;
   private static final byte ACK = 0x06;
   private static final byte VT = 0x0b;
@@ -38,16 +37,12 @@ public final class DefaultConnectionProbeExecutor
   public ProbeCheck probeListener(int port) {
     long started = System.nanoTime();
     Map<String, Object> args = Map.of("port", port);
-    try (Socket socket = new Socket()) {
-      socket.connect(
-        new InetSocketAddress(InetAddress.getLoopbackAddress(), port),
-        LISTENER_TIMEOUT_MS
-      );
+    try (ServerSocket socket = new ServerSocket()) {
+      socket.setReuseAddress(false);
+      socket.bind(new InetSocketAddress(port));
       return check("LISTENER", "PASSED", "listener.ready", started, args);
-    } catch (SocketTimeoutException exception) {
-      return check("LISTENER", "TIMED_OUT", "listener.timeout", started, args);
     } catch (IOException exception) {
-      return check("LISTENER", "FAILED", "listener.not.listening", started, args);
+      return check("LISTENER", "FAILED", "listener.port.in.use", started, args);
     }
   }
 

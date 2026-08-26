@@ -27,13 +27,28 @@ class DefaultConnectionProbeExecutorTest {
     new DefaultConnectionProbeExecutor();
 
   @Test
-  void listenerProbeReportsAListeningBridgePort() throws IOException {
+  void listenerProbeReportsAnAvailableBridgePort() throws IOException {
+    int availablePort;
+    try (ServerSocket server = new ServerSocket(0)) {
+      availablePort = server.getLocalPort();
+    }
+
+    ProbeCheck check = executor.probeListener(availablePort);
+
+    assertThat(check.kind()).isEqualTo("LISTENER");
+    assertThat(check.status()).isEqualTo("PASSED");
+    assertThat(check.code()).isEqualTo("listener.ready");
+    assertThat(check.args()).containsEntry("port", availablePort);
+  }
+
+  @Test
+  void listenerProbeRejectsAPortOwnedByAnotherProcess() throws IOException {
     try (ServerSocket server = new ServerSocket(0)) {
       ProbeCheck check = executor.probeListener(server.getLocalPort());
 
       assertThat(check.kind()).isEqualTo("LISTENER");
-      assertThat(check.status()).isEqualTo("PASSED");
-      assertThat(check.code()).isEqualTo("listener.ready");
+      assertThat(check.status()).isEqualTo("FAILED");
+      assertThat(check.code()).isEqualTo("listener.port.in.use");
       assertThat(check.args()).containsEntry("port", server.getLocalPort());
     }
   }
