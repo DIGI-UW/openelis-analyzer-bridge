@@ -6,8 +6,6 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -27,10 +25,12 @@ import org.itech.ahb.lib.astm.concept.ASTMFrame.FrameType;
 import org.itech.ahb.lib.astm.concept.ASTMMessage;
 import org.itech.ahb.lib.astm.concept.ASTMRecord;
 import org.itech.ahb.lib.astm.concept.DefaultASTMFrame;
+import org.itech.ahb.lib.astm.concept.DefaultASTMRecord;
 import org.itech.ahb.lib.astm.exception.ASTMCommunicationException;
 import org.itech.ahb.lib.astm.exception.FrameParsingException;
 import org.itech.ahb.lib.astm.interpretation.ASTMInterpreterFactory;
 import org.itech.ahb.lib.astm.servlet.ASTMServlet.ASTMVersion;
+import org.itech.ahb.lib.util.AstmCharsets;
 import org.itech.ahb.lib.util.LogUtil;
 import org.itech.ahb.lib.util.ThreadUtil;
 
@@ -169,8 +169,8 @@ public class GeneralASTMCommunicator implements Communicator {
     throws IOException {
     communicatorId = Integer.toString(incrementAndGetId());
     this.socket = socket;
-    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-    PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
+    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), AstmCharsets.TRANSPORT));
+    PrintWriter writer = new PrintWriter(socket.getOutputStream(), true, AstmCharsets.TRANSPORT);
 
     this.astmInterpreterFactory = astmInterpreterFactory;
     this.reader = reader;
@@ -316,9 +316,41 @@ public class GeneralASTMCommunicator implements Communicator {
           }
         }
 
-        return astmInterpreterFactory.createInterpreterForRecords(records).interpretASTMRecordsToMessage(records);
+        return decodePayload(
+          astmInterpreterFactory.createInterpreterForRecords(records).interpretASTMRecordsToMessage(records)
+        );
       }
     };
+  }
+
+  /**
+   * Re-reads an assembled message's text as payload text.
+   *
+   * <p>Frames are read byte-transparently through {@link AstmCharsets#TRANSPORT} so that checksums
+   * can be verified against the sender's own arithmetic. That leaves each byte standing for itself,
+   * which is already the correct reading for a Latin-1 analyzer but not for one sending UTF-8, where
+   * a multi-byte sequence would otherwise surface as mojibake. The encoding is decided once for the
+   * whole message and applied to every record, so records cannot disagree with each other.
+   *
+   * @param message the assembled message, with record text as read off the wire.
+   * @return the message with its records re-read as payload text, or the original message if the
+   *     transport reading is already correct.
+   */
+  private ASTMMessage decodePayload(ASTMMessage message) {
+    List<ASTMRecord> records = message == null ? null : message.getRecords();
+    if (records == null || records.isEmpty()) {
+      return message;
+    }
+    if (!AstmCharsets.isUtf8Payload(message.getMessage())) {
+      return message;
+    }
+    List<ASTMRecord> decodedRecords = new ArrayList<>(records.size());
+    for (ASTMRecord record : records) {
+      decodedRecords.add(new DefaultASTMRecord(AstmCharsets.decodePayload(record.getRecord())));
+    }
+    return astmInterpreterFactory
+      .createInterpreterForRecords(decodedRecords)
+      .interpretASTMRecordsToMessage(decodedRecords);
   }
 
   /**
@@ -389,7 +421,9 @@ public class GeneralASTMCommunicator implements Communicator {
       );
     }
 
-    return astmInterpreterFactory.createInterpreterForFrames(frames).interpretFramesToASTMMessage(frames);
+    return decodePayload(
+      astmInterpreterFactory.createInterpreterForFrames(frames).interpretFramesToASTMMessage(frames)
+    );
   }
 
   /**
@@ -492,8 +526,8 @@ public class GeneralASTMCommunicator implements Communicator {
       "'] aka [0x17, 0x03]"
     );
     StringBuilder checksum = new StringBuilder();
-    checksum.append((char) reader.read());
-    checksum.append((char) reader.read());
+    checksum.append(ThreadUtil.readCharWithInterruptCheck(reader));
+    checksum.append(ThreadUtil.readCharWithInterruptCheck(reader));
 
     log.debug("checking checksum...");
     if (!checksumFits(checksum.toString(), frameNumberChar, text, curChar)) {
@@ -767,6 +801,12 @@ public class GeneralASTMCommunicator implements Communicator {
   /**
    * Calculates the checksum from the parameters.
    *
+   * <p>The sum is taken over the bytes recovered through {@link AstmCharsets#TRANSPORT}, which are
+   * byte-for-byte the ones the sender summed, so the result matches whatever encoding the payload
+   * uses. Each byte is masked to its unsigned value: Java's {@code byte} is signed, and a frame
+   * carrying enough high bytes could otherwise drive the running total negative, which
+   * {@code %02X} would then render as eight hex digits instead of two.
+   *
    * @param frameNumber the frame number character to be used in the checksum calculation.
    * @param frame the frame to be used in the checksum calculation.
    * @param frameTerminator the frame terminator character to be used in the checksum calculation.
@@ -774,11 +814,11 @@ public class GeneralASTMCommunicator implements Communicator {
    */
   private String checksumCalc(char frameNumber, String frame, char frameTerminator) {
     int computedChecksum = 0;
-    computedChecksum += (byte) frameNumber;
-    for (byte curByte : frame.getBytes(Charset.forName(StandardCharsets.UTF_8.toString()))) {
-      computedChecksum += curByte;
+    computedChecksum += frameNumber & 0xFF;
+    for (byte curByte : frame.getBytes(AstmCharsets.TRANSPORT)) {
+      computedChecksum += curByte & 0xFF;
     }
-    computedChecksum += (byte) frameTerminator;
+    computedChecksum += frameTerminator & 0xFF;
     computedChecksum %= 256;
     String checksum = String.format("%02X", computedChecksum);
     log.debug("frame number " + frameNumber + " calculated checksum: " + checksum);
