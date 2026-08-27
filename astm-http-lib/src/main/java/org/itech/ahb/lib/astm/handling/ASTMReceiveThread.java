@@ -1,5 +1,6 @@
 package org.itech.ahb.lib.astm.handling;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -75,10 +76,10 @@ public class ASTMReceiveThread extends Thread {
   @Override
   public void run() {
     log.trace("thread started to receive ASTM message");
-    
+
     // Extract source IP from socket before processing (FR-001)
     String sourceIp = extractSourceIp(socket);
-    
+
     try {
       ASTMMessage message;
       try {
@@ -96,8 +97,11 @@ public class ASTMReceiveThread extends Thread {
       } catch (SocketTimeoutException e) {
         log.error("there was a timeout in the receive protocol at the socket level, abandoning message", e);
         return;
+      } catch (EOFException e) {
+        log.info("the astm sender closed the connection without completing a message, abandoning message");
+        return;
       }
-      
+
       // Pass source IP to handler service so it can be included in HTTP headers
       ASTMHandlerServiceResponse response = astmHandlerService.handle(message, sourceIp);
       if (response.getResponses() == null || response.getResponses().size() == 0) {

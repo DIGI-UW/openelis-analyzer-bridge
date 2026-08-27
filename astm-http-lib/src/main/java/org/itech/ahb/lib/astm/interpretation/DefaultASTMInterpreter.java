@@ -38,11 +38,21 @@ public class DefaultASTMInterpreter implements ASTMInterpreter {
         log.debug("adding end frame to ASTM message");
         recordBuilder.append(frame.getText());
         String record = recordBuilder.toString();
+        recordBuilder.setLength(0);
         message.addRecord(new DefaultASTMRecord(record));
         log.trace("added record: '" + record + "' to list of records in message");
       } else {
         throw new FrameParsingException("frame type is an unrecognized type so message cannot be reconstructed");
       }
+    }
+    if (recordBuilder.length() > 0) {
+      String record = recordBuilder.toString();
+      log.warn(
+        "transmission ended without an ETX-terminated final frame; recovering " +
+        record.length() +
+        " buffered characters as the final record"
+      );
+      message.addRecord(new DefaultASTMRecord(record));
     }
     log.debug("finished interpreting frames as astm messages");
     return message;
