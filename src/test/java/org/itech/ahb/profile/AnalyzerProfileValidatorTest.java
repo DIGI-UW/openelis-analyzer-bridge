@@ -133,6 +133,15 @@ class AnalyzerProfileValidatorTest {
   }
 
   @Test
+  void requiresCompleteSerialRuntimeSettings() throws Exception {
+    ObjectNode profile = astmProfile();
+    profile.withObject("transport_config").withObject("RS-232").remove("data_bits");
+
+    assertThat(validator.validationIssues(profile))
+      .anyMatch(issue -> issue.contains("data_bits"));
+  }
+
+  @Test
   void rejectsDuplicateConnectionFieldKeys() throws Exception {
     ObjectNode profile = fileProfile();
     ArrayNode fields = (ArrayNode) profile.path("connectionFields");
