@@ -78,9 +78,9 @@ public class BridgeAdminController {
 
         int filesRemoved = 0;
         java.util.List<String> watchDirs = new java.util.ArrayList<>();
-        // For FILE entries the registry key is the watch directory path, which
-        // isn't exposed on the entry — resolve it via entrySet() iteration
-        // (find the key whose value is this analyzer).
+        // FILE registry keys append the durable connection id so two connections can
+        // share a directory without replacing each other. Strip that exact suffix
+        // before performing filesystem operations.
         for (Map.Entry<String, AnalyzerEntry> e : registry.getRegisteredAnalyzers().entrySet()) {
             AnalyzerEntry entry = e.getValue();
             if (!analyzerId.equals(entry.getId())) continue;
@@ -88,7 +88,7 @@ public class BridgeAdminController {
             if (protocol == null || (!protocol.equalsIgnoreCase("FILE") && !protocol.equalsIgnoreCase("CSV"))) {
                 continue;
             }
-            Path dir = Path.of(e.getKey());
+            Path dir = watchDirectory(e.getKey(), entry);
             watchDirs.add(dir.toString());
             if (!Files.isDirectory(dir)) continue;
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
@@ -116,5 +116,16 @@ public class BridgeAdminController {
         log.info("admin/reset: analyzerId={} stateRowsRemoved={} filesRemoved={} watchDirs={}",
                 analyzerId, stateRowsRemoved, filesRemoved, watchDirs);
         return ResponseEntity.ok(body);
+    }
+
+    private Path watchDirectory(String registryKey, AnalyzerEntry entry) {
+        String connectionId = entry.getBridgeConnectionId();
+        if (connectionId != null && !connectionId.isBlank()) {
+            String suffix = "#" + connectionId;
+            if (registryKey.endsWith(suffix)) {
+                return Path.of(registryKey.substring(0, registryKey.length() - suffix.length()));
+            }
+        }
+        return Path.of(registryKey);
     }
 }
