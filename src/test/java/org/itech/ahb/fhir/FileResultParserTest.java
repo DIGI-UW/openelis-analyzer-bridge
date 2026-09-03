@@ -379,8 +379,8 @@ class FileResultParserTest {
     class SheetResolution {
 
         @Test
-        @DisplayName("Prefers sheet named 'Results' when present")
-        void prefersResultsSheet() {
+        @DisplayName("Uses the profile-preferred result sheet")
+        void usesProfilePreferredResultSheet() {
             // Build workbook with two sheets: "Other" (wrong data) and "Results" (correct data)
             try {
                 Workbook workbook = new XSSFWorkbook();
@@ -415,7 +415,9 @@ class FileResultParserTest {
                         "Target", "testCode",
                         "CT", "result");
 
-                List<ParsedResults> parsed = FileResultParser.parse(is, mappings);
+                List<ParsedResults> parsed = FileResultParser.parse(
+                        is, mappings, null, List.of(), List.of(),
+                        TabularFileLayout.headerScan(List.of("Results"), "Sample Name", 2, 10));
 
                 assertNotNull(parsed);
                 assertEquals(1, parsed.size());
@@ -657,8 +659,8 @@ class FileResultParserTest {
         }
 
         @Test
-        @DisplayName("QuantStudio multi-section CSV → picks the LAST 'Well' header (Results section)")
-        void quantStudioMultiSectionCsvPicksLastWellHeader() {
+        @DisplayName("Configured multi-section CSV picks the last matching header")
+        void configuredMultiSectionCsvPicksLastHeader() {
             // QuantStudio Design & Analysis CSV exports include two sections
             // both starting with a row whose first cell is "Well": [Sample Setup]
             // (assigns Well -> sample) then [Results] (carries Cq/quantities).
@@ -679,7 +681,8 @@ class FileResultParserTest {
                     "CT", "ctValue");
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), mappings, ",", 0);
+                    csv.getBytes(), mappings, ",", 0, null, List.of(), List.of(),
+                    TabularFileLayout.headerScan(List.of(), "Well", 1, 200));
 
             assertNotNull(results);
             // Setup section's "IGNORE-ME" must NOT show up — only Results section.
@@ -895,10 +898,9 @@ class FileResultParserTest {
                 "Quantity Mean", "result",
                 "CT", "ctValue",
                 "Well Position", "position",
-                "Task", "qcTask",
-                "Quantity", "quantityRaw",
-                "Ct Mean", "ctMean",
-                "Comments", "comments");
+                "Task", "qcTask");
+        private static final TabularFileLayout QUANTSTUDIO_LAYOUT = TabularFileLayout.headerScan(
+                List.of("Results"), "Well", 5, 200);
 
         @Test
         @DisplayName("Synthetic Fluorocycler-shape file + perFileTestCode → CI baseline for A.3.3")
@@ -1052,7 +1054,8 @@ class FileResultParserTest {
         void syntheticQS5Shape_headerAt20_parses() {
             InputStream xls = buildQuantStudioLikeWorkbook(20);
 
-            List<ParsedResults> results = FileResultParser.parse(xls, QUANTSTUDIO_COLUMN_MAPPING);
+            List<ParsedResults> results = FileResultParser.parse(
+                    xls, QUANTSTUDIO_COLUMN_MAPPING, null, List.of(), List.of(), QUANTSTUDIO_LAYOUT);
 
             assertNotNull(results, "Parser returned null for synthetic QS5 fixture with header at row 20");
             assertFalse(results.isEmpty(),
@@ -1083,7 +1086,8 @@ class FileResultParserTest {
         void syntheticQS7Shape_headerAt50_parses() {
             InputStream xls = buildQuantStudioLikeWorkbook(50);
 
-            List<ParsedResults> results = FileResultParser.parse(xls, QUANTSTUDIO_COLUMN_MAPPING);
+            List<ParsedResults> results = FileResultParser.parse(
+                    xls, QUANTSTUDIO_COLUMN_MAPPING, null, List.of(), List.of(), QUANTSTUDIO_LAYOUT);
 
             // The current parser has a 60-row scan window in findHeaderRow.
             // Row 50 is within that window, so this SHOULD pass. Phase A.3.1
@@ -1106,7 +1110,8 @@ class FileResultParserTest {
             // the header.
             InputStream xls = buildQuantStudioLikeWorkbook(120);
 
-            List<ParsedResults> results = FileResultParser.parse(xls, QUANTSTUDIO_COLUMN_MAPPING);
+            List<ParsedResults> results = FileResultParser.parse(
+                    xls, QUANTSTUDIO_COLUMN_MAPPING, null, List.of(), List.of(), QUANTSTUDIO_LAYOUT);
 
             assertNotNull(results,
                     "Parser returned null for QS-shape fixture with header at row 120 — "

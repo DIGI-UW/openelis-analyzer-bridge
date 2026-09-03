@@ -16,6 +16,7 @@ ADD ./astm-http-lib/src /build/astm-http-lib/src
 #
 WORKDIR /build
 ADD ./pom.xml /build/pom.xml
+ADD ./contracts /build/contracts
 ADD ./src /build/src
 
 # Build library and main project in a single RUN to share .m2 repository

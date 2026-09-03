@@ -10,9 +10,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import javax.xml.parsers.DocumentBuilder;
@@ -113,6 +115,14 @@ public class FileResultParser {
             InputStream inputStream, Map<String, String> columnMappings,
             String perFileTestCode, List<QcRule> qcRules,
             List<org.itech.ahb.qc.ControlLotDto> controlLots) {
+        return parse(inputStream, columnMappings, perFileTestCode, qcRules, controlLots, null);
+    }
+
+    public static List<HL7ResultParser.ParsedResults> parse(
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, List<QcRule> qcRules,
+            List<org.itech.ahb.qc.ControlLotDto> controlLots,
+            TabularFileLayout layout) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser: null input or empty column mappings");
@@ -120,18 +130,15 @@ public class FileResultParser {
         }
 
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
-            Sheet sheet = resolveSheet(workbook);
-            if (sheet == null) {
-                log.warn("FileResultParser: empty workbook or missing sheet");
+            DataFormatter formatter = new DataFormatter();
+            SheetHeader sheetHeader = locateSheetHeader(workbook, formatter, layout);
+            if (sheetHeader == null) {
+                log.warn("FileResultParser: profile-configured result header not found");
                 return null;
             }
 
-            DataFormatter formatter = new DataFormatter();
-            int headerRowIndex = findHeaderRow(sheet, formatter);
-            if (headerRowIndex < 0) {
-                log.warn("FileResultParser: header row not found");
-                return null;
-            }
+            Sheet sheet = sheetHeader.sheet();
+            int headerRowIndex = sheetHeader.headerRowIndex();
 
             Row headerRow = sheet.getRow(headerRowIndex);
             Map<String, Integer> headerIndex = buildHeaderIndex(headerRow, formatter);
@@ -496,6 +503,14 @@ public class FileResultParser {
             byte[] content, Map<String, String> columnMappings,
             String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules,
             List<org.itech.ahb.qc.ControlLotDto> controlLots) {
+        return parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules, controlLots, null);
+    }
+
+    public static List<HL7ResultParser.ParsedResults> parseCsv(
+            byte[] content, Map<String, String> columnMappings,
+            String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules,
+            List<org.itech.ahb.qc.ControlLotDto> controlLots,
+            TabularFileLayout layout) {
 
         if (content == null || content.length == 0 || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseCsv: null/empty input or column mappings");
@@ -523,34 +538,27 @@ public class FileResultParser {
 
         char delimChar = (delimiter != null && !delimiter.isEmpty()) ? delimiter.charAt(0) : ',';
 
-        // QuantStudio Design & Analysis CSV exports carry a `* Key = Value`
-        // metadata preamble + multi-section layout (`[Sample Setup]` then
-        // `[Results]`) before the actual tabular header. Mirrors the Excel
-        // path's findHeaderRow logic so QuantStudio CSV exports parse the
-        // same way the .xlsx exports already do.
-        //
-        // Strategy: start at the configured `skipRows` (preserves existing
-        // behavior for non-QuantStudio CSVs). Scan up to 200 more lines for
-        // a row whose first delimiter-separated field is exactly "Well" —
-        // the QuantStudio header marker. Prefer the LAST such header before
-        // EOF, since the Sample Setup section also starts with "Well" but
-        // the Results section is what we want.
-        int headerLineIndex = -1;
-        int scanEnd = Math.min(allLines.length, skipRows + 200);
-        for (int i = skipRows; i < scanEnd; i++) {
-            String line = allLines[i];
-            if (line == null || line.isBlank()) continue;
-            int firstDelim = line.indexOf(delimChar);
-            String firstField = (firstDelim >= 0) ? line.substring(0, firstDelim) : line;
-            if ("Well".equals(firstField.trim())) {
-                headerLineIndex = i;
-                // Don't break — keep scanning for a later "Well" row.
+        int headerLineIndex = skipRows;
+        if (layout != null) {
+            headerLineIndex = -1;
+            int scanEnd = Math.min(allLines.length, skipRows + layout.maxRowsToScan());
+            for (int i = skipRows; i < scanEnd; i++) {
+                String line = allLines[i];
+                if (line == null || line.isBlank()) continue;
+                int firstDelim = line.indexOf(delimChar);
+                String firstField = (firstDelim >= 0) ? line.substring(0, firstDelim) : line;
+                if (layout.headerMarker().equals(firstField.trim())) {
+                    headerLineIndex = i;
+                }
+            }
+            if (headerLineIndex < 0) {
+                log.warn("FileResultParser.parseCsv: profile-configured header marker not found");
+                return null;
             }
         }
 
         StringBuilder csvContent = new StringBuilder();
-        int contentStart = (headerLineIndex >= 0) ? headerLineIndex : skipRows;
-        for (int i = contentStart; i < allLines.length; i++) {
+        for (int i = headerLineIndex; i < allLines.length; i++) {
             csvContent.append(allLines[i]).append("\n");
         }
 
@@ -689,54 +697,53 @@ public class FileResultParser {
         return null;
     }
 
-    /**
-     * Resolve sheet — prefer "Results" sheet, fall back to first sheet.
-     * Ported from ExcelAnalyzerReader.resolveSheet().
-     */
-    private static Sheet resolveSheet(Workbook workbook) {
+    private static SheetHeader locateSheetHeader(
+            Workbook workbook, DataFormatter formatter, TabularFileLayout layout) {
         if (workbook.getNumberOfSheets() == 0) return null;
-        Sheet byName = workbook.getSheet("Results");
-        if (byName != null) return byName;
-        return workbook.getSheetAt(0);
-    }
-
-    /**
-     * Find header row. For QuantStudio-style files with a metadata preamble
-     * (row 0 contains {@code "Block Type"} or {@code "Experiment Name"}),
-     * scan forward for a row whose first cell is {@code "Well"}.
-     * <p>
-     * Scan window: 200 rows. This is defensive margin — Madagascar's
-     * CVVIH 24 07 2024 serie 02 QuantStudio 7 Flex export has the header
-     * row at row 50, the Arbo-extraitQS5.xls at row 20, and QS SDS exports
-     * in general put the header between row 15 and row 50 depending on
-     * how many calibration / experiment metadata fields the tech filled in.
-     * A 60-row window (previous value) covered both known real files but
-     * gave only a 10-row margin on the CVVIH case; 200 covers any
-     * reasonable preamble size.
-     * Ported from ExcelAnalyzerReader.findHeaderRow().
-     */
-    private static int findHeaderRow(Sheet sheet, DataFormatter formatter) {
-        int firstRow = sheet.getFirstRowNum();
-        Row first = sheet.getRow(firstRow);
-        if (first == null) return -1;
-
-        String firstCell = formatter.formatCellValue(first.getCell(0));
-        if (firstCell != null && firstCell.trim().equals("Well")) {
-            return firstRow;
+        if (layout == null) {
+            Sheet first = workbook.getSheetAt(0);
+            return new SheetHeader(first, first.getFirstRowNum());
         }
-        // QuantStudio metadata block detection
-        if (firstCell != null && (firstCell.contains("Block Type") || firstCell.contains("Experiment Name"))) {
-            for (int r = firstRow + 1; r <= Math.min(firstRow + 200, sheet.getLastRowNum()); r++) {
-                Row row = sheet.getRow(r);
-                if (row == null) continue;
-                String cell0 = formatter.formatCellValue(row.getCell(0));
-                if (cell0 != null && cell0.trim().equals("Well")) {
-                    return r;
-                }
+
+        Set<String> candidateNames = new LinkedHashSet<>();
+        for (String preferredName : layout.preferredSheetNames()) {
+            if (workbook.getSheet(preferredName) != null) {
+                candidateNames.add(preferredName);
+            }
+            if (candidateNames.size() == layout.maxSheetsToScan()) break;
+        }
+        for (int index = 0;
+                index < workbook.getNumberOfSheets() && candidateNames.size() < layout.maxSheetsToScan();
+                index++) {
+            candidateNames.add(workbook.getSheetName(index));
+        }
+
+        for (String candidateName : candidateNames) {
+            Sheet sheet = workbook.getSheet(candidateName);
+            int headerRowIndex = findHeaderRow(sheet, formatter, layout);
+            if (headerRowIndex >= 0) {
+                return new SheetHeader(sheet, headerRowIndex);
             }
         }
-        return firstRow;
+        return null;
     }
+
+    private static int findHeaderRow(
+            Sheet sheet, DataFormatter formatter, TabularFileLayout layout) {
+        int firstRow = sheet.getFirstRowNum();
+        int lastRow = Math.min(sheet.getLastRowNum(), firstRow + layout.maxRowsToScan() - 1);
+        for (int rowIndex = firstRow; rowIndex <= lastRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) continue;
+            String firstCell = formatter.formatCellValue(row.getCell(0));
+            if (layout.headerMarker().equals(firstCell.trim())) {
+                return rowIndex;
+            }
+        }
+        return -1;
+    }
+
+    private record SheetHeader(Sheet sheet, int headerRowIndex) {}
 
     /**
      * Build header name → column index map.

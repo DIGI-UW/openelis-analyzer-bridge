@@ -125,8 +125,11 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.file.watchDirectories` | Directories to watch | [] |
 | `bridge.file.archiveDirectory` | Processed files archive | Required if enabled |
 | `bridge.file.pollIntervalMs` | Poll interval | 5000 |
+| **Profile Catalog** | | |
+| `bridge.profile-catalog.directory` | Durable site-profile revision store | `/data/openelis-analyzer-bridge/profile-catalog` |
+| `bridge.profile-catalog.shipped-pattern` | Packaged profile resource pattern | `classpath*:/analyzer-profiles/**/*.json` |
 | **Security (M7.1)** | | |
-| `bridge.security.enabled` | Enable HTTP Basic auth on /input | true |
+| `bridge.security.enabled` | Enable HTTP Basic auth on `/input` and profile management | true |
 | `bridge.security.username` | HTTP Basic username | bridge |
 | `bridge.security.password` | HTTP Basic password: plaintext or `{bcrypt}...` (use env var in prod) | changeme |
 | **Server** | | |
@@ -242,8 +245,9 @@ readinessProbe:
 
 ## Security
 
-The `/input` HTTP endpoint is protected with HTTP Basic authentication (M7.1).
-Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
+The `/input` HTTP endpoint and `/api/profiles` profile-management API are
+protected with HTTP Basic authentication. Non-HTTP transports (ASTM/TCP, MLLP,
+Serial, File) are unaffected.
 
 ### Configuration
 

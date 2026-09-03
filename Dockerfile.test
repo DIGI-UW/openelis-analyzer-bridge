@@ -15,6 +15,7 @@ RUN mvn dependency:go-offline -DskipTests
 
 # Copy source code
 COPY src src/
+COPY contracts contracts/
 COPY astm-http-lib/src astm-http-lib/src/
 
 # Copy serial test entrypoint

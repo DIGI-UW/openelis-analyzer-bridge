@@ -1,0 +1,110 @@
+{
+  "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "schemaVersion": "1.0",
+  "profileMeta": {
+    "id": "quantstudio",
+    "version": "1.2.0",
+    "displayName": "Thermo Fisher QuantStudio QS5/QS7",
+    "manufacturer": "Thermo Fisher",
+    "confidence": "VALIDATED"
+  },
+  "analyzer_name": "Thermo Fisher QuantStudio QS5/QS7",
+  "manufacturer": "Thermo Fisher",
+  "model": "QS5/QS7",
+  "category": "MOLECULAR",
+  "protocol": {
+    "name": "FILE",
+    "format": "XLSX"
+  },
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "supported_extensions": [".xls", ".xlsx"],
+  "column_mapping": {
+    "Sample Name": "sampleId",
+    "Target Name": "testCode",
+    "Quantity Mean": "result",
+    "CT": "ctValue",
+    "Well Position": "position",
+    "Task": "qcTask"
+  },
+  "sheet_detection": {
+    "strategy": "header_scan",
+    "preferred_sheet_names": ["Results"],
+    "header_marker": "Well",
+    "max_sheets_to_scan": 5,
+    "max_rows_to_scan": 200
+  },
+  "default_test_mappings": [
+    {
+      "test_code": "VIH-1",
+      "test_name_hint": "HIV-1 Viral Load",
+      "loinc": "20447-9",
+      "unit": "copies/mL",
+      "result_type": "quantitative"
+    },
+    {
+      "test_code": "IC",
+      "test_name_hint": "Internal Control DNA",
+      "loinc": "89578-3",
+      "unit": "",
+      "result_type": "quantitative"
+    }
+  ],
+  "configDefaults": {
+    "fileFormat": "XLSX",
+    "filePattern": "*.{xls,XLS,xlsx,XLSX}",
+    "hasHeader": true
+  },
+  "connectionFields": [
+    {
+      "key": "directory",
+      "labelKey": "analyzer.connection.field.directory",
+      "inputKind": "FILE_PATH",
+      "required": true,
+      "choices": []
+    },
+    {
+      "key": "filePattern",
+      "labelKey": "analyzer.connection.field.filePattern",
+      "helpTextKey": "analyzer.connection.field.filePattern.help",
+      "inputKind": "TEXT",
+      "required": true,
+      "choices": []
+    }
+  ],
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": {
+      "standard-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "STANDARD"
+      },
+      "ntc-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "NTC"
+      },
+      "negative-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PATTERN",
+        "operand": "^(CNEG|NTC)(?:$|[-_].*)"
+      },
+      "positive-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PATTERN",
+        "operand": "^(CPOS|PTC|LPC|HPC)(?:$|[-_].*)"
+      }
+    }
+  },
+  "catalog": {
+    "revision": 1,
+    "revisionFingerprint": "sha256:b940cb5cc7191a44570a87326e7e5c2054f4ac6df42cdf653ae113b9df143e6e",
+    "recognitionFingerprint": "sha256:e5c668abfd8b64220efeff01dd57682dcbd883f2652d68d187505bbd4ac707ab",
+    "source": "SHIPPED",
+    "status": "ACTIVE",
+    "publishedAt": "2026-08-19T00:00:00Z",
+    "publishedBy": "distribution"
+  }
+}

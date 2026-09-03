@@ -23,6 +23,7 @@ WORKDIR /build
 ADD ./pom.xml /build/pom.xml
 RUN --mount=type=cache,target=/root/.m2 \
   mvn dependency:go-offline
+ADD ./contracts /build/contracts
 ADD ./src /build/src
 RUN --mount=type=cache,target=/root/.m2 \
   mvn clean package -DskipTests
@@ -54,4 +55,3 @@ RUN chown astm:astm /app/docker-entrypoint.sh; \
 USER astm:astm
 
 ENTRYPOINT [ "/app/docker-entrypoint.sh" ]
-

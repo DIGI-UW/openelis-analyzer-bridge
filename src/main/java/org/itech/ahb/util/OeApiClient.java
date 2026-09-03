@@ -17,8 +17,8 @@ import org.springframework.stereotype.Component;
  * Reuses the same base URL, auth, and TLS config as the forwarding router.
  *
  * <p>Used by {@link org.itech.ahb.normalizer.MessageNormalizer} for discovered-source
- * reporting and by {@link org.itech.ahb.startup.AnalyzerRegistryBootstrap} for
- * registry pull on startup.
+ * reporting. Analyzer registration is one-way: OpenELIS pushes desired state to
+ * Bridge, and Bridge never pulls analyzer configuration from OpenELIS.
  */
 @Component
 @Slf4j
@@ -39,36 +39,6 @@ public class OeApiClient {
     /** Returns true if the OE base URL is configured. */
     public boolean isConfigured() {
         return httpConfig.getUri() != null;
-    }
-
-    /**
-     * GET an OE REST API path. Returns the raw response body as a String,
-     * or null on non-2xx / failure.
-     */
-    public String getString(String restPath) {
-        String baseUrl = deriveOeBaseUrl();
-        if (baseUrl == null) {
-            log.warn("No OE base URL — cannot GET {}", restPath);
-            return null;
-        }
-        String url = baseUrl + restPath;
-        try {
-            HttpRequest request = newRequestBuilder(url).GET().build();
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                return response.body();
-            }
-            log.warn("OE returned {} for GET {}", response.statusCode(), url);
-            return null;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Interrupted during GET {}", url);
-            return null;
-        } catch (Exception e) {
-            log.warn("Failed to GET OE {}: {}", url, e.getMessage());
-            return null;
-        }
     }
 
     /**

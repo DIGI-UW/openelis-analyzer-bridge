@@ -66,6 +66,9 @@ class AnalyzerProfileContractTest {
         assertTrue(profile.path("transport").size() > 0, fixtureName);
         assertFalse(profile.path("communication").path("mode").asText().isBlank(), fixtureName);
         assertFalse(profile.path("configDefaults").path("connectionRole").asText().isBlank(), fixtureName);
+        if ("ASTM".equals(profile.path("protocol").path("name").asText())) {
+          assertEquals("LIS01_A", profile.path("protocol").path("lowerLayerVersion").asText(), fixtureName);
+        }
       }
     }
   }
@@ -90,6 +93,20 @@ class AnalyzerProfileContractTest {
     ObjectNode defaults = (ObjectNode) profile.path("configDefaults");
     defaults.put("fileFormat", "XML");
     defaults.remove("hasHeader");
+
+    assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), PROFILE_SCHEMA.validate(profile).toString());
+  }
+
+  @Test
+  @DisplayName("FILE profiles can own generic spreadsheet header detection")
+  void fileProfileMayDeclareSpreadsheetHeaderDetection() throws IOException {
+    ObjectNode profile = fixture("analyzer-profile-file.json").deepCopy();
+    ObjectNode detection = profile.putObject("sheet_detection");
+    detection.put("strategy", "header_scan");
+    detection.putArray("preferred_sheet_names").add("Results");
+    detection.put("header_marker", "Specimen");
+    detection.put("max_sheets_to_scan", 5);
+    detection.put("max_rows_to_scan", 100);
 
     assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), PROFILE_SCHEMA.validate(profile).toString());
   }
@@ -153,6 +170,25 @@ class AnalyzerProfileContractTest {
   }
 
   @Test
+  @DisplayName("catalog responses expose the established analyzer profile without an adapter")
+  void catalogResponsesUseEstablishedProfiles() throws IOException {
+    JsonNode entrySchema = JSON.readTree(CONTRACT_ROOT.resolve("profile-catalog-entry.schema.json").toFile());
+    assertEquals(
+      "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+      entrySchema.path("properties").path("profile").path("$ref").asText()
+    );
+
+    JsonNode response = fixture("profile-catalog-response.json");
+    JsonNode profile = response.path("profiles").path(0).path("profile");
+    assertEquals(fixture("analyzer-profile-file.json"), profile);
+    assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), PROFILE_SCHEMA.validate(profile).toString());
+    assertFalse(profile.has("profileId"));
+    assertFalse(profile.has("revision"));
+    assertTrue(profile.path("profileMeta").path("id").isTextual());
+    assertTrue(profile.path("catalog").path("revision").isInt());
+  }
+
+  @Test
   @DisplayName("profiles exclude OpenELIS bindings, instance secrets, and operational QC")
   void profilesExcludeForeignAuthority() throws IOException {
     String schema = Files.readString(CONTRACT_ROOT.resolve("analyzer-profile.schema.json"));
@@ -188,6 +224,29 @@ class AnalyzerProfileContractTest {
     )) {
       assertFalse(Files.exists(CONTRACT_ROOT.resolve(removedArtifact)), removedArtifact);
     }
+  }
+
+  @Test
+  @DisplayName("profile lifecycle does not depend on the removed full-state registration contract")
+  void profileLifecycleDoesNotReintroduceFullStateRegistration() throws IOException {
+    for (String removedSource : List.of(
+      "src/main/java/org/itech/ahb/registration/AnalyzerRegistrationSyncService.java",
+      "src/main/java/org/itech/ahb/registration/RegistrationContractException.java",
+      "src/main/java/org/itech/ahb/registration/RegistrationContractValidator.java"
+    )) {
+      assertFalse(Files.exists(Path.of(removedSource)), removedSource);
+    }
+
+    String controller = Files.readString(
+      Path.of("src/main/java/org/itech/ahb/controller/AnalyzerRegistrationController.java")
+    );
+    assertFalse(controller.contains("AnalyzerRegistrationSyncService"));
+    assertFalse(controller.contains("RegistrationContractException"));
+
+    String registry = Files.readString(
+      Path.of("src/main/java/org/itech/ahb/config/AnalyzerRegistryConfig.java")
+    );
+    assertFalse(registry.contains("syncAll("));
   }
 
   @Test

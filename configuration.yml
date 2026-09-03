@@ -6,8 +6,9 @@
 # CONFIGURATION FORMATS:
 #
 # 1. Bridge runtime settings (bridge.*)
-#    Used by: security, analyzer registry, file watcher.
-#    Properties: bridge.file.*, bridge.analyzers.*, bridge.security.*
+#    Used by: security, analyzer registry, profile catalog, file watcher.
+#    Properties: bridge.file.*, bridge.analyzers.*, bridge.profile-catalog.*,
+#    bridge.security.*
 #
 # 2. OpenELIS forwarding settings (org.itech.ahb.forward-http-server.*)
 #    Used by: HttpForwardingRouter, FILE FHIR forwarding, registry bootstrap,
@@ -29,6 +30,12 @@ bridge:
     enabled: true                               # Set to false to disable auth (not recommended)
     username: bridge                            # HTTP Basic username
     password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via env var in production
+
+  # Bridge-owned immutable analyzer profile revisions. Site-created revisions
+  # must remain under the image's declared persistent /data volume.
+  profile-catalog:
+    directory: ${BRIDGE_PROFILE_CATALOG_DIRECTORY:/data/openelis-analyzer-bridge/profile-catalog}
+    shipped-pattern: classpath*:/analyzer-profiles/**/*.json
 
   # Analyzer identification registry (M7: Message Normalizer)
   # Maps source identifiers (IP addresses, serial ports, file paths) to analyzer IDs.
@@ -151,7 +158,7 @@ logging:
 # Actuator endpoints for health monitoring and metrics
 # NOTE: Health and info endpoints are publicly accessible. Other actuator endpoints
 # are also public by default but can be network-restricted in production.
-# The /input endpoint requires HTTP Basic auth (see bridge.security above).
+# The /input and /api/profiles endpoints require HTTP Basic auth (see bridge.security above).
 management:
   endpoints:
     web:

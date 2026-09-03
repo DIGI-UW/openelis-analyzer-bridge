@@ -100,6 +100,9 @@ public class SecurityConfig {
                 // require authentication — they expose internal paths and
                 // error messages that must not be publicly readable.
                 .requestMatchers("/admin/**").authenticated()
+                // Analyzer profile reads and lifecycle writes are an internal
+                // OpenELIS-to-Bridge management API.
+                .requestMatchers("/api/profiles", "/api/profiles/**").authenticated()
                 // All other endpoints (ASTM query forwarding, etc.) are permitted
                 .anyRequest().permitAll()
             )

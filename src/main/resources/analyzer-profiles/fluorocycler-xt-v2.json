@@ -42,12 +42,25 @@
     }
   ],
   "configDefaults": {
+    "dataFlow": "RESULTS_ONLY",
     "fileFormat": "XLSX",
     "filePattern": "*.{ods,ODS,xlsx,XLSX,xls,XLS}",
     "hasHeader": true,
     "sheetIndex": 0
   },
   "connectionFields": [
+    {
+      "key": "dataFlow",
+      "labelKey": "analyzer.setup.connect.dataFlow",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RESULTS_ONLY",
+          "labelKey": "analyzer.setup.connect.dataFlow.resultsOnly"
+        }
+      ]
+    },
     {
       "key": "directory",
       "labelKey": "analyzer.connection.field.directory",
@@ -93,12 +106,12 @@
     }
   },
   "catalog": {
-    "revision": 1,
-    "revisionFingerprint": "sha256:8d099084227b7de083a6f8f0511234c8f09540534182a380060fe921a7f28c21",
+    "revision": 2,
+    "revisionFingerprint": "sha256:bb1fca7426cf1c3bbc3a40c2c84fac5392efa21720b075b33060b0d5a57bb7a1",
     "recognitionFingerprint": "sha256:5c0de42e1135b772b23e4c1ea04b0162b30fe36fc08ecef76a70108ba031be26",
     "source": "SHIPPED",
     "status": "ACTIVE",
-    "publishedAt": "2026-08-19T00:00:00Z",
+    "publishedAt": "2026-08-26T00:00:00Z",
     "publishedBy": "distribution"
   }
 }
