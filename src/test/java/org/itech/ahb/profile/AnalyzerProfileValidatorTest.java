@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 class AnalyzerProfileValidatorTest {
 
   private static final String FILE_PROFILE = "analyzer-profiles/fluorocycler-xt.json";
+  private static final String ASTM_PROFILE = "analyzer-profiles/genexpert-astm.json";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
@@ -50,6 +51,88 @@ class AnalyzerProfileValidatorTest {
   }
 
   @Test
+  void rejectsDuplicatePrimaryAndAliasAnalyzerIdentities() throws Exception {
+    ObjectNode duplicatePrimary = fileProfile();
+    ObjectNode copiedMapping = duplicatePrimary
+      .withArray("default_test_mappings")
+      .path(0)
+      .deepCopy();
+    copiedMapping.put("loinc", "94500-6");
+    duplicatePrimary.withArray("default_test_mappings").add(copiedMapping);
+
+    assertThat(validator.validationIssues(duplicatePrimary))
+      .contains("$.default_test_mappings contains duplicate analyzer identity VIH-1");
+
+    ObjectNode duplicateAlias = fileProfile();
+    ArrayNode aliases = duplicateAlias
+      .withArray("default_test_mappings")
+      .path(0)
+      .withArray("aliases");
+    aliases.add("VIH-1");
+
+    assertThat(validator.validationIssues(duplicateAlias))
+      .contains("$.default_test_mappings contains duplicate analyzer identity VIH-1");
+  }
+
+  @Test
+  void rejectsMalformedSpecimenIdRecognitionPatterns() throws Exception {
+    ObjectNode profile = fileProfile();
+    ObjectNode rule = profile
+      .withObject("controlResultRecognition")
+      .withObject("rules")
+      .putObject("malformed-pattern");
+    rule.put("ruleType", "SPECIMEN_ID_PATTERN");
+    rule.put("operand", "^(QC-[)$");
+
+    assertThat(validator.validationIssues(profile))
+      .contains(
+        "$.controlResultRecognition.rules.malformed-pattern.operand must be a valid Java regular expression"
+      );
+  }
+
+  @Test
+  void rejectsAResultValueOrderWithoutAMappedSourceColumn() throws Exception {
+    ObjectNode profile = fileProfile();
+    profile.withArray("result_value_order").removeAll().add("ctValue");
+
+    assertThat(validator.validationIssues(profile))
+      .contains("$.result_value_order selects ctValue but $.column_mapping has no matching source column");
+  }
+
+  @Test
+  void aColumnOnlyFileProfileDefaultsToTheResultSemantic() throws Exception {
+    ObjectNode profile = fileProfile();
+    profile.remove("result_value_order");
+
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void requiresAnExplicitAstmResultRecordSelection() throws Exception {
+    ObjectNode profile = astmProfile();
+    profile
+      .withObject("configDefaults")
+      .withObject("extractionOverrides")
+      .remove("resultRecordSelection");
+
+    assertThat(validator.validationIssues(profile))
+      .anyMatch(issue -> issue.contains("resultRecordSelection"));
+  }
+
+  @Test
+  void rejectsMalformedAstmResultRecordSelectionTargets() throws Exception {
+    ObjectNode profile = astmProfile();
+    profile
+      .withObject("configDefaults")
+      .withObject("extractionOverrides")
+      .withObject("resultRecordSelection")
+      .put("targetField", "R.0.5");
+
+    assertThat(validator.validationIssues(profile))
+      .anyMatch(issue -> issue.contains("targetField"));
+  }
+
+  @Test
   void rejectsDuplicateConnectionFieldKeys() throws Exception {
     ObjectNode profile = fileProfile();
     ArrayNode fields = (ArrayNode) profile.path("connectionFields");
@@ -83,6 +166,17 @@ class AnalyzerProfileValidatorTest {
   private ObjectNode fileProfile() throws Exception {
     try (InputStream input = getClass().getClassLoader().getResourceAsStream(FILE_PROFILE)) {
       assertThat(input).as(FILE_PROFILE).isNotNull();
+      return (ObjectNode) objectMapper.readTree(input);
+    }
+  }
+
+  private ObjectNode astmProfile() throws Exception {
+    return profile(ASTM_PROFILE);
+  }
+
+  private ObjectNode profile(String resource) throws Exception {
+    try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource)) {
+      assertThat(input).as(resource).isNotNull();
       return (ObjectNode) objectMapper.readTree(input);
     }
   }

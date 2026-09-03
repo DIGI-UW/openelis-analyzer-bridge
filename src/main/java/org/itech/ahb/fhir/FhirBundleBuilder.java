@@ -187,6 +187,12 @@ public class FhirBundleBuilder {
                                 "http://openelis-global.org/fhir/qc/control-level",
                                 new org.hl7.fhir.r4.model.StringType(result.controlLevel())));
             }
+            if (result.controlType() != null && !result.controlType().isEmpty()) {
+                obs.addExtension(
+                        new org.hl7.fhir.r4.model.Extension(
+                                "http://openelis-global.org/fhir/qc/control-type",
+                                new org.hl7.fhir.r4.model.StringType(result.controlType())));
+            }
 
             // Analyzer completion timestamp
             if (result.timestamp() != null && !result.timestamp().isBlank()) {
@@ -355,30 +361,35 @@ public class FhirBundleBuilder {
             boolean isControl,
             String timestamp,
             String lotNumber,
-            String controlLevel) {
+            String controlLevel,
+            String controlType) {
 
         public static AnalyzerResult numeric(String testCode, String testName, String value, String units) {
-            return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null);
+            return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null);
         }
 
         public static AnalyzerResult text(String testCode, String testName, String value) {
-            return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null);
+            return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null, null);
         }
 
         public AnalyzerResult withControl(boolean control) {
-            return new AnalyzerResult(testCode, testName, value, units, isNumeric, control, timestamp, lotNumber, controlLevel);
+            return new AnalyzerResult(testCode, testName, value, units, isNumeric, control, timestamp, lotNumber, controlLevel, controlType);
         }
 
         public AnalyzerResult withTimestamp(String ts) {
-            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, ts, lotNumber, controlLevel);
+            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, ts, lotNumber, controlLevel, controlType);
         }
 
         public AnalyzerResult withLotNumber(String lot) {
-            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, timestamp, lot, controlLevel);
+            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, timestamp, lot, controlLevel, controlType);
         }
 
         public AnalyzerResult withControlLevel(String level) {
-            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, timestamp, lotNumber, level);
+            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, timestamp, lotNumber, level, controlType);
+        }
+
+        public AnalyzerResult withControlType(String type) {
+            return new AnalyzerResult(testCode, testName, value, units, isNumeric, isControl, timestamp, lotNumber, controlLevel, type);
         }
     }
 }

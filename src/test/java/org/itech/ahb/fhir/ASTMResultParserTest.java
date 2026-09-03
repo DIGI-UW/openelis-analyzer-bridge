@@ -3,9 +3,10 @@ package org.itech.ahb.fhir;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
-import java.util.regex.Pattern;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
+import org.itech.ahb.profile.AstmResultRecordSelection;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,10 @@ import org.junit.jupiter.api.Test;
  */
 @DisplayName("ASTMResultParser")
 class ASTMResultParserTest {
+
+    private static final AstmResultRecordSelection ALL_RESULTS = AstmResultRecordSelection.all();
+    private static final AstmResultRecordSelection GENEXPERT_RESULTS =
+            AstmResultRecordSelection.fieldNonBlank("R.3.5");
 
     // Realistic ASTM from a GeneXpert analyzer.
     // Field indices (0-indexed split, segment ID at idx 0):
@@ -50,7 +55,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Should extract accession from O-record specimen ID")
         void shouldExtractAccession() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("SAMPLE001", parsed.accessionNumber());
@@ -59,7 +64,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Should extract correct number of results from R-records")
         void shouldExtractAllResults() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals(2, parsed.results().size());
@@ -68,7 +73,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Should extract test codes from R-record")
         void shouldExtractTestCodes() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             List<String> codes = parsed.results().stream()
@@ -79,7 +84,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Should extract values from R-record")
         void shouldExtractValues() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("1520.5", parsed.results().get(0).value());
@@ -89,7 +94,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Should extract units from R-record")
         void shouldExtractUnits() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("copies/mL", parsed.results().get(0).units());
@@ -103,7 +108,8 @@ class ASTMResultParserTest {
             // machines (H|@^\) does not affect accession, test code, or value
             // extraction — the parser only relies on | (field) and ^ (component)
             // which are the same in both delimiter sets.
-            ParsedResults parsed = ASTMResultParser.parseRaw(REAL_GENEXPERT_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(
+                    REAL_GENEXPERT_MESSAGE, ControlResultRecognition.none(), GENEXPERT_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("ACC-REAL-001", parsed.accessionNumber(),
@@ -130,7 +136,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^GLUCOSE|95.0|mg/dL\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("GLUCOSE", parsed.results().get(0).testCode());
@@ -145,7 +151,7 @@ class ASTMResultParserTest {
                     + "R|1|^GLUCOSE|95.0|mg/dL\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("GLUCOSE", parsed.results().get(0).testCode());
@@ -160,7 +166,7 @@ class ASTMResultParserTest {
                     + "R|1|GLUCOSE|95.0|mg/dL\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("GLUCOSE", parsed.results().get(0).testCode());
@@ -180,7 +186,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|NEGATIVE^||\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("NEGATIVE", parsed.results().get(0).value());
@@ -195,7 +201,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|^3.10|mg/dL\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("3.10", parsed.results().get(0).value());
@@ -210,7 +216,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|POS^^^||\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("POS", parsed.results().get(0).value());
@@ -218,8 +224,15 @@ class ASTMResultParserTest {
     }
 
     @Nested
-    @DisplayName("QC sample detection")
+    @DisplayName("Profile-owned control recognition")
     class QcDetection {
+
+        private ParsedResults parseWithActionCodeRecognition(String message) {
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule("FIELD_EQUALS", "O.12", "Q");
+            return ASTMResultParser.parse(
+                    List.of(message.split("[\\r\\n]+")), recognition, ALL_RESULTS);
+        }
 
         @Test
         @DisplayName("O.12 = 'Q' -> result.isControl() = true")
@@ -232,7 +245,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|5.0|units\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = parseWithActionCodeRecognition(msg);
 
             assertNotNull(parsed);
             assertTrue(parsed.results().get(0).isControl(),
@@ -242,7 +255,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("O.12 = 'P' (normal) -> result.isControl() = false")
         void normalSampleNotFlaggedAsQc() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isControl(),
@@ -258,20 +271,14 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|5.0|units\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isControl());
         }
 
-        // Standards-conformant test fixtures — drive the bridge with messages
-        // shaped like REAL analyzer output, not hand-crafted with off-by-one
-        // padding. Per LIS2-A2 §5.7 (Order Record), Action Code is O.12 in
-        // 1-indexed ASTM field numbering, which is idx 11 when the segment ID
-        // ("O") is included as field 0 in the 0-indexed split — same
-        // convention pinned by the O_ACTION_CODE_FIELD = 11 constant in
-        // ASTMResultParser. Earlier bridge tests padded by one extra pipe
-        // and so masked an off-by-one; these tests assert the correct shape.
+        // These fixtures keep the field-level rule honest against real wire
+        // shapes: O.12 is index 11 when the segment ID is included at index 0.
 
         @Test
         @DisplayName("REAL wire format: O.12='Q' at idx 11 (per ASTM LIS2-A2) -> isControl=true")
@@ -286,14 +293,12 @@ class ASTMResultParserTest {
                     + "Q|1|HIV-VL^LOT-HIVVL-N^N|1687.5|copies/mL|20260429181325\r"
                     + "L|1|N\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(wireFormat);
+            ParsedResults parsed = parseWithActionCodeRecognition(wireFormat);
 
-            assertNotNull(parsed, "parseRaw should produce results from wire-format QC message");
+            assertNotNull(parsed, "Parser should produce results from wire-format QC message");
             assertEquals(1, parsed.results().size(), "Expected one R-record parsed");
             assertTrue(parsed.results().get(0).isControl(),
-                    "Mock-generated QC message must be detected as control. "
-                    + "If this fails, O_ACTION_CODE_FIELD has an off-by-one — "
-                    + "ASTM O.12 lands at idx 11 in 0-indexed split.");
+                    "The profile's O.12 rule must classify the mock-generated control message");
         }
 
         @Test
@@ -308,7 +313,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^ALT|35.2|U/L|10-40|N||F||20260202115530||\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(fixture);
+            ParsedResults parsed = ASTMResultParser.parseRaw(fixture, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isControl(),
@@ -324,7 +329,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("R.9 timestamp extracted when present")
         void timestampExtracted() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("20260326120000", parsed.results().get(0).timestamp());
@@ -339,7 +344,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|5.0|units\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertNull(parsed.results().get(0).timestamp());
@@ -353,7 +358,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Numeric value '1520.5' -> isNumeric = true")
         void numericValueDetected() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertTrue(parsed.results().get(0).isNumeric());
@@ -368,7 +373,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|NEGATIVE||\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isNumeric());
@@ -378,6 +383,22 @@ class ASTMResultParserTest {
     @Nested
     @DisplayName("Main Result filter (Cepheid multi-result)")
     class MainResultFilter {
+
+        @Test
+        @DisplayName("Generic ASTM keeps a five-component result when no analyzer-specific selector applies")
+        void genericAstmKeepsFiveComponentResult() {
+            String message = "H|\\^&|||Generic Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^PANEL^^ANALYTE^^|POSITIVE|\r"
+                    + "L|1\r";
+
+            ParsedResults parsed = ASTMResultParser.parseRaw(message, ControlResultRecognition.none(), ALL_RESULTS);
+
+            assertNotNull(parsed);
+            assertEquals(1, parsed.results().size());
+            assertEquals("ANALYTE", parsed.results().get(0).testCode());
+        }
 
         private static final String CTNG_MESSAGE =
                 "H|\\^&|||GeneXpert^6.5\r"
@@ -396,7 +417,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Only Main Results (Component 5 non-empty) forwarded from CTNG cartridge")
         void onlyMainResultsForwarded() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE, ControlResultRecognition.none(), GENEXPERT_RESULTS);
 
             assertNotNull(parsed);
             assertEquals(2, parsed.results().size(), "Only 2 Main Results (CT + NG) from 8 R-records");
@@ -405,7 +426,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Main Results carry per-analyte test codes (CT, NG)")
         void mainResultsCarryAnalyteCodes() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE, ControlResultRecognition.none(), GENEXPERT_RESULTS);
 
             assertNotNull(parsed);
             List<String> codes = parsed.results().stream()
@@ -416,7 +437,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Main Result values cleaned correctly (POS^→POS, NOT DETECTED)")
         void mainResultValuesClean() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE, ControlResultRecognition.none(), GENEXPERT_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("POS", parsed.results().get(0).value());
@@ -426,7 +447,7 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Analyte rows (CT1, NG2), Complementary (Ct, EndPt), and controls (SAC) all filtered out")
         void analyteAndComplementaryFiltered() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE);
+            ParsedResults parsed = ASTMResultParser.parseRaw(CTNG_MESSAGE, ControlResultRecognition.none(), GENEXPERT_RESULTS);
 
             assertNotNull(parsed);
             List<String> codes = parsed.results().stream()
@@ -445,40 +466,13 @@ class ASTMResultParserTest {
                     + "R|1|^^^GLUCOSE|95.0|mg/dL\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals(1, parsed.results().size());
             assertEquals("GLUCOSE", parsed.results().get(0).testCode());
         }
 
-        @Test
-        @DisplayName("isMainResult correctly identifies Main vs Analyte via Component 5")
-        void isMainResultUnit() {
-            String[] mainFields = "R|1|^CTNG^^CT^Xpert CT_NG^3^CT^|POS^".split(Pattern.quote("|"));
-            String[] analyteFields = "R|2|^CTNG^^CT^^^CT1^|POS^".split(Pattern.quote("|"));
-            String[] complementaryFields = "R|3|^CTNG^^CT^^^CT1^Ct|^20.1".split(Pattern.quote("|"));
-            String[] simpleFields = "R|1|^^^GLUCOSE|95.0|mg/dL".split(Pattern.quote("|"));
-
-            assertTrue(ASTMResultParser.isMainResult(mainFields), "Main Result should pass");
-            assertFalse(ASTMResultParser.isMainResult(analyteFields), "Analyte should be filtered");
-            assertFalse(ASTMResultParser.isMainResult(complementaryFields), "Complementary should be filtered");
-            assertTrue(ASTMResultParser.isMainResult(simpleFields), "Simple format backward compat");
-        }
-
-        @Test
-        @DisplayName("extractCartridgeCode returns panel code from Component 2")
-        void cartridgeCodeExtracted() {
-            String[] fields = "R|1|^CTNG^^CT^Xpert CT_NG^3^CT^|POS^".split(Pattern.quote("|"));
-            assertEquals("CTNG", ASTMResultParser.extractCartridgeCode(fields));
-        }
-
-        @Test
-        @DisplayName("extractCartridgeCode returns null for simple format")
-        void cartridgeCodeNullForSimple() {
-            String[] fields = "R|1|^^^GLUCOSE|95.0|mg/dL".split(Pattern.quote("|"));
-            assertNull(ASTMResultParser.extractCartridgeCode(fields));
-        }
     }
 
     @Nested
@@ -488,19 +482,19 @@ class ASTMResultParserTest {
         @Test
         @DisplayName("Null input -> returns null")
         void nullInputReturnsNull() {
-            assertNull(ASTMResultParser.parseRaw(null));
+            assertNull(ASTMResultParser.parseRaw(null, ControlResultRecognition.none(), ALL_RESULTS));
         }
 
         @Test
         @DisplayName("Empty input -> returns null")
         void emptyInputReturnsNull() {
-            assertNull(ASTMResultParser.parseRaw(""));
+            assertNull(ASTMResultParser.parseRaw("", ControlResultRecognition.none(), ALL_RESULTS));
         }
 
         @Test
         @DisplayName("Blank input -> returns null")
         void blankInputReturnsNull() {
-            assertNull(ASTMResultParser.parseRaw("   "));
+            assertNull(ASTMResultParser.parseRaw("   ", ControlResultRecognition.none(), ALL_RESULTS));
         }
 
         @Test
@@ -511,7 +505,7 @@ class ASTMResultParserTest {
                     + "O|1|ACC001\r"
                     + "L|1\r";
 
-            assertNull(ASTMResultParser.parseRaw(msg));
+            assertNull(ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS));
         }
 
         @Test
@@ -523,7 +517,7 @@ class ASTMResultParserTest {
                     + "O|1|ACC001\r"
                     + "L|1\r";
 
-            assertNull(ASTMResultParser.parseRaw(msg));
+            assertNull(ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS));
         }
 
         @Test
@@ -535,7 +529,7 @@ class ASTMResultParserTest {
                     + "R|1|^^^TEST|5.0|units\r"
                     + "L|1\r";
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg);
+            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("SAMPLE123", parsed.accessionNumber());
@@ -555,7 +549,7 @@ class ASTMResultParserTest {
             // Actually: accession is set per O-record parse. Let's trace:
             // extractAccessionNumber("O|1|") -> fields[2] = "" -> returns null
             // So accession remains null and R-record is skipped -> returns null
-            assertNull(ASTMResultParser.parseRaw(msg));
+            assertNull(ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS));
         }
     }
 }

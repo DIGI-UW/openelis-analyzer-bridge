@@ -4,11 +4,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
-import org.itech.ahb.qc.QcRule;
-import org.itech.ahb.qc.QcRuleEvaluator;
+import org.itech.ahb.profile.AstmResultRecordSelection;
+import org.itech.ahb.profile.ControlRecognitionRule;
+import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.ControlResultRecognitionEvaluator;
 
 /**
  * Extracts lab results from ASTM LIS2-A2 messages.
@@ -33,36 +36,24 @@ public class ASTMResultParser {
     private static final int R_VALUE_FIELD = 3;
     private static final int R_UNITS_FIELD = 4;
     private static final int R_TIMESTAMP_FIELD = 9;
-    // ASTM LIS2-A2 §5.7: Order Record Action Code is field 12 (1-indexed).
-    // In a 0-indexed split that includes the segment ID ("O") at index 0,
-    // O.12 lands at array index 11. Pinned by the mindray-ba88a-result.txt
-    // fixture (action code "A" at idx 11) and by the analyzer mock's
-    // test_qc_message.py (Q at idx 11).
-    private static final int O_ACTION_CODE_FIELD = 11;
-
     /**
-     * Parse ASTM message lines and extract results.
+     * Parse ASTM message lines using the pinned profile's explicit control
+     * recognition mode.
      *
-     * @param lines ASTM message lines (H, P, O, R, L segments)
+     * @param lines ASTM message lines
+     * @param recognition profile-owned control-result recognition
      * @return parsed results with accession, or null if no results found
      */
-    public static HL7ResultParser.ParsedResults parse(List<String> lines) {
-        return parse(lines, null);
-    }
-
-    /**
-     * Parse ASTM message lines with configurable QC rules.
-     * Falls back to hardcoded O.12=="Q" when qcRules is null or empty.
-     *
-     * @param lines   ASTM message lines
-     * @param qcRules FR-15 QC identification rules (null = use hardcoded fallback)
-     * @return parsed results with accession, or null if no results found
-     */
-    public static HL7ResultParser.ParsedResults parse(List<String> lines, List<QcRule> qcRules) {
+    public static HL7ResultParser.ParsedResults parse(
+            List<String> lines, ControlResultRecognition recognition,
+            AstmResultRecordSelection resultRecordSelection) {
         if (lines == null || lines.isEmpty()) return null;
+        if (resultRecordSelection == null) {
+            throw new IllegalArgumentException("ASTM result-record selection is required");
+        }
 
         String accession = null;
-        boolean isQcSample = false;
+        Optional<ControlRecognitionRule> matchedRule = Optional.empty();
         List<AnalyzerResult> results = new ArrayList<>();
 
         for (String line : lines) {
@@ -73,28 +64,23 @@ public class ASTMResultParser {
             switch (segment) {
                 case "O" -> {
                     accession = extractAccessionNumber(line);
-                    if (qcRules != null && !qcRules.isEmpty()) {
-                        // FR-15: rule-based QC detection. Operand naming follows the
-                        // ASTM LIS2-A2 §5.7 1-indexed convention where O.1 is the
-                        // segment ID ("O") and O.12 is the Action Code — same
-                        // convention pinned by O_ACTION_CODE_FIELD (= idx 11).
-                        String[] fields = line.split(Pattern.quote(FIELD_DELIMITER));
-                        Map<String, String> fieldValues = new HashMap<>();
-                        for (int i = 0; i < fields.length; i++) {
-                            fieldValues.put("O." + (i + 1), fields[i].trim());
-                        }
-                        isQcSample = QcRuleEvaluator.isQcSample(qcRules, accession, fieldValues);
-                    } else {
-                        // Fallback: hardcoded O.12 == "Q"
-                        isQcSample = isQcSample(line);
+                    String[] fields = line.split(Pattern.quote(FIELD_DELIMITER));
+                    Map<String, String> fieldValues = new HashMap<>();
+                    for (int i = 0; i < fields.length; i++) {
+                        fieldValues.put("O." + (i + 1), fields[i].trim());
                     }
+                    matchedRule = ControlResultRecognitionEvaluator.findMatchingRule(
+                            recognition, accession, fieldValues);
                 }
                 case "R" -> {
                     if (accession != null) {
-                        AnalyzerResult result = parseResultRecord(line);
+                        AnalyzerResult result = parseResultRecord(line, resultRecordSelection);
                         if (result != null) {
-                            if (isQcSample) {
-                                result = result.withControl(true);
+                            if (matchedRule.isPresent()) {
+                                ControlRecognitionRule rule = matchedRule.get();
+                                result = result.withControl(true)
+                                        .withControlLevel(rule.controlLevel())
+                                        .withControlType(rule.controlType());
                             }
                             results.add(result);
                         }
@@ -135,13 +121,15 @@ public class ASTMResultParser {
     /**
      * Parse from raw ASTM message string (splits on newlines).
      */
-    public static HL7ResultParser.ParsedResults parseRaw(String rawAstm) {
+    public static HL7ResultParser.ParsedResults parseRaw(
+            String rawAstm, ControlResultRecognition recognition,
+            AstmResultRecordSelection resultRecordSelection) {
         if (rawAstm == null || rawAstm.isBlank()) return null;
         List<String> lines = new ArrayList<>();
         for (String line : rawAstm.split("\r")) {
             if (!line.isBlank()) lines.add(line.trim());
         }
-        return parse(lines);
+        return parse(lines, recognition, resultRecordSelection);
     }
 
     /**
@@ -174,28 +162,19 @@ public class ASTMResultParser {
 
     /**
      * Parse one R-record to extract a test result.
-     * Only Main Result records are forwarded as clinical results.
-     * Per Cepheid LIS spec 302-2261 Rev C: Main Result has Component 5
-     * (assay name) non-empty in the Universal Test ID field.
-     * Analyte, Complementary, and internal control rows are skipped.
-     *
      * R|seq|^^^testCode|value|units|...
      *       [2]         [3]   [4]
      */
-    static AnalyzerResult parseResultRecord(String resultRecord) {
+    static AnalyzerResult parseResultRecord(
+            String resultRecord, AstmResultRecordSelection resultRecordSelection) {
         String[] fields = resultRecord.split(Pattern.quote(FIELD_DELIMITER));
 
-        if (!isMainResult(fields)) {
+        if (!resultRecordSelection.includes(resultRecord)) {
             return null;
         }
 
         String testCode = extractTestCode(fields);
         if (testCode == null || testCode.isEmpty()) return null;
-
-        String cartridgeCode = extractCartridgeCode(fields);
-        if (cartridgeCode != null) {
-            log.trace("Multi-result cartridge={} analyte={}", cartridgeCode, testCode);
-        }
 
         String value = cleanResultValue(
                 fields.length > R_VALUE_FIELD ? fields[R_VALUE_FIELD] : "");
@@ -213,46 +192,6 @@ public class ASTMResultParser {
             result = result.withTimestamp(timestamp);
         }
         return result;
-    }
-
-    /**
-     * Check if an R-record is a Main Result (clinical value).
-     * Per Cepheid spec: Component 5 (index 4) of the Universal Test ID field
-     * contains the assay name for Main Results and is empty for Analyte/Complementary rows.
-     * For simple formats with fewer than 5 components, treat as Main Result (backward compat).
-     */
-    static boolean isMainResult(String[] fields) {
-        if (fields.length <= R_TEST_ID_FIELD) return false;
-        String testIdField = fields[R_TEST_ID_FIELD];
-        String[] components = testIdField.split(Pattern.quote(COMPONENT_DELIMITER), -1);
-        if (components.length < 5) return true;
-        return !components[4].trim().isEmpty();
-    }
-
-    /**
-     * Extract cartridge/panel code from Component 2 (index 1) of the Universal Test ID.
-     * Present in multi-result tests (e.g. "CTNG" for CT/NG cartridge).
-     */
-    static String extractCartridgeCode(String[] fields) {
-        if (fields.length <= R_TEST_ID_FIELD) return null;
-        String testIdField = fields[R_TEST_ID_FIELD];
-        String[] components = testIdField.split(Pattern.quote(COMPONENT_DELIMITER), -1);
-        if (components.length >= 2 && !components[1].trim().isEmpty()) {
-            return components[1].trim();
-        }
-        return null;
-    }
-
-    /**
-     * Check if O-record indicates a QC sample via Action Code (O.12).
-     * Ported from GenericASTMLineInserter.isQcSample().
-     */
-    private static boolean isQcSample(String orderRecord) {
-        String[] fields = orderRecord.split(Pattern.quote(FIELD_DELIMITER));
-        if (fields.length > O_ACTION_CODE_FIELD) {
-            return "Q".equalsIgnoreCase(fields[O_ACTION_CODE_FIELD].trim());
-        }
-        return false;
     }
 
     /**

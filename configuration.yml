@@ -68,7 +68,7 @@ bridge:
 
   # File watcher configuration (M4)
   # Runtime ownership note (014 remediation): Bridge is the active FILE watcher owner.
-  # OpenELIS app-side poller is fallback-only and disabled by default.
+  # OpenELIS configures and registers FILE analyzers but does not watch directories.
   file:
     enabled: false  # Bootstrap default; watcher is activated by FILE registration lifecycle during remediation
     watchDirectories:
@@ -112,6 +112,9 @@ org:
         read-timeout-seconds: 30
         max-attempts: 3
         backoff-ms: 1000
+
+      astm:
+        enabled: true
 
       # ASTM LIS1-A Server - Listens for ASTM messages from analyzers
       listen-astm-server:

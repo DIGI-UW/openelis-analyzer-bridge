@@ -40,6 +40,11 @@ public class AnalyzerProfileController {
     return catalog.requireDraft(draftId);
   }
 
+  @GetMapping("/drafts/{draftId}/control-recognition")
+  public ControlRecognitionAuthoring.DraftView controlRecognition(@PathVariable String draftId) {
+    return catalog.inspectControlRecognition(draftId);
+  }
+
   @PostMapping("/drafts")
   public ResponseEntity<ProfileDraft> createDraft(@RequestBody CreateDraftRequest request) {
     requireRequest(request);
@@ -52,6 +57,23 @@ public class AnalyzerProfileController {
       throw new ProfileCatalogException("profile is required");
     }
     return catalog.updateDraft(draftId, request.profile(), request.actor());
+  }
+
+  @PutMapping("/drafts/{draftId}/control-recognition")
+  public ControlRecognitionAuthoring.DraftView updateControlRecognition(
+    @PathVariable String draftId,
+    @RequestBody ControlRecognitionMutationRequest request
+  ) {
+    requireRequest(request);
+    return catalog.updateControlRecognition(
+      draftId,
+      new ControlRecognitionAuthoring.Update(
+        request.mode(),
+        request.affirmedNoControlResults(),
+        request.conditions()
+      ),
+      request.actor()
+    );
   }
 
   @PostMapping("/drafts/{draftId}/publish")
@@ -124,6 +146,13 @@ public class AnalyzerProfileController {
   public record CreateDraftRequest(String actor, String displayName) {}
 
   public record ProfileMutationRequest(String actor, ObjectNode profile) {}
+
+  public record ControlRecognitionMutationRequest(
+    String actor,
+    String mode,
+    boolean affirmedNoControlResults,
+    List<ControlRecognitionAuthoring.ConditionInput> conditions
+  ) {}
 
   public record DuplicateProfileRequest(String actor, int sourceRevision, String displayName) {}
 

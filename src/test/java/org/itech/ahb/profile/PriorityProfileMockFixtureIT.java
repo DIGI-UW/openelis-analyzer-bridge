@@ -10,6 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,21 +22,20 @@ import org.itech.ahb.fhir.ASTMResultParser;
 import org.itech.ahb.fhir.FileResultParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 class PriorityProfileMockFixtureIT {
 
   private static final ObjectMapper JSON = new ObjectMapper();
-  private static final String ASTM_PROFILE = "analyzer-profiles/genexpert-astm.json";
-  private static final String FILE_PROFILE = "analyzer-profiles/fluorocycler-xt.json";
-
   @TempDir
   Path temporaryDirectory;
 
   @Test
   void publishedGeneXpertProfileMatchesAndParsesTheMockTransportFixture() throws Exception {
     Path mockRoot = requiredMockRoot();
-    JsonNode profile = profile(ASTM_PROFILE);
     JsonNode template = JSON.readTree(mockRoot.resolve("templates/genexpert_astm.json").toFile());
+    JsonNode profile = profile(template.path("profileRef"));
     JsonNode resolvedTemplate = resolveMockTemplate(mockRoot, "genexpert_astm", profile);
     Set<String> declaredCodes = mappingCodes(profile);
     Set<String> evidencedCodes = fieldNames(template.path("fieldOverrides"));
@@ -67,7 +68,11 @@ class PriorityProfileMockFixtureIT {
     });
 
     String message = generateGeneXpertMessage(mockRoot, profile);
-    var parsed = ASTMResultParser.parse(message.lines().toList());
+    var parsed = ASTMResultParser.parse(
+      message.lines().toList(),
+      ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")),
+      AstmResultRecordSelection.fromProfile(profile.path("configDefaults"))
+    );
     assertThat(parsed).isNotNull();
     Set<String> parsedCodes = parsed
       .results()
@@ -80,8 +85,8 @@ class PriorityProfileMockFixtureIT {
   @Test
   void publishedFluoroCyclerProfileMatchesAndParsesTheMockFileFixture() throws Exception {
     Path mockRoot = requiredMockRoot();
-    JsonNode profile = profile(FILE_PROFILE);
     JsonNode template = JSON.readTree(mockRoot.resolve("templates/hain_fluorocycler.json").toFile());
+    JsonNode profile = profile(template.path("profileRef"));
     JsonNode resolvedTemplate = resolveMockTemplate(mockRoot, "hain_fluorocycler", profile);
     JsonNode fixture = template.path("fixture");
     String profileFileTestCode = onlyMappingCode(profile);
@@ -93,9 +98,18 @@ class PriorityProfileMockFixtureIT {
     );
 
     Set<String> parsedCodes = new LinkedHashSet<>();
+    int parsedResultCount;
     try (InputStream input = Files.newInputStream(fixturePath)) {
-      FileResultParser.parse(input, columnMappings, profileFileTestCode, List.of(), List.of())
-        .forEach(results -> results.results().forEach(result -> parsedCodes.add(result.testCode())));
+      var parsed = FileResultParser.parse(
+        input,
+        columnMappings,
+        profileFileTestCode,
+        ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")),
+        null,
+        TabularResultValueSelection.fromProfile(profile)
+      );
+      parsedResultCount = parsed.stream().mapToInt(results -> results.results().size()).sum();
+      parsed.forEach(results -> results.results().forEach(result -> parsedCodes.add(result.testCode())));
     }
 
     assertSoftly(softly -> {
@@ -119,6 +133,7 @@ class PriorityProfileMockFixtureIT {
         .isTrue();
       softly.assertThat(mappingCodes(profile)).containsExactly(profileFileTestCode);
       softly.assertThat(parsedCodes).containsExactly(profileFileTestCode);
+      softly.assertThat(parsedResultCount).as("every mock FILE result row is preserved").isEqualTo(4);
     });
   }
 
@@ -187,11 +202,18 @@ class PriorityProfileMockFixtureIT {
     return JSON.readTree(output);
   }
 
-  private static JsonNode profile(String resource) throws Exception {
-    try (InputStream input = PriorityProfileMockFixtureIT.class.getClassLoader().getResourceAsStream(resource)) {
-      assertThat(input).as(resource).isNotNull();
-      return JSON.readTree(input);
-    }
+  private JsonNode profile(JsonNode profileRef) throws Exception {
+    String profileId = profileRef.path("profileId").asText();
+    int revision = profileRef.path("revision").asInt();
+    ProfileCatalogProperties properties = new ProfileCatalogProperties();
+    Resource[] resources = new PathMatchingResourcePatternResolver().getResources(properties.getShippedPattern());
+    AnalyzerProfileCatalog catalog = new AnalyzerProfileCatalog(
+      temporaryDirectory.resolve("catalog-" + profileId),
+      Arrays.stream(resources).toList(),
+      JSON,
+      Clock.systemUTC()
+    );
+    return catalog.require(profileId, revision).profile();
   }
 
   private static Set<String> mappingCodes(JsonNode profile) {

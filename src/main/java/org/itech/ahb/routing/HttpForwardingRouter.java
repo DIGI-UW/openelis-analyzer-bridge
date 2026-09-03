@@ -23,7 +23,9 @@ import org.itech.ahb.fhir.ASTMResultParser;
 import org.itech.ahb.fhir.FhirBundleBuilder;
 import org.itech.ahb.fhir.HL7ResultParser;
 import org.itech.ahb.file.SqliteFileStateStore;
+import org.itech.ahb.model.Protocol;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -103,7 +105,7 @@ public class HttpForwardingRouter implements MessageRouter {
      * @param stateStore shared SQLite state store (optional — when absent the
      *                   router logs rejections without persisting them, same
      *                   as the pre-B1 behavior)
-     * @param registry   the analyzer registry for QC rule lookup (optional)
+     * @param registry   the analyzer registry for pinned profile recognition
      */
     public HttpForwardingRouter(
             HTTPForwardServerConfigurationProperties httpConfig,
@@ -259,17 +261,26 @@ public class HttpForwardingRouter implements MessageRouter {
      * Bundle, and POSTs to OE's {@code /analyzer/fhir} endpoint.
      */
     private boolean routeAsFhir(MessageEnvelope envelope) {
-        // FR-15: look up QC rules from analyzer registry by source ID
-        java.util.List<org.itech.ahb.qc.QcRule> qcRules = java.util.List.of();
-        if (registry != null && envelope.getSourceId() != null) {
-            var entry = registry.findAnalyzerEntry(envelope.getSourceId());
-            if (entry.isPresent() && entry.get().getQcRules() != null) {
-                qcRules = entry.get().getQcRules();
-            }
+        var registeredAnalyzer = registry == null || envelope.getSourceId() == null
+                ? java.util.Optional.<AnalyzerRegistryConfig.AnalyzerEntry>empty()
+                : registry.findAnalyzerEntry(envelope.getSourceId());
+        if (registeredAnalyzer.isEmpty() ||
+                registeredAnalyzer.get().getControlResultRecognition() == null) {
+            String reason = "FHIR routing requires control-result recognition from a pinned profile";
+            log.error("{} for analyzer source {}", reason, envelope.getSourceId());
+            recordRejection(envelope, envelope.getRawMessage(), 0, reason);
+            return false;
         }
 
-        // Parse raw message to extract results, passing QC rules to parsers
-        java.util.List<org.itech.ahb.qc.QcRule> rules = qcRules;
+        ControlResultRecognition profileRecognition =
+                registeredAnalyzer.get().getControlResultRecognition();
+        if ((envelope.getProtocol() == Protocol.ASTM || envelope.getProtocol() == Protocol.CSV)
+                && registeredAnalyzer.get().getAstmResultRecordSelection() == null) {
+            String reason = "FHIR routing requires ASTM result-record selection from a pinned profile";
+            log.error("{} for analyzer source {}", reason, envelope.getSourceId());
+            recordRejection(envelope, envelope.getRawMessage(), 0, reason);
+            return false;
+        }
         HL7ResultParser.ParsedResults parsed = switch (envelope.getProtocol()) {
             case HL7 -> {
                 String raw = envelope.getRawMessage();
@@ -279,7 +290,7 @@ public class HttpForwardingRouter implements MessageRouter {
                 for (String seg : normalized.split("\r")) {
                     if (!seg.isBlank()) segments.add(seg);
                 }
-                yield HL7ResultParser.parse(segments, rules);
+                yield HL7ResultParser.parse(segments, profileRecognition);
             }
             case ASTM -> {
                 String raw = envelope.getRawMessage();
@@ -288,7 +299,8 @@ public class HttpForwardingRouter implements MessageRouter {
                 for (String l : raw.split("[\\r\\n]+")) {
                     if (!l.isBlank()) lines.add(l);
                 }
-                yield ASTMResultParser.parse(lines, rules);
+                yield ASTMResultParser.parse(lines, profileRecognition,
+                        registeredAnalyzer.get().getAstmResultRecordSelection());
             }
             case CSV -> {
                 // CSV over HTTP/TCP uses same ASTM record format
@@ -298,7 +310,8 @@ public class HttpForwardingRouter implements MessageRouter {
                 for (String l : raw.split("[\\r\\n]+")) {
                     if (!l.isBlank()) lines.add(l);
                 }
-                yield ASTMResultParser.parse(lines, rules);
+                yield ASTMResultParser.parse(lines, profileRecognition,
+                        registeredAnalyzer.get().getAstmResultRecordSelection());
             }
             default -> {
                 log.error("FHIR routing: unsupported protocol {} from {} — cannot parse",
@@ -318,22 +331,13 @@ public class HttpForwardingRouter implements MessageRouter {
             return false;
         }
 
-        // Build FHIR Bundle with Device resource carrying full identification
-        // so OE can find-or-create the analyzer atomically per the
-        // transparent-pipe architecture (bridge never gates routing on local
-        // source registration). See feedback_bridge_transparent_fhir_pipe.md.
+        // Build a FHIR Bundle with the registered analyzer identity.
         String analyzerId = canonicalAnalyzerId(envelope);
         FhirBundleBuilder.DeviceInfo deviceInfo = FhirBundleBuilder.DeviceInfo
                 .fromSenderToken(envelope.getSourceId(), envelope.getProtocolAnalyzerHint());
-        // Resolve analyzer code → LOINC from the registered analyzer's pushed
-        // mapping so the bundle is LOINC-coded and OE2 stays analyzer-agnostic.
-        // Null resolver (unregistered source) preserves raw-code behavior.
-        java.util.function.Function<String, String> codeToLoinc = null;
-        if (registry != null) {
-            codeToLoinc = registry.findAnalyzerEntry(envelope.getSourceId())
-                    .map(entry -> (java.util.function.Function<String, String>) entry::getLoincForCode)
-                    .orElse(null);
-        }
+        // Resolve analyzer code to LOINC from the same registered profile pin.
+        java.util.function.Function<String, String> codeToLoinc =
+                registeredAnalyzer.get()::getLoincForCode;
         String fhirJson = FhirBundleBuilder.buildBundle(
                 parsed.accessionNumber(),
                 analyzerId,
@@ -440,38 +444,6 @@ public class HttpForwardingRouter implements MessageRouter {
     private static String truncate(String s, int max) {
         if (s == null) return null;
         return s.length() <= max ? s : s.substring(0, max);
-    }
-
-    /**
-     * Legacy raw routing (used when FHIR is disabled or as fallback).
-     */
-    private boolean routeLegacy(MessageEnvelope envelope) {
-        int maxAttempts = httpConfig.getMaxAttempts();
-        long backoffMs = httpConfig.getBackoffMs();
-        URI targetUri = buildTargetUri(envelope);
-
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                HttpRequest request = buildRequest(envelope, targetUri);
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                int statusCode = response.statusCode();
-                if (statusCode >= 200 && statusCode < 300) return true;
-                if (statusCode >= 400 && statusCode < 500) return false;
-            } catch (IOException e) {
-                log.warn("IO error on legacy route attempt {}/{}", attempt, maxAttempts);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-            if (attempt < maxAttempts) {
-                long waitMs = Math.min(backoffMs * (1L << (attempt - 1)), MAX_BACKOFF_MS);
-                try { Thread.sleep(waitMs); } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return false;
-                }
-            }
-        }
-        return false;
     }
 
     private URI buildFhirTargetUri() {

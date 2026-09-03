@@ -2,6 +2,7 @@ package org.itech.ahb.file;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import ca.uhn.fhir.context.FhirContext;
 import java.util.List;
@@ -59,16 +60,15 @@ class FileMessageHandlerLoincTest {
     }
 
     @Test
-    @DisplayName("null entry preserves raw-code fallback (back-compat / inversion)")
-    void nullEntryFallsBackToRawCode() {
+    @DisplayName("FILE bundle construction rejects an analyzer without a pinned profile registration")
+    void nullEntryIsRejected() {
         ParsedResults parsed = new ParsedResults(
                 "ACC", List.of(AnalyzerResult.numeric("DENV", "DENV", "5000", "")));
 
-        Observation o = firstObservation(
-                FileMessageHandler.buildFileFhirBundle(null, parsed, "43"));
+        NullPointerException error = assertThrows(NullPointerException.class,
+                () -> FileMessageHandler.buildFileFhirBundle(null, parsed, "43"));
 
-        assertEquals("DENV", o.getCode().getCodingFirstRep().getCode(),
-                "with no analyzer entry the raw code is preserved (not dropped)");
+        assertEquals("analyzerEntry is required", error.getMessage());
     }
 
     @Test

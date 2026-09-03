@@ -15,6 +15,7 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.itech.ahb.fhir.FileNameSelfDeclarationScanner.ScanResult;
+import org.itech.ahb.profile.TabularResultValueSelection;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,9 @@ class FileNameSelfDeclarationScannerTest {
 
     private static final Set<String> FLUOROCYCLER_MAPPED_CODES = Set.of("VIH-1", "CHIKV", "DENV", "ZIKV");
 
+    private static final TabularResultValueSelection FLUOROCYCLER_RESULT_SELECTION =
+            new TabularResultValueSelection(List.of("result", "interpretation"));
+
     private static final Map<String, List<String>> FLUOROCYCLER_SYNONYMS = Map.of(
             "VIH-1", List.of("VIH-1", "HIV-1", "GENERIC_HIV_CV"),
             "CHIKV", List.of("CHIKV", "Chikungunya"),
@@ -57,7 +61,8 @@ class FileNameSelfDeclarationScannerTest {
                     {"A", "1", "PAT-001", "Unknown", "", "HIV-1 + (CP=30.2)"}
             });
             ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
+                    FLUOROCYCLER_RESULT_SELECTION, FLUOROCYCLER_MAPPED_CODES,
+                    FLUOROCYCLER_SYNONYMS);
             assertInstanceOf(ScanResult.SelfDeclared.class, result);
             assertEquals("VIH-1", ((ScanResult.SelfDeclared) result).testCode());
         }
@@ -70,7 +75,8 @@ class FileNameSelfDeclarationScannerTest {
                     {"A", "1", "STD 1E7", "Standard", "", "STD 1E7 GENERIC_HIV_CV positiveControl(s) failed"}
             });
             ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
+                    FLUOROCYCLER_RESULT_SELECTION, FLUOROCYCLER_MAPPED_CODES,
+                    FLUOROCYCLER_SYNONYMS);
             assertInstanceOf(ScanResult.SelfDeclared.class, result);
             assertEquals("VIH-1", ((ScanResult.SelfDeclared) result).testCode());
         }
@@ -84,7 +90,8 @@ class FileNameSelfDeclarationScannerTest {
                     {"A", "2", "PAT-002", "Unknown", "", "CHIKV positive"}
             });
             ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
+                    FLUOROCYCLER_RESULT_SELECTION, FLUOROCYCLER_MAPPED_CODES,
+                    FLUOROCYCLER_SYNONYMS);
             assertInstanceOf(ScanResult.Ambiguous.class, result);
             Set<String> codes = ((ScanResult.Ambiguous) result).codes();
             assertTrue(codes.contains("VIH-1"), "Expected VIH-1 in ambiguous codes: " + codes);
@@ -100,7 +107,8 @@ class FileNameSelfDeclarationScannerTest {
                     {"A", "2", "PAT-002", "Unknown", "", "Invalid"}
             });
             ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
+                    FLUOROCYCLER_RESULT_SELECTION, FLUOROCYCLER_MAPPED_CODES,
+                    FLUOROCYCLER_SYNONYMS);
             assertInstanceOf(ScanResult.NoDeclaration.class, result);
         }
 
@@ -108,7 +116,8 @@ class FileNameSelfDeclarationScannerTest {
         @DisplayName("Non-existent file → NotInterpretable")
         void missingFile_returnsNotInterpretable() {
             ScanResult result = scanner.scan(Path.of("/tmp/does-not-exist.xlsx"),
-                    FLUOROCYCLER_MAPPING, FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
+                    FLUOROCYCLER_MAPPING, FLUOROCYCLER_RESULT_SELECTION,
+                    FLUOROCYCLER_MAPPED_CODES, FLUOROCYCLER_SYNONYMS);
             assertInstanceOf(ScanResult.NotInterpretable.class, result);
         }
 
@@ -120,7 +129,7 @@ class FileNameSelfDeclarationScannerTest {
                     {"A", "1", "PAT-001", "Unknown", "", "HIV-1 + (CP=30.2)"}
             });
             ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    Set.of(), FLUOROCYCLER_SYNONYMS);
+                    FLUOROCYCLER_RESULT_SELECTION, Set.of(), FLUOROCYCLER_SYNONYMS);
             assertInstanceOf(ScanResult.NotInterpretable.class, result);
         }
 
@@ -136,7 +145,7 @@ class FileNameSelfDeclarationScannerTest {
                     {"A", "1", "PAT-001", "Unknown", "", "VIH-1 positive"}
             });
             ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    FLUOROCYCLER_MAPPED_CODES, null);
+                    FLUOROCYCLER_RESULT_SELECTION, FLUOROCYCLER_MAPPED_CODES, null);
             assertInstanceOf(ScanResult.SelfDeclared.class, result);
             assertEquals("VIH-1", ((ScanResult.SelfDeclared) result).testCode());
         }
@@ -152,7 +161,7 @@ class FileNameSelfDeclarationScannerTest {
             });
             Set<String> mappedCodes = Set.of("VIH", "VIH-1");
             ScanResult result = scanner.scan(file, FLUOROCYCLER_MAPPING,
-                    mappedCodes, null);
+                    FLUOROCYCLER_RESULT_SELECTION, mappedCodes, null);
             assertInstanceOf(ScanResult.SelfDeclared.class, result);
             assertEquals("VIH-1", ((ScanResult.SelfDeclared) result).testCode(),
                     "Longer synonym VIH-1 should win over prefix VIH");

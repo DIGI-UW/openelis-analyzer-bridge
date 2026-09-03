@@ -2,6 +2,8 @@
 org:
   itech:
     ahb:
+      astm:
+        enabled: false
       forward-http-server:
         uri: http://localhost:8080/test
       listen-astm-server:
@@ -19,4 +21,3 @@ logging:
   level:
     root: WARN
     org.itech: INFO
-

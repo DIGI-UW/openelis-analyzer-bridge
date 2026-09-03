@@ -56,10 +56,9 @@ public class FileWatcher {
     /**
      * Registrations for each watched directory. A single directory may host
      * multiple analyzer registrations, each with its own glob pattern and its
-     * own {@link FileAlterationObserver}. This is the refactor that unblocks
-     * Madagascar's Fluorocycler XT workflow where one physical folder hosts
-     * both HIV VL ({@code HIV*.xlsx}) and Arbovirus ({@code ARBO*.xlsx}) runs
-     * under different analyzer instances. Apache Commons IO's
+     * own {@link FileAlterationObserver}. This supports multiple analyzer
+     * instances sharing one physical folder while using distinct profile-owned
+     * file patterns. Apache Commons IO's
      * {@link FileAlterationMonitor} supports multiple observers per directory
      * natively (internal {@code CopyOnWriteArrayList}); the prior single-
      * entry-per-path maps were an artificial constraint.

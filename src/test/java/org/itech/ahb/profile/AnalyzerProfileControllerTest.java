@@ -216,6 +216,113 @@ class AnalyzerProfileControllerTest {
       .andExpect(jsonPath("$.draftId").value(draftId));
   }
 
+  @Test
+  void catalogExposesHumanReadableControlRecognitionForEachRevision() throws Exception {
+    ObjectNode profile = publishedFixture("analyzer-profile-astm.json");
+    mockMvc
+      .perform(get("/api/profiles"))
+      .andExpect(status().isOk())
+      .andExpect(
+        jsonPath("$.profiles[0].controlRecognitionSummary.recognitionFingerprint")
+          .value(profile.path("catalog").path("recognitionFingerprint").asText())
+      )
+      .andExpect(jsonPath("$.profiles[0].controlRecognitionSummary.mode").value("RULES"))
+      .andExpect(jsonPath("$.profiles[0].controlRecognitionSummary.affirmedNoControlResults").value(false))
+      .andExpect(jsonPath("$.profiles[0].controlRecognitionSummary.conditions[0].key").value("astm-order-action-control"))
+      .andExpect(
+        jsonPath("$.profiles[0].controlRecognitionSummary.conditions[0].description")
+          .value("Order field 12 equals Q")
+      );
+  }
+
+  @Test
+  void readsAndUpdatesControlRecognitionThroughTheSafeDraftAuthoringContract() throws Exception {
+    MvcResult duplicateResult = mockMvc
+      .perform(
+        post("/api/profiles/genexpert-astm/duplicate")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            "{\"actor\":\"profile-duplicator\",\"sourceRevision\":1,\"displayName\":\"Safe Recognition Profile\"}"
+          )
+      )
+      .andExpect(status().isCreated())
+      .andReturn();
+    String draftId = objectMapper
+      .readTree(duplicateResult.getResponse().getContentAsByteArray())
+      .path("draftId")
+      .asText();
+
+    MvcResult authoringResult = mockMvc
+      .perform(get("/api/profiles/drafts/{draftId}/control-recognition", draftId))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.draftId").value(draftId))
+      .andExpect(jsonPath("$.kind").value("DUPLICATE"))
+      .andExpect(jsonPath("$.displayName").value("Safe Recognition Profile"))
+      .andExpect(jsonPath("$.recognition.mode").value("RULES"))
+      .andExpect(jsonPath("$.recognition.conditions[0].description").value("Order field 12 equals Q"))
+      .andReturn();
+    assertThat(authoringResult.getResponse().getContentAsString())
+      .doesNotContain("O.12")
+      .doesNotContain("targetField")
+      .doesNotContain("ruleType");
+
+    mockMvc
+      .perform(
+        put("/api/profiles/drafts/{draftId}/control-recognition", draftId)
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            "{\"actor\":\"profile-editor\",\"mode\":\"NONE\",\"affirmedNoControlResults\":true,\"conditions\":[]}"
+          )
+      )
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.recognition.mode").value("NONE"))
+      .andExpect(jsonPath("$.recognition.affirmedNoControlResults").value(true))
+      .andExpect(jsonPath("$.updatedBy").value("profile-editor"))
+      .andExpect(jsonPath("$.validationIssues").isEmpty());
+
+    assertThat(
+      catalog
+        .requireDraft(draftId)
+        .profile()
+        .path("controlResultRecognition")
+        .path("affirmedNoControlResults")
+        .asBoolean()
+    ).isTrue();
+    assertThat(catalog.requireDraft(draftId).profile().path("controlResultRecognition").has("rules")).isFalse();
+  }
+
+  @Test
+  void rejectsUnaffirmedNoneWithoutChangingTheDraft() throws Exception {
+    MvcResult duplicateResult = mockMvc
+      .perform(
+        post("/api/profiles/genexpert-astm/duplicate")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            "{\"actor\":\"profile-duplicator\",\"sourceRevision\":1,\"displayName\":\"Unchanged Recognition Profile\"}"
+          )
+      )
+      .andReturn();
+    String draftId = objectMapper
+      .readTree(duplicateResult.getResponse().getContentAsByteArray())
+      .path("draftId")
+      .asText();
+
+    mockMvc
+      .perform(
+        put("/api/profiles/drafts/{draftId}/control-recognition", draftId)
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            "{\"actor\":\"profile-editor\",\"mode\":\"NONE\",\"affirmedNoControlResults\":false,\"conditions\":[]}"
+          )
+      )
+      .andExpect(status().isBadRequest())
+      .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("affirm")));
+
+    assertThat(
+      catalog.requireDraft(draftId).profile().path("controlResultRecognition").path("mode").asText()
+    ).isEqualTo("RULES");
+  }
+
   private ObjectNode publishedFixture(String filename) throws Exception {
     ObjectNode profile = (ObjectNode) objectMapper.readTree(CONTRACT_FIXTURES.resolve(filename).toFile());
     ObjectNode catalogMetadata = (ObjectNode) profile.path("catalog");

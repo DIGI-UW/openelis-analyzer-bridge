@@ -83,6 +83,12 @@
         ]
       }
     },
+    "result_value_order": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["result", "ctValue", "interpretation"] }
+    },
     "sheet_detection": { "$ref": "#/$defs/sheetDetection" },
     "default_test_mappings": {
       "type": "array",
@@ -124,7 +130,7 @@
             "type": "array",
             "items": { "$ref": "#/$defs/testMapping" }
           },
-          "configDefaults": { "$ref": "#/$defs/socketDefaults" },
+          "configDefaults": { "$ref": "#/$defs/astmSocketDefaults" },
           "controlResultRecognition": {
             "$ref": "#/$defs/astmControlResultRecognition"
           }
@@ -382,6 +388,51 @@
         "flagMappings": { "type": "object" },
         "transforms": { "type": "object" }
       }
+    },
+    "astmSocketDefaults": {
+      "allOf": [
+        { "$ref": "#/$defs/socketDefaults" },
+        {
+          "required": ["extractionOverrides"],
+          "properties": {
+            "extractionOverrides": {
+              "$ref": "#/$defs/astmExtractionOverrides"
+            }
+          }
+        }
+      ]
+    },
+    "astmExtractionOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultRecordSelection"],
+      "properties": {
+        "resultRecordSelection": {
+          "$ref": "#/$defs/astmResultRecordSelection"
+        }
+      }
+    },
+    "astmResultRecordSelection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": { "mode": { "const": "ALL" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "targetField"],
+          "properties": {
+            "mode": { "const": "FIELD_NON_BLANK" },
+            "targetField": {
+              "type": "string",
+              "pattern": "^R\\.[1-9][0-9]*\\.[1-9][0-9]*$"
+            }
+          }
+        }
+      ]
     },
     "fileDefaults": {
       "type": "object",

@@ -40,6 +40,7 @@ public final class AnalyzerProfileCatalog {
   private final ProfileCatalogFileStore store;
   private final ProfileFingerprintService fingerprints = new ProfileFingerprintService();
   private final AnalyzerProfileValidator validator;
+  private final ControlRecognitionAuthoring controlRecognitionAuthoring;
   private final Map<String, TreeMap<Integer, ProfileRevision>> revisions = new TreeMap<>();
   private final Map<String, ProfileDraft> drafts = new TreeMap<>();
 
@@ -64,6 +65,7 @@ public final class AnalyzerProfileCatalog {
     this.ids = ids;
     store = new ProfileCatalogFileStore(catalogDirectory, objectMapper);
     validator = new AnalyzerProfileValidator(objectMapper);
+    controlRecognitionAuthoring = new ControlRecognitionAuthoring(objectMapper);
     loadShipped(shippedProfiles);
     loadPersistedRevisions();
     loadPersistedDrafts();
@@ -160,6 +162,20 @@ public final class AnalyzerProfileCatalog {
     store.persistDraft(changed);
     drafts.put(draftId, changed);
     return changed;
+  }
+
+  public synchronized ControlRecognitionAuthoring.DraftView inspectControlRecognition(String draftId) {
+    return controlRecognitionAuthoring.inspect(requireDraft(draftId));
+  }
+
+  public synchronized ControlRecognitionAuthoring.DraftView updateControlRecognition(
+    String draftId,
+    ControlRecognitionAuthoring.Update update,
+    String actor
+  ) {
+    ProfileDraft current = requireDraft(draftId);
+    ObjectNode changedProfile = controlRecognitionAuthoring.apply(current.profile(), update);
+    return controlRecognitionAuthoring.inspect(updateDraft(draftId, changedProfile, actor));
   }
 
   public synchronized ProfileRevision publishDraft(String draftId, String actor) {
