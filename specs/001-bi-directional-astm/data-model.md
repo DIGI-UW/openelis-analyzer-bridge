@@ -1,8 +1,11 @@
 # Data Model: Bi-Directional ASTM Workflow Support
 
+> Superseded historical model. Current runtime and contract structures are
+> defined by current code and `contracts/analyzer/v1`.
+
 **Feature**: 001-bi-directional-astm  
 **Date**: 2025-12-03  
-**Status**: Complete
+**Status**: Superseded
 
 ## Overview
 
@@ -264,4 +267,3 @@ are required.
 - More code but clearer intent
 
 **Decision**: Use Option A (default method) for minimal disruption.
-

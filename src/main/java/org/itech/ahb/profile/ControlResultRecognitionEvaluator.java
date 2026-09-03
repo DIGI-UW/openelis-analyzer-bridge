@@ -1,5 +1,7 @@
 package org.itech.ahb.profile;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -17,27 +19,69 @@ public final class ControlResultRecognitionEvaluator {
 
   private ControlResultRecognitionEvaluator() {}
 
-  public static Optional<ControlRecognitionRule> findMatchingRule(
+  public static Assessment evaluate(
     ControlResultRecognition recognition,
     String specimenId,
     Map<String, String> fieldValues
   ) {
     Objects.requireNonNull(recognition, "recognition is required");
     if (recognition.mode() == ControlResultRecognition.Mode.NONE) {
-      return Optional.empty();
+      return new Assessment(
+        recognition.mode(),
+        Outcome.NOT_EVALUATED,
+        List.of(),
+        null
+      );
     }
+    List<RuleEvaluation> evaluations = new ArrayList<>();
+    ControlRecognitionRule matchedRule = null;
     for (ControlRecognitionRule rule : recognition.rules()) {
-      if (matches(rule, specimenId, fieldValues)) {
+      boolean matched = matches(rule, specimenId, fieldValues);
+      String sourceField = sourceField(rule);
+      String rawValue = sourceValue(rule, specimenId, fieldValues);
+      evaluations.add(new RuleEvaluation(rule, sourceField, rawValue, matched));
+      if (matched && matchedRule == null) {
+        matchedRule = rule;
         log.debug(
           "Control recognition rule matched: key={}, type={}, field={}",
           rule.key(),
           rule.ruleType(),
           rule.targetField()
         );
-        return Optional.of(rule);
       }
     }
-    return Optional.empty();
+    return new Assessment(
+      recognition.mode(),
+      matchedRule == null ? Outcome.NO_MATCH : Outcome.MATCH,
+      evaluations,
+      matchedRule
+    );
+  }
+
+  private static String sourceField(ControlRecognitionRule rule) {
+    return switch (rule.ruleType()) {
+      case "FIELD_EQUALS", "FIELD_CONTAINS" -> rule.targetField();
+      case "SPECIMEN_ID_PREFIX", "SPECIMEN_ID_PATTERN" -> "specimenId";
+      default -> throw new IllegalStateException(
+        "Unsupported control recognition rule type " + rule.ruleType()
+      );
+    };
+  }
+
+  private static String sourceValue(
+    ControlRecognitionRule rule,
+    String specimenId,
+    Map<String, String> fieldValues
+  ) {
+    String value = switch (rule.ruleType()) {
+      case "FIELD_EQUALS", "FIELD_CONTAINS" ->
+        fieldValues == null ? null : fieldValues.get(rule.targetField());
+      case "SPECIMEN_ID_PREFIX", "SPECIMEN_ID_PATTERN" -> specimenId;
+      default -> throw new IllegalStateException(
+        "Unsupported control recognition rule type " + rule.ruleType()
+      );
+    };
+    return value == null ? "" : value;
   }
 
   private static boolean matches(
@@ -86,6 +130,42 @@ public final class ControlResultRecognitionEvaluator {
         exception.getMessage()
       );
       return false;
+    }
+  }
+
+  public enum Outcome {
+    MATCH,
+    NO_MATCH,
+    NOT_EVALUATED
+  }
+
+  public record RuleEvaluation(
+    ControlRecognitionRule rule,
+    String sourceField,
+    String rawValue,
+    boolean matched
+  ) {
+    public RuleEvaluation {
+      Objects.requireNonNull(rule, "rule is required");
+      Objects.requireNonNull(sourceField, "source field is required");
+      Objects.requireNonNull(rawValue, "raw value is required");
+    }
+  }
+
+  public record Assessment(
+    ControlResultRecognition.Mode mode,
+    Outcome outcome,
+    List<RuleEvaluation> evaluations,
+    ControlRecognitionRule matched
+  ) {
+    public Assessment {
+      Objects.requireNonNull(mode, "mode is required");
+      Objects.requireNonNull(outcome, "outcome is required");
+      evaluations = evaluations == null ? List.of() : List.copyOf(evaluations);
+    }
+
+    public Optional<ControlRecognitionRule> matchedRule() {
+      return Optional.ofNullable(matched);
     }
   }
 }

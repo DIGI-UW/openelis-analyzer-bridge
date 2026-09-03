@@ -1,5 +1,10 @@
 # ASTM HTTP Bridge Multi-Analyzer & Bi-Directional Communication Analysis
 
+> Historical analysis only. It predates Bridge-owned saved connections,
+> profile-driven parsing, and the normalized result contract. Current
+> implementation direction is defined by `README.md`, `contracts/analyzer/v1`,
+> and current code.
+
 **Date**: 2025-01-28  
 **Feature**: 004-astm-analyzer-mapping  
 **Analysis Type**: Architecture Gap Analysis  
@@ -312,5 +317,4 @@ The `astm-http-bridge` requires **minimal updates** to support Feature 004 requi
 **Estimated Effort**: 2-4 hours for bridge update (source IP header).
 
 **Risk Level**: **LOW** - Simple header addition, minimal code changes, no architectural complexity.
-
 

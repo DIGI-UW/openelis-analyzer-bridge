@@ -143,6 +143,9 @@ public final class AnalyzerConnectionCatalog {
     ObjectNode profile = requirePinnedProfile(profileRef);
     validateValues(profile, suppliedValues);
     ObjectNode values = effectiveValues(profile, suppliedValues, (ObjectNode) existing.path("values"));
+    if (sameConfiguration(existing, profileRef, displayName, values)) {
+      return view(existing, profile);
+    }
 
     ObjectNode changed = existing.deepCopy();
     changed.put("displayName", displayName);

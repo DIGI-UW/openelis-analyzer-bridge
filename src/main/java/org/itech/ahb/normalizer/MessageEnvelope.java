@@ -70,20 +70,9 @@ public class MessageEnvelope {
     private final String resolvedAnalyzerId;
 
     /**
-     * Backward-compatible alias for the canonical analyzer ID in downstream routing.
-     * <p>
-     * For new code, prefer {@link #resolvedAnalyzerId} for routing decisions and
-     * {@link #protocolAnalyzerHint} for protocol-level evidence.
-     * </p>
-     */
-    private final String analyzerId;
-
-    /**
-     * Source port number (TCP/MLLP: remote port from connection metadata; HTTP: remote port from request)
-     * <p>
-     * Forwarded to OpenELIS as {@code X-Source-Port} for deterministic analyzer identification
-     * when combined with sourceId (IP address).
-     * </p>
+     * Optional source port retained for Bridge diagnostics and dead-letter
+     * evidence. Routing authority comes from the saved connection bound to
+     * {@link #sourceId}.
      */
     private final Integer sourcePort;
 }

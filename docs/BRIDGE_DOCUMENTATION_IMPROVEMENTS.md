@@ -1,5 +1,10 @@
 # ASTM HTTP Bridge Documentation Improvements
 
+> Historical proposal only. It predates Bridge-owned saved connections,
+> profile-driven parsing, and the normalized result contract. Current
+> implementation direction is defined by `README.md`, `contracts/analyzer/v1`,
+> and current code.
+
 **Date**: 2025-01-28  
 **Feature**: 004-astm-analyzer-mapping  
 **Purpose**: Improve bridge configuration and documentation for multi-analyzer, bi-directional workflow
@@ -403,4 +408,3 @@ This makes it clear:
 4. **Troubleshooting**: Better debugging guidance
 5. **Onboarding**: New developers can understand bridge architecture quickly
 6. **Property Naming**: Consistent, logical property names that match their purpose
-

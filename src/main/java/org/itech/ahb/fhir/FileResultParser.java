@@ -11,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -138,12 +137,12 @@ public class FileResultParser {
                 AnalyzerResult ar = isNumeric
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
-                Optional<ControlRecognitionRule> matchedRule =
-                        findMatchingControlRule(sampleId, qcTask, recognition);
-                boolean isCtrl = matchedRule.isPresent();
-                ar = ar.withControl(isCtrl);
-                if (matchedRule.isPresent()) {
-                    ControlRecognitionRule rule = matchedRule.get();
+                ControlResultRecognitionEvaluator.Assessment assessment =
+                        evaluateControl(sampleId, qcTask, recognition);
+                ar = ar.withControlRecognition(assessment)
+                        .withControl(assessment.matchedRule().isPresent());
+                if (assessment.matchedRule().isPresent()) {
+                    ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
                     ar = ar.withControlLevel(rule.controlLevel())
                             .withControlType(rule.controlType());
                 }
@@ -253,11 +252,12 @@ public class FileResultParser {
             AnalyzerResult ar = isNumeric
                     ? AnalyzerResult.numeric(testCode, testCode, value, units)
                     : AnalyzerResult.text(testCode, testCode, value);
-            Optional<ControlRecognitionRule> matchedRule =
-                    findMatchingControlRule(sampleId, qcTask, recognition);
-            ar = ar.withControl(matchedRule.isPresent());
-            if (matchedRule.isPresent()) {
-                ControlRecognitionRule rule = matchedRule.get();
+            ControlResultRecognitionEvaluator.Assessment assessment =
+                    evaluateControl(sampleId, qcTask, recognition);
+            ar = ar.withControlRecognition(assessment)
+                    .withControl(assessment.matchedRule().isPresent());
+            if (assessment.matchedRule().isPresent()) {
+                ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
                 ar = ar.withControlLevel(rule.controlLevel())
                         .withControlType(rule.controlType());
             }
@@ -528,12 +528,12 @@ public class FileResultParser {
                     AnalyzerResult ar = isNumeric
                             ? AnalyzerResult.numeric(testCode, testCode, value, units)
                             : AnalyzerResult.text(testCode, testCode, value);
-                    Optional<ControlRecognitionRule> matchedRule =
-                            findMatchingControlRule(sampleId, qcTask, recognition);
-                    boolean isCtrl = matchedRule.isPresent();
-                    ar = ar.withControl(isCtrl);
-                    if (matchedRule.isPresent()) {
-                        ControlRecognitionRule rule = matchedRule.get();
+                    ControlResultRecognitionEvaluator.Assessment assessment =
+                            evaluateControl(sampleId, qcTask, recognition);
+                    ar = ar.withControlRecognition(assessment)
+                            .withControl(assessment.matchedRule().isPresent());
+                    if (assessment.matchedRule().isPresent()) {
+                        ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
                         ar = ar.withControlLevel(rule.controlLevel())
                                 .withControlType(rule.controlType());
                     }
@@ -711,16 +711,16 @@ public class FileResultParser {
 
     static boolean isControlRow(
             String sampleId, String qcTask, ControlResultRecognition recognition) {
-        return findMatchingControlRule(sampleId, qcTask, recognition).isPresent();
+        return evaluateControl(sampleId, qcTask, recognition).matchedRule().isPresent();
     }
 
-    static Optional<ControlRecognitionRule> findMatchingControlRule(
+    static ControlResultRecognitionEvaluator.Assessment evaluateControl(
             String sampleId, String qcTask, ControlResultRecognition recognition) {
         Map<String, String> fieldValues = new HashMap<>();
         if (qcTask != null) {
             fieldValues.put("QC_TASK", qcTask);
         }
-        return ControlResultRecognitionEvaluator.findMatchingRule(
+        return ControlResultRecognitionEvaluator.evaluate(
                 recognition, sampleId, fieldValues);
     }
 }

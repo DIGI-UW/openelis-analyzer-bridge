@@ -1,5 +1,9 @@
 # HTTP Header Contract: X-Source-Analyzer-IP
 
+> Superseded historical contract. Source headers do not identify an analyzer in
+> the current normalized result path. The current versioned contract is
+> `contracts/analyzer/v1/normalized-result.schema.json`.
+
 **Feature**: 001-bi-directional-astm  
 **Date**: 2025-12-03  
 **Version**: 1.0.0
@@ -183,4 +187,3 @@ docker logs openelis-global | grep "X-Source-Analyzer-IP"
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2025-12-03 | Initial specification |
-

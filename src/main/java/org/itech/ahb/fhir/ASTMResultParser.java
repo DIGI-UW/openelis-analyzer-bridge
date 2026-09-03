@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
@@ -53,7 +52,7 @@ public class ASTMResultParser {
         }
 
         String accession = null;
-        Optional<ControlRecognitionRule> matchedRule = Optional.empty();
+        ControlResultRecognitionEvaluator.Assessment recognitionAssessment = null;
         List<AnalyzerResult> results = new ArrayList<>();
 
         for (String line : lines) {
@@ -69,15 +68,16 @@ public class ASTMResultParser {
                     for (int i = 0; i < fields.length; i++) {
                         fieldValues.put("O." + (i + 1), fields[i].trim());
                     }
-                    matchedRule = ControlResultRecognitionEvaluator.findMatchingRule(
+                    recognitionAssessment = ControlResultRecognitionEvaluator.evaluate(
                             recognition, accession, fieldValues);
                 }
                 case "R" -> {
                     if (accession != null) {
                         AnalyzerResult result = parseResultRecord(line, resultRecordSelection);
                         if (result != null) {
-                            if (matchedRule.isPresent()) {
-                                ControlRecognitionRule rule = matchedRule.get();
+                            result = result.withControlRecognition(recognitionAssessment);
+                            if (recognitionAssessment.matchedRule().isPresent()) {
+                                ControlRecognitionRule rule = recognitionAssessment.matchedRule().orElseThrow();
                                 result = result.withControl(true)
                                         .withControlLevel(rule.controlLevel())
                                         .withControlType(rule.controlType());

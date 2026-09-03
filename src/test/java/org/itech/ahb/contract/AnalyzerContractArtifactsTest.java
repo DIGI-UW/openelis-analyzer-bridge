@@ -30,6 +30,8 @@ class AnalyzerContractArtifactsTest {
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final FhirContext FHIR = FhirContext.forR4();
   private static final JsonSchemaFactory SCHEMAS = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
+  private static final String CONNECTION_ID_SYSTEM =
+    "https://openelis-global.org/fhir/analyzer-connection-id";
   private static final String RAW_CODE_SYSTEM = "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code";
   private static final String SOURCE_TRANSPORT_EXTENSION =
     "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-transport";
@@ -152,6 +154,28 @@ class AnalyzerContractArtifactsTest {
       JsonNode observation = firstObservation(fixture(fixture));
       assertTrue(hasExtension(observation, RESULT_CLASSIFICATION_EXTENSION));
       assertTrue(hasExtension(observation, CONTROL_RECOGNITION_EXTENSION));
+    }
+  }
+
+  @Test
+  @DisplayName("normalized traffic requires the exact durable Bridge connection identity")
+  void normalizedTrafficRequiresBridgeConnectionIdentity() throws IOException {
+    for (String fixtureName : new String[] {
+      "normalized-known-test.fhir.json",
+      "normalized-unknown-test.fhir.json",
+      "normalized-unknown-value.fhir.json",
+      "normalized-qc.fhir.json",
+      "normalized-nonmatch.fhir.json",
+      "normalized-none.fhir.json",
+      "normalized-file.fhir.json"
+    }) {
+      JsonNode fixture = fixture(fixtureName);
+      JsonNode device = firstResource(fixture, "Device");
+      assertTrue(hasIdentifier(device, CONNECTION_ID_SYSTEM, "bridge-connection-7f3c"));
+
+      com.fasterxml.jackson.databind.node.ObjectNode withoutConnectionId = fixture.deepCopy();
+      removeIdentifier(firstResource(withoutConnectionId, "Device"), CONNECTION_ID_SYSTEM);
+      assertFalse(validationMessages("normalized-fhir-bundle.schema.json", withoutConnectionId).isEmpty());
     }
   }
 
@@ -419,6 +443,22 @@ class AnalyzerContractArtifactsTest {
     return StreamSupport.stream(resource.path("extension").spliterator(), false).anyMatch(
       extension -> url.equals(extension.path("url").asText())
     );
+  }
+
+  private static boolean hasIdentifier(JsonNode resource, String system, String value) {
+    return StreamSupport.stream(resource.path("identifier").spliterator(), false).anyMatch(
+      identifier -> system.equals(identifier.path("system").asText()) && value.equals(identifier.path("value").asText())
+    );
+  }
+
+  private static void removeIdentifier(JsonNode resource, String system) {
+    com.fasterxml.jackson.databind.node.ArrayNode identifiers =
+      (com.fasterxml.jackson.databind.node.ArrayNode) resource.path("identifier");
+    for (int index = identifiers.size() - 1; index >= 0; index--) {
+      if (system.equals(identifiers.path(index).path("system").asText())) {
+        identifiers.remove(index);
+      }
+    }
   }
 
   private static String extensionValueCode(JsonNode resource, String url) {

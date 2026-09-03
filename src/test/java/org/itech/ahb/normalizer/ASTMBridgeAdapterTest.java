@@ -153,6 +153,17 @@ class ASTMBridgeAdapterTest {
 
             verify(mockNormalizer, times(1)).process(any(MessageEnvelope.class));
         }
+
+        @Test
+        @DisplayName("Handshake-only sessions should not enter result processing")
+        void handshakeOnlySessionsShouldNotEnterResultProcessing() {
+            when(mockAstmMessage.getMessage()).thenReturn("");
+
+            ASTMHandlerResponse response = adapter.handle(mockAstmMessage, "192.168.1.10");
+
+            assertEquals(HandleStatus.SUCCESS, response.getStatus());
+            verify(mockNormalizer, never()).process(any(MessageEnvelope.class));
+        }
     }
 
     @Nested
@@ -203,37 +214,6 @@ class ASTMBridgeAdapterTest {
             ASTMHandlerResponse response = adapter.handle(mockAstmMessage, "192.168.1.10");
 
             assertSame(adapter, response.getHandler());
-        }
-    }
-
-    @Nested
-    @DisplayName("Default handle(message) Method Tests")
-    class DefaultHandleMethodTests {
-
-        @Test
-        @DisplayName("Default handle method should call handle(message, null)")
-        void defaultHandleMethodShouldCallHandleWithNullSourceIp() {
-            // Use a real DefaultASTMMessage for this test
-            DefaultASTMMessage message = new DefaultASTMMessage(SAMPLE_ASTM_MESSAGE);
-
-            adapter.handle(message);
-
-            // Verify normalizer was called with "unknown" sourceId (null sourceIp → "unknown")
-            verify(mockNormalizer).process(argThat(envelope ->
-                "unknown".equals(envelope.getSourceId())
-            ));
-        }
-
-        @Test
-        @DisplayName("Default handle method should return same result as handle(message, null)")
-        void defaultHandleMethodShouldReturnSameResultAsHandleWithNull() {
-            DefaultASTMMessage message = new DefaultASTMMessage(SAMPLE_ASTM_MESSAGE);
-            when(mockNormalizer.process(any())).thenReturn(true);
-
-            ASTMHandlerResponse defaultResponse = adapter.handle(message);
-            ASTMHandlerResponse explicitResponse = adapter.handle(message, null);
-
-            assertEquals(defaultResponse.getStatus(), explicitResponse.getStatus());
         }
     }
 

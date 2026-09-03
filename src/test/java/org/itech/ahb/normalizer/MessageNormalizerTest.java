@@ -11,7 +11,6 @@ import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.util.DeadLetterWriter;
-import org.itech.ahb.util.OeApiClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -68,7 +67,6 @@ class MessageNormalizerTest {
             assertTrue(result);
             // Verify forwardingRouter is called with canonical resolved analyzer ID.
             verify(mockForwardingRouter).route(argThat(e ->
-                "MINDRAY-001".equals(e.getAnalyzerId()) &&
                 "MINDRAY-001".equals(e.getResolvedAnalyzerId()) &&
                 "MINDRAY-001".equals(e.getProtocolAnalyzerHint())
             ));
@@ -91,7 +89,6 @@ class MessageNormalizerTest {
             assertTrue(result);
             // Verify forwardingRouter is called with enriched envelope
             verify(mockForwardingRouter).route(argThat(e ->
-                "SYSMEX-001".equals(e.getAnalyzerId()) &&
                 "SYSMEX-001".equals(e.getResolvedAnalyzerId()) &&
                 Protocol.HL7.equals(e.getProtocol()) &&
                 "192.168.1.10".equals(e.getSourceId())
@@ -99,10 +96,9 @@ class MessageNormalizerTest {
         }
 
         @Test
-        @DisplayName("Should forward even when identifier returns null (transparent-pipe principle)")
-        void shouldForwardWhenIdentifierReturnsNull() {
+        @DisplayName("Should reject an unregistered source before forwarding")
+        void shouldRejectWhenIdentifierReturnsNull() {
             when(mockIdentifier.identify(any())).thenReturn(null);
-            when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.CSV)
@@ -113,16 +109,8 @@ class MessageNormalizerTest {
 
             boolean result = normalizer.process(envelope);
 
-            // Per the transparent-pipe architecture, unknown sources are no
-            // longer rejected at the bridge — bundle is forwarded so OE can
-            // find-or-create the analyzer atomically from the FHIR Device
-            // resource. See feedback_bridge_transparent_fhir_pipe.md.
-            assertTrue(result);
-            verify(mockForwardingRouter).route(argThat(e ->
-                e.getResolvedAnalyzerId() == null &&
-                e.getAnalyzerId() == null &&
-                "/mnt/analyzer/file.csv".equals(e.getSourceId())
-            ));
+            assertFalse(result);
+            verifyNoInteractions(mockForwardingRouter);
         }
 
         @Test
@@ -142,7 +130,6 @@ class MessageNormalizerTest {
 
             assertTrue(result);
             verify(mockForwardingRouter).route(argThat(e ->
-                "OE-ANALYZER-001".equals(e.getAnalyzerId()) &&
                 "OE-ANALYZER-001".equals(e.getResolvedAnalyzerId()) &&
                 "GENEXPERT".equals(e.getProtocolAnalyzerHint())
             ));
@@ -161,7 +148,7 @@ class MessageNormalizerTest {
             registry.register("10.42.59.10", entry);
 
             MessageNormalizer metadataAwareNormalizer =
-                new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null, null, null);
+                new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null, null);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
@@ -175,17 +162,15 @@ class MessageNormalizerTest {
 
             assertTrue(result);
             verify(mockForwardingRouter).route(argThat(e ->
-                "44".equals(e.getAnalyzerId()) &&
                 "44".equals(e.getResolvedAnalyzerId()) &&
                 "GENEXPERT".equals(e.getProtocolAnalyzerHint())
             ));
         }
 
         @Test
-        @DisplayName("Should forward when only protocol hint is present (transparent-pipe principle)")
-        void shouldForwardWhenOnlyProtocolHintPresent() {
+        @DisplayName("Should not use a protocol hint as routing authority")
+        void shouldRejectWhenOnlyProtocolHintPresent() {
             when(mockIdentifier.identify(any())).thenReturn(null);
-            when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.HL7)
@@ -197,13 +182,8 @@ class MessageNormalizerTest {
 
             boolean result = normalizer.process(envelope);
 
-            // Forward anyway; OE resolves analyzer from the FHIR Device
-            // resource that the router includes from sourceId + hint.
-            assertTrue(result);
-            verify(mockForwardingRouter).route(argThat(e ->
-                e.getResolvedAnalyzerId() == null &&
-                "SYSMEX".equals(e.getProtocolAnalyzerHint())
-            ));
+            assertFalse(result);
+            verifyNoInteractions(mockForwardingRouter);
         }
     }
 
@@ -428,21 +408,9 @@ class MessageNormalizerTest {
         }
     }
 
-    // === Transparent-pipe behaviour for unknown sources ===
-    //
-    // Replaces the older OGC-526 "Unknown Source Handling" tests, which
-    // verified the now-retired discovered-sources side-channel + DLQ writer.
-    // The transparent-pipe architecture (see
-    // .claude memory feedback_bridge_transparent_fhir_pipe.md) requires the
-    // bridge to forward unknown-source messages anyway — OE owns
-    // find-or-create-stub atomically per FHIR-bundle import.
-
     @Nested
-    @DisplayName("Unknown Source Forwarding (transparent-pipe)")
-    class UnknownSourceForwardingTests {
-
-        @Mock
-        private OeApiClient mockOeApiClient;
+    @DisplayName("Unknown source rejection")
+    class UnknownSourceRejectionTests {
 
         @Mock
         private DeadLetterWriter mockDeadLetterWriter;
@@ -459,14 +427,13 @@ class MessageNormalizerTest {
             // (avoids Mockito strict-mode UnnecessaryStubbing failures).
             normalizerWithUnknownSource = new MessageNormalizer(
                 mockForwardingRouter, rejectingIdentifier,
-                null, null, mockOeApiClient, mockDeadLetterWriter, Runnable::run);
+                null, null, mockDeadLetterWriter);
         }
 
         @Test
-        @DisplayName("Forwards unknown-source messages without calling discovered-sources")
-        void shouldForwardWithoutSideChannel() {
+        @DisplayName("Rejects and dead-letters an unknown-source message")
+        void shouldRejectAndDeadLetterUnknownSource() {
             when(rejectingIdentifier.identify(any())).thenReturn(null);
-            when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.HL7)
@@ -477,12 +444,9 @@ class MessageNormalizerTest {
 
             boolean result = normalizerWithUnknownSource.process(envelope);
 
-            assertTrue(result, "transparent pipe: forward anyway");
-            verify(mockForwardingRouter).route(any(MessageEnvelope.class));
-            // Side-channel must NOT be invoked
-            verify(mockOeApiClient, never()).post(any(), any());
-            // Dead-letter must NOT be written for unknown source
-            verify(mockDeadLetterWriter, never()).write(any(), any());
+            assertFalse(result);
+            verifyNoInteractions(mockForwardingRouter);
+            verify(mockDeadLetterWriter).write(envelope, "UNREGISTERED_SOURCE");
         }
 
         @Test

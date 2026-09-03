@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.profile.ControlRecognitionRule;
@@ -78,21 +77,19 @@ public class HL7ResultParser {
             }
         }
 
-        if (accession != null) {
-            Optional<ControlRecognitionRule> matchedRule =
-                    ControlResultRecognitionEvaluator.findMatchingRule(
-                            recognition, accession, fieldValues);
-            if (matchedRule.isPresent()) {
-                ControlRecognitionRule rule = matchedRule.get();
-                results = results.stream()
-                        .map(result -> result.withControl(true)
-                                .withControlLevel(rule.controlLevel())
-                                .withControlType(rule.controlType()))
-                        .toList();
-            }
-        }
-
         if (accession == null) accession = "HL7-UNKNOWN";
+
+        ControlResultRecognitionEvaluator.Assessment assessment =
+                ControlResultRecognitionEvaluator.evaluate(recognition, accession, fieldValues);
+        ControlRecognitionRule matchedRule = assessment.matchedRule().orElse(null);
+        results = results.stream()
+                .map(result -> {
+                    AnalyzerResult assessed = result.withControlRecognition(assessment);
+                    return matchedRule == null ? assessed : assessed.withControl(true)
+                            .withControlLevel(matchedRule.controlLevel())
+                            .withControlType(matchedRule.controlType());
+                })
+                .toList();
 
         return results.isEmpty() ? null : new ParsedResults(accession, results);
     }

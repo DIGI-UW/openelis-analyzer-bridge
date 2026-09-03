@@ -83,6 +83,16 @@ public class AnalyzerRuntimeRegistry {
         return Optional.empty();
     }
 
+    /** Finds the active runtime projection for one durable Bridge connection. */
+    public Optional<AnalyzerEntry> findAnalyzerEntryByConnectionId(String connectionId) {
+        if (connectionId == null || connectionId.isBlank()) {
+            return Optional.empty();
+        }
+        return analyzers.values().stream()
+            .filter(entry -> connectionId.equals(entry.getBridgeConnectionId()))
+            .findFirst();
+    }
+
     /**
      * Checks if a source ID matches a glob pattern.
      * <p>
@@ -162,6 +172,15 @@ public class AnalyzerRuntimeRegistry {
          */
         private String id;
 
+        /** Durable Bridge connection identity used for all result and order routing. */
+        private String bridgeConnectionId;
+
+        /** Exact pinned profile identity materialized from the saved connection. */
+        private String profileId;
+
+        /** Exact pinned profile revision materialized from the saved connection. */
+        private int profileRevision;
+
         /**
          * Human-readable analyzer name (e.g., "Mindray BC-5380")
          */
@@ -171,6 +190,12 @@ public class AnalyzerRuntimeRegistry {
          * Expected protocol (ASTM, HL7, CSV) for validation
          */
         private String expectedProtocol;
+
+        /** Bridge-owned network destination for LIS-initiated orders, when configured. */
+        private String outboundHost;
+
+        /** Bridge-owned network port for LIS-initiated orders, when configured. */
+        private int outboundPort;
 
         /**
          * Optional file pattern for additional validation (regex)
@@ -256,6 +281,9 @@ public class AnalyzerRuntimeRegistry {
 
         /** Complete control-result recognition from the pinned Bridge profile. */
         private ControlResultRecognition controlResultRecognition;
+
+        /** Fingerprint of the exact profile-owned recognition definition. */
+        private String recognitionFingerprint;
 
         /** Profile-owned selection of ASTM R records that carry reportable results. */
         private AstmResultRecordSelection astmResultRecordSelection;

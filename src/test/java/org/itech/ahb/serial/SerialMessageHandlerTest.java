@@ -59,8 +59,7 @@ class SerialMessageHandlerTest {
                 envelope.getProtocol() == Protocol.ASTM &&
                 envelope.getTransport() == Transport.SERIAL &&
                 "/dev/ttyUSB0".equals(envelope.getSourceId()) &&
-                astmMessage.equals(envelope.getRawMessage()) &&
-                envelope.getAnalyzerId() == null
+                astmMessage.equals(envelope.getRawMessage())
             ));
         }
 
@@ -120,8 +119,7 @@ class SerialMessageHandlerTest {
             handler.handleMessage(message, "/dev/ttyUSB0", "ANALYZER-001", Protocol.ASTM);
 
             verify(mockNormalizer).process(argThat(envelope ->
-                "ANALYZER-001".equals(envelope.getProtocolAnalyzerHint()) &&
-                envelope.getAnalyzerId() == null
+                "ANALYZER-001".equals(envelope.getProtocolAnalyzerHint())
             ));
         }
 
@@ -133,8 +131,7 @@ class SerialMessageHandlerTest {
             handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             verify(mockNormalizer).process(argThat(envelope ->
-                envelope.getProtocolAnalyzerHint() == null &&
-                envelope.getAnalyzerId() == null
+                envelope.getProtocolAnalyzerHint() == null
             ));
         }
     }

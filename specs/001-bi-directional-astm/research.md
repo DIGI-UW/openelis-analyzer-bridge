@@ -1,8 +1,11 @@
 # Research: Bi-Directional ASTM Workflow Support
 
+> Superseded historical research. It does not define current implementation
+> direction.
+
 **Feature**: 001-bi-directional-astm  
 **Date**: 2025-12-03  
-**Status**: Complete
+**Status**: Superseded
 
 ## Research Tasks
 
@@ -289,4 +292,3 @@ None - all research questions resolved.
 - [Java InetSocketAddress](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/net/InetSocketAddress.html)
 - [Java HttpClient](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpClient.html)
 - [Constitution](../../.specify/memory/constitution.md) - Principles I, VI, VII
-

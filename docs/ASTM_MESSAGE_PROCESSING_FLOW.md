@@ -1,5 +1,9 @@
 # ASTM Message Processing Flow in OpenELIS
 
+> Historical analysis only. The described raw OpenELIS parsing and plugin path
+> is not part of the current architecture. Current implementation direction is
+> defined by `README.md`, `contracts/analyzer/v1`, and current code.
+
 **Date**: 2025-12-01  
 **Feature**: 004-astm-analyzer-mapping  
 **Purpose**: Document how ASTM analyzer messages are received, processed, and stored in OpenELIS
@@ -435,5 +439,4 @@ The system maintains **backward compatibility** with legacy plugin-based analyze
 - **Plugin Interface**: `src/main/java/org/openelisglobal/plugin/AnalyzerImporterPlugin.java`
 - **Results Service**: `src/main/java/org/openelisglobal/analyzerresults/service/AnalyzerResultsService.java`
 - **Feature Specification**: `specs/004-astm-analyzer-mapping/spec.md` (FR-001, FR-011, FR-021)
-
 

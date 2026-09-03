@@ -12,6 +12,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,13 +28,28 @@ class DefaultConnectionProbeExecutorTest {
     new DefaultConnectionProbeExecutor();
 
   @Test
-  void listenerProbeReportsAListeningBridgePort() throws IOException {
+  void listenerProbeReportsAnAvailableBridgePort() throws IOException {
+    int availablePort;
+    try (ServerSocket server = new ServerSocket(0)) {
+      availablePort = server.getLocalPort();
+    }
+
+    ProbeCheck check = executor.probeListener(availablePort);
+
+    assertThat(check.kind()).isEqualTo("LISTENER");
+    assertThat(check.status()).isEqualTo("PASSED");
+    assertThat(check.code()).isEqualTo("listener.ready");
+    assertThat(check.args()).containsEntry("port", availablePort);
+  }
+
+  @Test
+  void listenerProbeRejectsAPortOwnedByAnotherProcess() throws IOException {
     try (ServerSocket server = new ServerSocket(0)) {
       ProbeCheck check = executor.probeListener(server.getLocalPort());
 
       assertThat(check.kind()).isEqualTo("LISTENER");
-      assertThat(check.status()).isEqualTo("PASSED");
-      assertThat(check.code()).isEqualTo("listener.ready");
+      assertThat(check.status()).isEqualTo("FAILED");
+      assertThat(check.code()).isEqualTo("listener.port.in.use");
       assertThat(check.args()).containsEntry("port", server.getLocalPort());
     }
   }
@@ -41,7 +57,8 @@ class DefaultConnectionProbeExecutorTest {
   @Test
   void astmProbeRequiresTheProtocolAck() throws Exception {
     try (ServerSocket server = new ServerSocket(0)) {
-      Thread peer = astmPeer(server);
+      AtomicInteger terminator = new AtomicInteger(-1);
+      Thread peer = astmPeer(server, terminator);
 
       ProbeCheck check = executor.probeRemote(
         "ASTM",
@@ -54,6 +71,7 @@ class DefaultConnectionProbeExecutorTest {
       assertThat(check.status()).isEqualTo("PASSED");
       assertThat(check.code()).isEqualTo("remote.astm.ready");
       peer.join(1000);
+      assertThat(terminator.get()).isEqualTo(0x04);
     }
   }
 
@@ -134,12 +152,13 @@ class DefaultConnectionProbeExecutorTest {
     }
   }
 
-  private static Thread astmPeer(ServerSocket server) {
+  private static Thread astmPeer(ServerSocket server, AtomicInteger terminator) {
     Thread peer = new Thread(() -> {
       try (Socket client = server.accept()) {
         if (client.getInputStream().read() == ENQ) {
           client.getOutputStream().write(ACK);
           client.getOutputStream().flush();
+          terminator.set(client.getInputStream().read());
         }
       } catch (IOException exception) {
         throw new IllegalStateException(exception);

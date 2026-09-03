@@ -53,12 +53,17 @@ class BridgeAnalyzerConnectionRuntimeTest {
       .findFirst()
       .orElseThrow();
     assertThat(entry.getExpectedProtocol()).isEqualTo("FILE");
+    assertThat(entry.getBridgeConnectionId()).isEqualTo("00000000-0000-0000-0000-000000000042");
+    assertThat(entry.getProfileId()).isEqualTo(profile.path("profileMeta").path("id").asText());
+    assertThat(entry.getProfileRevision()).isEqualTo(profile.path("catalog").path("revision").asInt());
     assertThat(entry.getColumnMappings())
       .containsEntry("Sample ID", "sampleId")
       .containsEntry("TargetName", "testCode")
       .containsEntry("Interpretation", "interpretation");
     assertThat(entry.getControlResultRecognition().mode()).isEqualTo(Mode.RULES);
     assertThat(entry.getControlResultRecognition().rules()).hasSize(5);
+    assertThat(entry.getRecognitionFingerprint())
+      .isEqualTo(profile.path("catalog").path("recognitionFingerprint").asText());
 
     runtime.deactivate(connection, profile);
 
@@ -183,6 +188,40 @@ class BridgeAnalyzerConnectionRuntimeTest {
 
     verify(astmListeners).stop("00000000-0000-0000-0000-000000000042");
     assertThat(registry.getRegisteredAnalyzers().values()).noneMatch(candidate -> "oe-42".equals(candidate.getId()));
+    verifyNoInteractions(serialListeners);
+  }
+
+  @Test
+  void materializesAClientConnectionAsItsBridgeOwnedOutboundEndpoint() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AstmConnectionListeners astmListeners = mock(AstmConnectionListeners.class);
+    SerialConnectionListeners serialListeners = mock(SerialConnectionListeners.class);
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      astmListeners,
+      serialListeners
+    );
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+    );
+    ObjectNode connection = baseConnection(profile, "GeneXpert outbound bench");
+    connection.withObject("values")
+      .setAll((ObjectNode) profile.path("configDefaults").deepCopy());
+    connection.withObject("values")
+      .put("connectionRole", "CLIENT")
+      .put("host", "gene-xpert.lab")
+      .put("port", 9_600);
+
+    runtime.activate(connection, profile);
+
+    AnalyzerEntry entry = registry
+      .findAnalyzerEntryByConnectionId("00000000-0000-0000-0000-000000000042")
+      .orElseThrow();
+    assertThat(entry.getExpectedProtocol()).isEqualTo("ASTM");
+    assertThat(entry.getOutboundHost()).isEqualTo("gene-xpert.lab");
+    assertThat(entry.getOutboundPort()).isEqualTo(9_600);
+    verifyNoInteractions(astmListeners);
     verifyNoInteractions(serialListeners);
   }
 

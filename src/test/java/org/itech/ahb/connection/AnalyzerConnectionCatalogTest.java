@@ -100,6 +100,32 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
+  void updateDoesNotCreateANewRevisionWhenTheEffectiveConfigurationIsUnchanged() {
+    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    AnalyzerConnectionCatalog catalog = catalog(() ->
+      UUID.fromString("00000000-0000-0000-0000-000000000097")
+    );
+    ObjectNode create = createRequest(profile, "create-genexpert-noop", "oe-97");
+    create.withObject("values").put("port", 5000);
+    ObjectNode created = catalog.create(create);
+
+    ObjectNode update = objectMapper.createObjectNode();
+    update.put("schemaVersion", "1.0");
+    update.put("requestId", "update-genexpert-noop");
+    update.put("connectionId", created.path("connectionId").asText());
+    update.put("expectedConfigRevision", 1);
+    update.set("profileRef", create.path("profileRef").deepCopy());
+    update.put("displayName", created.path("displayName").asText());
+    update.putObject("values").put("port", 5000);
+
+    ObjectNode unchanged = catalog.update(update);
+
+    assertThat(unchanged.path("configRevision").asInt()).isEqualTo(1);
+    assertThat(unchanged.path("configFingerprint").asText())
+      .isEqualTo(created.path("configFingerprint").asText());
+  }
+
+  @Test
   void updateChangesOnlySuppliedValuesAndRetainsTheDurableBridgeConfiguration() {
     ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(() ->

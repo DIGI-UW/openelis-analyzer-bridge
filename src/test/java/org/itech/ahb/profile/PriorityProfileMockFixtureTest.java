@@ -67,7 +67,7 @@ class PriorityProfileMockFixtureTest {
       });
     });
 
-    String message = generateGeneXpertMessage(mockRoot, profile);
+    String message = generateGeneXpertMessage(mockRoot, profile, false);
     var parsed = ASTMResultParser.parse(
       message.lines().toList(),
       ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")),
@@ -80,6 +80,26 @@ class PriorityProfileMockFixtureTest {
       .map(result -> result.testCode())
       .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     assertThat(parsedCodes).containsExactlyInAnyOrderElementsOf(declaredCodes);
+  }
+
+  @Test
+  void publishedGeneXpertProfileRecognizesAndParsesTheMockControlFixture() throws Exception {
+    Path mockRoot = requiredMockRoot();
+    JsonNode template = JSON.readTree(mockRoot.resolve("templates/genexpert_astm.json").toFile());
+    JsonNode profile = profile(template.path("profileRef"));
+
+    String message = generateGeneXpertMessage(mockRoot, profile, true);
+    var parsed = ASTMResultParser.parse(
+      message.lines().toList(),
+      ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")),
+      AstmResultRecordSelection.fromProfile(profile.path("configDefaults"))
+    );
+
+    assertThat(parsed).isNotNull();
+    assertThat(parsed.results()).hasSize(1);
+    assertThat(parsed.results().get(0).testCode()).isEqualTo("HIV-VL");
+    assertThat(parsed.results().get(0).isControl()).isTrue();
+    assertThat(parsed.results().get(0).lotNumber()).isEqualTo("LOT-HIVVL-N");
   }
 
   @Test
@@ -137,7 +157,7 @@ class PriorityProfileMockFixtureTest {
     });
   }
 
-  private String generateGeneXpertMessage(Path mockRoot, JsonNode profile) throws Exception {
+  private String generateGeneXpertMessage(Path mockRoot, JsonNode profile, boolean control) throws Exception {
     Path profileRoot = temporaryDirectory.resolve("profiles");
     Files.createDirectories(profileRoot);
     JSON.writeValue(profileRoot.resolve("analyzer-profile-astm.json").toFile(), profile);
@@ -151,14 +171,16 @@ class PriorityProfileMockFixtureTest {
       with open(sys.argv[2], encoding="utf-8") as source:
           template = json.load(source)
       merged = load_profile_backed_template("genexpert_astm", template)
-      print(ASTMHandler().generate(merged, use_seed=True))
+      handler = ASTMHandler()
+      print(handler.generate_qc(merged, deviation=0) if sys.argv[3] == "control" else handler.generate(merged, use_seed=True))
       """;
     ProcessBuilder processBuilder = new ProcessBuilder(
       "python3",
       "-c",
       script,
       mockRoot.toString(),
-      mockRoot.resolve("templates/genexpert_astm.json").toString()
+      mockRoot.resolve("templates/genexpert_astm.json").toString(),
+      control ? "control" : "patient"
     );
     processBuilder.directory(mockRoot.toFile());
     processBuilder.environment().put("ANALYZER_BRIDGE_PROFILES_DIR", profileRoot.toString());

@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DIGI-UW/analyzer-mock-server
-          ref: db1db96bf920543a44719b2783813b005a2d189e
+          ref: 8f1b30fc4c69fdd777755ba616b1ef38a7a3931a
           path: analyzer-mock-server
 
       - name: Set up JDK 21

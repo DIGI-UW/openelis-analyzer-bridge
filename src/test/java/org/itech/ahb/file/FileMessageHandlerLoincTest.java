@@ -1,32 +1,30 @@
 package org.itech.ahb.file;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ca.uhn.fhir.context.FhirContext;
 import java.util.List;
 import java.util.Map;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.Device;
 import org.hl7.fhir.r4.model.Observation;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * G1: the FILE inbound path must apply the analyzer's code→LOINC mapping (parity
- * with the ASTM/HL7 path) so OE2 resolves results by LOINC. The live E2E proof
- * showed the gap: a FILE result for "DENV" imported with a blank test_id because
- * the bundle carried the raw code. This pins the fix.
+ * FILE transport uses the same normalized contract as listener traffic. Raw
+ * analyzer identity remains authoritative and LOINC is only an optional hint.
  */
-@DisplayName("FileMessageHandler — FILE inbound applies code→LOINC (G1)")
+@DisplayName("FileMessageHandler normalized FILE traffic")
 class FileMessageHandlerLoincTest {
 
     private static final FhirContext CTX = FhirContext.forR4();
-    private static final String LOINC_SYSTEM = "http://loinc.org";
-
     private Observation firstObservation(String json) {
         Bundle b = CTX.newJsonParser().parseResource(Bundle.class, json);
         return b.getEntry().stream()
@@ -38,25 +36,42 @@ class FileMessageHandlerLoincTest {
     }
 
     @Test
-    @DisplayName("mapped analyzer code -> LOINC coding (system http://loinc.org), not the raw code")
-    void fileInboundEmitsLoinc() {
+    @DisplayName("FILE traffic carries exact connection context, raw code, and optional LOINC")
+    void fileInboundUsesNormalizedContract() {
         AnalyzerEntry entry = new AnalyzerEntry();
         entry.setId("43");
         entry.setName("QuantStudio 5");
+        entry.setBridgeConnectionId("bridge-file-7f3c");
+        entry.setProfileId("site.mock-file");
+        entry.setProfileRevision(2);
+        entry.setControlResultRecognition(ControlResultRecognition.none());
+        entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
         entry.setCodeToLoinc(Map.of("DENV", "7855-0"));
         ParsedResults parsed = new ParsedResults(
                 "DEV01260000000000008",
                 List.of(AnalyzerResult.numeric("DENV", "DENV", "5000", "")));
 
-        Observation o = firstObservation(
-                FileMessageHandler.buildFileFhirBundle(entry, parsed, "43"));
+        String json = FileMessageHandler.buildFileFhirBundle(entry, parsed, "result-001.csv");
+        Bundle bundle = CTX.newJsonParser().parseResource(Bundle.class, json);
+        Observation observation = firstObservation(json);
+        Device device = bundle.getEntry().stream()
+                .map(Bundle.BundleEntryComponent::getResource)
+                .filter(Device.class::isInstance)
+                .map(Device.class::cast)
+                .findFirst()
+                .orElseThrow();
 
-        assertEquals(LOINC_SYSTEM, o.getCode().getCodingFirstRep().getSystem(),
-                "FILE result must be LOINC-coded, like the ASTM/HL7 path");
-        assertEquals("7855-0", o.getCode().getCodingFirstRep().getCode(),
-                "DENV must map to LOINC 7855-0");
-        assertNotEquals("DENV", o.getCode().getCodingFirstRep().getCode(),
-                "raw analyzer code must NOT be the coding code");
+        assertEquals("bridge-file-7f3c", device.getIdentifier().stream()
+                .filter(value -> "https://openelis-global.org/fhir/analyzer-connection-id"
+                        .equals(value.getSystem()))
+                .findFirst()
+                .orElseThrow()
+                .getValue());
+        assertTrue(observation.getCode().getCoding().stream().anyMatch(value ->
+                "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code".equals(value.getSystem())
+                        && "DENV".equals(value.getCode())));
+        assertTrue(observation.getCode().getCoding().stream().anyMatch(value ->
+                "http://loinc.org".equals(value.getSystem()) && "7855-0".equals(value.getCode())));
     }
 
     @Test

@@ -1,5 +1,8 @@
 # Quickstart: Testing Bi-Directional ASTM Workflow
 
+> Superseded historical quickstart. Use the test commands in `README.md` and the
+> current analyzer-mock project.
+
 **Feature**: 001-bi-directional-astm  
 **Date**: 2025-12-03
 
@@ -265,4 +268,3 @@ curl -X POST http://localhost:8080/push \
 | SC-004: Graceful degradation | Kill socket mid-transfer, verify message still forwarded |
 | SC-005: Correct config structure | Verify YAML matches Spring Boot properties |
 | SC-006: No regression | Run existing test suite |
-

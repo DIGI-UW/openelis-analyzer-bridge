@@ -54,11 +54,14 @@ expected configuration revision. Probe is non-mutating. Activate and deactivate
 are idempotent commands whose acknowledgements identify the exact connection,
 profile, configuration, and runtime revisions applied by Bridge.
 
-Normalized FHIR preserves raw analyzer code/value and identifies the pinned
-profile revision. Every Observation has exactly one patient/control
-classification and one control-recognition extension. A matching rule evaluation
-must carry its complete rule and source evidence; explicit `NONE` never invents
-an evaluation.
+Normalized FHIR preserves raw analyzer code/value and identifies the durable
+Bridge connection and pinned profile revision. OpenELIS resolves only
+`Device.identifier[system="https://openelis-global.org/fhir/analyzer-connection-id"]`;
+source addresses, sender tokens, names, and local analyzer IDs are context, not
+routing authority. Every Observation has exactly one patient/control
+classification and one control-recognition extension. A matching rule
+evaluation must carry its complete rule and source evidence; explicit `NONE`
+never invents an evaluation.
 
 ## Versioned artifacts
 

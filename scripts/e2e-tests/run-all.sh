@@ -1,31 +1,66 @@
 #!/bin/bash
-set -e
+
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 echo "========================================"
-echo "Universal Analyzer Bridge E2E Test Suite"
+echo "Priority Analyzer Bridge Result-Traffic Suite"
 echo "========================================"
 echo "Project dir: ${PROJECT_DIR}"
 echo ""
 
 cd "${PROJECT_DIR}"
 
-# Ensure test data directories exist
-mkdir -p test-data/file-input test-data/file-archive test-data/file-error test-data/wiremock/mappings
+source "${SCRIPT_DIR}/test-support.sh"
+
+for command in docker curl jq; do
+    command -v "${command}" >/dev/null || {
+        echo "Missing required command: ${command}" >&2
+        exit 1
+    }
+done
+
+BRIDGE_REPOSITORY="$(dirname "$(git rev-parse --git-common-dir)")"
+export ANALYZER_MOCK_CONTEXT="${ANALYZER_MOCK_DIR:-$(dirname "${BRIDGE_REPOSITORY}")/analyzer-mock-server}"
+if [ ! -f "${ANALYZER_MOCK_CONTEXT}/Dockerfile" ]; then
+    echo "Analyzer mock checkout not found at ${ANALYZER_MOCK_CONTEXT}" >&2
+    echo "Set ANALYZER_MOCK_DIR to the analyzer-mock-server checkout." >&2
+    exit 1
+fi
+
+cleanup() {
+    docker compose -f docker-compose.test.yml down --volumes --remove-orphans >/dev/null 2>&1 || true
+}
+
+finish() {
+    local status=$?
+    if [ "${status}" -ne 0 ]; then
+        echo "" >&2
+        echo "Analyzer result-traffic diagnostics:" >&2
+        docker compose -f docker-compose.test.yml logs --tail=160 \
+            openelis-analyzer-bridge analyzer-mock wiremock >&2 || true
+    fi
+    cleanup
+    exit "${status}"
+}
+trap finish EXIT
+
+cleanup
 
 # Start services
 echo "Starting Docker Compose test environment..."
 docker compose -f docker-compose.test.yml up -d --build
 
 echo "Waiting for services to be healthy..."
-TIMEOUT=60
+TIMEOUT=120
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    if docker compose -f docker-compose.test.yml ps --format json 2>/dev/null | \
-       jq -e 'select(.Service == "openelis-analyzer-bridge" and .Health == "healthy")' > /dev/null 2>&1; then
-        echo "Bridge is healthy!"
+    if curl --silent --fail http://localhost:8443/actuator/health >/dev/null 2>&1 \
+        && curl --silent --fail http://localhost:18080/health >/dev/null 2>&1 \
+        && curl --silent --fail http://localhost:8080/__admin/health >/dev/null 2>&1; then
+        echo "Bridge, analyzer-mock, and OpenELIS capture are ready."
         break
     fi
     sleep 5
@@ -35,63 +70,40 @@ done
 
 if [ $ELAPSED -ge $TIMEOUT ]; then
     echo "ERROR: Bridge did not become healthy within ${TIMEOUT}s"
-    docker compose -f docker-compose.test.yml logs openelis-analyzer-bridge | tail -30
-    docker compose -f docker-compose.test.yml down
+    docker compose -f docker-compose.test.yml logs --tail=80
     exit 1
 fi
 
-# Check Prometheus endpoint
-echo ""
-echo "--- Verifying Prometheus metrics endpoint ---"
-if curl -s http://localhost:8443/actuator/prometheus | head -5 > /dev/null 2>&1; then
-    echo "  [PASS] Prometheus endpoint is accessible"
-else
-    echo "  [WARN] Prometheus endpoint not accessible (may not be critical)"
-fi
+curl --silent --show-error --fail-with-body \
+    --request POST \
+    --header 'Content-Type: application/json' \
+    --data '{"request":{"method":"POST","urlPath":"/api/OpenELIS-Global/analyzer/fhir"},"response":{"status":202,"jsonBody":{"accepted":true}}}' \
+    "${WIREMOCK_URL}/__admin/mappings" >/dev/null
 
-# Check health endpoint
-echo ""
-echo "--- Verifying health endpoint ---"
-HEALTH=$(curl -s http://localhost:8443/actuator/health)
-echo "  Health: $(echo "$HEALTH" | jq -r '.status' 2>/dev/null || echo 'unknown')"
+GENEXPERT_CONNECTION_ID="$(create_connection \
+    "genexpert-astm" \
+    "oe-e2e-genexpert" \
+    "GeneXpert acceptance connection" \
+    '{"transport":"TCP/IP","connectionRole":"SERVER","port":12001}')"
+export GENEXPERT_CONNECTION_ID
+activate_connection "${GENEXPERT_CONNECTION_ID}"
 
-# Run individual tests
-echo ""
-FAILED=0
+FLUOROCYCLER_CONNECTION_ID="$(create_connection \
+    "fluorocycler-xt" \
+    "oe-e2e-fluorocycler" \
+    "FluoroCycler acceptance connection" \
+    '{"directory":"/mnt/analyzer-import"}')"
+export FLUOROCYCLER_CONNECTION_ID
+activate_connection "${FLUOROCYCLER_CONNECTION_ID}"
 
 echo "--- Running ASTM TCP test ---"
-bash "${SCRIPT_DIR}/test-astm-tcp.sh" || FAILED=$((FAILED + 1))
+bash "${SCRIPT_DIR}/test-astm-tcp.sh"
 echo ""
 
-echo "--- Running MLLP HL7 test ---"
-bash "${SCRIPT_DIR}/test-mllp.sh" || FAILED=$((FAILED + 1))
+echo "--- Running FILE test ---"
+bash "${SCRIPT_DIR}/test-file-csv.sh"
 echo ""
 
-echo "--- Running File CSV test ---"
-bash "${SCRIPT_DIR}/test-file-csv.sh" || FAILED=$((FAILED + 1))
-echo ""
-
-echo "--- Running HTTP /input test ---"
-bash "${SCRIPT_DIR}/test-http-input.sh" || FAILED=$((FAILED + 1))
-echo ""
-
-# Cleanup main test environment before serial tests (uses separate compose)
-echo "Stopping Docker Compose environment..."
-docker compose -f docker-compose.test.yml down
-
-echo ""
-echo "--- Running Serial Port test ---"
-bash "${SCRIPT_DIR}/test-serial.sh" || FAILED=$((FAILED + 1))
-echo ""
-
-echo ""
 echo "========================================"
-if [ $FAILED -eq 0 ]; then
-    echo "ALL E2E TESTS PASSED (5/5)"
-    echo "========================================"
-    exit 0
-else
-    echo "FAILED: ${FAILED}/5 tests failed"
-    echo "========================================"
-    exit 1
-fi
+echo "PRIORITY RESULT-TRAFFIC TESTS PASSED (2/2)"
+echo "========================================"

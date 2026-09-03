@@ -13,9 +13,9 @@ import org.itech.ahb.model.Transport;
  * ASTM bridge adapter that implements the ASTM library's {@link ASTMHandler} interface
  * and delegates to {@link MessageNormalizer} for routing to OpenELIS.
  * <p>
- * This adapter replaces {@code DefaultForwardingASTMToHTTPHandler} in the M7 milestone,
- * ensuring all transport listeners (including ASTM TCP) route through the unified normalizer
- * for consistent retry/backoff, audit logging, and analyzer identification.
+ * All transport listeners, including ASTM TCP, route through the normalizer for
+ * profile-driven parsing, normalized delivery, retry, audit logging, and saved
+ * connection identification.
  * </p>
  * <p>
  * The adapter:
@@ -27,8 +27,7 @@ import org.itech.ahb.model.Transport;
  * </ol>
  * </p>
  * <p>
- * NOTE: This class lives in the main application (not astm-http-lib) and uses the adapter
- * pattern to avoid modifying the library code.
+ * This class adapts the ASTM listener library to the Bridge runtime.
  * </p>
  *
  * @see MessageNormalizer
@@ -87,8 +86,14 @@ public class ASTMBridgeAdapter implements ASTMHandler {
     public ASTMHandlerResponse handle(ASTMMessage message, String sourceIp) {
         log.debug("ASTMBridgeAdapter handling message from {}", sourceIp);
 
+        String rawMessage = message.getMessage();
+        if (rawMessage == null || rawMessage.isBlank()) {
+            log.debug("ASTM session from {} completed without a result payload", sourceIp);
+            return new ASTMHandlerResponse("", HandleStatus.SUCCESS, false, this);
+        }
+
         // Extract sender identifier from ASTM H-record field 4 (e.g., "GENEXPERT^GeneXpert^4.6.0")
-        String analyzerId = extractSenderFromHRecord(message.getMessage());
+        String analyzerId = extractSenderFromHRecord(rawMessage);
 
         // Create MessageEnvelope
         MessageEnvelope envelope = MessageEnvelope.builder()
@@ -97,7 +102,7 @@ public class ASTMBridgeAdapter implements ASTMHandler {
             .sourceId(sourceBindingId != null && !sourceBindingId.isBlank()
                 ? sourceBindingId
                 : sourceIp != null ? sourceIp : "unknown")
-            .rawMessage(message.getMessage())
+            .rawMessage(rawMessage)
             .protocolAnalyzerHint(analyzerId)
             .build();
 
@@ -132,13 +137,9 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * tuple ({@code "LA2M3^GeneXpert^6.2"} = site^model^version per
      * Cepheid LIS protocol spec).
      *
-     * <p>Returns the FULL field-4 value (not just the first component).
-     * Downstream consumers (FhirBundleBuilder, OE's profile matcher) need
-     * the complete sender identification — truncating to the first component
-     * loses model + version info needed for accurate profile matching at
-     * the OE side. Per the "transparent FHIR pipe" architecture (see
-     * .claude/memory feedback_bridge_transparent_fhir_pipe.md): preserve
-     * everything, let OE decide.
+     * <p>Returns the full field-4 value as protocol evidence. The listener's
+     * saved Bridge connection remains routing authority; this value may
+     * corroborate that connection and is retained in normalized audit context.
      */
     private String extractSenderFromHRecord(String rawMessage) {
         if (rawMessage == null) return null;

@@ -17,6 +17,10 @@
         "resourceType": "Device",
         "identifier": [
           {
+            "system": "https://openelis-global.org/fhir/analyzer-connection-id",
+            "value": "bridge-connection-7f3c"
+          },
+          {
             "system": "https://openelis-global.org/fhir/analyzer-id",
             "value": "42"
           }
@@ -116,6 +120,10 @@
                   {
                     "url": "sourceField",
                     "valueString": "specimenId"
+                  },
+                  {
+                    "url": "sourcePresent",
+                    "valueBoolean": true
                   },
                   {
                     "url": "rawValue",

@@ -43,33 +43,36 @@ class OutboundOrderControllerTest {
         controller = new OutboundOrderController(registry, mllp, astm);
     }
 
-    private void registerAnalyzer(String host, String protocol, Map<String, String> codeToLoinc) {
+    private void registerAnalyzer(String connectionId, String host, int port, String protocol,
+            Map<String, String> codeToLoinc) {
         AnalyzerEntry e = new AnalyzerEntry();
         e.setId("AN-1");
+        e.setBridgeConnectionId(connectionId);
+        e.setOutboundHost(host);
+        e.setOutboundPort(port);
         e.setExpectedProtocol(protocol);
         e.setCodeToLoinc(codeToLoinc);
-        registry.register(host, e);
+        registry.register("connection:" + connectionId, e);
     }
 
-    private OrderRequest req(String host, int port, String protocol, List<String> loincCodes) {
+    private OrderRequest req(String connectionId, List<String> loincCodes) {
         OrderRequest r = new OrderRequest();
-        r.host = host;
-        r.port = port;
-        r.protocol = protocol;
-        r.accessionNumber = "ACC-1";
-        r.patientId = "PAT-9";
-        r.loincCodes = loincCodes;
+        r.connectionId = connectionId;
+        r.order = new OutboundOrderController.ClinicalOrder();
+        r.order.accessionNumber = "ACC-1";
+        r.order.patientId = "PAT-9";
+        r.order.loincCodes = loincCodes;
         return r;
     }
 
     @Test
     @DisplayName("HL7: LOINC translated to analyzer code, ORM sent via MLLP")
     void hl7OrderTranslatesAndSends() {
-        registerAnalyzer("10.0.0.5", "HL7", Map.of("WBC", "6690-2"));
+        registerAnalyzer("bridge-5", "10.0.0.5", 5380, "HL7", Map.of("WBC", "6690-2"));
         when(mllp.send(eq("10.0.0.5"), eq(5380), Mockito.anyString(), anyInt()))
                 .thenReturn(new OutboundMllpClient.SendResult(true, "MSA|AA|", null, 1));
 
-        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("10.0.0.5", 5380, "HL7", List.of("6690-2")));
+        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("bridge-5", List.of("6690-2")));
 
         assertEquals(200, resp.getStatusCode().value());
         ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
@@ -82,10 +85,10 @@ class OutboundOrderControllerTest {
     @Test
     @DisplayName("ASTM: LOINC translated to analyzer code, records sent over TCP")
     void astmOrderTranslatesAndSends() {
-        registerAnalyzer("10.0.0.6", "ASTM", Map.of("MTB-RIF", "85362-2"));
+        registerAnalyzer("bridge-6", "10.0.0.6", 9600, "ASTM", Map.of("MTB-RIF", "85362-2"));
         when(astm.send(eq("10.0.0.6"), eq(9600), Mockito.anyList(), anyInt())).thenReturn(true);
 
-        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("10.0.0.6", 9600, "ASTM", List.of("85362-2")));
+        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("bridge-6", List.of("85362-2")));
 
         assertEquals(200, resp.getStatusCode().value());
         ArgumentCaptor<List<String>> recs = ArgumentCaptor.forClass(List.class);
@@ -97,26 +100,38 @@ class OutboundOrderControllerTest {
     @Test
     @DisplayName("unmapped LOINC (none resolve) → 422, nothing dispatched")
     void unmappedLoinc() {
-        registerAnalyzer("10.0.0.5", "HL7", Map.of("WBC", "6690-2"));
-        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("10.0.0.5", 5380, "HL7", List.of("99999-9")));
+        registerAnalyzer("bridge-5", "10.0.0.5", 5380, "HL7", Map.of("WBC", "6690-2"));
+        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("bridge-5", List.of("99999-9")));
         assertEquals(422, resp.getStatusCode().value());
         verify(mllp, never()).send(Mockito.anyString(), anyInt(), Mockito.anyString(), anyInt());
     }
 
     @Test
-    @DisplayName("unregistered analyzer (no mapping) → 422")
-    void unregisteredAnalyzer() {
-        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("10.9.9.9", 5380, "HL7", List.of("6690-2")));
+    @DisplayName("unknown Bridge connection → 422")
+    void unknownConnection() {
+        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("bridge-missing", List.of("6690-2")));
         assertEquals(422, resp.getStatusCode().value());
+    }
+
+    @Test
+    @DisplayName("connection without an outbound endpoint → 422")
+    void connectionWithoutOutboundEndpoint() {
+        registerAnalyzer("bridge-server", null, 0, "ASTM", Map.of("MTB-RIF", "85362-2"));
+
+        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("bridge-server", List.of("85362-2")));
+
+        assertEquals(422, resp.getStatusCode().value());
+        assertTrue(String.valueOf(resp.getBody().get("error")).contains("outbound endpoint"));
+        verify(astm, never()).send(Mockito.anyString(), anyInt(), Mockito.anyList(), anyInt());
     }
 
     @Test
     @DisplayName("transport failure → 502")
     void transportFailure() {
-        registerAnalyzer("10.0.0.5", "HL7", Map.of("WBC", "6690-2"));
+        registerAnalyzer("bridge-5", "10.0.0.5", 5380, "HL7", Map.of("WBC", "6690-2"));
         when(mllp.send(Mockito.anyString(), anyInt(), Mockito.anyString(), anyInt()))
                 .thenReturn(new OutboundMllpClient.SendResult(false, null, "refused", 3));
-        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("10.0.0.5", 5380, "HL7", List.of("6690-2")));
+        ResponseEntity<Map<String, Object>> resp = controller.sendOrder(req("bridge-5", List.of("6690-2")));
         assertEquals(502, resp.getStatusCode().value());
     }
 }
