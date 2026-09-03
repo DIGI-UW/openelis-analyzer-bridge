@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Bridge-owned outbound order dispatch. OE2 sends a LOINC-coded order
  * ({@code {host, port, protocol, accessionNumber, loincCodes[]}}); the bridge
  * translates each LOINC → the analyzer's own test code via the registered
- * {@code code↔LOINC} map (pushed from OE2's profile), builds the protocol
+ * {@code code↔LOINC} map materialized from the pinned Bridge profile, builds the protocol
  * message ({@link OrderBuilder}), and dispatches it (HL7 via
  * {@link OutboundMllpClient}, ASTM via {@link OutboundAstmClient}).
  *

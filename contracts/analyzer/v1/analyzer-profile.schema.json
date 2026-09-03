@@ -13,6 +13,7 @@
     "protocol",
     "capabilities",
     "configDefaults",
+    "connectionFields",
     "controlResultRecognition",
     "catalog"
   ],
@@ -82,11 +83,17 @@
         ]
       }
     },
+    "sheet_detection": { "$ref": "#/$defs/sheetDetection" },
     "default_test_mappings": {
       "type": "array",
       "items": { "$ref": "#/$defs/testMapping" }
     },
     "configDefaults": { "type": "object" },
+    "connectionFields": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/connectionField" }
+    },
     "controlResultRecognition": { "$ref": "#/$defs/controlResultRecognition" },
     "catalog": { "$ref": "#/$defs/catalogMetadata" },
     "authoring": { "$ref": "#/$defs/authoring" }
@@ -179,6 +186,47 @@
   ],
   "$defs": {
     "nonBlank": { "type": "string", "pattern": ".*\\S.*" },
+    "jsonValue": {
+      "type": ["string", "number", "boolean", "array", "object", "null"]
+    },
+    "connectionChoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "labelKey"],
+      "properties": {
+        "value": { "$ref": "#/$defs/jsonValue" },
+        "labelKey": { "$ref": "#/$defs/nonBlank" }
+      }
+    },
+    "connectionCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fieldKey", "operator", "value"],
+      "properties": {
+        "fieldKey": { "$ref": "#/$defs/nonBlank" },
+        "operator": { "enum": ["EQUALS", "NOT_EQUALS", "IN", "NOT_IN"] },
+        "value": { "$ref": "#/$defs/jsonValue" }
+      }
+    },
+    "connectionField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "labelKey", "inputKind", "required", "choices"],
+      "properties": {
+        "key": { "$ref": "#/$defs/nonBlank" },
+        "labelKey": { "$ref": "#/$defs/nonBlank" },
+        "helpTextKey": { "$ref": "#/$defs/nonBlank" },
+        "inputKind": {
+          "enum": ["TEXT", "NUMBER", "SELECT", "BOOLEAN", "SECRET", "FILE_PATH"]
+        },
+        "required": { "type": "boolean" },
+        "choices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/connectionChoice" }
+        },
+        "visibleWhen": { "$ref": "#/$defs/connectionCondition" }
+      }
+    },
     "fingerprint": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
@@ -211,10 +259,11 @@
     "astmProtocol": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version"],
+      "required": ["name", "version", "lowerLayerVersion"],
       "properties": {
         "name": { "const": "ASTM" },
-        "version": { "$ref": "#/$defs/nonBlank" }
+        "version": { "$ref": "#/$defs/nonBlank" },
+        "lowerLayerVersion": { "enum": ["LIS01_A", "E1381_95"] }
       }
     },
     "hl7Protocol": {
@@ -319,9 +368,10 @@
       "additionalProperties": false,
       "required": ["connectionRole", "aggregationMode"],
       "properties": {
+        "dataFlow": { "enum": ["RESULTS_ONLY", "TWO_WAY"] },
         "connectionRole": { "enum": ["SERVER", "CLIENT"] },
-        "defaultTransport": { "enum": ["RS-232", "TCP/IP", "MLLP", "HTTP"] },
-        "defaultPort": {
+        "transport": { "enum": ["RS-232", "TCP/IP", "MLLP", "HTTP"] },
+        "port": {
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
@@ -338,8 +388,12 @@
       "additionalProperties": false,
       "required": ["fileFormat", "filePattern"],
       "properties": {
+        "dataFlow": { "const": "RESULTS_ONLY" },
         "fileFormat": { "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS", "XML"] },
-        "filePattern": { "$ref": "#/$defs/nonBlank" },
+        "filePattern": {
+          "allOf": [{ "$ref": "#/$defs/nonBlank" }],
+          "description": "Java NIO filename glob evaluated by the Bridge FILE watcher, for example *.{ods,xlsx,xls}."
+        },
         "hasHeader": { "type": "boolean" },
         "delimiter": { "type": "string", "minLength": 1, "maxLength": 1 },
         "encoding": { "$ref": "#/$defs/nonBlank" },
@@ -359,6 +413,36 @@
           "then": { "required": ["hasHeader"] }
         }
       ]
+    },
+    "sheetDetection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "preferred_sheet_names",
+        "header_marker",
+        "max_sheets_to_scan",
+        "max_rows_to_scan"
+      ],
+      "properties": {
+        "strategy": { "const": "header_scan" },
+        "preferred_sheet_names": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonBlank" }
+        },
+        "header_marker": { "$ref": "#/$defs/nonBlank" },
+        "max_sheets_to_scan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "max_rows_to_scan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
     },
     "controlResultRecognition": {
       "oneOf": [

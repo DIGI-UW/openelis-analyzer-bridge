@@ -2,7 +2,7 @@ name: Run Tests
 
 on:
   push:
-    branches: [ master, develop, '*-*' ]
+    branches: [master, develop, "*-*"]
   pull_request:
   workflow_dispatch:
 
@@ -18,11 +18,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Checkout analyzer mock fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: DIGI-UW/analyzer-mock-server
+          ref: 504ffec81a5b93f6be91231051e8fe0720f61eb1
+          path: analyzer-mock-server
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
+          java-version: "21"
+          distribution: "temurin"
           cache: maven
 
       - name: Build library first
@@ -31,7 +38,14 @@ jobs:
           mvn clean install
 
       - name: Run tests
-        run: mvn test
+        run: mvn clean test
+
+      - name: Verify shipped profiles against analyzer mock fixtures
+        run: >-
+          mvn
+          -Dtest=org.itech.ahb.profile.PriorityProfileMockFixtureIT,org.itech.ahb.profile.QuantStudioProfileFixtureIT
+          -DanalyzerMockDir=${{ github.workspace }}/analyzer-mock-server
+          test
 
       - name: Generate test report
         if: always()

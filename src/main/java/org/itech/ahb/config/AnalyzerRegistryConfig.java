@@ -170,63 +170,6 @@ public class AnalyzerRegistryConfig {
     }
 
     /**
-     * Unregisters an analyzer by OE analyzer ID.
-     * Removes all source mappings that point to this analyzer.
-     *
-     * @param oeAnalyzerId the OE analyzer ID to unregister
-     * @return true if at least one mapping was removed
-     */
-    public boolean unregisterByAnalyzerId(String oeAnalyzerId) {
-        boolean removed = analyzers.entrySet()
-                .removeIf(e -> oeAnalyzerId.equals(e.getValue().getId()));
-        if (removed) {
-            log.info("Unregistered analyzer with OE ID '{}'", oeAnalyzerId);
-        }
-        return removed;
-    }
-
-    /**
-     * Replace the entire registry with a new set of registrations.
-     * This is the idempotent full-state sync — OE pushes its complete
-     * analyzer state, and the bridge replaces its in-memory registry.
-     *
-     * @param newRegistry map of sourceId → AnalyzerEntry
-     * @return sync result with counts of added, removed, and unchanged entries
-     */
-    public SyncResult syncAll(Map<String, AnalyzerEntry> newRegistry) {
-        Map<String, AnalyzerEntry> previous = Map.copyOf(analyzers);
-
-        // Atomic swap: build new map, then replace reference (thread-safe vs clear+putAll)
-        Map<String, AnalyzerEntry> replacement = new LinkedHashMap<>(newRegistry);
-        this.analyzers = replacement;
-
-        int added = 0;
-        int updated = 0;
-        for (Map.Entry<String, AnalyzerEntry> entry : newRegistry.entrySet()) {
-            if (!previous.containsKey(entry.getKey())) {
-                added++;
-            } else if (!entry.getValue().equals(previous.get(entry.getKey()))) {
-                updated++;
-            }
-            // else: unchanged — not counted
-        }
-        // Removed = keys in previous that are absent from new registry
-        int removed = 0;
-        for (String key : previous.keySet()) {
-            if (!newRegistry.containsKey(key)) {
-                removed++;
-            }
-        }
-
-        log.info("Registry sync: {} total ({} added, {} updated, {} removed)",
-                analyzers.size(), added, updated, removed);
-        return new SyncResult(analyzers.size(), added, updated, removed);
-    }
-
-    public record SyncResult(int total, int added, int updated, int removed) {
-    }
-
-    /**
      * Returns all registered analyzers.
      *
      * @return unmodifiable view of the registry
@@ -305,7 +248,7 @@ public class AnalyzerRegistryConfig {
         /**
          * Column mappings for FILE protocol (spreadsheet column name → semantic field).
          * E.g., {"Sample Name": "sampleId", "Target": "testCode", "CT": "result"}
-         * Synced from OE's Analyzer entity at registration time.
+         * Materialized from the pinned Bridge profile revision.
          */
         private java.util.Map<String, String> columnMappings;
 
@@ -322,6 +265,13 @@ public class AnalyzerRegistryConfig {
         private int skipRows;
 
         /**
+         * Profile-derived file-wide analyzer test code for FILE exports that do
+         * not carry a row-level {@code testCode}. This is materialized only when
+         * the pinned profile declares exactly one primary test mapping.
+         */
+        private String fileTestCode;
+
+        /**
          * Vocabulary translation for {@code FileNameSelfDeclarationScanner}:
          * maps OE test code → free-text synonyms the lab's files use
          * (e.g. {@code "VIH-1" → ["HIV-1", "GENERIC_HIV_CV"]}).
@@ -331,21 +281,18 @@ public class AnalyzerRegistryConfig {
         /** OE test codes this analyzer is allowed to emit (whitelist, not a default). */
         private Set<String> mappedTestCodes = Collections.emptySet();
 
-        /** FR-15: QC identification rules pulled from OE. Evaluated by parsers. */
+        /** Control-result recognition rules from the pinned Bridge profile. */
         private java.util.List<org.itech.ahb.qc.QcRule> qcRules = new java.util.ArrayList<>();
 
         /**
-         * Active control lots pulled from OE. Used by parsers to enrich
-         * recognized QC samples with lot identity (Tier 1 lot-number match in
-         * OE's resolver) when the inbound message embeds the lot in a
-         * sample-name (FILE) or carries it in a Q-segment (ASTM).
+         * Transitional parser input. The registration contract never populates
+         * operational control lots; target recognition comes only from the profile.
          */
         private java.util.List<org.itech.ahb.qc.ControlLotDto> controlLots = new java.util.ArrayList<>();
 
         /**
-         * Analyzer test_code → LOINC mapping, pushed from OE2 at registration
-         * (sourced from the analyzer profile's {@code default_test_mappings}).
-         * This is the bridge's authority for the analyzer↔LOINC translation:
+         * Analyzer test_code → LOINC mapping materialized from the pinned profile's
+         * {@code default_test_mappings}. This is the bridge's authority for translation:
          * inbound results translate code→LOINC ({@link #getLoincForCode}), and
          * outbound orders translate LOINC→code ({@link #getCodeForLoinc}). OE2
          * never sees analyzer codes — it speaks LOINC over FHIR.

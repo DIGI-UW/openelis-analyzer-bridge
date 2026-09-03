@@ -100,9 +100,9 @@ public class FileMessageHandler {
     /**
      * Process a file with an optional event-scoped per-file test code that
      * the parser applies to rows lacking a per-row testCode from the
-     * column mapping. {@code perFileTestCode} must come from the caller
-     * (upload-time admin declaration or self-declaration scanner) — never
-     * read from persistent analyzer config.
+     * column mapping. An explicit caller value (for example, an admin upload)
+     * overrides the single file-wide test code materialized from the pinned
+     * Bridge profile for unattended watcher processing.
      */
     public MessageEnvelope processFile(Path filePath, String analyzerId, String perFileTestCode)
             throws IOException, FileProcessingException {
@@ -173,6 +173,7 @@ public class FileMessageHandler {
                 }
             }
         }
+        String effectiveFileTestCode = resolveFileTestCode(analyzerEntry, perFileTestCode);
 
         Map<String, String> columnMappings = analyzerEntry != null ? analyzerEntry.getColumnMappings() : null;
         if (columnMappings == null || columnMappings.isEmpty()) {
@@ -205,22 +206,22 @@ public class FileMessageHandler {
             String delimiter = analyzerEntry.getDelimiter();
             int skipRows = analyzerEntry.getSkipRows();
             log.info("Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}, qcRules={}, controlLots={}) for analyzer {}",
-                    filePath.getFileName(), delimiter, skipRows, perFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
-            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules, controlLots);
+                    filePath.getFileName(), delimiter, skipRows, effectiveFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
+            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, effectiveFileTestCode, qcRules, controlLots);
         } else if (".xls".equals(ext) || ".xlsx".equals(ext)) {
             log.info("Parsing Excel file {} (perFileTestCode={}, qcRules={}, controlLots={}) for analyzer {}",
-                    filePath.getFileName(), perFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
+                    filePath.getFileName(), effectiveFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-                allResults = FileResultParser.parse(bis, columnMappings, perFileTestCode, qcRules, controlLots);
+                allResults = FileResultParser.parse(bis, columnMappings, effectiveFileTestCode, qcRules, controlLots);
             }
         } else if (".ods".equals(ext)) {
             // parseOds does not yet accept qcRules — ODS QC detection still
             // falls back to the legacy task-based heuristic. Don't log
             // qcRules here so the message doesn't mislead.
             log.info("Parsing ODS file {} (perFileTestCode={}) for analyzer {}",
-                    filePath.getFileName(), perFileTestCode, analyzerId);
+                    filePath.getFileName(), effectiveFileTestCode, analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-                allResults = FileResultParser.parseOds(bis, columnMappings, perFileTestCode);
+                allResults = FileResultParser.parseOds(bis, columnMappings, effectiveFileTestCode);
             }
         } else {
             throw new FileProcessingException(
@@ -270,6 +271,13 @@ public class FileMessageHandler {
 
         log.info("FHIR file import: {} results across {} accessions from {}",
                 totalResults, allResults.size(), filePath.getFileName());
+    }
+
+    static String resolveFileTestCode(AnalyzerEntry analyzerEntry, String explicitFileTestCode) {
+        if (explicitFileTestCode != null && !explicitFileTestCode.isBlank()) {
+            return explicitFileTestCode.trim();
+        }
+        return analyzerEntry != null ? analyzerEntry.getFileTestCode() : null;
     }
 
     private URI buildFhirUri() throws FileProcessingException {

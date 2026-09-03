@@ -70,4 +70,15 @@ class FileMessageHandlerLoincTest {
         assertEquals("DENV", o.getCode().getCodingFirstRep().getCode(),
                 "with no analyzer entry the raw code is preserved (not dropped)");
     }
+
+    @Test
+    @DisplayName("watched FILE uses the pinned profile code while an explicit upload choice wins")
+    void resolvesFileWideTestCodeWithoutGuessing() {
+        AnalyzerEntry entry = new AnalyzerEntry();
+        entry.setFileTestCode("VIH-1");
+
+        assertEquals("VIH-1", FileMessageHandler.resolveFileTestCode(entry, null));
+        assertEquals("VIH-1", FileMessageHandler.resolveFileTestCode(entry, "  "));
+        assertEquals("CHIKV", FileMessageHandler.resolveFileTestCode(entry, " CHIKV "));
+    }
 }

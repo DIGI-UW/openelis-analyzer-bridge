@@ -1,8 +1,8 @@
 package org.itech.ahb.qc;
 
 /**
- * A QC sample identification rule, pulled from OE.
- * Rules use OR semantics: if ANY active rule matches, the sample is QC.
+ * A profile-owned control-result recognition rule.
+ * Rules use OR semantics: if any rule matches, the sample is a control.
  *
  * @param ruleType       FIELD_EQUALS, SPECIMEN_ID_PREFIX, SPECIMEN_ID_PATTERN, FIELD_CONTAINS
  * @param targetField    e.g., "O.12", "QC_TASK" (null for SPECIMEN_ID_* rules)

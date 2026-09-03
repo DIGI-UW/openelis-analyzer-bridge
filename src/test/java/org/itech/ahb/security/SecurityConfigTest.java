@@ -85,6 +85,26 @@ class SecurityConfigTest {
     }
 
     @Nested
+    @DisplayName("/api/profiles authentication")
+    class ProfileApiTests {
+
+        @Test
+        @DisplayName("Unauthenticated profile catalog read returns 401")
+        void unauthenticatedProfileCatalogReturns401() throws Exception {
+            mockMvc.perform(get("/api/profiles"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("Authenticated profile catalog read succeeds")
+        void authenticatedProfileCatalogSucceeds() throws Exception {
+            mockMvc.perform(get("/api/profiles")
+                    .with(httpBasic("testuser", "testpass")))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
     @DisplayName("Actuator endpoint access")
     class ActuatorTests {
 

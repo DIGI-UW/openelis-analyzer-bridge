@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/profile-catalog-entry.schema.json",
+  "title": "OpenELIS Analyzer Bridge profile catalog entry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "publication"],
+  "properties": {
+    "profile": {
+      "$ref": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json"
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "actor", "markedAt"],
+      "properties": {
+        "action": {
+          "enum": [
+            "SHIPPED",
+            "CREATED",
+            "DUPLICATED",
+            "UPDATED",
+            "DEACTIVATED",
+            "REACTIVATED"
+          ]
+        },
+        "actor": { "type": "string", "minLength": 1 },
+        "markedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
