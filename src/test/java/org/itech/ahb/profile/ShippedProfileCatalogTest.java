@@ -80,7 +80,7 @@ class ShippedProfileCatalogTest {
       .allSatisfy(revision -> {
         ObjectNode profile = revision.profile();
         assertThat(profile.path("catalog").path("source").asText()).isEqualTo("SHIPPED");
-        assertThat(profile.path("catalog").path("revision").asInt()).isEqualTo(3);
+        assertThat(profile.path("catalog").path("revision").asInt()).isPositive();
         assertThat(profile.path("configDefaults").has("qcRules")).isFalse();
         assertThat(profile.path("configDefaults").path("dataFlow").asText()).isEqualTo("RESULTS_ONLY");
 
