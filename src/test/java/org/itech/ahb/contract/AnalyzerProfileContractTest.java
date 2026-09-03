@@ -95,6 +95,16 @@ class AnalyzerProfileContractTest {
   }
 
   @Test
+  @DisplayName("a new profile may start without analyzer test concepts")
+  void profileMayStartWithoutDefaultTestMappings() throws IOException {
+    ObjectNode profile = fixture("analyzer-profile-astm.json").deepCopy();
+    profile.withArray("default_test_mappings").removeAll();
+
+    assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), PROFILE_SCHEMA.validate(profile).toString());
+    assertSemanticProfile(profile);
+  }
+
+  @Test
   @DisplayName("control recognition is explicit RULES or affirmed NONE")
   void controlRecognitionIsDiscriminated() throws IOException {
     ObjectNode rulesProfile = fixture(PROFILE_FIXTURES.get(0)).deepCopy();
