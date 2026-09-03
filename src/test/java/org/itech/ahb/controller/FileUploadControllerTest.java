@@ -20,8 +20,8 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.fhir.FileNameSelfDeclarationScanner;
 import org.itech.ahb.file.FileMessageHandler;
 import org.itech.ahb.file.FileMessageHandler.FileProcessingException;
@@ -62,7 +62,7 @@ class FileUploadControllerTest {
     @TempDir
     Path tempDir;
 
-    private AnalyzerRegistryConfig registry;
+    private AnalyzerRuntimeRegistry registry;
     private FileMessageHandler fileMessageHandler;
     private FileNameSelfDeclarationScanner scanner;
     private FileWatcher fileWatcher;
@@ -72,7 +72,7 @@ class FileUploadControllerTest {
 
     @BeforeEach
     void setUp() {
-        registry = org.mockito.Mockito.mock(AnalyzerRegistryConfig.class);
+        registry = org.mockito.Mockito.mock(AnalyzerRuntimeRegistry.class);
         fileMessageHandler = org.mockito.Mockito.mock(FileMessageHandler.class);
         scanner = org.mockito.Mockito.mock(FileNameSelfDeclarationScanner.class);
         fileWatcher = org.mockito.Mockito.mock(FileWatcher.class);

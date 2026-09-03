@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-logging: &local-logging
   driver: "local"
   options:
@@ -18,10 +16,10 @@ services:
       - "2575:2575"     # MLLP HL7 listener (concurrent connections via HAPI SimpleServer)
     volumes:
       - ./configuration.yml:/app/configuration.yml
+      - bridge-data:/data/openelis-analyzer-bridge
       # File watcher directories (uncomment if bridge.file.enabled=true)
       # - /path/to/analyzer-import:/mnt/analyzer-import:ro
-      # - /path/to/analyzer-archive:/mnt/analyzer-archive
-    # Serial device passthrough (uncomment if org.itech.ahb.serial.enabled=true)
+    # Serial device passthrough for active RS-232 analyzer connections.
     # devices:
     #   - /dev/ttyUSB0:/dev/ttyUSB0
     environment:
@@ -37,3 +35,6 @@ services:
       interval: 30s
       retries: 3
       start_period: 2m
+
+volumes:
+  bridge-data:

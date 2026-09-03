@@ -32,7 +32,6 @@ import org.springframework.test.web.servlet.MockMvc;
     "bridge.security.username=testuser",
     "bridge.security.password=testpass",
     "org.itech.ahb.mllp.enabled=false",
-    "org.itech.ahb.serial.enabled=false",
     "bridge.file.enabled=false",
     "management.endpoints.web.exposure.include=health,info,prometheus,metrics,loggers"
 })
@@ -101,6 +100,37 @@ class SecurityConfigTest {
             mockMvc.perform(get("/api/profiles")
                     .with(httpBasic("testuser", "testpass")))
                     .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("/api/connections management authentication")
+    class AnalyzerConnectionApiTests {
+
+        @Test
+        @DisplayName("Unauthenticated connection create returns 401")
+        void unauthenticatedConnectionCreateReturns401() throws Exception {
+            mockMvc.perform(post("/api/connections")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("Unauthenticated analyzer probe returns 401")
+        void unauthenticatedAnalyzerProbeReturns401() throws Exception {
+            mockMvc.perform(post("/api/connections/77/probe"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("Authenticated analyzer probe reaches the controller")
+        void authenticatedAnalyzerProbeReachesController() throws Exception {
+            mockMvc.perform(post("/api/connections/77/probe")
+                    .with(httpBasic("testuser", "testpass"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}"))
+                    .andExpect(status().isBadRequest());
         }
     }
 

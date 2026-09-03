@@ -16,7 +16,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.fhir.ASTMResultParser;
@@ -92,7 +92,7 @@ public class HttpForwardingRouter implements MessageRouter {
     private final HTTPForwardServerConfigurationProperties httpConfig;
     private final FhirRoutingConfig fhirConfig;
     private final SqliteFileStateStore stateStore;
-    private final AnalyzerRegistryConfig registry;
+    private final AnalyzerRuntimeRegistry registry;
     private final int connectTimeoutSeconds;
     private final int readTimeoutSeconds;
     private final HttpClient httpClient;
@@ -111,7 +111,7 @@ public class HttpForwardingRouter implements MessageRouter {
             HTTPForwardServerConfigurationProperties httpConfig,
             @Autowired(required = false) FhirRoutingConfig fhirConfig,
             @Autowired(required = false) SqliteFileStateStore stateStore,
-            @Autowired(required = false) AnalyzerRegistryConfig registry) {
+            @Autowired(required = false) AnalyzerRuntimeRegistry registry) {
         this.httpConfig = httpConfig;
         this.fhirConfig = fhirConfig;
         this.stateStore = stateStore;
@@ -262,7 +262,7 @@ public class HttpForwardingRouter implements MessageRouter {
      */
     private boolean routeAsFhir(MessageEnvelope envelope) {
         var registeredAnalyzer = registry == null || envelope.getSourceId() == null
-                ? java.util.Optional.<AnalyzerRegistryConfig.AnalyzerEntry>empty()
+                ? java.util.Optional.<AnalyzerRuntimeRegistry.AnalyzerEntry>empty()
                 : registry.findAnalyzerEntry(envelope.getSourceId());
         if (registeredAnalyzer.isEmpty() ||
                 registeredAnalyzer.get().getControlResultRecognition() == null) {

@@ -26,7 +26,6 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest(properties = {
     "bridge.security.enabled=false",
     "org.itech.ahb.mllp.enabled=false",
-    "org.itech.ahb.serial.enabled=false",
     "bridge.file.enabled=false"
 })
 @AutoConfigureMockMvc

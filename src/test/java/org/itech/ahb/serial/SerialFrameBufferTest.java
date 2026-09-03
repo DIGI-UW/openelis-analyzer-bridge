@@ -3,7 +3,7 @@ package org.itech.ahb.serial;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
-import org.itech.ahb.config.properties.SerialConfigurationProperties.ProtocolMode;
+import org.itech.ahb.model.Protocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -40,7 +40,7 @@ class SerialFrameBufferTest {
 
         @BeforeEach
         void setUp() {
-            buffer = new SerialFrameBuffer(ProtocolMode.ASTM);
+            buffer = new SerialFrameBuffer(Protocol.ASTM);
         }
 
         @Test
@@ -218,7 +218,7 @@ class SerialFrameBufferTest {
 
         @BeforeEach
         void setUp() {
-            buffer = new SerialFrameBuffer(ProtocolMode.HL7);
+            buffer = new SerialFrameBuffer(Protocol.HL7);
         }
 
         @Test
@@ -315,115 +315,13 @@ class SerialFrameBufferTest {
     }
 
     @Nested
-    @DisplayName("Auto-Detection Tests")
-    class AutoDetectionTests {
-
-        @BeforeEach
-        void setUp() {
-            buffer = new SerialFrameBuffer(ProtocolMode.AUTO);
-        }
-
-        @Test
-        @DisplayName("Should auto-detect ASTM from ENQ")
-        void shouldAutoDetectASTMFromEnq() {
-            buffer.appendData(new byte[]{ENQ});
-
-            assertTrue(buffer.getDetectedProtocol().isPresent());
-            assertEquals(ProtocolMode.ASTM, buffer.getDetectedProtocol().get());
-        }
-
-        @Test
-        @DisplayName("Should auto-detect ASTM from STX")
-        void shouldAutoDetectASTMFromStx() {
-            buffer.appendData(new byte[]{STX});
-
-            assertTrue(buffer.getDetectedProtocol().isPresent());
-            assertEquals(ProtocolMode.ASTM, buffer.getDetectedProtocol().get());
-        }
-
-        @Test
-        @DisplayName("Should auto-detect HL7 from VT")
-        void shouldAutoDetectHL7FromVt() {
-            buffer.appendData(new byte[]{VT});
-
-            assertTrue(buffer.getDetectedProtocol().isPresent());
-            assertEquals(ProtocolMode.HL7, buffer.getDetectedProtocol().get());
-        }
-
-        @Test
-        @DisplayName("Should process ASTM after auto-detection")
-        void shouldProcessASTMAfterAutoDetection() {
-            // Send ENQ to trigger auto-detection
-            buffer.appendData(new byte[]{ENQ});
-            assertEquals(ProtocolMode.ASTM, buffer.getDetectedProtocol().get());
-
-            // Continue with ASTM protocol
-            String text = "H|\\^&|||TEST";
-            byte[] frame = buildASTMFrame(1, text, true);
-            buffer.appendData(frame);
-            buffer.appendData(new byte[]{EOT});
-
-            assertTrue(buffer.hasCompletedMessages());
-            assertEquals(text, buffer.getCompletedMessages().get(0));
-        }
-
-        @Test
-        @DisplayName("Should process HL7 after auto-detection")
-        void shouldProcessHL7AfterAutoDetection() {
-            String hl7Message = "MSH|^~\\&|TEST|||20260205120000||ORU^R01|MSG001|P|2.5.1";
-            byte[] mllpMessage = wrapMLLP(hl7Message);
-
-            buffer.appendData(mllpMessage);
-
-            assertEquals(ProtocolMode.HL7, buffer.getDetectedProtocol().get());
-            assertTrue(buffer.hasCompletedMessages());
-            assertEquals(hl7Message, buffer.getCompletedMessages().get(0));
-        }
-
-        private byte[] buildASTMFrame(int frameNumber, String text, boolean isFinal) {
-            byte terminator = isFinal ? ETX : ETB;
-            int checksum = 0;
-            checksum += (byte) Character.forDigit(frameNumber % 8, 10);
-            for (byte b : text.getBytes()) {
-                checksum += b;
-            }
-            checksum += terminator;
-            checksum %= 256;
-            String checksumStr = String.format("%02X", checksum);
-
-            byte[] frame = new byte[1 + 1 + text.length() + 1 + 2 + 2];
-            int pos = 0;
-            frame[pos++] = STX;
-            frame[pos++] = (byte) Character.forDigit(frameNumber % 8, 10);
-            System.arraycopy(text.getBytes(), 0, frame, pos, text.length());
-            pos += text.length();
-            frame[pos++] = terminator;
-            frame[pos++] = (byte) checksumStr.charAt(0);
-            frame[pos++] = (byte) checksumStr.charAt(1);
-            frame[pos++] = CR;
-            frame[pos] = LF;
-            return frame;
-        }
-
-        private byte[] wrapMLLP(String message) {
-            byte[] msgBytes = message.getBytes();
-            byte[] wrapped = new byte[msgBytes.length + 3];
-            wrapped[0] = VT;
-            System.arraycopy(msgBytes, 0, wrapped, 1, msgBytes.length);
-            wrapped[msgBytes.length + 1] = FS;
-            wrapped[msgBytes.length + 2] = CR;
-            return wrapped;
-        }
-    }
-
-    @Nested
     @DisplayName("Edge Case Tests")
     class EdgeCaseTests {
 
         @Test
         @DisplayName("Should handle null data")
         void shouldHandleNullData() {
-            buffer = new SerialFrameBuffer(ProtocolMode.ASTM);
+            buffer = new SerialFrameBuffer(Protocol.ASTM);
             List<byte[]> responses = buffer.appendData(null);
             assertTrue(responses.isEmpty());
         }
@@ -431,7 +329,7 @@ class SerialFrameBufferTest {
         @Test
         @DisplayName("Should handle empty data")
         void shouldHandleEmptyData() {
-            buffer = new SerialFrameBuffer(ProtocolMode.ASTM);
+            buffer = new SerialFrameBuffer(Protocol.ASTM);
             List<byte[]> responses = buffer.appendData(new byte[0]);
             assertTrue(responses.isEmpty());
         }
@@ -439,7 +337,7 @@ class SerialFrameBufferTest {
         @Test
         @DisplayName("Should track time since last data")
         void shouldTrackTimeSinceLastData() throws InterruptedException {
-            buffer = new SerialFrameBuffer(ProtocolMode.ASTM);
+            buffer = new SerialFrameBuffer(Protocol.ASTM);
 
             buffer.appendData(new byte[]{ENQ});
             Thread.sleep(100);
@@ -450,7 +348,7 @@ class SerialFrameBufferTest {
         @Test
         @DisplayName("Should handle buffer overflow gracefully")
         void shouldHandleBufferOverflowGracefully() {
-            buffer = new SerialFrameBuffer(ProtocolMode.HL7);
+            buffer = new SerialFrameBuffer(Protocol.HL7);
 
             // Send VT to start message
             buffer.appendData(new byte[]{VT});

@@ -361,6 +361,20 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("bulk full-state registration artifacts are absent")
+  void fullStateRegistrationArtifactsAreAbsent() {
+    for (String removed : new String[] {
+      "registration-sync.schema.json",
+      "registration-sync-result.schema.json",
+      "fixtures/registration-initial.json",
+      "fixtures/registration-next.json",
+      "fixtures/registration-result.json"
+    }) {
+      assertFalse(Files.exists(CONTRACT_ROOT.resolve(removed)), removed);
+    }
+  }
+
+  @Test
   @DisplayName("NONE recognition has exactly one NOT_EVALUATED outcome")
   void noneRecognitionRejectsAdditionalOutcome() throws IOException {
     JsonNode invalid = fixture("normalized-none.fhir.json").deepCopy();

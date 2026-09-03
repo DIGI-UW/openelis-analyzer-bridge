@@ -11,10 +11,9 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.file.RejectedBundle;
@@ -140,11 +139,11 @@ class HttpForwardingRouterTest {
     void fhirRoutingRejectsAnAnalyzerWithoutProfileOwnedRecognition() {
         FhirRoutingConfig fhirConfig = new FhirRoutingConfig();
         fhirConfig.setUseFhir(true);
-        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         AnalyzerEntry entry = new AnalyzerEntry();
         entry.setId("analyzer-1");
         entry.setExpectedProtocol("ASTM");
-        registry.setAnalyzers(Map.of("10.0.0.7", entry));
+        registry.register("10.0.0.7", entry);
         HttpForwardingRouter router = new HttpForwardingRouter(
                 minimalConfig(), fhirConfig, stateStore, registry);
 
@@ -165,12 +164,12 @@ class HttpForwardingRouterTest {
     void fhirRoutingRejectsAnAstmAnalyzerWithoutProfileOwnedResultSelection() {
         FhirRoutingConfig fhirConfig = new FhirRoutingConfig();
         fhirConfig.setUseFhir(true);
-        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         AnalyzerEntry entry = new AnalyzerEntry();
         entry.setId("analyzer-1");
         entry.setExpectedProtocol("ASTM");
         entry.setControlResultRecognition(ControlResultRecognition.none());
-        registry.setAnalyzers(Map.of("10.0.0.8", entry));
+        registry.register("10.0.0.8", entry);
         HttpForwardingRouter router = new HttpForwardingRouter(
                 minimalConfig(), fhirConfig, stateStore, registry);
 

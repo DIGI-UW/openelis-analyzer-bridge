@@ -54,8 +54,13 @@
     "transport_config": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "enum": ["RS-232", "TCP/IP", "MLLP", "HTTP"] },
-      "additionalProperties": { "$ref": "#/$defs/transportSettings" }
+      "additionalProperties": false,
+      "properties": {
+        "RS-232": { "$ref": "#/$defs/serialTransportSettings" },
+        "TCP/IP": { "$ref": "#/$defs/transportSettings" },
+        "MLLP": { "$ref": "#/$defs/transportSettings" },
+        "HTTP": { "$ref": "#/$defs/transportSettings" }
+      }
     },
     "communication": { "$ref": "#/$defs/communication" },
     "capabilities": { "$ref": "#/$defs/capabilities" },
@@ -294,6 +299,36 @@
       "type": "object",
       "additionalProperties": {
         "type": ["string", "number", "integer", "boolean"]
+      }
+    },
+    "serialTransportSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_baud_rate",
+        "data_bits",
+        "stop_bits",
+        "parity",
+        "flow_control",
+        "read_timeout_ms",
+        "message_timeout_ms",
+        "reconnect_interval_ms",
+        "max_reconnect_attempts",
+        "rts_enabled",
+        "dtr_enabled"
+      ],
+      "properties": {
+        "default_baud_rate": { "type": "integer", "minimum": 1 },
+        "data_bits": { "type": "integer", "minimum": 5, "maximum": 8 },
+        "stop_bits": { "enum": [1, 2, 3] },
+        "parity": { "enum": ["NONE", "ODD", "EVEN", "MARK", "SPACE"] },
+        "flow_control": { "enum": ["NONE", "RTS_CTS", "XON_XOFF"] },
+        "read_timeout_ms": { "type": "integer", "minimum": 1 },
+        "message_timeout_ms": { "type": "integer", "minimum": 1 },
+        "reconnect_interval_ms": { "type": "integer", "minimum": 1 },
+        "max_reconnect_attempts": { "type": "integer", "minimum": -1 },
+        "rts_enabled": { "type": "boolean" },
+        "dtr_enabled": { "type": "boolean" }
       }
     },
     "communication": {

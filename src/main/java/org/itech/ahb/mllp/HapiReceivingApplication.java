@@ -81,7 +81,7 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
             // Extract connection metadata
             String sourceIp = extractSourceIp(metadata);
             String rawMessage = extractRawMessage(message, metadata);
-            String analyzerId = extractAnalyzerId(message, sourceIp);
+            String analyzerId = extractAnalyzerId(message);
 
             log.debug("Processing HL7 message from {} (analyzer: {}), {} bytes",
                 sourceIp, analyzerId, rawMessage != null ? rawMessage.length() : 0);
@@ -199,14 +199,12 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
      * <p>
      * Uses HAPI Terser for safe MSH segment parsing (fixes PR review comments #2, #3).
      * Tries MSH-3 (Sending Application) and MSH-4 (Sending Facility).
-     * Falls back to the source IP if not available.
      * </p>
      *
      * @param message the parsed HAPI message
-     * @param sourceIp the source IP as fallback
-     * @return the analyzer identifier
+     * @return the message-declared analyzer identifier, or null when absent
      */
-    String extractAnalyzerId(Message message, String sourceIp) {
+    String extractAnalyzerId(Message message) {
         try {
             Terser terser = new Terser(message);
 
@@ -226,7 +224,6 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
             log.debug("Could not extract analyzer ID from MSH segment", e);
         }
 
-        log.debug("Using source IP as analyzer ID fallback: {}", sourceIp);
-        return sourceIp;
+        return null;
     }
 }

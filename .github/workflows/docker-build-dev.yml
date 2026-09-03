@@ -23,6 +23,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Checkout analyzer mock fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: DIGI-UW/analyzer-mock-server
+          ref: db1db96bf920543a44719b2783813b005a2d189e
+          path: analyzer-mock-server
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -36,7 +43,10 @@ jobs:
           mvn clean install -DskipTests
 
       - name: Run tests
-        run: mvn test
+        run: >-
+          mvn
+          -DanalyzerMockDir=${{ github.workspace }}/analyzer-mock-server
+          test
 
   build-and-push-dev-image:
     needs: test

@@ -10,8 +10,8 @@ import static org.mockito.Mockito.when;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.controller.OutboundOrderController.OrderRequest;
 import org.itech.ahb.mllp.OutboundMllpClient;
 import org.itech.ahb.order.OutboundAstmClient;
@@ -30,14 +30,14 @@ import org.springframework.http.ResponseEntity;
 @DisplayName("OutboundOrderController — LOINC order → translate → dispatch")
 class OutboundOrderControllerTest {
 
-    private AnalyzerRegistryConfig registry;
+    private AnalyzerRuntimeRegistry registry;
     private OutboundMllpClient mllp;
     private OutboundAstmClient astm;
     private OutboundOrderController controller;
 
     @BeforeEach
     void setUp() {
-        registry = new AnalyzerRegistryConfig();
+        registry = new AnalyzerRuntimeRegistry();
         mllp = Mockito.mock(OutboundMllpClient.class);
         astm = Mockito.mock(OutboundAstmClient.class);
         controller = new OutboundOrderController(registry, mllp, astm);

@@ -112,6 +112,21 @@ class ASTMBridgeAdapterTest {
         }
 
         @Test
+        @DisplayName("Connection-owned listener uses its stable source binding")
+        void connectionOwnedListenerUsesItsStableSourceBinding() {
+            ASTMBridgeAdapter boundAdapter = new ASTMBridgeAdapter(
+                mockNormalizer,
+                "connection:bridge-42"
+            );
+
+            boundAdapter.handle(mockAstmMessage, "192.168.1.10");
+
+            verify(mockNormalizer).process(argThat(envelope ->
+                "connection:bridge-42".equals(envelope.getSourceId())
+            ));
+        }
+
+        @Test
         @DisplayName("Should use 'unknown' as sourceId when sourceIp is null")
         void shouldUseUnknownWhenSourceIpIsNull() {
             adapter.handle(mockAstmMessage, null);

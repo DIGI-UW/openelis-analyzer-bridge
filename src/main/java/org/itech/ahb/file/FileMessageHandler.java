@@ -19,8 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.fhir.FileResultParser;
@@ -46,7 +46,7 @@ import org.springframework.stereotype.Component;
 public class FileMessageHandler {
 
     private final FhirRoutingConfig fhirConfig;
-    private final AnalyzerRegistryConfig registry;
+    private final AnalyzerRuntimeRegistry registry;
     private final HTTPForwardServerConfigurationProperties httpConfig;
 
     private volatile HttpClient httpClient;
@@ -55,7 +55,7 @@ public class FileMessageHandler {
 
     @Autowired
     public FileMessageHandler(@Autowired(required = false) FhirRoutingConfig fhirConfig,
-            @Autowired(required = false) AnalyzerRegistryConfig registry,
+            @Autowired(required = false) AnalyzerRuntimeRegistry registry,
             HTTPForwardServerConfigurationProperties httpConfig) {
         this.fhirConfig = fhirConfig;
         this.registry = registry;

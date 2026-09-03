@@ -7,16 +7,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.controller.AnalyzerInputController;
 import org.itech.ahb.file.FileMessageHandler;
@@ -24,6 +23,7 @@ import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
 import org.itech.ahb.normalizer.ASTMBridgeAdapter;
 import org.itech.ahb.normalizer.AnalyzerIdentifier;
 import org.itech.ahb.normalizer.MessageNormalizer;
+import org.itech.ahb.model.Protocol;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
 import org.itech.ahb.routing.HttpForwardingRouter;
@@ -122,22 +122,20 @@ class UnifiedRoutingTest {
         HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
-        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, null, registry);
-        Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
-        analyzers.put("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
-        analyzers.put("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));
-        analyzers.put("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV"));
-        analyzers.put("192.168.1.10", analyzer("HTTP-001", "ASTM"));
-        analyzers.put("192.168.1.20", analyzer("HTTP-002", "HL7"));
-        analyzers.put("192.168.1.30", analyzer("HTTP-003", "CSV"));
-        analyzers.put("192.168.1.40", analyzer("MINDRAY", "ASTM"));
-        analyzers.put("192.168.1.50", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
-        analyzers.put("192.168.1.51", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
-        analyzers.put("192.168.1.60", analyzer("HTTP-004", "ASTM"));
-        analyzers.put("unknown", analyzer("TEST", "ASTM"));
-        analyzers.put("/tmp/quantstudio", fileAnalyzer("QUANTSTUDIO-001"));
-        registry.setAnalyzers(analyzers);
+        registry.register("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
+        registry.register("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));
+        registry.register("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV"));
+        registry.register("192.168.1.10", analyzer("HTTP-001", "ASTM"));
+        registry.register("192.168.1.20", analyzer("HTTP-002", "HL7"));
+        registry.register("192.168.1.30", analyzer("HTTP-003", "CSV"));
+        registry.register("192.168.1.40", analyzer("MINDRAY", "ASTM"));
+        registry.register("192.168.1.50", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
+        registry.register("192.168.1.51", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
+        registry.register("192.168.1.60", analyzer("HTTP-004", "ASTM"));
+        registry.register("unknown", analyzer("TEST", "ASTM"));
+        registry.register("/tmp/quantstudio", fileAnalyzer("QUANTSTUDIO-001"));
 
         AnalyzerIdentifier identifier = new AnalyzerIdentifier(registry);
         normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
@@ -181,7 +179,7 @@ class UnifiedRoutingTest {
             resetLatch();
             String astmMessage = "H|\\^&|||TEST|||||||P|1|20260205120000\rP|1||12345\rL|1|N";
 
-            serialHandler.handleMessage(astmMessage, "/dev/ttyUSB0", "SERIAL-001");
+            serialHandler.handleMessage(astmMessage, "/dev/ttyUSB0", "SERIAL-001", Protocol.ASTM);
 
             CapturedRequest req = awaitRequest();
             assertTrue(req.path().endsWith("/astm"), "Path should end with /astm, got: " + req.path());
@@ -200,7 +198,7 @@ class UnifiedRoutingTest {
             String hl7Message = "MSH|^~\\&|TEST|LAB|OPENELIS|LAB|20260205120000||ORU^R01|MSG001|P|2.5.1\r" +
                     "PID|1||12345\rOBX|1|NM|WBC||7.5|10^3/uL";
 
-            serialHandler.handleMessage(hl7Message, "/dev/ttyUSB1", null);
+            serialHandler.handleMessage(hl7Message, "/dev/ttyUSB1", null, Protocol.HL7);
 
             CapturedRequest req = awaitRequest();
             assertTrue(req.path().endsWith("/hl7"), "Path should end with /hl7, got: " + req.path());
@@ -208,20 +206,6 @@ class UnifiedRoutingTest {
             assertEquals("SERIAL", req.sourceTransport());
         }
 
-        @Test
-        @DisplayName("Serial CSV message routes to /analyzer/csv")
-        void serialCsvRoutesCorrectly() throws Exception {
-            resetLatch();
-            // ProtocolDetector requires >= 4 columns for CSV detection
-            String csvMessage = "SampleID,TestCode,Result,Units\n12345,WBC,7.5,10^3/uL\n12346,RBC,4.8,10^6/uL";
-
-            serialHandler.handleMessage(csvMessage, "/dev/ttyUSB2", null);
-
-            CapturedRequest req = awaitRequest();
-            assertTrue(req.path().endsWith("/csv"), "Path should end with /csv, got: " + req.path());
-            assertEquals("CSV", req.sourceProtocol());
-            assertEquals("SERIAL", req.sourceTransport());
-        }
     }
 
     @Nested
@@ -515,15 +499,15 @@ class UnifiedRoutingTest {
             String sourcePort
     ) {}
 
-    private AnalyzerRegistryConfig.AnalyzerEntry analyzer(String id, String expectedProtocol) {
-        AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+    private AnalyzerRuntimeRegistry.AnalyzerEntry analyzer(String id, String expectedProtocol) {
+        AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
         entry.setId(id);
         entry.setExpectedProtocol(expectedProtocol);
         return entry;
     }
 
-    private AnalyzerRegistryConfig.AnalyzerEntry fileAnalyzer(String id) {
-        AnalyzerRegistryConfig.AnalyzerEntry entry = analyzer(id, "FILE");
+    private AnalyzerRuntimeRegistry.AnalyzerEntry fileAnalyzer(String id) {
+        AnalyzerRuntimeRegistry.AnalyzerEntry entry = analyzer(id, "FILE");
         entry.setControlResultRecognition(ControlResultRecognition.none());
         entry.setTabularResultValueSelection(TabularResultValueSelection.resultOnly());
         entry.setColumnMappings(Map.of(

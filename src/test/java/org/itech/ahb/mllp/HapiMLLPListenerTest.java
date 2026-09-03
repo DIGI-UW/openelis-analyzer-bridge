@@ -168,15 +168,15 @@ class HapiMLLPListenerTest {
             Message message = new PipeParser().parse(hl7Message);
 
             // When: Extracting analyzer ID
-            String analyzerId = app.extractAnalyzerId(message, "192.168.1.1");
+            String analyzerId = app.extractAnalyzerId(message);
 
             // Then: Should extract from MSH-3 and MSH-4
             assertEquals("SYSMEX-XN-LAB1", analyzerId);
         }
 
         @Test
-        @DisplayName("Should fallback to source IP when MSH fields are empty")
-        void shouldFallbackToSourceIP() throws Exception {
+        @DisplayName("Should leave the protocol sender empty when MSH fields are empty")
+        void shouldNotInventAProtocolSenderFromTheSourceIP() throws Exception {
             // Given: A HAPI receiving application
             TestMessageRouter testRouter = new TestMessageRouter();
             HapiReceivingApplication app = new HapiReceivingApplication(testRouter);
@@ -186,10 +186,9 @@ class HapiMLLPListenerTest {
             Message message = new PipeParser().parse(hl7Message);
 
             // When: Extracting analyzer ID
-            String analyzerId = app.extractAnalyzerId(message, "192.168.1.50");
+            String analyzerId = app.extractAnalyzerId(message);
 
-            // Then: Should use source IP
-            assertEquals("192.168.1.50", analyzerId);
+            assertNull(analyzerId);
         }
 
         @Test

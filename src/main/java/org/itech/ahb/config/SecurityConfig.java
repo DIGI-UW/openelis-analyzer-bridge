@@ -82,7 +82,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        log.info("Configuring bridge security: HTTP Basic auth for /input endpoint");
+        log.info("Configuring bridge security for ingestion and management APIs");
 
         http
             .csrf(csrf -> csrf.disable())
@@ -103,6 +103,9 @@ public class SecurityConfig {
                 // Analyzer profile reads and lifecycle writes are an internal
                 // OpenELIS-to-Bridge management API.
                 .requestMatchers("/api/profiles", "/api/profiles/**").authenticated()
+                // Durable analyzer connections and their probes are also
+                // OpenELIS-to-Bridge management operations.
+                .requestMatchers("/api/connections", "/api/connections/**").authenticated()
                 // All other endpoints (ASTM query forwarding, etc.) are permitted
                 .anyRequest().permitAll()
             )

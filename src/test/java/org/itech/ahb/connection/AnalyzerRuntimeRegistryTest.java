@@ -1,22 +1,20 @@
-package org.itech.ahb.config;
+package org.itech.ahb.connection;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for AnalyzerRegistryConfig.
+ * Unit tests for AnalyzerRuntimeRegistry.
  * <p>
  * Tests analyzer source lookup and identifier-pattern compilation.
  * </p>
  */
-@DisplayName("Analyzer Registry Config Tests")
-class AnalyzerRegistryConfigTest {
+@DisplayName("Analyzer Runtime Registry Tests")
+class AnalyzerRuntimeRegistryTest {
 
     // -------------------------------------------------------------------------
     // Existing tests: glob/direct matching
@@ -25,12 +23,10 @@ class AnalyzerRegistryConfigTest {
     @Test
     @DisplayName("Glob pattern should match against file name")
     void globMatchesFileName() {
-        AnalyzerRegistryConfig config = new AnalyzerRegistryConfig();
-        Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
-        analyzers.put("quantstudio-*", entry("QUANTSTUDIO-001"));
-        config.setAnalyzers(analyzers);
+        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+        registry.register("quantstudio-*", entry("QUANTSTUDIO-001"));
 
-        Optional<String> result = config.findAnalyzerId(
+        Optional<String> result = registry.findAnalyzerId(
             "/mnt/analyzer-import/quantstudio/quantstudio-20260205.csv");
 
         assertTrue(result.isPresent());
@@ -40,12 +36,10 @@ class AnalyzerRegistryConfigTest {
     @Test
     @DisplayName("Glob pattern should match against full path")
     void globMatchesFullPath() {
-        AnalyzerRegistryConfig config = new AnalyzerRegistryConfig();
-        Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
-        analyzers.put("/mnt/analyzer-import/quantstudio/*.csv", entry("QUANTSTUDIO-002"));
-        config.setAnalyzers(analyzers);
+        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+        registry.register("/mnt/analyzer-import/quantstudio/*.csv", entry("QUANTSTUDIO-002"));
 
-        Optional<String> result = config.findAnalyzerId(
+        Optional<String> result = registry.findAnalyzerId(
             "/mnt/analyzer-import/quantstudio/quantstudio-20260205.csv");
 
         assertTrue(result.isPresent());
@@ -55,13 +49,11 @@ class AnalyzerRegistryConfigTest {
     @Test
     @DisplayName("Direct match should take precedence over glob")
     void directMatchPreferredOverGlob() {
-        AnalyzerRegistryConfig config = new AnalyzerRegistryConfig();
-        Map<String, AnalyzerRegistryConfig.AnalyzerEntry> analyzers = new LinkedHashMap<>();
-        analyzers.put("192.168.1.10", entry("MINDRAY-001"));
-        analyzers.put("192.168.*", entry("GENERIC-001"));
-        config.setAnalyzers(analyzers);
+        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+        registry.register("192.168.1.10", entry("MINDRAY-001"));
+        registry.register("192.168.*", entry("GENERIC-001"));
 
-        Optional<String> result = config.findAnalyzerId("192.168.1.10");
+        Optional<String> result = registry.findAnalyzerId("192.168.1.10");
 
         assertTrue(result.isPresent());
         assertEquals("MINDRAY-001", result.get());
@@ -78,7 +70,7 @@ class AnalyzerRegistryConfigTest {
         @Test
         @DisplayName("a valid regex is compiled and cached (CASE_INSENSITIVE), reused per message")
         void validPatternIsCompiledAndCached() {
-            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             entry.setIdentifierPattern("GENEXPERT|CEPHEID");
 
             assertNotNull(entry.getCompiledIdentifierPattern(),
@@ -92,7 +84,7 @@ class AnalyzerRegistryConfigTest {
         @Test
         @DisplayName("an invalid regex leaves the compiled form null (no throw) so callers can reject/ignore")
         void invalidPatternLeavesCompiledNull() {
-            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             // Unbalanced bracket — a PatternSyntaxException source.
             assertDoesNotThrow(() -> entry.setIdentifierPattern("MINDRAY["));
             assertEquals("MINDRAY[", entry.getIdentifierPattern(),
@@ -104,7 +96,7 @@ class AnalyzerRegistryConfigTest {
         @Test
         @DisplayName("null / blank pattern compiles to null")
         void nullOrBlankPatternCompilesToNull() {
-            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             entry.setIdentifierPattern(null);
             assertNull(entry.getCompiledIdentifierPattern());
             entry.setIdentifierPattern("   ");
@@ -114,7 +106,7 @@ class AnalyzerRegistryConfigTest {
         @Test
         @DisplayName("re-setting to a new pattern replaces the cached compiled form")
         void resettingPatternReplacesCompiledForm() {
-            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             entry.setIdentifierPattern("AAA");
             assertTrue(entry.getCompiledIdentifierPattern().matcher("aaa").find());
             entry.setIdentifierPattern("BBB");
@@ -127,8 +119,8 @@ class AnalyzerRegistryConfigTest {
     // Helper methods
     // -------------------------------------------------------------------------
 
-    private AnalyzerRegistryConfig.AnalyzerEntry entry(String id) {
-        AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+    private AnalyzerRuntimeRegistry.AnalyzerEntry entry(String id) {
+        AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
         entry.setId(id);
         return entry;
     }

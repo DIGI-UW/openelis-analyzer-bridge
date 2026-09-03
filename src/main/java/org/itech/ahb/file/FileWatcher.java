@@ -135,14 +135,6 @@ public class FileWatcher {
         monitor = new FileAlterationMonitor(fileConfig.getPollIntervalMs());
         processorExecutor = Executors.newFixedThreadPool(2);
 
-        // Register bootstrap directories (if any)
-        for (String watchDir : fileConfig.getWatchDirectories()) {
-            if (watchDir == null || watchDir.isBlank()) {
-                continue;
-            }
-            registerDirectoryInternal(Paths.get(watchDir).normalize(), null, true);
-        }
-
         running = true;
         try {
             monitor.start();
@@ -184,11 +176,6 @@ public class FileWatcher {
         Path normalized = dirPath.normalize();
         String effectiveGlob = (filePattern == null || filePattern.isBlank()) ? "*" : filePattern;
         registerDirectoryInternal(normalized, analyzerId, effectiveGlob, true);
-        if (!fileConfig.getWatchDirectories().contains(normalized.toString())) {
-            List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
-            mutableWatchDirs.add(normalized.toString());
-            fileConfig.setWatchDirectories(mutableWatchDirs);
-        }
         log.info("Runtime watch directory registered: {} (analyzerId={}, glob={})", normalized, analyzerId,
                 effectiveGlob);
     }
@@ -213,9 +200,6 @@ public class FileWatcher {
             }
         }
         pendingDirectories.remove(normalized);
-        List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
-        mutableWatchDirs.remove(normalized.toString());
-        fileConfig.setWatchDirectories(mutableWatchDirs);
         log.info("Runtime watch directory removed: {} ({} registration(s))", normalized, registrations.size());
         return true;
     }
@@ -253,9 +237,6 @@ public class FileWatcher {
         if (registrations.isEmpty()) {
             registrationsByDirectory.remove(normalized);
             pendingDirectories.remove(normalized);
-            List<String> mutableWatchDirs = new ArrayList<>(fileConfig.getWatchDirectories());
-            mutableWatchDirs.remove(normalized.toString());
-            fileConfig.setWatchDirectories(mutableWatchDirs);
         }
         log.info("Removed watch registration for analyzer {} at {}", analyzerId, normalized);
         return true;
@@ -273,19 +254,6 @@ public class FileWatcher {
             }
         }
         return removed;
-    }
-
-    /**
-     * Bootstrap overload used by {@link #start()} when registering directories
-     * from {@link FileConfig#getWatchDirectories()}. Bootstrap registrations
-     * do not carry a per-analyzer glob — the directory is watched with a
-     * catch-all glob and filtering falls back to the legacy
-     * {@link FileConfig#getFilePatterns()} list evaluated in
-     * {@link #shouldProcessFile}.
-     */
-    private void registerDirectoryInternal(Path dirPath, String analyzerId, boolean processExisting)
-            throws IOException {
-        registerDirectoryInternal(dirPath, analyzerId, "*", processExisting);
     }
 
     /**
@@ -407,18 +375,11 @@ public class FileWatcher {
     }
 
     /**
-     * Base-level file filter applied by every observer: skips hidden files
-     * and legacy {@code .error} / {@code .failed} sidecars. The non-
-     * destructive bridge never writes these, but a previous bridge version
-     * may have left them behind. Per-registration glob matching runs AFTER
-     * this base filter.
+     * Base-level file filter applied before a profile-owned glob.
      */
     private boolean matchesBaseFilter(Path filePath) {
         String filename = filePath.getFileName().toString();
-        if (filename.startsWith(".") || filename.endsWith(".error") || filename.endsWith(".failed")) {
-            return false;
-        }
-        return true;
+        return !filename.startsWith(".");
     }
 
     /**
@@ -800,24 +761,13 @@ public class FileWatcher {
     /**
      * Determine the analyzer ID that owns a given file path.
      * <p>
-     * Lookup order (first match wins):
-     * <ol>
-     *   <li>Per-directory registrations: iterate the parent directory's
-     *       {@link WatchRegistration} list and return the first one whose
-     *       glob pattern matches the file name. This is how multi-observer
-     *       directories route: each analyzer declared its own glob at
-     *       registration time, and only one should match any given file.</li>
-     *   <li>Legacy {@code fileConfig.getAnalyzers()} pattern map — kept as a
-     *       fallback for bootstrap-registered analyzers that came in through
-     *       the config file rather than runtime registration.</li>
-     *   <li>Directory name as last resort.</li>
-     * </ol>
+     * A file has an owner only when an active saved connection registered a
+     * matching profile glob for its parent directory.
      *
      * @param filePath the file path to analyze
      * @return analyzer ID or null if cannot be determined
      */
     private String determineAnalyzerId(Path filePath) {
-        String pathString = filePath.toString();
         String filename = filePath.getFileName().toString();
 
         Path parent = filePath.getParent();
@@ -843,53 +793,14 @@ public class FileWatcher {
             }
         }
 
-        // Check configured analyzer patterns (legacy fallback for bootstrap
-        // registrations via FileConfig rather than runtime addWatchDirectory).
-        for (Map.Entry<String, FileConfig.AnalyzerConfig> entry : fileConfig.getAnalyzers().entrySet()) {
-            String pattern = entry.getKey();
-            FileConfig.AnalyzerConfig config = entry.getValue();
-
-            // Use filePattern if specified, otherwise use key as pattern
-            String matchPattern = config.getFilePattern() != null ? config.getFilePattern() : pattern;
-
-            // Glob pattern matching (e.g., "quantstudio-*")
-            if (matchPattern.contains("*") || matchPattern.contains("?")) {
-                try {
-                    PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + matchPattern);
-                    if (matcher.matches(filePath.getFileName())) {
-                        log.debug("Matched file {} to analyzer {} via glob pattern: {}",
-                                filename, config.getId(), matchPattern);
-                        return config.getId();
-                    }
-                } catch (Exception e) {
-                    log.warn("Invalid glob pattern: {}", matchPattern, e);
-                }
-            }
-            // Substring matching (e.g., "quantstudio")
-            else if (pathString.contains(matchPattern) || filename.contains(matchPattern)) {
-                log.debug("Matched file {} to analyzer {} via substring: {}",
-                        filename, config.getId(), matchPattern);
-                return config.getId();
-            }
-        }
-
-        // Fallback: use parent directory name
-        if (parent != null) {
-            String dirName = parent.getFileName().toString().toUpperCase();
-            log.debug("No pattern match for file {}, using directory name: {}", filename, dirName);
-            return dirName;
-        }
-
-        log.debug("Could not determine analyzer ID for file: {}", filePath);
+        log.debug("No active saved connection owns file {}", filePath);
         return null;
     }
 
     /**
      * Check if a file should be processed by ANY registered analyzer.
      * <p>
-     * Skips hidden files and any legacy {@code .error} / {@code .failed}
-     * sidecars that a previous (destructive) bridge version may have left
-     * in the watched directory. Then checks each registration at the parent
+     * Skips hidden files, then checks each registration at the parent
      * directory — returns true if ANY registration's glob matches. This is
      * used by the rescan safety net and by existing-file bootstrap walks;
      * the per-observer IOFileFilter captured at registration time is what
@@ -923,16 +834,6 @@ public class FileWatcher {
                 // A directory with registrations is opinionated: if no glob
                 // matched, the file belongs to no analyzer at this path.
                 return false;
-            }
-        }
-
-        // No per-directory registrations — fall back to the bootstrap
-        // fileConfig.getFilePatterns() list (e.g. *.csv, *.hl7) for legacy
-        // config-file-driven analyzers.
-        for (String pattern : fileConfig.getFilePatterns()) {
-            PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + pattern);
-            if (matcher.matches(filePath.getFileName())) {
-                return true;
             }
         }
 

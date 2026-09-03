@@ -133,6 +133,15 @@ class AnalyzerProfileValidatorTest {
   }
 
   @Test
+  void requiresCompleteSerialRuntimeSettings() throws Exception {
+    ObjectNode profile = astmProfile();
+    profile.withObject("transport_config").withObject("RS-232").remove("data_bits");
+
+    assertThat(validator.validationIssues(profile))
+      .anyMatch(issue -> issue.contains("data_bits"));
+  }
+
+  @Test
   void rejectsDuplicateConnectionFieldKeys() throws Exception {
     ObjectNode profile = fileProfile();
     ArrayNode fields = (ArrayNode) profile.path("connectionFields");
@@ -152,6 +161,26 @@ class AnalyzerProfileValidatorTest {
 
     assertThat(validator.validationIssues(profile))
       .contains("$.connectionFields[directory].visibleWhen references undeclared field inventedTransport");
+  }
+
+  @Test
+  void rejectsCircularConnectionVisibilityDependencies() throws Exception {
+    ObjectNode profile = fileProfile();
+    ObjectNode directory = (ObjectNode) profile.path("connectionFields").get(0);
+    ObjectNode filePattern = (ObjectNode) profile.path("connectionFields").get(1);
+    directory
+      .putObject("visibleWhen")
+      .put("fieldKey", "filePattern")
+      .put("operator", "EQUALS")
+      .put("value", "*.csv");
+    filePattern
+      .putObject("visibleWhen")
+      .put("fieldKey", "directory")
+      .put("operator", "EQUALS")
+      .put("value", "/data/instruments");
+
+    assertThat(validator.validationIssues(profile))
+      .contains("$.connectionFields.visibleWhen must not contain dependency cycles");
   }
 
   @Test

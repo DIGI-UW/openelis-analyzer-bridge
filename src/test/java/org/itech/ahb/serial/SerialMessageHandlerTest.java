@@ -42,17 +42,17 @@ class SerialMessageHandlerTest {
     }
 
     @Nested
-    @DisplayName("Protocol Detection Tests")
-    class ProtocolDetectionTests {
+    @DisplayName("Profile Protocol Tests")
+    class ProfileProtocolTests {
 
         @Test
-        @DisplayName("Should detect ASTM protocol and create correct envelope")
-        void shouldDetectASTMProtocol() {
+        @DisplayName("Should use the profile-declared ASTM protocol")
+        void shouldUseAstmProtocol() {
             String astmMessage = "H|\\^&|||ANALYZER|||||||P|1|20260205120000\r" +
                                 "P|1||12345\r" +
                                 "L|1|N";
 
-            HandleResult result = handler.handleMessage(astmMessage, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(astmMessage, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             assertTrue(result.success());
             verify(mockNormalizer).process(argThat(envelope ->
@@ -65,13 +65,13 @@ class SerialMessageHandlerTest {
         }
 
         @Test
-        @DisplayName("Should detect HL7 protocol and create correct envelope")
-        void shouldDetectHL7Protocol() {
+        @DisplayName("Should use the profile-declared HL7 protocol")
+        void shouldUseHl7Protocol() {
             String hl7Message = "MSH|^~\\&|TEST|LAB|OPENELIS|LAB|20260205120000||ORU^R01|MSG001|P|2.5.1\r" +
                                "PID|1||12345||DOE^JOHN\r" +
                                "OBX|1|NM|WBC||7.5|10^3/uL";
 
-            HandleResult result = handler.handleMessage(hl7Message, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(hl7Message, "/dev/ttyUSB0", null, Protocol.HL7);
 
             assertTrue(result.success());
             verify(mockNormalizer).process(argThat(envelope ->
@@ -82,36 +82,6 @@ class SerialMessageHandlerTest {
             ));
         }
 
-        @Test
-        @DisplayName("Should detect CSV protocol and create correct envelope")
-        void shouldDetectCSVProtocol() {
-            String csvMessage = "SampleID,TestCode,Result,Unit,Flag\r\n" +
-                               "12345,WBC,7.5,10^3/uL,N\r\n" +
-                               "12345,RBC,4.8,10^6/uL,N";
-
-            HandleResult result = handler.handleMessage(csvMessage, "/dev/ttyUSB0", null);
-
-            assertTrue(result.success());
-            verify(mockNormalizer).process(argThat(envelope ->
-                envelope.getProtocol() == Protocol.CSV &&
-                envelope.getTransport() == Transport.SERIAL &&
-                csvMessage.equals(envelope.getRawMessage())
-            ));
-        }
-
-        @Test
-        @DisplayName("Should detect unknown protocol and create envelope")
-        void shouldDetectUnknownProtocol() {
-            String unknownMessage = "This is some unknown format";
-
-            HandleResult result = handler.handleMessage(unknownMessage, "/dev/ttyUSB0", null);
-
-            assertTrue(result.success());
-            verify(mockNormalizer).process(argThat(envelope ->
-                envelope.getProtocol() == Protocol.UNKNOWN &&
-                envelope.getTransport() == Transport.SERIAL
-            ));
-        }
     }
 
     @Nested
@@ -123,7 +93,7 @@ class SerialMessageHandlerTest {
         void shouldIncludeSourceIdInEnvelope() {
             String message = "H|\\^&|||TEST";
 
-            handler.handleMessage(message, "/dev/ttyUSB0", null);
+            handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             verify(mockNormalizer).process(argThat(envelope ->
                 "/dev/ttyUSB0".equals(envelope.getSourceId())
@@ -135,7 +105,7 @@ class SerialMessageHandlerTest {
         void shouldIncludeTransportInEnvelope() {
             String message = "H|\\^&|||TEST";
 
-            handler.handleMessage(message, "/dev/ttyUSB0", null);
+            handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             verify(mockNormalizer).process(argThat(envelope ->
                 envelope.getTransport() == Transport.SERIAL
@@ -147,7 +117,7 @@ class SerialMessageHandlerTest {
         void shouldIncludeProtocolAnalyzerHintInEnvelope() {
             String message = "H|\\^&|||TEST";
 
-            handler.handleMessage(message, "/dev/ttyUSB0", "ANALYZER-001");
+            handler.handleMessage(message, "/dev/ttyUSB0", "ANALYZER-001", Protocol.ASTM);
 
             verify(mockNormalizer).process(argThat(envelope ->
                 "ANALYZER-001".equals(envelope.getProtocolAnalyzerHint()) &&
@@ -160,7 +130,7 @@ class SerialMessageHandlerTest {
         void shouldHaveNullProtocolAnalyzerHintWhenNotProvided() {
             String message = "H|\\^&|||TEST";
 
-            handler.handleMessage(message, "/dev/ttyUSB0", null);
+            handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             verify(mockNormalizer).process(argThat(envelope ->
                 envelope.getProtocolAnalyzerHint() == null &&
@@ -176,7 +146,7 @@ class SerialMessageHandlerTest {
         @Test
         @DisplayName("Should handle empty message")
         void shouldHandleEmptyMessage() {
-            HandleResult result = handler.handleMessage("", "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage("", "/dev/ttyUSB0", null, Protocol.ASTM);
 
             assertFalse(result.success());
             assertEquals("Empty message", result.message());
@@ -186,7 +156,7 @@ class SerialMessageHandlerTest {
         @Test
         @DisplayName("Should handle null message")
         void shouldHandleNullMessage() {
-            HandleResult result = handler.handleMessage(null, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(null, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             assertFalse(result.success());
             assertEquals("Empty message", result.message());
@@ -199,7 +169,7 @@ class SerialMessageHandlerTest {
             when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(false);
 
             String message = "H|\\^&|||TEST";
-            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             assertFalse(result.success());
             assertEquals("Routing failed", result.message());
@@ -211,7 +181,7 @@ class SerialMessageHandlerTest {
             when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
 
             String message = "H|\\^&|||TEST";
-            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             assertTrue(result.success());
             assertEquals("Routed via normalizer", result.message());
@@ -236,7 +206,12 @@ class SerialMessageHandlerTest {
                 "R|5|^^^PLT|250|10^3/uL|150-400|N||F|||20260205120000\r" +
                 "L|1|N";
 
-            HandleResult result = handler.handleMessage(astmMessage, "/dev/ttyUSB0", "MINDRAY-001");
+            HandleResult result = handler.handleMessage(
+                astmMessage,
+                "/dev/ttyUSB0",
+                "MINDRAY-001",
+                Protocol.ASTM
+            );
 
             assertTrue(result.success());
             verify(mockNormalizer).process(argThat(envelope ->
@@ -258,7 +233,7 @@ class SerialMessageHandlerTest {
                 "OBX|2|NM|RBC^RED BLOOD CELL||4.8|10^6/uL|4.5-5.5|N|||F\r" +
                 "OBX|3|NM|HGB^HEMOGLOBIN||14.2|g/dL|12.0-16.0|N|||F";
 
-            HandleResult result = handler.handleMessage(hl7Message, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(hl7Message, "/dev/ttyUSB0", null, Protocol.HL7);
 
             assertTrue(result.success());
             verify(mockNormalizer).process(argThat(envelope ->
@@ -274,7 +249,7 @@ class SerialMessageHandlerTest {
                             "P|1||ID&with^special|chars\r" +
                             "L|1|N";
 
-            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             assertTrue(result.success());
             verify(mockNormalizer).process(argThat(envelope ->
@@ -297,7 +272,7 @@ class SerialMessageHandlerTest {
             sb.append("L|1|N");
 
             String message = sb.toString();
-            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null);
+            HandleResult result = handler.handleMessage(message, "/dev/ttyUSB0", null, Protocol.ASTM);
 
             assertTrue(result.success());
             verify(mockNormalizer).process(argThat(envelope ->

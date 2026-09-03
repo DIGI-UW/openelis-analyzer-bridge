@@ -2,14 +2,8 @@
 org:
   itech:
     ahb:
-      astm:
-        enabled: false
       forward-http-server:
         uri: http://localhost:8080/test
-      listen-astm-server:
-        port: 12001
-      listen-astm-e1381-95-server:
-        port: 12011
       forward-astm-server:
         host-name: localhost
         port: 5000

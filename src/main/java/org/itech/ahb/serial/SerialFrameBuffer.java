@@ -5,9 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.properties.SerialConfigurationProperties.ProtocolMode;
+import org.itech.ahb.model.Protocol;
 
 /**
  * Buffer for accumulating serial port data and detecting complete messages.
@@ -17,9 +16,6 @@ import org.itech.ahb.config.properties.SerialConfigurationProperties.ProtocolMod
  *   <li><b>ASTM LIS2-A2</b>: Uses ENQ/ACK handshake, STX/ETX/ETB framing with checksums</li>
  *   <li><b>HL7 MLLP</b>: Uses VT (0x0B) start block, FS+CR (0x1C 0x0D) end block</li>
  * </ul>
- * </p>
- * <p>
- * In AUTO mode, the buffer detects the protocol from the first control character received.
  * </p>
  */
 @Slf4j
@@ -45,8 +41,7 @@ public class SerialFrameBuffer {
     private static final int MAX_CAPACITY = 1024 * 1024;  // 1MB max message size
 
     private ByteBuffer buffer;
-    private ProtocolMode protocolMode;
-    private volatile ProtocolMode detectedProtocol; // Volatile for thread-safe protocol detection
+    private final Protocol protocol;
     private Instant lastDataTime;
     private final List<String> completedMessages;
     private final List<byte[]> pendingResponses;
@@ -70,10 +65,13 @@ public class SerialFrameBuffer {
     /**
      * Creates a new SerialFrameBuffer with the specified protocol mode.
      *
-     * @param protocolMode the protocol detection mode
+     * @param protocol the protocol declared by the pinned analyzer profile
      */
-    public SerialFrameBuffer(ProtocolMode protocolMode) {
-        this.protocolMode = protocolMode;
+    public SerialFrameBuffer(Protocol protocol) {
+        if (protocol != Protocol.ASTM && protocol != Protocol.HL7) {
+            throw new IllegalArgumentException("Serial framing requires ASTM or HL7");
+        }
+        this.protocol = protocol;
         this.buffer = ByteBuffer.allocate(INITIAL_CAPACITY);
         this.completedMessages = new ArrayList<>();
         this.pendingResponses = new ArrayList<>();
@@ -88,13 +86,6 @@ public class SerialFrameBuffer {
      */
     public ASTMState getAstmState() {
         return astmState;
-    }
-
-    /**
-     * Gets the detected protocol (may differ from configured mode in AUTO).
-     */
-    public Optional<ProtocolMode> getDetectedProtocol() {
-        return Optional.ofNullable(detectedProtocol);
     }
 
     /**
@@ -127,21 +118,7 @@ public class SerialFrameBuffer {
      * Processes a single input byte according to the current protocol state.
      */
     private void processInputByte(byte b) {
-        // Auto-detect protocol if not yet determined
-        if (protocolMode == ProtocolMode.AUTO && detectedProtocol == null) {
-            if (b == ENQ || b == STX) {
-                detectedProtocol = ProtocolMode.ASTM;
-                log.debug("Auto-detected ASTM protocol from control character 0x{}",
-                    String.format("%02X", b));
-            } else if (b == VT) {
-                detectedProtocol = ProtocolMode.HL7;
-                log.debug("Auto-detected HL7 (MLLP) protocol from VT character");
-            }
-        }
-
-        // Route to appropriate handler
-        ProtocolMode activeProtocol = detectedProtocol != null ? detectedProtocol : protocolMode;
-        if (activeProtocol == ProtocolMode.HL7) {
+        if (protocol == Protocol.HL7) {
             processHL7Byte(b);
         } else {
             processASTMByte(b);
@@ -416,7 +393,6 @@ public class SerialFrameBuffer {
         currentASTMMessage.setLength(0);
         astmState = ASTMState.IDLE;
         expectedFrameNumber = 1;
-        detectedProtocol = null;
     }
 
     /**

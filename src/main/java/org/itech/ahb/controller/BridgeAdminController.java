@@ -7,8 +7,8 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.file.FileStateStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 public class BridgeAdminController {
 
-    private final AnalyzerRegistryConfig registry;
+    private final AnalyzerRuntimeRegistry registry;
     private final FileStateStore fileStateStore;
 
     // FileStateStore only exists when file handling is enabled
@@ -39,7 +39,7 @@ public class BridgeAdminController {
     // admin controller must still load (and serve watch-dir cleanup) when
     // file mode is off, so the store is an optional dependency — null then,
     // and the SQLite-row reset below is simply skipped.
-    public BridgeAdminController(AnalyzerRegistryConfig registry, @Nullable FileStateStore fileStateStore) {
+    public BridgeAdminController(AnalyzerRuntimeRegistry registry, @Nullable FileStateStore fileStateStore) {
         this.registry = registry;
         this.fileStateStore = fileStateStore;
     }

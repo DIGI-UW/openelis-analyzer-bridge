@@ -1,4 +1,4 @@
-package org.itech.ahb.config;
+package org.itech.ahb.connection;
 
 import lombok.AccessLevel;
 import lombok.Data;
@@ -8,73 +8,32 @@ import org.itech.ahb.fhir.TabularFileLayout;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Configuration properties for analyzer identification registry.
- * <p>
- * Maps source identifiers (IP addresses, serial ports, file paths) to analyzer IDs
- * for the {@link org.itech.ahb.normalizer.AnalyzerIdentifier} service.
- * </p>
- * <p>
- * Configuration format in {@code configuration.yml}:
- * <pre>
- * bridge:
- *   analyzers:
- *     "192.168.1.10":
- *       id: MINDRAY-BC5380-001
- *       name: "Mindray BC-5380"
- *       expectedProtocol: ASTM
- *     "/dev/ttyUSB0":
- *       id: HORIBA-PENTRA60-001
- *       name: "Horiba Pentra 60"
- *       expectedProtocol: ASTM
- *     "quantstudio-*":
- *       id: QUANTSTUDIO-001
- *       name: "QuantStudio 7 Flex"
- *       expectedProtocol: CSV
- *       filePattern: ".*\\/quantstudio-.*\\.csv"
- * </pre>
- * </p>
- * <p>
- * Keys can be:
- * <ul>
- *   <li><strong>IP addresses:</strong> Exact match (e.g., "192.168.1.10")</li>
- *   <li><strong>Serial port paths:</strong> Exact match (e.g., "/dev/ttyUSB0")</li>
- *   <li><strong>Glob patterns:</strong> Wildcard match for file paths (e.g., "quantstudio-*")</li>
- * </ul>
- * </p>
+ * In-memory projection of active, durable analyzer connections.
  *
- * @see org.itech.ahb.normalizer.AnalyzerIdentifier
+ * <p>The connection catalog is the sole writer. This registry gives inbound protocol handlers
+ * fast source-to-analyzer lookup without creating a second configuration authority.
  */
-@Configuration
-@ConfigurationProperties(prefix = "bridge")
-@Data
+@Component
 @Slf4j
-public class AnalyzerRegistryConfig {
+public class AnalyzerRuntimeRegistry {
 
-    /**
-     * Map of source identifiers to analyzer entries.
-     * <p>
-     * Keys are source identifiers (IP addresses, serial ports, glob patterns).
-     * Values are {@link AnalyzerEntry} objects with analyzer metadata.
-     * </p>
-     */
-    private Map<String, AnalyzerEntry> analyzers = new LinkedHashMap<>();
+    private final Map<String, AnalyzerEntry> analyzers = new ConcurrentHashMap<>();
 
     /**
      * Finds an analyzer ID by source identifier.
@@ -167,10 +126,18 @@ public class AnalyzerRegistryConfig {
      * @param sourceId the source identifier (IP address, serial port, glob pattern)
      * @param entry    the analyzer entry to register
      */
-    public void register(String sourceId, AnalyzerEntry entry) {
+    public synchronized void register(String sourceId, AnalyzerEntry entry) {
         analyzers.put(sourceId, entry);
         log.info("Registered analyzer '{}' (id={}) for source '{}'",
                 entry.getName(), entry.getId(), sourceId);
+    }
+
+    public synchronized void unregister(String sourceId, String analyzerId) {
+        AnalyzerEntry current = analyzers.get(sourceId);
+        if (current != null && java.util.Objects.equals(current.getId(), analyzerId)) {
+            analyzers.remove(sourceId);
+            log.info("Unregistered analyzer '{}' from source '{}'", analyzerId, sourceId);
+        }
     }
 
     /**
@@ -211,19 +178,16 @@ public class AnalyzerRegistryConfig {
         private String filePattern;
 
         /**
-         * Regex OE uses to identify an inbound message by its sender (HL7 MSH-3/4,
-         * ASTM H-record). Pushed from OE's {@code Analyzer.identifierPattern} so the
-         * bridge corroborates the source-IP identity against the same authoritative
-         * pattern OE matches with — see {@code MessageNormalizer}.
+         * Profile-owned expression used to identify an inbound sender (HL7 MSH-3/4,
+         * ASTM H-record).
          */
         private String identifierPattern;
 
         /**
          * Compiled form of {@link #identifierPattern}, built once when the pattern is
          * set so {@code MessageNormalizer} reuses it on every inbound message instead
-         * of recompiling the regex per message. {@code null} when no pattern is set, or
-         * when the supplied regex was invalid — registration/sync validation decides
-         * whether an invalid pattern is rejected (register → 400) or ignored (sync).
+         * of recompiling the regex per message. {@code null} when no pattern is set or
+         * when the supplied regex is invalid.
          */
         @Setter(AccessLevel.NONE)
         private transient Pattern compiledIdentifierPattern;
@@ -242,8 +206,7 @@ public class AnalyzerRegistryConfig {
                 try {
                     compiled = Pattern.compile(identifierPattern, Pattern.CASE_INSENSITIVE);
                 } catch (PatternSyntaxException e) {
-                    // Leave compiled null; the registration/sync path validates and
-                    // rejects (register) or ignores (sync) the bad pattern.
+                    // Leave compiled null so the owning contract validator can reject it.
                 }
             }
             this.compiledIdentifierPattern = compiled;

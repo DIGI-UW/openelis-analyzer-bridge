@@ -9,8 +9,8 @@ import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
@@ -32,7 +32,7 @@ class MessageNormalizerIdentityCorroborationTest {
     private static final String SOURCE_IP = "10.42.21.10";
 
     private SimpleMeterRegistry meters;
-    private AnalyzerRegistryConfig analyzerRegistry;
+    private AnalyzerRuntimeRegistry analyzerRegistry;
     private HttpForwardingRouter forwardingRouter;
     private AnalyzerIdentifier identifier;
     private MessageNormalizer normalizer;
@@ -41,7 +41,7 @@ class MessageNormalizerIdentityCorroborationTest {
     void setUp() {
         meters = new SimpleMeterRegistry();
         MetricsService metrics = new MetricsService(meters);
-        analyzerRegistry = new AnalyzerRegistryConfig();
+        analyzerRegistry = new AnalyzerRuntimeRegistry();
         forwardingRouter = mock(HttpForwardingRouter.class);
         identifier = mock(AnalyzerIdentifier.class);
         when(forwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
@@ -77,7 +77,7 @@ class MessageNormalizerIdentityCorroborationTest {
     @DisplayName("source IP and in-message sender agree -> corroborated; routing proceeds")
     void corroborated() {
         when(identifier.identify(any())).thenReturn("5");
-        registerAnalyzer("5", "Demo Mindray BS-200"); // registered name contains the sender token
+        registerAnalyzerWithPattern("5", "Demo Mindray BS-200", "MINDRAY.*BS.?200");
 
         assertTrue(normalizer.process(hl7FromSourceIp("MINDRAY-BS-200")));
 
@@ -98,6 +98,18 @@ class MessageNormalizerIdentityCorroborationTest {
         assertEquals(0.0, identityCount("corroborated"));
         // Identity is observability only — a mismatch must never gate routing.
         verify(forwardingRouter).route(any(MessageEnvelope.class));
+    }
+
+    @Test
+    @DisplayName("connection names and IDs do not replace a profile identifier pattern")
+    void connectionMetadataDoesNotClassifyTheProtocolSender() {
+        when(identifier.identify(any())).thenReturn("MINDRAY-BS-200");
+        registerAnalyzer("MINDRAY-BS-200", "MINDRAY-BS-200");
+
+        assertTrue(normalizer.process(hl7FromSourceIp("MINDRAY-BS-200")));
+
+        assertEquals(1.0, identityCount("mismatch"));
+        assertEquals(0.0, identityCount("corroborated"));
     }
 
     @Test

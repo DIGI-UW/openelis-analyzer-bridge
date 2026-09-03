@@ -1,8 +1,7 @@
 package org.itech.ahb.normalizer;
 
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,32 +16,24 @@ import org.springframework.stereotype.Component;
  * </ol>
  * </p>
  *
- * @see AnalyzerRegistryConfig
+ * @see AnalyzerRuntimeRegistry
  * @see MessageEnvelope
  */
 @Component
 @Slf4j
 public class AnalyzerIdentifier {
 
-    private final AnalyzerRegistryConfig registry;  // may be null if not configured
+    private final AnalyzerRuntimeRegistry registry;
 
     /**
      * Constructs a new AnalyzerIdentifier.
      * <p>
-     * The registry is optional (required = false) — if not configured, all identification
-     * attempts will return null and OpenELIS will identify from message content.
-     * </p>
-     *
-     * @param registry the analyzer registry configuration (may be null)
+     * @param registry the active connection projection
      */
-    public AnalyzerIdentifier(@Autowired(required = false) AnalyzerRegistryConfig registry) {
+    public AnalyzerIdentifier(AnalyzerRuntimeRegistry registry) {
         this.registry = registry;
-        if (registry == null) {
-            log.info("AnalyzerIdentifier created without registry — source-binding resolution disabled");
-        } else {
-            int analyzerCount = registry.getAnalyzers() != null ? registry.getAnalyzers().size() : 0;
-            log.info("AnalyzerIdentifier created with {} registered analyzers", analyzerCount);
-        }
+        log.info("AnalyzerIdentifier created with {} registered analyzers",
+                registry.getRegisteredAnalyzers().size());
     }
 
     /**
@@ -50,8 +41,8 @@ public class AnalyzerIdentifier {
      * <p>
      * Strategy:
      * <ol>
-     *   <li>If registry is configured → lookup by sourceId (IP, serial port, file pattern)</li>
-     *   <li>Otherwise → return null</li>
+     *   <li>Look up the source in the active connection projection</li>
+     *   <li>Return null when no active connection owns the source</li>
      * </ol>
      * </p>
      *
@@ -61,11 +52,6 @@ public class AnalyzerIdentifier {
     public String identify(MessageEnvelope envelope) {
         // Registry-based lookup by source ID -> canonical OE analyzer ID.
         // Protocol-level hints are handled by MessageNormalizer as diagnostics only.
-        if (registry == null) {
-            log.debug("No analyzer registry configured, returning null");
-            return null;
-        }
-
         String sourceId = envelope.getSourceId();
         if (sourceId == null || sourceId.isEmpty()) {
             log.debug("Envelope has no sourceId, cannot identify");

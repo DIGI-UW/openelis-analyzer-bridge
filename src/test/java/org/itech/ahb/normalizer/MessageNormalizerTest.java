@@ -6,7 +6,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 import java.util.Map;
-import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.routing.HttpForwardingRouter;
@@ -153,8 +153,8 @@ class MessageNormalizerTest {
         void shouldValidateHintAgainstRegisteredAnalyzerMetadata() {
             when(mockIdentifier.identify(any())).thenReturn("44");
 
-            AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
-            AnalyzerRegistryConfig.AnalyzerEntry entry = new AnalyzerRegistryConfig.AnalyzerEntry();
+            AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+            AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
             entry.setId("44");
             entry.setName("Demo: GeneXpert ASTM");
             entry.setExpectedProtocol("ASTM");

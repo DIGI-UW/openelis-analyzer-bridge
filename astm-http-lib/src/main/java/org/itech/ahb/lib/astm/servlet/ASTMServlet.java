@@ -3,6 +3,9 @@ package org.itech.ahb.lib.astm.servlet;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.lib.astm.communication.GeneralASTMCommunicator;
@@ -35,8 +38,11 @@ public class ASTMServlet {
   private final ASTMInterpreterFactory astmInterpreterFactory;
   private final int listenPort;
   private final ASTMVersion astmVersion;
+  private final AtomicBoolean starting = new AtomicBoolean(false);
   private final AtomicBoolean running = new AtomicBoolean(false);
+  private final CountDownLatch startupAttempted = new CountDownLatch(1);
   private volatile ServerSocket serverSocket;
+  private volatile Throwable startupFailure;
 
   /**
    * Constructs a new ASTMServlet with the specified handler service, interpreter factory, listen port, and ASTM version.
@@ -64,13 +70,15 @@ public class ASTMServlet {
    * Will spawn a new thread for every incoming connection.
    */
   public void listen() {
-    if (running.getAndSet(true)) {
+    if (!starting.compareAndSet(false, true)) {
       log.warn("Server is already running on port " + listenPort);
       return;
     }
-    
+
     try {
       serverSocket = new ServerSocket(listenPort);
+      running.set(true);
+      startupAttempted.countDown();
       log.info(
         "Server is listening on port " + listenPort + " for ASTM transmission protocol: " + astmVersion + " messages"
       );
@@ -93,10 +101,34 @@ public class ASTMServlet {
         }
       }
     } catch (Exception e) {
+      startupFailure = e;
+      startupAttempted.countDown();
       log.error("an exception caused the astm server to shut down", e);
     } finally {
       running.set(false);
+      starting.set(false);
+      startupAttempted.countDown();
       closeServerSocket();
+    }
+  }
+
+  /** Waits until the socket is bound or startup has failed. */
+  public void awaitStarted(Duration timeout) {
+    boolean completed;
+    try {
+      completed = startupAttempted.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while starting ASTM listener on port " + listenPort, exception);
+    }
+    if (!completed) {
+      throw new IllegalStateException("Timed out starting ASTM listener on port " + listenPort);
+    }
+    if (startupFailure != null) {
+      throw new IllegalStateException("Cannot start ASTM listener on port " + listenPort, startupFailure);
+    }
+    if (!running.get()) {
+      throw new IllegalStateException("ASTM listener stopped while starting on port " + listenPort);
     }
   }
 

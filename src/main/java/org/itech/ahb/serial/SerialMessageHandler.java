@@ -5,7 +5,6 @@ import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
 import org.itech.ahb.normalizer.MessageNormalizer;
-import org.itech.ahb.util.ProtocolDetector;
 import org.springframework.stereotype.Service;
 
 /**
@@ -51,16 +50,23 @@ public class SerialMessageHandler {
      * @param message the complete message content
      * @param serialPortPath the serial port path (e.g., /dev/ttyUSB0)
      * @param analyzerId optional analyzer ID from configuration
+     * @param protocol protocol declared by the pinned analyzer profile
      * @return the result of handling the message
      */
-    public HandleResult handleMessage(String message, String serialPortPath, String analyzerId) {
+    public HandleResult handleMessage(
+        String message,
+        String serialPortPath,
+        String analyzerId,
+        Protocol protocol
+    ) {
         if (message == null || message.isEmpty()) {
             log.warn("Received empty message from serial port {}", serialPortPath);
             return new HandleResult(false, "Empty message");
         }
 
-        // Detect protocol
-        Protocol protocol = ProtocolDetector.detect(message);
+        if (protocol != Protocol.ASTM && protocol != Protocol.HL7) {
+            throw new IllegalArgumentException("Serial messages require an explicit ASTM or HL7 profile protocol");
+        }
         log.info("Received {} message from serial port {} ({} bytes)",
             protocol, serialPortPath, message.length());
 

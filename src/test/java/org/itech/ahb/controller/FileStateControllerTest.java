@@ -38,7 +38,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "bridge.security.username=testuser",
     "bridge.security.password=testpass",
     "org.itech.ahb.mllp.enabled=false",
-    "org.itech.ahb.serial.enabled=false",
     "bridge.file.enabled=false"
 })
 @AutoConfigureMockMvc
