@@ -5,15 +5,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import org.apache.commons.io.input.BOMInputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Optional;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -23,6 +21,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
+import org.apache.commons.io.input.BOMInputStream;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
@@ -30,8 +29,10 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
-import org.itech.ahb.qc.QcRule;
-import org.itech.ahb.qc.QcRuleEvaluator;
+import org.itech.ahb.profile.ControlRecognitionRule;
+import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.ControlResultRecognitionEvaluator;
+import org.itech.ahb.profile.TabularResultValueSelection;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -51,78 +52,39 @@ import org.xml.sax.SAXException;
 @Slf4j
 public class FileResultParser {
 
-    private static final List<String> CONTROL_PREFIXES = Arrays.asList(
-            // Molecular (QuantStudio, FluoroCycler)
-            "CNEG", "CPOS", "NTC", "PTC",
-            // ELISA plate readers (Tecan, Multiskan)
-            "NEG", "POS", "NC", "PC", "BLANC", "BLANK");
-
     /** OpenDocument XML namespaces used to navigate ODS content.xml. */
     private static final String ODS_TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
     private static final String ODS_TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
 
     /**
-     * Parse an Excel file and extract results using column mappings.
-     *
-     * @param inputStream the xlsx/xls file content
-     * @param columnMappings map of spreadsheet column name → semantic field
-     *        (e.g., {"Sample Name": "sampleId", "Target": "testCode", "CT": "result"})
-     * @return list of parsed results grouped by accession, or null on failure
-     */
-    public static List<HL7ResultParser.ParsedResults> parse(
-            InputStream inputStream, Map<String, String> columnMappings) {
-        return parse(inputStream, columnMappings, null, java.util.Collections.emptyList());
-    }
-
-    /**
-     * 3-arg overload preserved for callers that only need the file-wide
-     * test-code fallback (e.g. {@code FileMessageHandler}). Forwards to the
-     * 4-arg canonical with an empty QC-rule list — the bridge's legacy
-     * hardcoded QC detection still applies inside {@code isControlRow}
-     * when no rules are configured.
-     */
-    public static List<HL7ResultParser.ParsedResults> parse(
-            InputStream inputStream, Map<String, String> columnMappings, String perFileTestCode) {
-        return parse(inputStream, columnMappings, perFileTestCode, java.util.Collections.emptyList());
-    }
-
-    /**
-     * Parse an Excel file with an optional file-wide test code and
-     * configurable QC identification rules pulled from OE.
+     * Parse an Excel file using a file-wide test code and the pinned profile's
+     * control-result recognition.
      *
      * @param perFileTestCode event-scoped fallback test code; null or
      *        blank drops rows with no per-row identity
-     * @param qcRules         QC identification rules (FR-15); empty list
-     *        defers to legacy hardcoded QC detection in {@code isControlRow}
+     * @param recognition profile-owned control-result recognition
      */
     public static List<HL7ResultParser.ParsedResults> parse(
             InputStream inputStream, Map<String, String> columnMappings,
-            String perFileTestCode, List<QcRule> qcRules) {
-        return parse(inputStream, columnMappings, perFileTestCode, qcRules,
-                java.util.Collections.emptyList());
-    }
-
-    /**
-     * Parse an Excel file with optional file-wide test code, QC rules, and
-     * registered control lots. The control-lot list is used to enrich
-     * recognized QC samples with a {@code lotNumber} when the sample id
-     * embeds one of the registered lot strings (e.g. sample
-     * "QC-LOT-LPC-26B-LPC" with registered "LOT-LPC-26B" → emit
-     * {@code lotNumber=LOT-LPC-26B}). Without this, OE's resolver falls back
-     * to controlLevel match (Tier 2) or single-active-lot (Tier 3).
-     */
-    public static List<HL7ResultParser.ParsedResults> parse(
-            InputStream inputStream, Map<String, String> columnMappings,
-            String perFileTestCode, List<QcRule> qcRules,
-            List<org.itech.ahb.qc.ControlLotDto> controlLots) {
-        return parse(inputStream, columnMappings, perFileTestCode, qcRules, controlLots, null);
+            String perFileTestCode, ControlResultRecognition recognition) {
+        return parse(
+                inputStream, columnMappings, perFileTestCode, recognition, null,
+                TabularResultValueSelection.resultOnly());
     }
 
     public static List<HL7ResultParser.ParsedResults> parse(
             InputStream inputStream, Map<String, String> columnMappings,
-            String perFileTestCode, List<QcRule> qcRules,
-            List<org.itech.ahb.qc.ControlLotDto> controlLots,
+            String perFileTestCode, ControlResultRecognition recognition,
             TabularFileLayout layout) {
+        return parse(
+                inputStream, columnMappings, perFileTestCode, recognition, layout,
+                TabularResultValueSelection.resultOnly());
+    }
+
+    public static List<HL7ResultParser.ParsedResults> parse(
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, ControlResultRecognition recognition,
+            TabularFileLayout layout, TabularResultValueSelection resultSelection) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser: null input or empty column mappings");
@@ -143,14 +105,8 @@ public class FileResultParser {
             Row headerRow = sheet.getRow(headerRowIndex);
             Map<String, Integer> headerIndex = buildHeaderIndex(headerRow, formatter);
 
-            // Reverse mapping: semantic field → column index
-            Map<String, Integer> fieldIndex = new HashMap<>();
-            for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
-                Integer colIdx = headerIndex.get(mapping.getKey());
-                if (colIdx != null) {
-                    fieldIndex.put(mapping.getValue(), colIdx);
-                }
-            }
+            Map<String, List<Integer>> fieldIndexes =
+                    buildFieldIndexes(headerIndex, columnMappings);
 
             // Group results by accession number
             Map<String, List<AnalyzerResult>> resultsByAccession = new HashMap<>();
@@ -159,14 +115,11 @@ public class FileResultParser {
                 Row row = sheet.getRow(rowIdx);
                 if (row == null) continue;
 
-                String sampleId = getCellValue(row, fieldIndex.get("sampleId"), formatter);
-                String testCode = getCellValue(row, fieldIndex.get("testCode"), formatter);
-                String result = getCellValue(row, fieldIndex.get("result"), formatter);
-                String ctValue = getCellValue(row, fieldIndex.get("ctValue"), formatter);
-                String units = getCellValue(row, fieldIndex.get("units"), formatter);
-                String interpretation = getCellValue(row, fieldIndex.get("interpretation"), formatter);
-                String qcTask = getCellValue(row, fieldIndex.get("qcTask"), formatter);
-                String testDate = getCellValue(row, fieldIndex.get("testDate"), formatter);
+                String sampleId = getCellValue(row, fieldIndexes.get("sampleId"), formatter);
+                String testCode = getCellValue(row, fieldIndexes.get("testCode"), formatter);
+                String units = getCellValue(row, fieldIndexes.get("units"), formatter);
+                String qcTask = getCellValue(row, fieldIndexes.get("qcTask"), formatter);
+                String testDate = getCellValue(row, fieldIndexes.get("testDate"), formatter);
 
                 if (sampleId == null || sampleId.isBlank()) continue;
                 if (testCode == null || testCode.isBlank()) {
@@ -177,35 +130,22 @@ public class FileResultParser {
                     }
                 }
 
-                // Use result → ctValue → interpretation as the value.
-                // QuantStudio HIV Viral Load fills `Quantity Mean` (mapped to
-                // `result`) with copies/mL. QuantStudio Arbovirus PCR leaves
-                // `Quantity Mean` empty because arbovirus targets are
-                // qualitative — only the `CT` column (mapped to `ctValue`)
-                // carries the cycle threshold. Falling back from result →
-                // ctValue lets a single profile serve both workflows without
-                // a rewrite. Interpretation is a last-resort text slot.
-                String value = (result != null && !result.isBlank()) ? result
-                        : (ctValue != null && !ctValue.isBlank()) ? ctValue
-                        : interpretation;
+                String value = resultSelection.select(
+                        field -> getCellValue(row, fieldIndexes.get(field), formatter));
                 if (value == null || value.isBlank()) continue;
 
                 boolean isNumeric = isNumericValue(value);
                 AnalyzerResult ar = isNumeric
                         ? AnalyzerResult.numeric(testCode, testCode, value, units)
                         : AnalyzerResult.text(testCode, testCode, value);
-                Optional<QcRule> matchedRule = findMatchingControlRule(sampleId, qcTask, qcRules);
-                boolean rulesConfigured = qcRules != null && !qcRules.isEmpty();
-                boolean isCtrl =
-                        rulesConfigured ? matchedRule.isPresent() : isControlRow(sampleId, qcTask);
+                Optional<ControlRecognitionRule> matchedRule =
+                        findMatchingControlRule(sampleId, qcTask, recognition);
+                boolean isCtrl = matchedRule.isPresent();
                 ar = ar.withControl(isCtrl);
-                String matchedLevel = matchedRule.map(FileResultParser::extractControlLevel).orElse(null);
-                if (matchedLevel != null) {
-                    ar = ar.withControlLevel(matchedLevel);
-                }
-                String embeddedLot = isCtrl ? findEmbeddedLot(sampleId, controlLots) : null;
-                if (embeddedLot != null) {
-                    ar = ar.withLotNumber(embeddedLot);
+                if (matchedRule.isPresent()) {
+                    ControlRecognitionRule rule = matchedRule.get();
+                    ar = ar.withControlLevel(rule.controlLevel())
+                            .withControlType(rule.controlType());
                 }
                 if (testDate != null && !testDate.isBlank()) {
                     ar = ar.withTimestamp(testDate);
@@ -234,16 +174,20 @@ public class FileResultParser {
     /**
      * Parse an OpenDocument Spreadsheet (.ods) file and extract results.
      *
-     * <p>Header row is located by scanning for a cell whose text equals
-     * {@code "Sample ID"}. {@code Row} + {@code Col} columns, when both
-     * present, are composed into the {@code position} semantic field
-     * inline (not declared in {@code column_mapping}). If {@code Calc. Conc.}
-     * is absent or all blank, {@code Result} is promoted to the
-     * {@code result} semantic field so qualitative rows still produce a
-     * populated value.
+     * <p>Header and result-value selection come from the pinned profile.
      */
     public static List<HL7ResultParser.ParsedResults> parseOds(
-            InputStream inputStream, Map<String, String> columnMappings, String perFileTestCode) {
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, ControlResultRecognition recognition) {
+        return parseOds(
+                inputStream, columnMappings, perFileTestCode, recognition, null,
+                TabularResultValueSelection.resultOnly());
+    }
+
+    public static List<HL7ResultParser.ParsedResults> parseOds(
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, ControlResultRecognition recognition,
+            TabularFileLayout layout, TabularResultValueSelection resultSelection) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseOds: null input or empty column mappings");
@@ -263,9 +207,9 @@ public class FileResultParser {
             return null;
         }
 
-        int headerRowIdx = findOdsHeaderRow(table);
+        int headerRowIdx = findOdsHeaderRow(table, columnMappings, layout, resultSelection);
         if (headerRowIdx < 0) {
-            log.warn("FileResultParser.parseOds: header row not found (no row contains 'Sample ID')");
+            log.warn("FileResultParser.parseOds: profile-configured result header not found");
             return null;
         }
 
@@ -278,30 +222,8 @@ public class FileResultParser {
             }
         }
 
-        Map<String, Integer> fieldIndex = new HashMap<>();
-        for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
-            Integer colIdx = headerIndex.get(mapping.getKey());
-            if (colIdx != null) {
-                fieldIndex.put(mapping.getValue(), colIdx);
-            }
-        }
-
-        // If Calc. Conc. is missing or all-blank, promote Result to the
-        // `result` semantic field so qualitative rows still produce a value.
-        Integer calcConcIdx = headerIndex.get("Calc. Conc.");
-        boolean calcConcPopulated = false;
-        if (calcConcIdx != null) {
-            for (int r = headerRowIdx + 1; r < table.size(); r++) {
-                String v = getRowValue(table.get(r), calcConcIdx);
-                if (v != null && !v.isBlank()) { calcConcPopulated = true; break; }
-            }
-        }
-        if (!calcConcPopulated) {
-            Integer resultColIdx = headerIndex.get("Result");
-            if (resultColIdx != null) {
-                fieldIndex.put("result", resultColIdx);
-            }
-        }
+        Map<String, List<Integer>> fieldIndexes =
+                buildFieldIndexes(headerIndex, columnMappings);
 
         Map<String, List<AnalyzerResult>> resultsByAccession = new HashMap<>();
 
@@ -309,13 +231,10 @@ public class FileResultParser {
             List<String> row = table.get(rIdx);
             if (isRowAllEmpty(row)) continue;
 
-            String sampleId = getRowValue(row, fieldIndex.get("sampleId"));
-            String testCode = getRowValue(row, fieldIndex.get("testCode"));
-            String result = getRowValue(row, fieldIndex.get("result"));
-            String interpretation = getRowValue(row, fieldIndex.get("interpretation"));
-            String qcTask = getRowValue(row, fieldIndex.get("qcTask"));
-            String units = getRowValue(row, fieldIndex.get("units"));
-            String ctValue = getRowValue(row, fieldIndex.get("ctValue"));
+            String sampleId = getRowValue(row, fieldIndexes.get("sampleId"));
+            String testCode = getRowValue(row, fieldIndexes.get("testCode"));
+            String qcTask = getRowValue(row, fieldIndexes.get("qcTask"));
+            String units = getRowValue(row, fieldIndexes.get("units"));
 
             if (sampleId == null || sampleId.isBlank()) continue;
             if (testCode == null || testCode.isBlank()) {
@@ -326,16 +245,22 @@ public class FileResultParser {
                 }
             }
 
-            String value = (result != null && !result.isBlank()) ? result
-                    : (ctValue != null && !ctValue.isBlank()) ? ctValue
-                    : interpretation;
+            String value = resultSelection.select(
+                    field -> getRowValue(row, fieldIndexes.get(field)));
             if (value == null || value.isBlank()) continue;
 
             boolean isNumeric = isNumericValue(value);
             AnalyzerResult ar = isNumeric
                     ? AnalyzerResult.numeric(testCode, testCode, value, units)
                     : AnalyzerResult.text(testCode, testCode, value);
-            ar = ar.withControl(isControlRow(sampleId, qcTask));
+            Optional<ControlRecognitionRule> matchedRule =
+                    findMatchingControlRule(sampleId, qcTask, recognition);
+            ar = ar.withControl(matchedRule.isPresent());
+            if (matchedRule.isPresent()) {
+                ControlRecognitionRule rule = matchedRule.get();
+                ar = ar.withControlLevel(rule.controlLevel())
+                        .withControlType(rule.controlType());
+            }
 
             resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
         }
@@ -433,14 +358,26 @@ public class FileResultParser {
         return s.isEmpty() ? null : s;
     }
 
-    private static int findOdsHeaderRow(List<List<String>> table) {
+    private static int findOdsHeaderRow(
+            List<List<String>> table, Map<String, String> columnMappings,
+            TabularFileLayout layout, TabularResultValueSelection resultSelection) {
+        Set<String> sampleHeaders = mappedHeaders(columnMappings, Set.of("sampleId"));
+        Set<String> resultHeaders = mappedHeaders(
+                columnMappings, new LinkedHashSet<>(resultSelection.semanticFields()));
         for (int r = 0; r < table.size(); r++) {
             List<String> row = table.get(r);
-            for (String cell : row) {
-                if (cell != null && "Sample ID".equalsIgnoreCase(cell.trim())) {
-                    return r;
-                }
+            if (layout != null) {
+                String firstCell = getRowValue(row, 0);
+                if (layout.headerMarker().equals(firstCell)) return r;
+                continue;
             }
+            Set<String> cells = new LinkedHashSet<>();
+            row.stream()
+                    .filter(cell -> cell != null && !cell.isBlank())
+                    .map(String::trim)
+                    .forEach(cells::add);
+            if (cells.stream().anyMatch(sampleHeaders::contains)
+                    && cells.stream().anyMatch(resultHeaders::contains)) return r;
         }
         return -1;
     }
@@ -459,6 +396,15 @@ public class FileResultParser {
         return (v != null && !v.isBlank()) ? v.trim() : null;
     }
 
+    private static String getRowValue(List<String> row, List<Integer> columnIndexes) {
+        if (columnIndexes == null) return null;
+        for (Integer columnIndex : columnIndexes) {
+            String value = getRowValue(row, columnIndex);
+            if (value != null) return value;
+        }
+        return null;
+    }
+
     /**
      * Parse a CSV/TSV text file and extract results using column mappings.
      *
@@ -468,49 +414,33 @@ public class FileResultParser {
      * @param skipRows      number of metadata rows to skip before header
      * @return list of parsed results grouped by accession, or null on failure
      */
-    public static List<HL7ResultParser.ParsedResults> parseCsv(
-            byte[] content, Map<String, String> columnMappings,
-            String delimiter, int skipRows) {
-        return parseCsv(content, columnMappings, delimiter, skipRows, null, java.util.Collections.emptyList());
-    }
-
-    /** See {@link #parse(InputStream, Map, String, List)} for {@code perFileTestCode} semantics. */
-    public static List<HL7ResultParser.ParsedResults> parseCsv(
-            byte[] content, Map<String, String> columnMappings,
-            String delimiter, int skipRows, String perFileTestCode) {
-        return parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, java.util.Collections.emptyList());
-    }
-
     /**
-     * Parse a CSV file with an optional file-wide test code and configurable
-     * QC identification rules. Forwards to the canonical 7-arg form with an
-     * empty {@code controlLots} list (no lot enrichment).
+     * Parse CSV using the pinned profile's control-result recognition.
      */
     public static List<HL7ResultParser.ParsedResults> parseCsv(
             byte[] content, Map<String, String> columnMappings,
-            String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules) {
-        return parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules,
-                java.util.Collections.emptyList());
-    }
-
-    /**
-     * Parse a CSV file with optional test code, QC rules, and registered
-     * control lots. See
-     * {@link #parse(InputStream, Map, String, List, List)} for {@code controlLots}
-     * semantics — the same lot-enrichment pass applies to CSV.
-     */
-    public static List<HL7ResultParser.ParsedResults> parseCsv(
-            byte[] content, Map<String, String> columnMappings,
-            String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules,
-            List<org.itech.ahb.qc.ControlLotDto> controlLots) {
-        return parseCsv(content, columnMappings, delimiter, skipRows, perFileTestCode, qcRules, controlLots, null);
+            String delimiter, int skipRows, String perFileTestCode,
+            ControlResultRecognition recognition) {
+        return parseCsv(
+                content, columnMappings, delimiter, skipRows, perFileTestCode,
+                recognition, null);
     }
 
     public static List<HL7ResultParser.ParsedResults> parseCsv(
             byte[] content, Map<String, String> columnMappings,
-            String delimiter, int skipRows, String perFileTestCode, List<QcRule> qcRules,
-            List<org.itech.ahb.qc.ControlLotDto> controlLots,
+            String delimiter, int skipRows, String perFileTestCode,
+            ControlResultRecognition recognition,
             TabularFileLayout layout) {
+        return parseCsv(
+                content, columnMappings, delimiter, skipRows, perFileTestCode,
+                recognition, layout, TabularResultValueSelection.resultOnly());
+    }
+
+    public static List<HL7ResultParser.ParsedResults> parseCsv(
+            byte[] content, Map<String, String> columnMappings,
+            String delimiter, int skipRows, String perFileTestCode,
+            ControlResultRecognition recognition, TabularFileLayout layout,
+            TabularResultValueSelection resultSelection) {
 
         if (content == null || content.length == 0 || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseCsv: null/empty input or column mappings");
@@ -576,23 +506,10 @@ public class FileResultParser {
             try (StringReader reader = new StringReader(csvContent.toString())) {
                 for (CSVRecord record : format.parse(reader)) {
                     String sampleId = getMappedValue(record, columnMappings, "sampleId");
-                    if (sampleId == null || sampleId.isBlank()) {
-                        // Some FILE profiles omit explicit sample mapping aliases.
-                        sampleId = getFirstPresentValue(record,
-                                "SampleID", "Sample ID", "SampleNumber", "Sample Number", "Sample Name");
-                    }
                     String testCode = getMappedValue(record, columnMappings, "testCode");
-                    if (testCode == null || testCode.isBlank()) {
-                        // Some FILE profiles omit explicit testCode mapping for single-test analyzers.
-                        testCode = getFirstPresentValue(record, "TestCode", "Test Code", "Target", "Test Name");
-                    }
-                    String result = getMappedValue(record, columnMappings, "result");
-                    String ctValue = getMappedValue(record, columnMappings, "ctValue");
                     String units = getMappedValue(record, columnMappings, "units");
-                    String interpretation = getMappedValue(record, columnMappings, "interpretation");
                     String qcTask = getMappedValue(record, columnMappings, "qcTask");
                     String testDate = getMappedValue(record, columnMappings, "testDate");
-                    String dateTime = getMappedValue(record, columnMappings, "dateTime");
 
                     if (sampleId == null || sampleId.isBlank()) continue;
                     if (testCode == null || testCode.isBlank()) {
@@ -603,43 +520,26 @@ public class FileResultParser {
                         }
                     }
 
-                    // Mirror the Excel parse() fallback chain: result → ctValue
-                    // → interpretation. QuantStudio Arbovirus PCR + QuantStudio
-                    // QC samples leave `Quantity Mean` (mapped to `result`)
-                    // empty since the meaningful number is in `CT` (mapped to
-                    // `ctValue`). Without this fallback, every QuantStudio QC
-                    // row gets dropped at the value check.
-                    String value = (result != null && !result.isBlank()) ? result
-                            : (ctValue != null && !ctValue.isBlank()) ? ctValue
-                            : interpretation;
+                    String value = resultSelection.select(
+                            field -> getMappedValue(record, columnMappings, field));
                     if (value == null || value.isBlank()) continue;
 
                     boolean isNumeric = isNumericValue(value);
                     AnalyzerResult ar = isNumeric
                             ? AnalyzerResult.numeric(testCode, testCode, value, units)
                             : AnalyzerResult.text(testCode, testCode, value);
-                    Optional<QcRule> matchedRule = findMatchingControlRule(sampleId, qcTask, qcRules);
-                    // When explicit QC rules are configured they are authoritative
-                    // (mirrors the Excel path): a row is QC iff a rule matches. Only
-                    // when no rules are pushed do we fall back to the legacy hardcoded
-                    // heuristic, so configured rules can't be overridden by it.
-                    boolean rulesConfigured = qcRules != null && !qcRules.isEmpty();
-                    boolean isCtrl =
-                            rulesConfigured ? matchedRule.isPresent() : isControlRow(sampleId, qcTask);
+                    Optional<ControlRecognitionRule> matchedRule =
+                            findMatchingControlRule(sampleId, qcTask, recognition);
+                    boolean isCtrl = matchedRule.isPresent();
                     ar = ar.withControl(isCtrl);
-                    String matchedLevel = matchedRule.map(FileResultParser::extractControlLevel).orElse(null);
-                    if (matchedLevel != null) {
-                        ar = ar.withControlLevel(matchedLevel);
-                    }
-                    String embeddedLot = isCtrl ? findEmbeddedLot(sampleId, controlLots) : null;
-                    if (embeddedLot != null) {
-                        ar = ar.withLotNumber(embeddedLot);
+                    if (matchedRule.isPresent()) {
+                        ControlRecognitionRule rule = matchedRule.get();
+                        ar = ar.withControlLevel(rule.controlLevel())
+                                .withControlType(rule.controlType());
                     }
 
-                    // Use testDate or dateTime — fall back to dateTime if testDate is null or blank
-                    String ts = (testDate != null && !testDate.isBlank()) ? testDate : dateTime;
-                    if (ts != null && !ts.isBlank()) {
-                        ar = ar.withTimestamp(ts);
+                    if (testDate != null && !testDate.isBlank()) {
+                        ar = ar.withTimestamp(testDate);
                     }
 
                     resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
@@ -674,24 +574,12 @@ public class FileResultParser {
             if (fieldName.equals(mapping.getValue())) {
                 try {
                     String value = record.get(mapping.getKey());
-                    return (value != null && !value.isBlank()) ? value.trim() : null;
+                    if (value != null && !value.isBlank()) {
+                        return value.trim();
+                    }
                 } catch (IllegalArgumentException e) {
                     // Column not found for this alias; try the next alias for the same semantic field.
                 }
-            }
-        }
-        return null;
-    }
-
-    private static String getFirstPresentValue(CSVRecord record, String... headers) {
-        for (String header : headers) {
-            try {
-                String value = record.get(header);
-                if (value != null && !value.isBlank()) {
-                    return value.trim();
-                }
-            } catch (IllegalArgumentException ignored) {
-                // Header alias not present in this record.
             }
         }
         return null;
@@ -750,7 +638,7 @@ public class FileResultParser {
      * Ported from ExcelAnalyzerReader.buildHeaderIndex().
      */
     private static Map<String, Integer> buildHeaderIndex(Row headerRow, DataFormatter formatter) {
-        Map<String, Integer> index = new HashMap<>();
+        Map<String, Integer> index = new LinkedHashMap<>();
         if (headerRow == null) return index;
         for (int i = 0; i < headerRow.getLastCellNum(); i++) {
             Cell cell = headerRow.getCell(i);
@@ -768,6 +656,39 @@ public class FileResultParser {
         if (cell == null) return null;
         String value = formatter.formatCellValue(cell);
         return (value != null && !value.isBlank()) ? value.trim() : null;
+    }
+
+    private static String getCellValue(
+            Row row, List<Integer> columnIndexes, DataFormatter formatter) {
+        if (columnIndexes == null) return null;
+        for (Integer columnIndex : columnIndexes) {
+            String value = getCellValue(row, columnIndex, formatter);
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private static Map<String, List<Integer>> buildFieldIndexes(
+            Map<String, Integer> headerIndex, Map<String, String> columnMappings) {
+        Map<String, List<Integer>> fieldIndexes = new LinkedHashMap<>();
+        for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
+            Integer columnIndex = headerIndex.get(mapping.getKey());
+            if (columnIndex != null) {
+                fieldIndexes
+                        .computeIfAbsent(mapping.getValue(), ignored -> new ArrayList<>())
+                        .add(columnIndex);
+            }
+        }
+        return fieldIndexes;
+    }
+
+    private static Set<String> mappedHeaders(
+            Map<String, String> columnMappings, Set<String> semanticFields) {
+        Set<String> headers = new LinkedHashSet<>();
+        columnMappings.forEach((header, semanticField) -> {
+            if (semanticFields.contains(semanticField)) headers.add(header);
+        });
+        return headers;
     }
 
     private static boolean isNumericValue(String value) {
@@ -788,111 +709,18 @@ public class FileResultParser {
         }
     }
 
-    /**
-     * FR-15: rule-based QC detection. Configured rules take precedence;
-     * when present, hardcoded prefix and qcTask fallbacks are bypassed
-     * entirely so analyzer profiles can opt out of legacy detection.
-     * Falls back to hardcoded logic only when rules are null or empty.
-     */
-    static boolean isControlRow(String sampleId, String qcTask, List<QcRule> qcRules) {
-        if (qcRules != null && !qcRules.isEmpty()) {
-            // Any matching rule classifies the row as control, regardless of
-            // whether the rule's operand carries a level (only
-            // SPECIMEN_ID_PREFIX does — see extractControlLevel).
-            return findMatchingControlRule(sampleId, qcTask, qcRules).isPresent();
-        }
-        return isControlRow(sampleId, qcTask);
+    static boolean isControlRow(
+            String sampleId, String qcTask, ControlResultRecognition recognition) {
+        return findMatchingControlRule(sampleId, qcTask, recognition).isPresent();
     }
 
-    /**
-     * Find the QC rule that classifies the sample as control, returning
-     * its operand (the level identifier — "LPC", "CNEG", "STANDARD",
-     * etc.) so the FHIR Observation can carry controlLevel metadata for
-     * OE's QCResultProcessingService. Returns null when no rule matches
-     * (caller should fall through to legacy detection).
-     */
-    static Optional<QcRule> findMatchingControlRule(
-            String sampleId, String qcTask, List<QcRule> qcRules) {
-        if (qcRules == null || qcRules.isEmpty()) {
-            return Optional.empty();
-        }
+    static Optional<ControlRecognitionRule> findMatchingControlRule(
+            String sampleId, String qcTask, ControlResultRecognition recognition) {
         Map<String, String> fieldValues = new HashMap<>();
         if (qcTask != null) {
             fieldValues.put("QC_TASK", qcTask);
         }
-        return QcRuleEvaluator.findMatchingRule(qcRules, sampleId, fieldValues);
-    }
-
-    static String matchControlRule(String sampleId, String qcTask, List<QcRule> qcRules) {
-        return findMatchingControlRule(sampleId, qcTask, qcRules)
-                .map(FileResultParser::extractControlLevel)
-                .orElse(null);
-    }
-
-    // Only ID-prefix-style rules carry a control level in their operand
-    // (e.g., "LPC", "HPC"). Other rule types — like FIELD_EQUALS
-    // QC_TASK=CONTROL — use the operand as a match predicate, not a level
-    // tag. Returning "CONTROL" as a controlLevel would propagate junk into
-    // OE's tier-2 lot resolver.
-    static String extractControlLevel(QcRule rule) {
-        if (rule == null) return null;
-        return "SPECIMEN_ID_PREFIX".equals(rule.ruleType()) ? rule.operand() : null;
-    }
-
-    /**
-     * Scan the registered control-lot list for any lot number that appears
-     * as a substring of {@code sampleId}. Returns the first match, or null
-     * when none are found (or no lots are registered). Caller should only
-     * invoke this on samples already classified as QC — calling on patient
-     * samples is wasted work, not unsafe (the patient sample-id should not
-     * coincidentally embed a lot string).
-     *
-     * <p>The first-match policy is acceptable because real labs assign
-     * unique lot strings per (test, instrument); ambiguity at this layer
-     * means OE's resolver will fall back to controlLevel match anyway.
-     */
-    static String findEmbeddedLot(String sampleId, List<org.itech.ahb.qc.ControlLotDto> controlLots) {
-        if (sampleId == null || sampleId.isBlank() || controlLots == null || controlLots.isEmpty()) {
-            return null;
-        }
-        for (org.itech.ahb.qc.ControlLotDto lot : controlLots) {
-            String lotNumber = lot.lotNumber();
-            if (lotNumber != null && !lotNumber.isBlank() && sampleId.contains(lotNumber)) {
-                return lotNumber;
-            }
-        }
-        return null;
-    }
-
-    private static boolean isControlRow(String sampleId, String qcTask) {
-        // Non-clinical task / type values are treated as controls so they're
-        // preserved in the staging table but hidden from the clinical review
-        // UI by default (OE staging filters by isControl). Covers:
-        //   • "CONTROL" — generic control flag (pre-existing)
-        //   • "STANDARD" / "STD" — QuantStudio calibration curve rows
-        //   • "NTC" — No Template Control (QuantStudio)
-        //   • "CALIBRATOR" — plate-reader calibration wells
-        //   • "POSITIVE" / "NEGATIVE" — Bruker Fluorocycler XT control wells.
-        //     The Fluorocycler "Type" column distinguishes clinical samples
-        //     (Type=Unknown) from control wells (Type=Positive for positive
-        //     control, Type=Negative for negative control). These are NOT
-        //     result interpretations — they're well purposes, same semantic
-        //     as QuantStudio's Task=STANDARD. In practice no analyzer we
-        //     handle uses Type=Positive to mean "this clinical sample is
-        //     positive"; that lives in the Result column instead.
-        if (qcTask != null) {
-            String t = qcTask.trim().toUpperCase();
-            if (t.equals("CONTROL") || t.equals("STANDARD") || t.equals("STD")
-                    || t.equals("NTC") || t.equals("CALIBRATOR")
-                    || t.equals("POSITIVE") || t.equals("NEGATIVE")) {
-                return true;
-            }
-        }
-        if (sampleId == null) {
-            return false;
-        }
-        String normalizedSampleId = sampleId.trim().toUpperCase();
-        return CONTROL_PREFIXES.stream()
-                .anyMatch(normalizedSampleId::startsWith);
+        return ControlResultRecognitionEvaluator.findMatchingRule(
+                recognition, sampleId, fieldValues);
     }
 }

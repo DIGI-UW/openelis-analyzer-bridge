@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
@@ -28,6 +29,8 @@ import org.itech.ahb.fhir.HL7ResultParser;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.TabularResultValueSelection;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -42,7 +45,6 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class FileMessageHandler {
 
-    private final CSVParser csvParser;
     private final FhirRoutingConfig fhirConfig;
     private final AnalyzerRegistryConfig registry;
     private final HTTPForwardServerConfigurationProperties httpConfig;
@@ -52,22 +54,12 @@ public class FileMessageHandler {
     private static final long MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
     @Autowired
-    public FileMessageHandler(CSVParser csvParser,
-            @Autowired(required = false) FhirRoutingConfig fhirConfig,
+    public FileMessageHandler(@Autowired(required = false) FhirRoutingConfig fhirConfig,
             @Autowired(required = false) AnalyzerRegistryConfig registry,
             HTTPForwardServerConfigurationProperties httpConfig) {
-        this.csvParser = csvParser;
         this.fhirConfig = fhirConfig;
         this.registry = registry;
         this.httpConfig = httpConfig;
-    }
-
-    public FileMessageHandler(CSVParser csvParser, FileConfig ignoredFileConfig,
-            org.itech.ahb.normalizer.MessageNormalizer ignoredNormalizer) {
-        this.csvParser = csvParser;
-        this.fhirConfig = null;
-        this.registry = null;
-        this.httpConfig = new HTTPForwardServerConfigurationProperties();
     }
 
     private HttpClient httpClient() {
@@ -149,13 +141,13 @@ public class FileMessageHandler {
      * Build the FHIR bundle for one parsed file accession, applying the analyzer's
      * code→LOINC mapping (parity with the ASTM/HL7 inbound path via
      * HttpForwardingRouter) so OE2 resolves the result by LOINC instead of receiving
-     * a raw analyzer test code. Without this the FILE path emitted raw codes and OE2
-     * left test_id unresolved (G1). Null entry/mapping preserves raw-code fallback.
+     * a raw analyzer test code. Construction requires the registered analyzer
+     * materialized from its pinned profile revision.
      */
     static String buildFileFhirBundle(AnalyzerEntry analyzerEntry,
             HL7ResultParser.ParsedResults parsed, String analyzerId) {
-        java.util.function.Function<String, String> codeToLoinc =
-                (analyzerEntry != null) ? analyzerEntry::getLoincForCode : null;
+        Objects.requireNonNull(analyzerEntry, "analyzerEntry is required");
+        java.util.function.Function<String, String> codeToLoinc = analyzerEntry::getLoincForCode;
         return FhirBundleBuilder.buildBundle(
                 parsed.accessionNumber(), analyzerId, parsed.results(), null, codeToLoinc);
     }
@@ -181,22 +173,19 @@ public class FileMessageHandler {
                     "No column mappings registered for analyzer " + analyzerId + " — refusing FILE fallback");
         }
 
-        // QC identification rules from the analyzer registration (FR-15).
-        // Empty list = legacy hardcoded prefix detection in isControlRow.
-        // Wiring this through ensures profile-defined SPECIMEN_ID_PREFIX
-        // rules (e.g. LPC/HPC for QuantStudio HIV-1 controls) actually
-        // classify rows as QC at parse time so the FHIR meta.tag flows
-        // through to OE.
-        java.util.List<org.itech.ahb.qc.QcRule> qcRules = analyzerEntry.getQcRules() != null
-                ? analyzerEntry.getQcRules()
-                : java.util.Collections.emptyList();
-        // Active control lots from OE — used by FileResultParser to attach
-        // lotNumber to QC samples whose sample-id embeds the lot string.
-        // Empty list when OE hasn't pushed lots (older deployments) or the
-        // analyzer has no active lots — parser silently skips lot enrichment.
-        java.util.List<org.itech.ahb.qc.ControlLotDto> controlLots = analyzerEntry.getControlLots() != null
-                ? analyzerEntry.getControlLots()
-                : java.util.Collections.emptyList();
+        ControlResultRecognition recognition = analyzerEntry.getControlResultRecognition();
+        if (recognition == null) {
+            throw new FileProcessingException(
+                    "Analyzer " + analyzerId
+                    + " has no control-result recognition from its pinned profile");
+        }
+        TabularResultValueSelection resultSelection =
+                analyzerEntry.getTabularResultValueSelection();
+        if (resultSelection == null) {
+            throw new FileProcessingException(
+                    "Analyzer " + analyzerId
+                            + " has no result-value selection from its pinned profile");
+        }
 
         // Dispatch by file extension: CSV/TSV/TXT → CSV parser, XLS/XLSX → Excel parser
         String ext = getFileExtension(filePath);
@@ -205,23 +194,36 @@ public class FileMessageHandler {
         if (".csv".equals(ext) || ".tsv".equals(ext) || ".txt".equals(ext)) {
             String delimiter = analyzerEntry.getDelimiter();
             int skipRows = analyzerEntry.getSkipRows();
-            log.info("Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}, qcRules={}, controlLots={}) for analyzer {}",
-                    filePath.getFileName(), delimiter, skipRows, effectiveFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
-            allResults = FileResultParser.parseCsv(content, columnMappings, delimiter, skipRows, effectiveFileTestCode, qcRules, controlLots);
+            log.info(
+                    "Parsing CSV file {} (delimiter='{}', skipRows={}, perFileTestCode={}, recognitionMode={}) for analyzer {}",
+                    filePath.getFileName(), delimiter, skipRows, effectiveFileTestCode,
+                    recognition.mode(), analyzerId);
+            allResults = FileResultParser.parseCsv(
+                    content, columnMappings, delimiter, skipRows,
+                    effectiveFileTestCode, recognition,
+                    analyzerEntry.getTabularFileLayout(),
+                    resultSelection);
         } else if (".xls".equals(ext) || ".xlsx".equals(ext)) {
-            log.info("Parsing Excel file {} (perFileTestCode={}, qcRules={}, controlLots={}) for analyzer {}",
-                    filePath.getFileName(), effectiveFileTestCode, qcRules.size(), controlLots.size(), analyzerId);
+            log.info(
+                    "Parsing Excel file {} (perFileTestCode={}, recognitionMode={}) for analyzer {}",
+                    filePath.getFileName(), effectiveFileTestCode,
+                    recognition.mode(), analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-                allResults = FileResultParser.parse(bis, columnMappings, effectiveFileTestCode, qcRules, controlLots);
+                allResults = FileResultParser.parse(
+                        bis, columnMappings, effectiveFileTestCode, recognition,
+                        analyzerEntry.getTabularFileLayout(),
+                        resultSelection);
             }
         } else if (".ods".equals(ext)) {
-            // parseOds does not yet accept qcRules — ODS QC detection still
-            // falls back to the legacy task-based heuristic. Don't log
-            // qcRules here so the message doesn't mislead.
-            log.info("Parsing ODS file {} (perFileTestCode={}) for analyzer {}",
-                    filePath.getFileName(), effectiveFileTestCode, analyzerId);
+            log.info(
+                    "Parsing ODS file {} (perFileTestCode={}, recognitionMode={}) for analyzer {}",
+                    filePath.getFileName(), effectiveFileTestCode,
+                    recognition.mode(), analyzerId);
             try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(content)) {
-                allResults = FileResultParser.parseOds(bis, columnMappings, effectiveFileTestCode);
+                allResults = FileResultParser.parseOds(
+                        bis, columnMappings, effectiveFileTestCode, recognition,
+                        analyzerEntry.getTabularFileLayout(),
+                        resultSelection);
             }
         } else {
             throw new FileProcessingException(

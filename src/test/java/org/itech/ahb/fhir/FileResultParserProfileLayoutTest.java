@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Map;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.Test;
 
 class FileResultParserProfileLayoutTest {
@@ -41,8 +42,7 @@ class FileResultParserProfileLayoutTest {
       new ByteArrayInputStream(workbookBytes),
       Map.of("Specimen", "sampleId", "Assay", "testCode", "Measured value", "result"),
       null,
-      List.of(),
-      List.of(),
+      ControlResultRecognition.none(),
       layout
     );
 

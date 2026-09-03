@@ -4,10 +4,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
-import org.itech.ahb.qc.QcRule;
-import org.itech.ahb.qc.QcRuleEvaluator;
+import org.itech.ahb.profile.ControlRecognitionRule;
+import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.ControlResultRecognitionEvaluator;
 
 /**
  * Extracts lab results from HL7 v2 ORU^R01 messages.
@@ -24,24 +26,14 @@ import org.itech.ahb.qc.QcRuleEvaluator;
 public class HL7ResultParser {
 
     /**
-     * Parse HL7 v2 segment lines and extract results.
-     *
-     * @param segmentLines list of HL7 segment strings (MSH|..., PID|..., OBR|..., OBX|...)
-     * @return parsed results with accession, or null if no results found
-     */
-    public static ParsedResults parse(List<String> segmentLines) {
-        return parse(segmentLines, null);
-    }
-
-    /**
-     * Parse HL7 v2 segment lines with configurable QC rules.
-     * HL7 had no QC detection before FR-15 — rules enable it.
-     *
+     * Parse HL7 v2 segment lines using the pinned profile's explicit control
+     * recognition mode.
      * @param segmentLines list of HL7 segment strings
-     * @param qcRules      FR-15 QC identification rules (null = no QC detection)
+     * @param recognition profile-owned control-result recognition
      * @return parsed results with accession, or null if no results found
      */
-    public static ParsedResults parse(List<String> segmentLines, List<QcRule> qcRules) {
+    public static ParsedResults parse(
+            List<String> segmentLines, ControlResultRecognition recognition) {
         if (segmentLines == null || segmentLines.isEmpty()) {
             return null;
         }
@@ -86,12 +78,16 @@ public class HL7ResultParser {
             }
         }
 
-        // FR-15: evaluate QC rules against collected fields
-        if (qcRules != null && !qcRules.isEmpty() && accession != null) {
-            boolean isQcSample = QcRuleEvaluator.isQcSample(qcRules, accession, fieldValues);
-            if (isQcSample) {
+        if (accession != null) {
+            Optional<ControlRecognitionRule> matchedRule =
+                    ControlResultRecognitionEvaluator.findMatchingRule(
+                            recognition, accession, fieldValues);
+            if (matchedRule.isPresent()) {
+                ControlRecognitionRule rule = matchedRule.get();
                 results = results.stream()
-                        .map(r -> r.withControl(true))
+                        .map(result -> result.withControl(true)
+                                .withControlLevel(rule.controlLevel())
+                                .withControlType(rule.controlType()))
                         .toList();
             }
         }
@@ -104,7 +100,8 @@ public class HL7ResultParser {
     /**
      * Parse HL7 from raw message string (splits on segment terminators first).
      */
-    public static ParsedResults parseRaw(String rawHl7) {
+    public static ParsedResults parseRaw(
+            String rawHl7, ControlResultRecognition recognition) {
         if (rawHl7 == null || rawHl7.isBlank()) return null;
         // Normalize terminators: \r\n → \r, \n → \r, then split
         String normalized = rawHl7.replace("\r\n", "\r").replace("\n", "\r");
@@ -112,7 +109,7 @@ public class HL7ResultParser {
         for (String seg : normalized.split("\r")) {
             if (!seg.isBlank()) segments.add(seg);
         }
-        return parse(segments);
+        return parse(segments, recognition);
     }
 
     /**

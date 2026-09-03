@@ -4,17 +4,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
-import org.itech.ahb.qc.QcRule;
+import org.itech.ahb.profile.AstmResultRecordSelection;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-@DisplayName("ASTMResultParser — QC rules (FR-15)")
-class ASTMResultParserQcRulesTest {
+@DisplayName("ASTMResultParser control recognition")
+class ASTMResultParserControlRecognitionTest {
 
-    // O-record fixtures use 11 fields (10 separators) with Action Code at idx 11,
-    // matching ASTM LIS2-A2 §5.7 (1-indexed O.12 → 0-indexed array idx 11) and
-    // O_ACTION_CODE_FIELD in ASTMResultParser.
+    private static final AstmResultRecordSelection ALL_RESULTS = AstmResultRecordSelection.all();
+
+    // O-record fixtures place the action code at O.12, following ASTM LIS2-A2.
     private static final String ASTM_QC_O12_Q =
             "H|\\^&|||Analyzer\r"
             + "P|1\r"
@@ -55,8 +56,10 @@ class ASTMResultParserQcRulesTest {
         @Test
         @DisplayName("FIELD_EQUALS O.12=Q flags results as control")
         void fieldEqualsO12Q_FlagsAsControl() {
-            List<QcRule> rules = List.of(new QcRule("FIELD_EQUALS", "O.12", "Q"));
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_QC_O12_Q), rules);
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule("FIELD_EQUALS", "O.12", "Q");
+            ParsedResults parsed = ASTMResultParser.parse(
+                    lines(ASTM_QC_O12_Q), recognition, ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("QC_SAMPLE001", parsed.accessionNumber());
@@ -67,8 +70,10 @@ class ASTMResultParserQcRulesTest {
         @Test
         @DisplayName("SPECIMEN_ID_PREFIX matches accession, not action code")
         void specimenIdPrefix_FlagsAsControl() {
-            List<QcRule> rules = List.of(new QcRule("SPECIMEN_ID_PREFIX", null, "QC-"));
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_QC_PREFIX), rules);
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule("SPECIMEN_ID_PREFIX", null, "QC-");
+            ParsedResults parsed = ASTMResultParser.parse(
+                    lines(ASTM_QC_PREFIX), recognition, ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("QC-LOT-001", parsed.accessionNumber());
@@ -79,8 +84,11 @@ class ASTMResultParserQcRulesTest {
         @Test
         @DisplayName("SPECIMEN_ID_PATTERN regex match flags as control")
         void specimenIdPattern_FlagsAsControl() {
-            List<QcRule> rules = List.of(new QcRule("SPECIMEN_ID_PATTERN", null, "^QC-LOT-\\d{3}$"));
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_QC_PREFIX), rules);
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule(
+                            "SPECIMEN_ID_PATTERN", null, "^QC-LOT-\\d{3}$");
+            ParsedResults parsed = ASTMResultParser.parse(
+                    lines(ASTM_QC_PREFIX), recognition, ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals("QC-LOT-001", parsed.accessionNumber());
@@ -91,8 +99,10 @@ class ASTMResultParserQcRulesTest {
         @Test
         @DisplayName("Non-matching rules do not flag as control")
         void nonMatchingRules_NotControl() {
-            List<QcRule> rules = List.of(new QcRule("FIELD_EQUALS", "O.12", "Q"));
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_PATIENT_O12_P), rules);
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule("FIELD_EQUALS", "O.12", "Q");
+            ParsedResults parsed = ASTMResultParser.parse(
+                    lines(ASTM_PATIENT_O12_P), recognition, ALL_RESULTS);
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isControl());
@@ -101,8 +111,10 @@ class ASTMResultParserQcRulesTest {
         @Test
         @DisplayName("Multiple results all flagged when QC matches")
         void multipleResults_AllFlagged() {
-            List<QcRule> rules = List.of(new QcRule("FIELD_EQUALS", "O.12", "Q"));
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_TWO_RESULTS), rules);
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule("FIELD_EQUALS", "O.12", "Q");
+            ParsedResults parsed = ASTMResultParser.parse(
+                    lines(ASTM_TWO_RESULTS), recognition, ALL_RESULTS);
 
             assertNotNull(parsed);
             assertEquals(2, parsed.results().size());
@@ -112,31 +124,14 @@ class ASTMResultParserQcRulesTest {
     }
 
     @Nested
-    @DisplayName("Fallback to hardcoded O.12==Q")
-    class Fallback {
+    @DisplayName("Explicit absence of control recognition")
+    class NoRecognition {
 
         @Test
-        @DisplayName("Null rules falls back to hardcoded O.12 check — QC detected")
-        void nullRules_FallbackDetectsQc() {
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_QC_O12_Q), null);
-
-            assertNotNull(parsed);
-            assertTrue(parsed.results().get(0).isControl());
-        }
-
-        @Test
-        @DisplayName("Empty rules falls back to hardcoded O.12 check — QC detected")
-        void emptyRules_FallbackDetectsQc() {
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_QC_O12_Q), List.of());
-
-            assertNotNull(parsed);
-            assertTrue(parsed.results().get(0).isControl());
-        }
-
-        @Test
-        @DisplayName("Null rules with O.12=P — not control")
-        void nullRules_PatientNotControl() {
-            ParsedResults parsed = ASTMResultParser.parse(lines(ASTM_PATIENT_O12_P), null);
+        @DisplayName("NONE does not classify O.12=Q")
+        void noneDoesNotClassifyActionCode() {
+            ParsedResults parsed = ASTMResultParser.parse(
+                    lines(ASTM_QC_O12_Q), ControlResultRecognition.none(), ALL_RESULTS);
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isControl());

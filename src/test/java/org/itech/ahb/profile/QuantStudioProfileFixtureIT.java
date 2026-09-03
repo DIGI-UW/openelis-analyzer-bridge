@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 
 class QuantStudioProfileFixtureIT {
 
-  private static final String PROFILE_RESOURCE = "analyzer-profiles/quantstudio.json";
+  private static final String PROFILE_RESOURCE = "analyzer-profiles/quantstudio-v3.json";
 
   @Test
   void publishedProfileParsesTheMockQs5AndQs7Fixtures() throws Exception {
@@ -75,9 +75,9 @@ class QuantStudioProfileFixtureIT {
           input,
           columnMappings,
           null,
-          List.of(),
-          List.of(),
-          layout
+          ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")),
+          layout,
+          TabularResultValueSelection.fromProfile(profile)
         );
         assertThat(parsed).as(fixturePath.toString()).isNotEmpty();
         Set<String> observedCodes = new LinkedHashSet<>();

@@ -73,6 +73,7 @@
     }
   ],
   "configDefaults": {
+    "dataFlow": "RESULTS_ONLY",
     "connectionRole": "SERVER",
     "transport": "TCP/IP",
     "aggregationMode": "PER_MESSAGE",
@@ -86,6 +87,22 @@
     "transforms": {}
   },
   "connectionFields": [
+    {
+      "key": "dataFlow",
+      "labelKey": "analyzer.setup.connect.dataFlow",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RESULTS_ONLY",
+          "labelKey": "analyzer.setup.connect.dataFlow.resultsOnly"
+        },
+        {
+          "value": "TWO_WAY",
+          "labelKey": "analyzer.setup.connect.dataFlow.twoWay"
+        }
+      ]
+    },
     {
       "key": "transport",
       "labelKey": "analyzer.connection.field.transport",
@@ -143,12 +160,12 @@
     }
   },
   "catalog": {
-    "revision": 1,
-    "revisionFingerprint": "sha256:c2168ff7438aaea72eb4dcd646e2348601899b4b401b3c235fae07b5804081b2",
+    "revision": 3,
+    "revisionFingerprint": "sha256:5fe2397faa3b02d8378bbbae4a69fba7e8c959d1b2d2ec9abe547097aeb625f7",
     "recognitionFingerprint": "sha256:68a4cf6c695d3a23662a7a5dc97983bbc78e38726f932517d09238d47aad701e",
     "source": "SHIPPED",
     "status": "ACTIVE",
-    "publishedAt": "2026-08-19T00:00:00Z",
+    "publishedAt": "2026-08-26T01:00:00Z",
     "publishedBy": "distribution"
   }
 }

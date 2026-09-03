@@ -11,13 +11,18 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.itech.ahb.config.AnalyzerRegistryConfig;
+import org.itech.ahb.config.AnalyzerRegistryConfig.AnalyzerEntry;
+import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.file.RejectedBundle;
 import org.itech.ahb.file.SqliteFileStateStore;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,14 +43,17 @@ class HttpForwardingRouterTest {
     private HttpServer server;
     private int port;
     private AtomicInteger statusCodeToReturn;
+    private AtomicInteger requestCount;
     private SqliteFileStateStore stateStore;
 
     @BeforeEach
     void setUp(@TempDir Path tmp) throws IOException {
         statusCodeToReturn = new AtomicInteger(200);
+        requestCount = new AtomicInteger();
         server = HttpServer.create(new InetSocketAddress(0), 0);
         port = server.getAddress().getPort();
         server.createContext("/analyzer", exchange -> {
+            requestCount.incrementAndGet();
             int code = statusCodeToReturn.get();
             byte[] body = ("status " + code).getBytes();
             exchange.sendResponseHeaders(code, body.length);
@@ -126,6 +134,57 @@ class HttpForwardingRouterTest {
         // only diagnostic available in this path.
         boolean result = router.route(envelope("src", "body"));
         assertFalse(result);
+    }
+
+    @Test
+    void fhirRoutingRejectsAnAnalyzerWithoutProfileOwnedRecognition() {
+        FhirRoutingConfig fhirConfig = new FhirRoutingConfig();
+        fhirConfig.setUseFhir(true);
+        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        AnalyzerEntry entry = new AnalyzerEntry();
+        entry.setId("analyzer-1");
+        entry.setExpectedProtocol("ASTM");
+        registry.setAnalyzers(Map.of("10.0.0.7", entry));
+        HttpForwardingRouter router = new HttpForwardingRouter(
+                minimalConfig(), fhirConfig, stateStore, registry);
+
+        MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.ASTM)
+                .transport(Transport.TCP)
+                .sourceId("10.0.0.7")
+                .resolvedAnalyzerId("analyzer-1")
+                .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\rR|1|^^^WBC|7.5|10*3/uL\rL|1")
+                .build();
+
+        assertFalse(router.route(envelope));
+        assertEquals(0, requestCount.get(),
+                "traffic without an explicit pinned-profile recognition mode must not be forwarded");
+    }
+
+    @Test
+    void fhirRoutingRejectsAnAstmAnalyzerWithoutProfileOwnedResultSelection() {
+        FhirRoutingConfig fhirConfig = new FhirRoutingConfig();
+        fhirConfig.setUseFhir(true);
+        AnalyzerRegistryConfig registry = new AnalyzerRegistryConfig();
+        AnalyzerEntry entry = new AnalyzerEntry();
+        entry.setId("analyzer-1");
+        entry.setExpectedProtocol("ASTM");
+        entry.setControlResultRecognition(ControlResultRecognition.none());
+        registry.setAnalyzers(Map.of("10.0.0.8", entry));
+        HttpForwardingRouter router = new HttpForwardingRouter(
+                minimalConfig(), fhirConfig, stateStore, registry);
+
+        MessageEnvelope envelope = MessageEnvelope.builder()
+                .protocol(Protocol.ASTM)
+                .transport(Transport.TCP)
+                .sourceId("10.0.0.8")
+                .resolvedAnalyzerId("analyzer-1")
+                .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\rR|1|^^^WBC|7.5|10*3/uL\rL|1")
+                .build();
+
+        assertFalse(router.route(envelope));
+        assertEquals(0, requestCount.get());
+        assertTrue(stateStore.listRejections(10).get(0).lastError().contains("result-record selection"));
     }
 
     private HTTPForwardServerConfigurationProperties minimalConfig() {

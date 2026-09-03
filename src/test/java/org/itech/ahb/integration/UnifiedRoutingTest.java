@@ -19,13 +19,13 @@ import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.config.AnalyzerRegistryConfig;
 import org.itech.ahb.config.FhirRoutingConfig;
 import org.itech.ahb.controller.AnalyzerInputController;
-import org.itech.ahb.file.CSVParser;
-import org.itech.ahb.file.FileConfig;
 import org.itech.ahb.file.FileMessageHandler;
 import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
 import org.itech.ahb.normalizer.ASTMBridgeAdapter;
 import org.itech.ahb.normalizer.AnalyzerIdentifier;
 import org.itech.ahb.normalizer.MessageNormalizer;
+import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.TabularResultValueSelection;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.serial.SerialMessageHandler;
 import org.itech.ahb.mllp.HapiReceivingApplication;
@@ -144,12 +144,9 @@ class UnifiedRoutingTest {
 
         serialHandler = new SerialMessageHandler(normalizer);
 
-        FileConfig fileConfig = new FileConfig();
-        fileConfig.setEnabled(true);
-        CSVParser csvParser = new CSVParser(fileConfig);
         FhirRoutingConfig fhirRoutingConfig = new FhirRoutingConfig();
         fhirRoutingConfig.setUseFhir(true);
-        fileHandler = new FileMessageHandler(csvParser, fhirRoutingConfig, registry, httpConfig);
+        fileHandler = new FileMessageHandler(fhirRoutingConfig, registry, httpConfig);
 
         httpController = new AnalyzerInputController(normalizer);
 
@@ -527,6 +524,8 @@ class UnifiedRoutingTest {
 
     private AnalyzerRegistryConfig.AnalyzerEntry fileAnalyzer(String id) {
         AnalyzerRegistryConfig.AnalyzerEntry entry = analyzer(id, "FILE");
+        entry.setControlResultRecognition(ControlResultRecognition.none());
+        entry.setTabularResultValueSelection(TabularResultValueSelection.resultOnly());
         entry.setColumnMappings(Map.of(
                 "Sample Name", "sampleId",
                 "Target", "testCode",

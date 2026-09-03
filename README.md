@@ -113,6 +113,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `org.itech.ahb.forward-http-server.max-attempts` | Outbound retry attempts | 3 |
 | `org.itech.ahb.forward-http-server.backoff-ms` | Initial outbound retry backoff in ms | 1000 |
 | **ASTM TCP** | | |
+| `org.itech.ahb.astm.enabled` | Enable ASTM TCP listeners | true |
 | `org.itech.ahb.listen-astm-server.port` | ASTM LIS1-A listen port | 12001 |
 | `org.itech.ahb.listen-astm-e1381-95-server.port` | E1381-95 listen port | 12011 |
 | **MLLP (HL7)** | | |

@@ -17,6 +17,9 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
+import org.itech.ahb.profile.ControlRecognitionRule;
+import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.TabularResultValueSelection;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -81,7 +84,7 @@ class FileResultParserTest {
                     {"STD 1E7", "Standard", null, "STD 1E7 control failed", "VL"},
             });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertFalse(results.isEmpty(),
@@ -99,7 +102,7 @@ class FileResultParserTest {
                     {"DEV-PAT-001", "Unknown", 1520.5, "Detected", "VL"},
             });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_OLD_BROKEN_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_OLD_BROKEN_MAPPINGS, null, ControlResultRecognition.none());
 
             // SampleID/CalcConc/TargetName don't exist in the real export
             // ("Sample ID"/"Calc. Conc."/"testCode") — exact matching resolves nothing.
@@ -118,7 +121,7 @@ class FileResultParserTest {
                     {"DEV-PAT-002", "A1", "VL", 980.0, "Detected", "Unknown"},
             });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, FLUOROCYCLER_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertFalse(results.isEmpty(),
@@ -182,7 +185,7 @@ class FileResultParserTest {
                             {"SAMPLE001", "CT", "28.5", "cycles"},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size(), "Both rows share same sampleId");
@@ -207,7 +210,7 @@ class FileResultParserTest {
                             {"SAMPLE001", "INTERP", "Normal", ""},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             ParsedResults group = results.get(0);
@@ -237,7 +240,7 @@ class FileResultParserTest {
                             {"SAMPLE001", "TEST-C", "30.0", "mg/dL"},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -254,7 +257,7 @@ class FileResultParserTest {
                             {"SAMPLE002", "TEST-B", "20.0", "mg/dL"},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(2, results.size());
@@ -276,7 +279,7 @@ class FileResultParserTest {
                             {"SAMPLE001", "TEST-C", "30.0", "mg/dL"},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -295,7 +298,7 @@ class FileResultParserTest {
                             {"SAMPLE001", "TEST-C", "30.0", "mg/dL"},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -313,7 +316,7 @@ class FileResultParserTest {
                             {"SAMPLE001", "TEST-B", "20.0", "mg/dL"},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.get(0).results().size());
@@ -323,7 +326,7 @@ class FileResultParserTest {
         @Test
         @DisplayName("Null input stream -> returns null")
         void nullInputStreamReturnsNull() {
-            assertNull(FileResultParser.parse(null, STANDARD_MAPPINGS));
+            assertNull(FileResultParser.parse(null, STANDARD_MAPPINGS, null, ControlResultRecognition.none()));
         }
 
         @Test
@@ -333,7 +336,7 @@ class FileResultParserTest {
                     new String[]{"Sample Name", "Target", "CT"},
                     new Object[][]{{"SAMPLE001", "TEST", "10.0"}});
 
-            assertNull(FileResultParser.parse(xlsx, null));
+            assertNull(FileResultParser.parse(xlsx, null, null, ControlResultRecognition.none()));
         }
 
         @Test
@@ -343,7 +346,7 @@ class FileResultParserTest {
                     new String[]{"Sample Name", "Target", "CT"},
                     new Object[][]{{"SAMPLE001", "TEST", "10.0"}});
 
-            assertNull(FileResultParser.parse(xlsx, Map.of()));
+            assertNull(FileResultParser.parse(xlsx, Map.of(), null, ControlResultRecognition.none()));
         }
 
         @Test
@@ -353,7 +356,7 @@ class FileResultParserTest {
                     new String[]{"Col A", "Col B", "Col C"},
                     new Object[][]{{"SAMPLE001", "TEST", "10.0"}});
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNull(results, "No columns matched, so no results should be extracted");
         }
@@ -368,7 +371,7 @@ class FileResultParserTest {
                             {"", "", "", ""},
                     });
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, STANDARD_MAPPINGS, null, ControlResultRecognition.none());
 
             assertNull(results);
         }
@@ -416,7 +419,7 @@ class FileResultParserTest {
                         "CT", "result");
 
                 List<ParsedResults> parsed = FileResultParser.parse(
-                        is, mappings, null, List.of(), List.of(),
+                        is, mappings, null, ControlResultRecognition.none(),
                         TabularFileLayout.headerScan(List.of("Results"), "Sample Name", 2, 10));
 
                 assertNotNull(parsed);
@@ -430,11 +433,11 @@ class FileResultParserTest {
     }
 
     @Nested
-    @DisplayName("Interpretation fallback")
+    @DisplayName("Profile result-value selection")
     class InterpretationFallback {
 
         @Test
-        @DisplayName("Uses interpretation when result column is empty")
+        @DisplayName("Uses the next profile-declared semantic field when result is empty")
         void usesInterpretationWhenResultEmpty() {
             InputStream xlsx = buildXlsx("Sheet1",
                     new String[]{"Sample Name", "Target", "CT", "Units", "Interpretation"},
@@ -445,7 +448,9 @@ class FileResultParserTest {
             Map<String, String> mappings = new HashMap<>(STANDARD_MAPPINGS);
             mappings.put("Interpretation", "interpretation");
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings);
+            List<ParsedResults> results = FileResultParser.parse(
+                    xlsx, mappings, null, ControlResultRecognition.none(), null,
+                    new TabularResultValueSelection(List.of("result", "interpretation")));
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -472,7 +477,14 @@ class FileResultParserTest {
                     "Quantity Mean", "result",
                     "Task", "qcTask");
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings);
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule(
+                            "SPECIMEN_ID_PATTERN",
+                            null,
+                            "^(CNEG|NTC)(?:$|[-_].*)");
+
+            List<ParsedResults> results = FileResultParser.parse(
+                    xlsx, mappings, null, recognition);
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -496,7 +508,7 @@ class FileResultParserTest {
                     "Quantity Mean", "result",
                     "Task", "qcTask");
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings);
+            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -505,7 +517,7 @@ class FileResultParserTest {
         }
 
         @Test
-        @DisplayName("SPECIMEN_ID_PREFIX rule -> isControl=true AND controlLevel=operand")
+        @DisplayName("SPECIMEN_ID_PREFIX rule propagates its explicit control level")
         void specimenIdPrefixRuleSetsControlLevel() {
             InputStream xlsx = buildXlsx("Results",
                     new String[]{"Well", "Sample Name", "Target Name", "Quantity Mean"},
@@ -518,17 +530,23 @@ class FileResultParserTest {
                     "Target Name", "testCode",
                     "Quantity Mean", "result");
 
-            List<org.itech.ahb.qc.QcRule> rules = List.of(
-                    new org.itech.ahb.qc.QcRule(
-                            "SPECIMEN_ID_PREFIX", null, "LPC"));
+            ControlResultRecognition recognition = TestControlRecognitions.rule(
+                    "lpc-prefix",
+                    "SPECIMEN_ID_PREFIX",
+                    null,
+                    "LPC",
+                    "LPC",
+                    "ASSAY_CONTROL");
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings, null, rules);
+            List<ParsedResults> results = FileResultParser.parse(
+                    xlsx, mappings, null, recognition);
 
             assertNotNull(results);
             var ar = results.get(0).results().get(0);
             assertTrue(ar.isControl(), "Row should be flagged as control");
             assertEquals("LPC", ar.controlLevel(),
-                    "Operand of SPECIMEN_ID_PREFIX rule should propagate as controlLevel");
+                    "Explicit profile metadata should propagate as controlLevel");
+            assertEquals("ASSAY_CONTROL", ar.controlType());
         }
 
         @Test
@@ -546,11 +564,12 @@ class FileResultParserTest {
                     "Quantity Mean", "result",
                     "Task", "qcTask");
 
-            List<org.itech.ahb.qc.QcRule> rules = List.of(
-                    new org.itech.ahb.qc.QcRule(
-                            "FIELD_EQUALS", "QC_TASK", "STANDARD"));
+            ControlResultRecognition recognition =
+                    TestControlRecognitions.rule(
+                            "FIELD_EQUALS", "QC_TASK", "STANDARD");
 
-            List<ParsedResults> results = FileResultParser.parse(xlsx, mappings, null, rules);
+            List<ParsedResults> results = FileResultParser.parse(
+                    xlsx, mappings, null, recognition);
 
             assertNotNull(results);
             var ar = results.get(0).results().get(0);
@@ -582,7 +601,7 @@ class FileResultParserTest {
                     + "S002,TSH,0.57,mIU/L\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), CSV_MAPPINGS, ",", 0);
+                    csv.getBytes(), CSV_MAPPINGS, ",", 0, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(2, results.size());
@@ -596,7 +615,7 @@ class FileResultParserTest {
                     + "S001,TSH,3.45,mIU/L\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), CSV_MAPPINGS, ",", 1);
+                    csv.getBytes(), CSV_MAPPINGS, ",", 1, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -611,7 +630,7 @@ class FileResultParserTest {
                     + "S002;HIV ELISA;0.048;OD\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), CSV_MAPPINGS, ";", 0);
+                    csv.getBytes(), CSV_MAPPINGS, ";", 0, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(2, results.size());
@@ -626,7 +645,7 @@ class FileResultParserTest {
                     + "S002,hCG,>100,mIU/mL\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), CSV_MAPPINGS, ",", 0);
+                    csv.getBytes(), CSV_MAPPINGS, ",", 0, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             ParsedResults s1 = results.stream()
@@ -646,7 +665,7 @@ class FileResultParserTest {
                     + "S001,TSH,3.45,mIU/L\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), CSV_MAPPINGS, ",", 0);
+                    csv.getBytes(), CSV_MAPPINGS, ",", 0, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -655,7 +674,7 @@ class FileResultParserTest {
         @Test
         @DisplayName("Empty content → returns null")
         void emptyContentReturnsNull() {
-            assertNull(FileResultParser.parseCsv(new byte[0], CSV_MAPPINGS, ",", 0));
+            assertNull(FileResultParser.parseCsv(new byte[0], CSV_MAPPINGS, ",", 0, null, ControlResultRecognition.none()));
         }
 
         @Test
@@ -678,10 +697,11 @@ class FileResultParserTest {
             Map<String, String> mappings = Map.of(
                     "Sample Name", "sampleId",
                     "Target Name", "testCode",
-                    "CT", "ctValue");
+                    "CT", "result");
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), mappings, ",", 0, null, List.of(), List.of(),
+                    csv.getBytes(), mappings, ",", 0, null,
+                    ControlResultRecognition.none(),
                     TabularFileLayout.headerScan(List.of(), "Well", 1, 200));
 
             assertNotNull(results);
@@ -691,33 +711,29 @@ class FileResultParserTest {
         }
 
         @Test
-        @DisplayName("Empty result column → falls back to ctValue (QuantStudio CT fallback chain)")
-        void emptyResultFallsBackToCtValue() {
-            // Real QuantStudio rows have CT but blank result cells when only Cq
-            // matters. The parser's value fallback (result -> ctValue ->
-            // interpretation) must keep the row and forward the CT value.
+        @DisplayName("Profile-declared result columns use the first nonblank value")
+        void profileDeclaredResultColumnsUseFirstNonblankValue() {
             String csv = "Sample Name,Target Name,Result,CT\n"
                     + "S001,VIH-1,,28.5\n";
 
-            Map<String, String> mappings = Map.of(
-                    "Sample Name", "sampleId",
-                    "Target Name", "testCode",
-                    "Result", "result",
-                    "CT", "ctValue");
+            Map<String, String> mappings = new java.util.LinkedHashMap<>();
+            mappings.put("Sample Name", "sampleId");
+            mappings.put("Target Name", "testCode");
+            mappings.put("Result", "result");
+            mappings.put("CT", "result");
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), mappings, ",", 0);
+                    csv.getBytes(), mappings, ",", 0, null, ControlResultRecognition.none());
 
             assertNotNull(results);
-            assertEquals(1, results.size(), "Row with blank result + CT must be retained");
-            assertEquals("28.5", results.get(0).results().get(0).value(),
-                    "CT value must be forwarded when result column is blank");
+            assertEquals(1, results.size());
+            assertEquals("28.5", results.get(0).results().get(0).value());
         }
 
         @Test
         @DisplayName("Null content → returns null")
         void nullContentReturnsNull() {
-            assertNull(FileResultParser.parseCsv(null, CSV_MAPPINGS, ",", 0));
+            assertNull(FileResultParser.parseCsv(null, CSV_MAPPINGS, ",", 0, null, ControlResultRecognition.none()));
         }
 
         @Test
@@ -733,7 +749,7 @@ class FileResultParserTest {
                     + "A2\tHIV ELISA\t0.048\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    tsv.getBytes(), tabMappings, "\t", 0);
+                    tsv.getBytes(), tabMappings, "\t", 0, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(2, results.size());
@@ -755,7 +771,7 @@ class FileResultParserTest {
                     + "SN002,10J,Serum,TSH,<2,mIU/L\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), wondfoMappings, ",", 1);
+                    csv.getBytes(), wondfoMappings, ",", 1, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(2, results.size());
@@ -779,7 +795,7 @@ class FileResultParserTest {
                     + "SN001;DEV01265000000000101;TSH;3.45\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), aliasMappings, ";", 0);
+                    csv.getBytes(), aliasMappings, ";", 0, null, ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -789,8 +805,8 @@ class FileResultParserTest {
         }
 
         @Test
-        @DisplayName("Tecan-style CSV parses even when testCode mapping is absent")
-        void tecanStyleCsvWithoutTestCodeMapping() {
+        @DisplayName("Single-test CSV uses the profile-derived file test code")
+        void singleTestCsvUsesProfileDerivedFileTestCode() {
             Map<String, String> tecanMappings = Map.of(
                     "SampleID", "sampleId",
                     "OD_450", "result");
@@ -799,7 +815,8 @@ class FileResultParserTest {
                     + "A1;DEV01265100000000101;2.345;HIV ELISA\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), tecanMappings, ";", 0);
+                    csv.getBytes(), tecanMappings, ";", 0, "HIV ELISA",
+                    ControlResultRecognition.none());
 
             assertNotNull(results);
             assertEquals(1, results.size());
@@ -809,8 +826,8 @@ class FileResultParserTest {
         }
 
         @Test
-        @DisplayName("Multiskan-style CSV parses even when sample/test mappings are absent")
-        void multiskanStyleCsvWithoutSampleAndTestMappings() {
+        @DisplayName("Unmapped familiar headers are not guessed")
+        void unmappedFamiliarHeadersAreNotGuessed() {
             Map<String, String> multiskanMappings = Map.of(
                     "Abs", "result");
 
@@ -818,18 +835,14 @@ class FileResultParserTest {
                     + "A1;DEV01265200000000101;2.345;HIV ELISA\n";
 
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), multiskanMappings, ";", 0);
+                    csv.getBytes(), multiskanMappings, ";", 0, null, ControlResultRecognition.none());
 
-            assertNotNull(results);
-            assertEquals(1, results.size());
-            assertEquals("DEV01265200000000101", results.get(0).accessionNumber());
-            assertEquals("HIV ELISA", results.get(0).results().get(0).testCode());
-            assertEquals("2.345", results.get(0).results().get(0).value());
+            assertNull(results);
         }
 
         @Test
-        @DisplayName("ELISA control prefixes (NEG, POS, NC, PC, Blanc) flagged as controls")
-        void elisaControlPrefixesFlagged() {
+        @DisplayName("Profile-declared ELISA control prefixes are classified")
+        void profileDeclaredElisaControlPrefixesAreClassified() {
             Map<String, String> mappings = Map.of(
                     "SampleID", "sampleId",
                     "TestCode", "testCode",
@@ -844,8 +857,17 @@ class FileResultParserTest {
                     + "Blanc,HIV ELISA,0.012\n"
                     + "BLANK,HIV ELISA,0.008\n";
 
+            ControlResultRecognition recognition = ControlResultRecognition.rules(
+                    List.of(
+                            new ControlRecognitionRule(
+                                    "negative-control", "SPECIMEN_ID_PATTERN", null,
+                                    "^(NEG|NC|BLANC|BLANK)$", null, "NEGATIVE"),
+                            new ControlRecognitionRule(
+                                    "positive-control", "SPECIMEN_ID_PATTERN", null,
+                                    "^(POS|PC)$", null, "POSITIVE")));
+
             List<ParsedResults> results = FileResultParser.parseCsv(
-                    csv.getBytes(), mappings, ",", 0);
+                    csv.getBytes(), mappings, ",", 0, null, recognition);
 
             assertNotNull(results);
 
@@ -942,7 +964,19 @@ class FileResultParserTest {
                     "Result", "result");
 
             List<ParsedResults> results = FileResultParser.parse(
-                    new ByteArrayInputStream(baos.toByteArray()), mapping, "VIH-1");
+                    new ByteArrayInputStream(baos.toByteArray()),
+                    mapping,
+                    "VIH-1",
+                    ControlResultRecognition.rules(List.of(
+                            new ControlRecognitionRule(
+                                    "standard-task", "FIELD_EQUALS", "QC_TASK",
+                                    "Standard", null, "STANDARD"),
+                            new ControlRecognitionRule(
+                                    "positive-task", "FIELD_EQUALS", "QC_TASK",
+                                    "Positive", null, "POSITIVE"),
+                            new ControlRecognitionRule(
+                                    "negative-task", "FIELD_EQUALS", "QC_TASK",
+                                    "Negative", null, "NEGATIVE"))));
 
             assertNotNull(results);
             assertFalse(results.isEmpty(), "Parser extracted zero results from synthetic Fluorocycler-shape fixture");
@@ -1055,7 +1089,8 @@ class FileResultParserTest {
             InputStream xls = buildQuantStudioLikeWorkbook(20);
 
             List<ParsedResults> results = FileResultParser.parse(
-                    xls, QUANTSTUDIO_COLUMN_MAPPING, null, List.of(), List.of(), QUANTSTUDIO_LAYOUT);
+                    xls, QUANTSTUDIO_COLUMN_MAPPING, null,
+                    ControlResultRecognition.none(), QUANTSTUDIO_LAYOUT);
 
             assertNotNull(results, "Parser returned null for synthetic QS5 fixture with header at row 20");
             assertFalse(results.isEmpty(),
@@ -1087,7 +1122,8 @@ class FileResultParserTest {
             InputStream xls = buildQuantStudioLikeWorkbook(50);
 
             List<ParsedResults> results = FileResultParser.parse(
-                    xls, QUANTSTUDIO_COLUMN_MAPPING, null, List.of(), List.of(), QUANTSTUDIO_LAYOUT);
+                    xls, QUANTSTUDIO_COLUMN_MAPPING, null,
+                    ControlResultRecognition.none(), QUANTSTUDIO_LAYOUT);
 
             // The current parser has a 60-row scan window in findHeaderRow.
             // Row 50 is within that window, so this SHOULD pass. Phase A.3.1
@@ -1111,7 +1147,8 @@ class FileResultParserTest {
             InputStream xls = buildQuantStudioLikeWorkbook(120);
 
             List<ParsedResults> results = FileResultParser.parse(
-                    xls, QUANTSTUDIO_COLUMN_MAPPING, null, List.of(), List.of(), QUANTSTUDIO_LAYOUT);
+                    xls, QUANTSTUDIO_COLUMN_MAPPING, null,
+                    ControlResultRecognition.none(), QUANTSTUDIO_LAYOUT);
 
             assertNotNull(results,
                     "Parser returned null for QS-shape fixture with header at row 120 — "

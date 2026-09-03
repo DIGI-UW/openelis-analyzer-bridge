@@ -4,6 +4,10 @@ import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.fhir.TabularFileLayout;
+import org.itech.ahb.profile.AstmResultRecordSelection;
+import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.TabularResultValueSelection;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -264,6 +268,12 @@ public class AnalyzerRegistryConfig {
         /** Number of metadata rows to skip before header detection (default 0). */
         private int skipRows;
 
+        /** Profile-owned instructions for locating the tabular result header. */
+        private TabularFileLayout tabularFileLayout;
+
+        /** Profile-owned precedence for selecting a reportable tabular value. */
+        private TabularResultValueSelection tabularResultValueSelection;
+
         /**
          * Profile-derived file-wide analyzer test code for FILE exports that do
          * not carry a row-level {@code testCode}. This is materialized only when
@@ -281,14 +291,11 @@ public class AnalyzerRegistryConfig {
         /** OE test codes this analyzer is allowed to emit (whitelist, not a default). */
         private Set<String> mappedTestCodes = Collections.emptySet();
 
-        /** Control-result recognition rules from the pinned Bridge profile. */
-        private java.util.List<org.itech.ahb.qc.QcRule> qcRules = new java.util.ArrayList<>();
+        /** Complete control-result recognition from the pinned Bridge profile. */
+        private ControlResultRecognition controlResultRecognition;
 
-        /**
-         * Transitional parser input. The registration contract never populates
-         * operational control lots; target recognition comes only from the profile.
-         */
-        private java.util.List<org.itech.ahb.qc.ControlLotDto> controlLots = new java.util.ArrayList<>();
+        /** Profile-owned selection of ASTM R records that carry reportable results. */
+        private AstmResultRecordSelection astmResultRecordSelection;
 
         /**
          * Analyzer test_code → LOINC mapping materialized from the pinned profile's

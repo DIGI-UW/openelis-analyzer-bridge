@@ -249,12 +249,13 @@ class FhirBundleBuilderTest {
         }
 
         @Test
-        @DisplayName("QC with lotNumber + controlLevel -> emits qc/lot-number + qc/control-level extensions")
-        void qcExtensionsEmittedForLotAndLevel() {
+        @DisplayName("Control metadata is emitted as explicit FHIR extensions")
+        void controlMetadataExtensionsAreEmitted() {
             AnalyzerResult qcResult = AnalyzerResult.numeric("HIV-VL", "HIV-VL", "1687.5", "copies/mL")
                     .withControl(true)
                     .withLotNumber("LOT-HIVVL-N")
-                    .withControlLevel("LPC");
+                    .withControlLevel("LPC")
+                    .withControlType("ASSAY_CONTROL");
 
             Bundle bundle = parseBundle(
                     FhirBundleBuilder.buildBundle(ACCESSION, ANALYZER_ID, List.of(qcResult)));
@@ -266,12 +267,16 @@ class FhirBundleBuilderTest {
 
             var lot = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/lot-number");
             var level = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-level");
+            var type = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-type");
             assertNotNull(lot, "qc/lot-number extension must be present");
             assertNotNull(level, "qc/control-level extension must be present");
+            assertNotNull(type, "qc/control-type extension must be present");
             assertEquals("LOT-HIVVL-N",
                     ((org.hl7.fhir.r4.model.StringType) lot.getValue()).getValue());
             assertEquals("LPC",
                     ((org.hl7.fhir.r4.model.StringType) level.getValue()).getValue());
+            assertEquals("ASSAY_CONTROL",
+                    ((org.hl7.fhir.r4.model.StringType) type.getValue()).getValue());
         }
 
         @Test
@@ -290,6 +295,7 @@ class FhirBundleBuilderTest {
 
             assertNull(obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/lot-number"));
             assertNull(obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-level"));
+            assertNull(obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-type"));
         }
     }
 

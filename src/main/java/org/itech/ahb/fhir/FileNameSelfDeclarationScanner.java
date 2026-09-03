@@ -17,6 +17,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.itech.ahb.profile.TabularResultValueSelection;
 import org.springframework.stereotype.Component;
 
 /**
@@ -41,7 +42,8 @@ public class FileNameSelfDeclarationScanner {
     }
 
     public ScanResult scan(Path filePath, Map<String, String> columnMappings,
-            Set<String> mappedTestCodes, Map<String, List<String>> scannerSynonyms) {
+            TabularResultValueSelection resultSelection, Set<String> mappedTestCodes,
+            Map<String, List<String>> scannerSynonyms) {
 
         if (filePath == null || !Files.exists(filePath)) {
             return new ScanResult.NotInterpretable("file does not exist: " + filePath);
@@ -50,13 +52,19 @@ public class FileNameSelfDeclarationScanner {
             return new ScanResult.NotInterpretable(
                     "analyzer has no configured test mappings — scanner needs at least one");
         }
+        if (resultSelection == null) {
+            return new ScanResult.NotInterpretable(
+                    "analyzer has no result-value selection from its pinned profile");
+        }
 
         // ODS branch — POI's WorkbookFactory doesn't handle OpenDocument
         // spreadsheets. Read via the zero-dep ZIP+XML path in FileResultParser
         // and run the same synonym-scan against the resulting row grid.
         String name = filePath.getFileName().toString().toLowerCase(Locale.ROOT);
         if (name.endsWith(".ods")) {
-            return scanOdsFile(filePath, columnMappings, mappedTestCodes, scannerSynonyms);
+            return scanOdsFile(
+                    filePath, columnMappings, resultSelection, mappedTestCodes,
+                    scannerSynonyms);
         }
 
         try (InputStream in = new FileInputStream(filePath.toFile());
@@ -72,14 +80,14 @@ public class FileNameSelfDeclarationScanner {
             Set<String> requiredContentHeaders = new LinkedHashSet<>();
             for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
                 String semanticField = mapping.getValue();
-                if ("result".equals(semanticField) || "interpretation".equals(semanticField)) {
+                if (resultSelection.semanticFields().contains(semanticField)) {
                     requiredContentHeaders.add(mapping.getKey());
                 }
             }
 
             if (requiredContentHeaders.isEmpty()) {
                 return new ScanResult.NotInterpretable(
-                        "profile has no result/interpretation column mapping for scanner to read");
+                        "profile has no selected result column mapping for scanner to read");
             }
 
             // Only AT LEAST ONE content header needs to be present — profiles
@@ -175,7 +183,8 @@ public class FileNameSelfDeclarationScanner {
      * same cell-text synonym-scan loop against the row grid.
      */
     private ScanResult scanOdsFile(Path filePath, Map<String, String> columnMappings,
-            Set<String> mappedTestCodes, Map<String, List<String>> scannerSynonyms) {
+            TabularResultValueSelection resultSelection, Set<String> mappedTestCodes,
+            Map<String, List<String>> scannerSynonyms) {
 
         List<List<String>> rows;
         try (InputStream in = new FileInputStream(filePath.toFile())) {
@@ -195,14 +204,14 @@ public class FileNameSelfDeclarationScanner {
         Set<String> requiredContentHeaders = new LinkedHashSet<>();
         for (Map.Entry<String, String> mapping : columnMappings.entrySet()) {
             String semanticField = mapping.getValue();
-            if ("result".equals(semanticField) || "interpretation".equals(semanticField)) {
+            if (resultSelection.semanticFields().contains(semanticField)) {
                 requiredContentHeaders.add(mapping.getKey());
             }
         }
 
         if (requiredContentHeaders.isEmpty()) {
             return new ScanResult.NotInterpretable(
-                    "profile has no result/interpretation column mapping for scanner to read");
+                    "profile has no selected result column mapping for scanner to read");
         }
 
         int headerRowIndex = findOdsHeaderRowWithAny(rows, requiredContentHeaders);

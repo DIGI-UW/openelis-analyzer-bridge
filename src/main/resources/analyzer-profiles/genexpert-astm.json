@@ -76,7 +76,12 @@
     "connectionRole": "SERVER",
     "transport": "TCP/IP",
     "aggregationMode": "PER_MESSAGE",
-    "extractionOverrides": {},
+    "extractionOverrides": {
+      "resultRecordSelection": {
+        "mode": "FIELD_NON_BLANK",
+        "targetField": "R.3.5"
+      }
+    },
     "flagMappings": {},
     "transforms": {}
   },
@@ -139,7 +144,7 @@
   },
   "catalog": {
     "revision": 1,
-    "revisionFingerprint": "sha256:5184c52a44ec58932116fb3c4e9495b6cd8f05e4e84916f183f57b428a24e4ee",
+    "revisionFingerprint": "sha256:c2168ff7438aaea72eb4dcd646e2348601899b4b401b3c235fae07b5804081b2",
     "recognitionFingerprint": "sha256:68a4cf6c695d3a23662a7a5dc97983bbc78e38726f932517d09238d47aad701e",
     "source": "SHIPPED",
     "status": "ACTIVE",

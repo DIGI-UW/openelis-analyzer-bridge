@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,7 @@ class HL7ResultParserTest {
         @Test
         @DisplayName("Should extract accession from OBR-3 filler order number")
         void shouldExtractAccessionFromFillerOrderNumber() {
-            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE);
+            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("FILLER456", parsed.accessionNumber());
@@ -44,7 +45,7 @@ class HL7ResultParserTest {
         @Test
         @DisplayName("Should extract correct number of results from OBX segments")
         void shouldExtractAllResults() {
-            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE);
+            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals(3, parsed.results().size());
@@ -53,7 +54,7 @@ class HL7ResultParserTest {
         @Test
         @DisplayName("Should extract test codes from OBX-3")
         void shouldExtractTestCodes() {
-            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE);
+            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             List<String> codes = parsed.results().stream()
@@ -64,7 +65,7 @@ class HL7ResultParserTest {
         @Test
         @DisplayName("Should extract values from OBX-5")
         void shouldExtractValues() {
-            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE);
+            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             List<String> values = parsed.results().stream()
@@ -75,7 +76,7 @@ class HL7ResultParserTest {
         @Test
         @DisplayName("Should extract units from OBX-6")
         void shouldExtractUnits() {
-            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE);
+            ParsedResults parsed = HL7ResultParser.parseRaw(VALID_ORU_MESSAGE, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("10*3/uL", parsed.results().get(0).units());
@@ -94,7 +95,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\r"
                     + "OBX|1|NM|WBC||5.0|10*3/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("WBC", parsed.results().get(0).testCode());
@@ -107,7 +108,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\r"
                     + "OBX|1|NM|^^^WBC^White Blood Cells||5.0|10*3/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("WBC", parsed.results().get(0).testCode());
@@ -125,7 +126,7 @@ class HL7ResultParserTest {
                     + "OBR|1|PLACER999|FILLER888|CBC\r"
                     + "OBX|1|NM|WBC||5.0|10*3/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("FILLER888", parsed.accessionNumber());
@@ -138,7 +139,7 @@ class HL7ResultParserTest {
                     + "OBR|1|PLACER999||CBC\r"
                     + "OBX|1|NM|WBC||5.0|10*3/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("PLACER999", parsed.accessionNumber());
@@ -152,7 +153,7 @@ class HL7ResultParserTest {
                     + "OBR|1|||CBC\r"
                     + "OBX|1|NM|WBC||5.0|10*3/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("PATIENT_ID_123", parsed.accessionNumber());
@@ -165,7 +166,7 @@ class HL7ResultParserTest {
                     + "OBR|1|||CBC\r"
                     + "OBX|1|NM|WBC||5.0|10*3/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("HL7-UNKNOWN", parsed.accessionNumber());
@@ -183,7 +184,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\r"
                     + "OBX|1|NM|WBC||7.5|10*3/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertTrue(parsed.results().get(0).isNumeric());
@@ -196,7 +197,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\r"
                     + "OBX|1|ST|INTERP||Normal|\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertFalse(parsed.results().get(0).isNumeric());
@@ -209,7 +210,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\r"
                     + "OBX|1|SN|RATIO||1.5|ratio\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertTrue(parsed.results().get(0).isNumeric());
@@ -228,7 +229,7 @@ class HL7ResultParserTest {
                     + "OBX|1|NM|WBC||7.5|10*3/uL\r"
                     + "OBX|2|NM|RBC|||10*6/uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals(1, parsed.results().size());
@@ -238,19 +239,19 @@ class HL7ResultParserTest {
         @Test
         @DisplayName("Null input -> returns null")
         void nullInputReturnsNull() {
-            assertNull(HL7ResultParser.parseRaw(null));
+            assertNull(HL7ResultParser.parseRaw(null, ControlResultRecognition.none()));
         }
 
         @Test
         @DisplayName("Empty input -> returns null")
         void emptyInputReturnsNull() {
-            assertNull(HL7ResultParser.parseRaw(""));
+            assertNull(HL7ResultParser.parseRaw("", ControlResultRecognition.none()));
         }
 
         @Test
         @DisplayName("Blank input -> returns null")
         void blankInputReturnsNull() {
-            assertNull(HL7ResultParser.parseRaw("   "));
+            assertNull(HL7ResultParser.parseRaw("   ", ControlResultRecognition.none()));
         }
 
         @Test
@@ -259,7 +260,7 @@ class HL7ResultParserTest {
             String msg = "MSH|^~\\&|A|B|C|D|20260326||ORU^R01|1|P|2.3.1\r"
                     + "OBR|1||ACC001|CBC\r";
 
-            assertNull(HL7ResultParser.parseRaw(msg));
+            assertNull(HL7ResultParser.parseRaw(msg, ControlResultRecognition.none()));
         }
 
         @Test
@@ -269,7 +270,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\n"
                     + "OBX|1|NM|WBC||5.0|10*3/uL\n";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals(1, parsed.results().size());
@@ -282,7 +283,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\r\n"
                     + "OBX|1|NM|WBC||5.0|10*3/uL\r\n";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals(1, parsed.results().size());
@@ -295,7 +296,7 @@ class HL7ResultParserTest {
                     + "OBR|1||ACC001|CBC\r"
                     + "OBX|1|NM|WBC||7.5|10*3/uL^10^3^uL\r";
 
-            ParsedResults parsed = HL7ResultParser.parseRaw(msg);
+            ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
             assertNotNull(parsed);
             assertEquals("10*3/uL", parsed.results().get(0).units());

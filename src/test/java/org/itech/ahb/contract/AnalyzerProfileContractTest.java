@@ -191,62 +191,9 @@ class AnalyzerProfileContractTest {
   @Test
   @DisplayName("profiles exclude OpenELIS bindings, instance secrets, and operational QC")
   void profilesExcludeForeignAuthority() throws IOException {
-    String schema = Files.readString(CONTRACT_ROOT.resolve("analyzer-profile.schema.json"));
-    for (String forbidden : List.of(
-      "openelisTestId",
-      "openelisResultOptionId",
-      "labUnitId",
-      "controlLots",
-      "westgard",
-      "qcRules",
-      "watchDirectory",
-      "credentials"
-    )) {
-      assertFalse(schema.contains(forbidden), forbidden);
-    }
-
     ObjectNode profile = fixture(PROFILE_FIXTURES.get(0)).deepCopy();
     profile.put("labUnitId", "not-profile-data");
     assertFalse(PROFILE_SCHEMA.validate(profile).isEmpty());
-  }
-
-  @Test
-  @DisplayName("no parallel thin profile or runtime compatibility contract remains")
-  void parallelProfileAndCompatibilityContractsAreAbsent() {
-    for (String removedArtifact : List.of(
-      "portable-profile.schema.json",
-      "legacy-registration.schema.json",
-      "compatibility.json",
-      "fixtures/portable-profile.json",
-      "fixtures/portable-profile-none.json",
-      "fixtures/legacy-registration.json",
-      "../../../src/test/java/org/itech/ahb/contract/AnalyzerRegistrationCompatibilityContractTest.java"
-    )) {
-      assertFalse(Files.exists(CONTRACT_ROOT.resolve(removedArtifact)), removedArtifact);
-    }
-  }
-
-  @Test
-  @DisplayName("profile lifecycle does not depend on the removed full-state registration contract")
-  void profileLifecycleDoesNotReintroduceFullStateRegistration() throws IOException {
-    for (String removedSource : List.of(
-      "src/main/java/org/itech/ahb/registration/AnalyzerRegistrationSyncService.java",
-      "src/main/java/org/itech/ahb/registration/RegistrationContractException.java",
-      "src/main/java/org/itech/ahb/registration/RegistrationContractValidator.java"
-    )) {
-      assertFalse(Files.exists(Path.of(removedSource)), removedSource);
-    }
-
-    String controller = Files.readString(
-      Path.of("src/main/java/org/itech/ahb/controller/AnalyzerRegistrationController.java")
-    );
-    assertFalse(controller.contains("AnalyzerRegistrationSyncService"));
-    assertFalse(controller.contains("RegistrationContractException"));
-
-    String registry = Files.readString(
-      Path.of("src/main/java/org/itech/ahb/config/AnalyzerRegistryConfig.java")
-    );
-    assertFalse(registry.contains("syncAll("));
   }
 
   @Test

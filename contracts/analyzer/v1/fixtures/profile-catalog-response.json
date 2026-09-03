@@ -38,6 +38,7 @@
           "testCode": "testCode",
           "WellPosition": "position"
         },
+        "result_value_order": ["result", "interpretation"],
         "default_test_mappings": [
           {
             "test_code": "VIH-1",
@@ -99,7 +100,7 @@
         },
         "catalog": {
           "revision": 1,
-          "revisionFingerprint": "sha256:8d099084227b7de083a6f8f0511234c8f09540534182a380060fe921a7f28c21",
+          "revisionFingerprint": "sha256:a39955225875ee8cc4ae2a5a0c587acd5c9e376749485ef48ef1eca2cefcf770",
           "recognitionFingerprint": "sha256:5c0de42e1135b772b23e4c1ea04b0162b30fe36fc08ecef76a70108ba031be26",
           "source": "SHIPPED",
           "status": "ACTIVE",
@@ -111,6 +112,49 @@
         "action": "SHIPPED",
         "actor": "distribution",
         "markedAt": "2026-08-19T00:00:00Z"
+      },
+      "controlRecognitionSummary": {
+        "recognitionFingerprint": "sha256:5c0de42e1135b772b23e4c1ea04b0162b30fe36fc08ecef76a70108ba031be26",
+        "mode": "RULES",
+        "description": "Any listed condition identifies a control result.",
+        "affirmedNoControlResults": false,
+        "conditions": [
+          {
+            "key": "positive-control-task",
+            "kind": "FIELD_VALUE_EQUALS",
+            "sourceLabel": "Control task",
+            "value": "Positive",
+            "description": "Control task equals Positive"
+          },
+          {
+            "key": "negative-control-task",
+            "kind": "FIELD_VALUE_EQUALS",
+            "sourceLabel": "Control task",
+            "value": "Negative",
+            "description": "Control task equals Negative"
+          },
+          {
+            "key": "standard-control-task",
+            "kind": "FIELD_VALUE_EQUALS",
+            "sourceLabel": "Control task",
+            "value": "Standard",
+            "description": "Control task equals Standard"
+          },
+          {
+            "key": "positive-control-prefix",
+            "kind": "SPECIMEN_ID_STARTS_WITH",
+            "sourceLabel": "Specimen ID",
+            "value": "C+",
+            "description": "Specimen ID starts with C+"
+          },
+          {
+            "key": "negative-control-prefix",
+            "kind": "SPECIMEN_ID_STARTS_WITH",
+            "sourceLabel": "Specimen ID",
+            "value": "C-",
+            "description": "Specimen ID starts with C-"
+          }
+        ]
       }
     }
   ]

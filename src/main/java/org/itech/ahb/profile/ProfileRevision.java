@@ -24,6 +24,13 @@ public final class ProfileRevision {
     return publication;
   }
 
+  @JsonProperty("controlRecognitionSummary")
+  public ControlRecognitionSummary controlRecognitionSummary() {
+    return ControlResultRecognition.fromProfile(profile.path("controlResultRecognition"))
+      .summary()
+      .withFingerprint(profile.path("catalog").path("recognitionFingerprint").asText());
+  }
+
   @Override
   public boolean equals(Object candidate) {
     if (this == candidate) {

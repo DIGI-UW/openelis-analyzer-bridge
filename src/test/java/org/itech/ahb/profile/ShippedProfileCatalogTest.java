@@ -3,6 +3,7 @@ package org.itech.ahb.profile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
@@ -21,7 +22,7 @@ class ShippedProfileCatalogTest {
     "fluorocycler-xt",
     "sha256:8d099084227b7de083a6f8f0511234c8f09540534182a380060fe921a7f28c21",
     "genexpert-astm",
-    "sha256:5184c52a44ec58932116fb3c4e9495b6cd8f05e4e84916f183f57b428a24e4ee",
+    "sha256:c2168ff7438aaea72eb4dcd646e2348601899b4b401b3c235fae07b5804081b2",
     "quantstudio",
     "sha256:b940cb5cc7191a44570a87326e7e5c2054f4ac6df42cdf653ae113b9df143e6e"
   );
@@ -79,7 +80,7 @@ class ShippedProfileCatalogTest {
       .allSatisfy(revision -> {
         ObjectNode profile = revision.profile();
         assertThat(profile.path("catalog").path("source").asText()).isEqualTo("SHIPPED");
-        assertThat(profile.path("catalog").path("revision").asInt()).isEqualTo(2);
+        assertThat(profile.path("catalog").path("revision").asInt()).isEqualTo(3);
         assertThat(profile.path("configDefaults").has("qcRules")).isFalse();
         assertThat(profile.path("configDefaults").path("dataFlow").asText()).isEqualTo("RESULTS_ONLY");
 
@@ -95,6 +96,28 @@ class ShippedProfileCatalogTest {
           assertThat(choices).contains("TWO_WAY");
         } else {
           assertThat(choices).doesNotContain("TWO_WAY");
+        }
+
+        switch (profile.path("profileMeta").path("id").asText()) {
+          case "fluorocycler-xt" ->
+            assertThat(profile.path("result_value_order")).extracting(JsonNode::asText).containsExactly(
+              "result",
+              "interpretation"
+            );
+          case "genexpert-astm" -> {
+            JsonNode selection = profile
+              .path("configDefaults")
+              .path("extractionOverrides")
+              .path("resultRecordSelection");
+            assertThat(selection.path("mode").asText()).isEqualTo("FIELD_NON_BLANK");
+            assertThat(selection.path("targetField").asText()).isEqualTo("R.3.5");
+          }
+          case "quantstudio" ->
+            assertThat(profile.path("result_value_order")).extracting(JsonNode::asText).containsExactly(
+              "result",
+              "ctValue"
+            );
+          default -> throw new AssertionError("Unexpected priority profile");
         }
       });
 

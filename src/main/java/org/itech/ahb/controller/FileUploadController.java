@@ -373,7 +373,12 @@ public class FileUploadController {
             Files.write(tempFile, file.getBytes(),
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-            ScanResult scanResult = scanner.scan(tempFile, columnMappings, allowedCodes, getSynonyms(entry));
+            ScanResult scanResult = scanner.scan(
+                    tempFile,
+                    columnMappings,
+                    entry.getTabularResultValueSelection(),
+                    allowedCodes,
+                    getSynonyms(entry));
             if (scanResult instanceof ScanResult.SelfDeclared selfDeclared) {
                 response.put("suggestion", selfDeclared.testCode());
                 response.put("confidence", "selfDeclared");

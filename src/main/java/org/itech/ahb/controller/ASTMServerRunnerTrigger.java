@@ -5,12 +5,14 @@ import jakarta.annotation.PreDestroy;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.lib.astm.servlet.ASTMServlet;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
  * Component for triggering an ASTM server runner for each ASTM transmission servlet.
  */
 @Component
+@ConditionalOnProperty(name = "org.itech.ahb.astm.enabled", havingValue = "true", matchIfMissing = true)
 @Slf4j
 public class ASTMServerRunnerTrigger {
 
