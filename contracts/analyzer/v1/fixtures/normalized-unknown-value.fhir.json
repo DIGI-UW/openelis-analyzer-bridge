@@ -1,0 +1,132 @@
+{
+  "resourceType": "Bundle",
+  "meta": {
+    "profile": [
+      "https://openelis-global.org/fhir/StructureDefinition/analyzer-normalized-bundle-v1"
+    ]
+  },
+  "identifier": {
+    "system": "https://openelis-global.org/fhir/analyzer-message-id",
+    "value": "unknown-value-astm-001"
+  },
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:30000000-0000-0000-0000-000000000001",
+      "resource": {
+        "resourceType": "Device",
+        "identifier": [
+          {
+            "system": "https://openelis-global.org/fhir/analyzer-id",
+            "value": "42"
+          }
+        ],
+        "extension": [
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-contract-version",
+            "valueString": "1.0"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-id",
+            "valueString": "site.mock-hematology"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-revision",
+            "valueInteger": 1
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-protocol",
+            "valueCode": "ASTM"
+          }
+        ]
+      },
+      "request": { "method": "POST", "url": "Device" }
+    },
+    {
+      "fullUrl": "urn:uuid:30000000-0000-0000-0000-000000000002",
+      "resource": {
+        "resourceType": "Specimen",
+        "identifier": [{ "value": "ACC-UNKNOWN-VALUE-001" }]
+      },
+      "request": { "method": "POST", "url": "Specimen" }
+    },
+    {
+      "fullUrl": "urn:uuid:30000000-0000-0000-0000-000000000003",
+      "resource": {
+        "resourceType": "Observation",
+        "status": "preliminary",
+        "code": {
+          "coding": [
+            {
+              "system": "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code",
+              "code": "HIV-INTERP",
+              "display": "HIV interpretation"
+            },
+            {
+              "system": "http://loinc.org",
+              "code": "7918-6",
+              "display": "HIV 1+2 Ab [Presence] in Serum"
+            }
+          ]
+        },
+        "valueString": "INDETERMINATE-VENDOR-X",
+        "extension": [
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification",
+            "valueCode": "PATIENT"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition",
+            "extension": [
+              { "url": "mode", "valueCode": "RULES" },
+              { "url": "outcome", "valueCode": "NO_MATCH" },
+              {
+                "url": "recognitionFingerprint",
+                "valueString": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+              },
+              {
+                "url": "evaluation",
+                "extension": [
+                  { "url": "ruleKey", "valueString": "control-prefix" },
+                  { "url": "matched", "valueBoolean": false },
+                  { "url": "sourceField", "valueString": "specimenId" },
+                  { "url": "rawValue", "valueString": "ACC-UNKNOWN-VALUE-001" }
+                ]
+              }
+            ]
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value",
+            "valueString": "INDETERMINATE-VENDOR-X"
+          },
+          {
+            "url": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-transport",
+            "valueCode": "TCP"
+          }
+        ],
+        "specimen": {
+          "reference": "urn:uuid:30000000-0000-0000-0000-000000000002"
+        },
+        "device": {
+          "reference": "urn:uuid:30000000-0000-0000-0000-000000000001"
+        }
+      },
+      "request": { "method": "POST", "url": "Observation" }
+    },
+    {
+      "fullUrl": "urn:uuid:30000000-0000-0000-0000-000000000004",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "status": "preliminary",
+        "code": { "text": "Analyzer Results" },
+        "specimen": [
+          { "reference": "urn:uuid:30000000-0000-0000-0000-000000000002" }
+        ],
+        "result": [
+          { "reference": "urn:uuid:30000000-0000-0000-0000-000000000003" }
+        ]
+      },
+      "request": { "method": "POST", "url": "DiagnosticReport" }
+    }
+  ]
+}

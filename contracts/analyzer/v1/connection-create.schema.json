@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/connection-create.schema.json",
+  "title": "Create a durable Bridge analyzer connection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "clientAnalyzerId",
+    "profileRef",
+    "displayName",
+    "values"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "requestId": { "type": "string", "minLength": 1 },
+    "clientAnalyzerId": { "type": "string", "minLength": 1 },
+    "profileRef": { "$ref": "#/$defs/profileRef" },
+    "displayName": { "type": "string", "minLength": 1 },
+    "values": { "$ref": "#/$defs/values" }
+  },
+  "$defs": {
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "revision", "fingerprint"],
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "values": {
+      "type": "object",
+      "propertyNames": {
+        "allOf": [
+          { "type": "string", "minLength": 1 },
+          {
+            "not": {
+              "enum": [
+                "controlLot",
+                "qcRule",
+                "westgardEnabled",
+                "classifierState",
+                "openelisTestId",
+                "labUnitId",
+                "testCodeLoinc"
+              ]
+            }
+          }
+        ]
+      },
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "array", "object"]
+      }
+    }
+  }
+}

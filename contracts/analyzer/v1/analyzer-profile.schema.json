@@ -1,0 +1,568 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "title": "OpenELIS Analyzer Bridge profile revision v1",
+  "description": "Strict evolution of the established analyzer-defaults profile. The profile defines analyzer runtime communication and defaults for a new Bridge connection; catalog metadata is generated separately under catalog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "profileMeta",
+    "category",
+    "protocol",
+    "capabilities",
+    "configDefaults",
+    "controlResultRecognition",
+    "catalog"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json"
+    },
+    "schemaVersion": { "const": "1.0" },
+    "profileMeta": { "$ref": "#/$defs/profileMeta" },
+    "analyzer_name": { "$ref": "#/$defs/nonBlank" },
+    "manufacturer": { "$ref": "#/$defs/nonBlank" },
+    "model": { "$ref": "#/$defs/nonBlank" },
+    "category": {
+      "enum": [
+        "HEMATOLOGY",
+        "CHEMISTRY",
+        "IMMUNOLOGY",
+        "MICROBIOLOGY",
+        "MOLECULAR",
+        "COAGULATION"
+      ]
+    },
+    "protocol": {
+      "oneOf": [
+        { "$ref": "#/$defs/astmProtocol" },
+        { "$ref": "#/$defs/hl7Protocol" },
+        { "$ref": "#/$defs/fileProtocol" }
+      ]
+    },
+    "identifier_pattern": { "$ref": "#/$defs/nonBlank" },
+    "msh3_pattern": { "$ref": "#/$defs/nonBlank" },
+    "transport": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["RS-232", "TCP/IP", "MLLP", "HTTP"] }
+    },
+    "transport_config": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["RS-232", "TCP/IP", "MLLP", "HTTP"] },
+      "additionalProperties": { "$ref": "#/$defs/transportSettings" }
+    },
+    "communication": { "$ref": "#/$defs/communication" },
+    "capabilities": { "$ref": "#/$defs/capabilities" },
+    "supported_extensions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^\\.[A-Za-z0-9]+$" }
+    },
+    "column_mapping": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/nonBlank" },
+      "additionalProperties": {
+        "enum": [
+          "sampleId",
+          "testCode",
+          "result",
+          "units",
+          "interpretation",
+          "qcTask",
+          "testDate",
+          "ctValue",
+          "position"
+        ]
+      }
+    },
+    "default_test_mappings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/testMapping" }
+    },
+    "configDefaults": { "type": "object" },
+    "controlResultRecognition": { "$ref": "#/$defs/controlResultRecognition" },
+    "catalog": { "$ref": "#/$defs/catalogMetadata" },
+    "authoring": { "$ref": "#/$defs/authoring" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "properties": { "name": { "const": "ASTM" } },
+            "required": ["name"]
+          }
+        },
+        "required": ["protocol"]
+      },
+      "then": {
+        "required": [
+          "analyzer_name",
+          "manufacturer",
+          "identifier_pattern",
+          "transport",
+          "transport_config",
+          "communication",
+          "default_test_mappings"
+        ],
+        "properties": {
+          "default_test_mappings": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/testMapping" }
+          },
+          "configDefaults": { "$ref": "#/$defs/socketDefaults" },
+          "controlResultRecognition": {
+            "$ref": "#/$defs/astmControlResultRecognition"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "properties": { "name": { "const": "HL7" } },
+            "required": ["name"]
+          }
+        },
+        "required": ["protocol"]
+      },
+      "then": {
+        "required": [
+          "analyzer_name",
+          "manufacturer",
+          "identifier_pattern",
+          "transport",
+          "transport_config",
+          "communication",
+          "default_test_mappings"
+        ],
+        "properties": {
+          "default_test_mappings": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/testMapping" }
+          },
+          "configDefaults": { "$ref": "#/$defs/socketDefaults" },
+          "controlResultRecognition": {
+            "$ref": "#/$defs/hl7ControlResultRecognition"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "properties": { "name": { "const": "FILE" } },
+            "required": ["name"]
+          }
+        },
+        "required": ["protocol"]
+      },
+      "then": {
+        "required": ["supported_extensions", "column_mapping"],
+        "properties": {
+          "configDefaults": { "$ref": "#/$defs/fileDefaults" },
+          "controlResultRecognition": {
+            "$ref": "#/$defs/fileControlResultRecognition"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonBlank": { "type": "string", "pattern": ".*\\S.*" },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "profileMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "displayName", "confidence"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]+$"
+        },
+        "version": { "$ref": "#/$defs/nonBlank" },
+        "displayName": { "$ref": "#/$defs/nonBlank" },
+        "manufacturer": { "$ref": "#/$defs/nonBlank" },
+        "confidence": {
+          "enum": [
+            "VALIDATED",
+            "HIGH",
+            "MEDIUM_HIGH",
+            "MEDIUM",
+            "ESTIMATED",
+            "LOW",
+            "NA"
+          ]
+        }
+      }
+    },
+    "astmProtocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "ASTM" },
+        "version": { "$ref": "#/$defs/nonBlank" }
+      }
+    },
+    "hl7Protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "HL7" },
+        "version": { "$ref": "#/$defs/nonBlank" }
+      }
+    },
+    "fileProtocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "format"],
+      "properties": {
+        "name": { "const": "FILE" },
+        "format": { "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS", "XML"] }
+      }
+    },
+    "transportSettings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "integer", "boolean"]
+      }
+    },
+    "communication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "supports_lis_initiated"],
+      "properties": {
+        "mode": {
+          "enum": ["ANALYZER_INITIATED", "LIS_INITIATED", "BOTH"]
+        },
+        "supports_lis_initiated": { "type": "boolean" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inboundResults", "outboundOrders", "connectionTest"],
+      "properties": {
+        "inboundResults": { "const": true },
+        "outboundOrders": { "type": "boolean" },
+        "connectionTest": { "type": "boolean" }
+      }
+    },
+    "coding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "code"],
+      "properties": {
+        "system": { "type": "string", "format": "uri" },
+        "code": { "$ref": "#/$defs/nonBlank" },
+        "display": { "$ref": "#/$defs/nonBlank" }
+      }
+    },
+    "testMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["test_code", "loinc"],
+      "properties": {
+        "test_code": { "$ref": "#/$defs/nonBlank" },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonBlank" }
+        },
+        "test_name_hint": { "$ref": "#/$defs/nonBlank" },
+        "loinc": { "type": "string", "pattern": "^[0-9]{1,8}-[0-9]$" },
+        "unit": { "type": "string" },
+        "result_type": {
+          "enum": ["quantitative", "qualitative", "text"]
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonBlank" }
+        },
+        "normalized_coding": { "$ref": "#/$defs/coding" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "result_type": { "const": "qualitative" } },
+            "required": ["result_type"]
+          },
+          "then": { "required": ["values"] }
+        },
+        {
+          "if": { "required": ["values"] },
+          "then": {
+            "properties": { "result_type": { "const": "qualitative" } },
+            "required": ["result_type"]
+          }
+        }
+      ]
+    },
+    "socketDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connectionRole", "aggregationMode"],
+      "properties": {
+        "connectionRole": { "enum": ["SERVER", "CLIENT"] },
+        "defaultTransport": { "enum": ["RS-232", "TCP/IP", "MLLP", "HTTP"] },
+        "defaultPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "aggregationMode": { "enum": ["PER_MESSAGE", "BY_SPECIMEN"] },
+        "aggregationWindowSeconds": { "type": "integer", "minimum": 0 },
+        "extractionOverrides": { "type": "object" },
+        "flagMappings": { "type": "object" },
+        "transforms": { "type": "object" }
+      }
+    },
+    "fileDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileFormat", "filePattern"],
+      "properties": {
+        "fileFormat": { "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS", "XML"] },
+        "filePattern": { "$ref": "#/$defs/nonBlank" },
+        "hasHeader": { "type": "boolean" },
+        "delimiter": { "type": "string", "minLength": 1, "maxLength": 1 },
+        "encoding": { "$ref": "#/$defs/nonBlank" },
+        "sheetIndex": { "type": "integer", "minimum": 0 },
+        "skipRows": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "fileFormat": {
+                "enum": ["CSV", "TSV", "XLS", "XLSX", "ODS"]
+              }
+            },
+            "required": ["fileFormat"]
+          },
+          "then": { "required": ["hasHeader"] }
+        }
+      ]
+    },
+    "controlResultRecognition": {
+      "oneOf": [
+        { "$ref": "#/$defs/rulesRecognition" },
+        { "$ref": "#/$defs/noneRecognition" }
+      ]
+    },
+    "rulesRecognition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "rules"],
+      "properties": {
+        "mode": { "const": "RULES" },
+        "rules": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]+$" },
+          "additionalProperties": { "$ref": "#/$defs/controlRecognitionRule" }
+        }
+      }
+    },
+    "noneRecognition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "affirmedNoControlResults"],
+      "properties": {
+        "mode": { "const": "NONE" },
+        "affirmedNoControlResults": { "const": true }
+      }
+    },
+    "controlRecognitionRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleType", "operand"],
+      "properties": {
+        "ruleType": {
+          "enum": [
+            "SPECIMEN_ID_PREFIX",
+            "SPECIMEN_ID_PATTERN",
+            "FIELD_EQUALS",
+            "FIELD_CONTAINS"
+          ]
+        },
+        "targetField": { "$ref": "#/$defs/nonBlank" },
+        "operand": { "$ref": "#/$defs/nonBlank" },
+        "controlLevel": { "$ref": "#/$defs/nonBlank" },
+        "controlType": { "$ref": "#/$defs/nonBlank" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ruleType": { "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"] }
+            },
+            "required": ["ruleType"]
+          },
+          "then": { "required": ["targetField"] }
+        },
+        {
+          "if": {
+            "properties": {
+              "ruleType": {
+                "enum": ["SPECIMEN_ID_PREFIX", "SPECIMEN_ID_PATTERN"]
+              }
+            },
+            "required": ["ruleType"]
+          },
+          "then": { "not": { "required": ["targetField"] } }
+        }
+      ]
+    },
+    "astmControlResultRecognition": {
+      "$ref": "#/$defs/controlResultRecognition",
+      "properties": {
+        "rules": {
+          "additionalProperties": {
+            "allOf": [
+              { "$ref": "#/$defs/controlRecognitionRule" },
+              {
+                "if": {
+                  "properties": {
+                    "ruleType": { "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"] }
+                  },
+                  "required": ["ruleType"]
+                },
+                "then": {
+                  "properties": {
+                    "targetField": {
+                      "pattern": "^[A-Z][0-9]?\\.[1-9][0-9]*(?:\\.[1-9][0-9]*){0,2}$"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "hl7ControlResultRecognition": {
+      "$ref": "#/$defs/controlResultRecognition",
+      "properties": {
+        "rules": {
+          "additionalProperties": {
+            "allOf": [
+              { "$ref": "#/$defs/controlRecognitionRule" },
+              {
+                "if": {
+                  "properties": {
+                    "ruleType": { "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"] }
+                  },
+                  "required": ["ruleType"]
+                },
+                "then": {
+                  "properties": {
+                    "targetField": {
+                      "pattern": "^[A-Z0-9]{3}\\.[1-9][0-9]*(?:\\.[1-9][0-9]*){0,2}$"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "fileControlResultRecognition": {
+      "$ref": "#/$defs/controlResultRecognition",
+      "properties": {
+        "rules": {
+          "additionalProperties": {
+            "allOf": [
+              { "$ref": "#/$defs/controlRecognitionRule" },
+              {
+                "if": {
+                  "properties": {
+                    "ruleType": { "enum": ["FIELD_EQUALS", "FIELD_CONTAINS"] }
+                  },
+                  "required": ["ruleType"]
+                },
+                "then": {
+                  "properties": {
+                    "targetField": {
+                      "enum": [
+                        "SAMPLE_ID",
+                        "TEST_CODE",
+                        "RESULT",
+                        "INTERPRETATION",
+                        "QC_TASK",
+                        "UNITS",
+                        "TEST_DATE",
+                        "CT_VALUE"
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "catalogMetadata": {
+      "type": "object",
+      "readOnly": true,
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "revisionFingerprint",
+        "recognitionFingerprint",
+        "source",
+        "status",
+        "publishedAt",
+        "publishedBy"
+      ],
+      "properties": {
+        "revision": { "type": "integer", "minimum": 1 },
+        "revisionFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "recognitionFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "source": { "enum": ["SHIPPED", "SITE"] },
+        "status": { "enum": ["ACTIVE", "INACTIVE"] },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "publishedBy": { "$ref": "#/$defs/nonBlank" },
+        "lineage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parentProfileId", "parentRevision"],
+          "properties": {
+            "parentProfileId": { "$ref": "#/$defs/nonBlank" },
+            "parentRevision": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "authoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "notes": { "$ref": "#/$defs/nonBlank" },
+        "evidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uri" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "create-fixture-001",
+  "clientAnalyzerId": "oe-analyzer-42",
+  "profileRef": {
+    "profileId": "fixture.synthetic-socket",
+    "revision": 2,
+    "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "displayName": "Synthetic chemistry analyzer",
+  "values": {
+    "connectionRole": "LISTENER",
+    "listenerPort": 5001,
+    "apiToken": "write-only-fixture-token"
+  }
+}

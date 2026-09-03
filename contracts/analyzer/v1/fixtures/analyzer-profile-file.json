@@ -1,0 +1,123 @@
+{
+  "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "schemaVersion": "1.0",
+  "profileMeta": {
+    "id": "fluorocycler-xt",
+    "version": "3.0.0",
+    "displayName": "Bruker FluoroCycler XT",
+    "confidence": "MEDIUM_HIGH"
+  },
+  "analyzer_name": "Bruker FluoroCycler XT",
+  "manufacturer": "Bruker",
+  "model": "FluoroCycler XT",
+  "category": "MOLECULAR",
+  "protocol": {
+    "name": "FILE",
+    "format": "XLSX"
+  },
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "supported_extensions": [".ods", ".xlsx", ".xls"],
+  "column_mapping": {
+    "Sample ID": "sampleId",
+    "SampleID": "sampleId",
+    "Type": "qcTask",
+    "Calc. Conc.": "result",
+    "CalcConc": "result",
+    "Result": "interpretation",
+    "Interpretation": "interpretation",
+    "TargetName": "testCode",
+    "testCode": "testCode",
+    "WellPosition": "position"
+  },
+  "default_test_mappings": [
+    {
+      "test_code": "VIH-1",
+      "test_name_hint": "HIV-1 Viral Load",
+      "loinc": "20447-9",
+      "unit": "copies/mL"
+    },
+    {
+      "test_code": "MPXV",
+      "test_name_hint": "Monkeypox virus DNA",
+      "loinc": "100383-9",
+      "unit": ""
+    },
+    {
+      "test_code": "Mpox",
+      "test_name_hint": "Monkeypox virus DNA",
+      "loinc": "100383-9",
+      "unit": ""
+    },
+    {
+      "test_code": "MPox",
+      "test_name_hint": "Monkeypox virus DNA",
+      "loinc": "100383-9",
+      "unit": ""
+    },
+    {
+      "test_code": "CHIKV",
+      "test_name_hint": "Chikungunya PCR",
+      "loinc": "60260-7",
+      "unit": ""
+    },
+    {
+      "test_code": "DENV",
+      "test_name_hint": "Dengue PCR",
+      "loinc": "7855-0",
+      "unit": ""
+    },
+    {
+      "test_code": "ZIKV",
+      "test_name_hint": "Zika PCR",
+      "loinc": "85622-9",
+      "unit": ""
+    }
+  ],
+  "configDefaults": {
+    "fileFormat": "XLSX",
+    "filePattern": "(?i).*\\.(ods|xlsx|xls)$",
+    "hasHeader": true,
+    "sheetIndex": 0
+  },
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": {
+      "positive-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Positive"
+      },
+      "negative-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Negative"
+      },
+      "standard-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Standard"
+      },
+      "positive-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "C+"
+      },
+      "negative-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "C-"
+      }
+    }
+  },
+  "catalog": {
+    "revision": 1,
+    "revisionFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "recognitionFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "source": "SHIPPED",
+    "status": "ACTIVE",
+    "publishedAt": "2026-08-19T00:00:00Z",
+    "publishedBy": "distribution"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "commandId": "deactivate-fixture-004",
+  "action": "DEACTIVATE",
+  "outcome": "APPLIED",
+  "connectionId": "bridge-connection-7f3c",
+  "profileRef": {
+    "profileId": "fixture.synthetic-socket",
+    "revision": 2,
+    "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "configRevision": 4,
+  "configFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "runtimeRevision": 10,
+  "runtimeFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+  "desiredRuntimeState": "INACTIVE",
+  "actualRuntimeState": "INACTIVE",
+  "blockers": [],
+  "acknowledgedAt": "2026-08-24T19:06:05Z"
+}

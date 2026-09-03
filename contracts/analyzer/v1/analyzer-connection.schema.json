@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/analyzer-connection.schema.json",
+  "title": "Durable Bridge analyzer connection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "connectionId",
+    "clientAnalyzerId",
+    "displayName",
+    "profileRef",
+    "configRevision",
+    "configFingerprint",
+    "fields",
+    "readiness",
+    "latestProbe",
+    "desiredRuntimeState",
+    "actualRuntimeState",
+    "activeRuntimeRef",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "connectionId": { "type": "string", "minLength": 1 },
+    "clientAnalyzerId": { "type": "string", "minLength": 1 },
+    "displayName": { "type": "string", "minLength": 1 },
+    "profileRef": { "$ref": "#/$defs/profileRef" },
+    "configRevision": { "type": "integer", "minimum": 1 },
+    "configFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "fields": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/field" }
+    },
+    "readiness": { "$ref": "#/$defs/readiness" },
+    "latestProbe": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/probeSummary" }]
+    },
+    "desiredRuntimeState": { "$ref": "#/$defs/runtimeState" },
+    "actualRuntimeState": { "$ref": "#/$defs/runtimeState" },
+    "activeRuntimeRef": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/runtimeRef" }]
+    },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "revision", "fingerprint"],
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "jsonValue": {
+      "type": ["string", "number", "boolean", "array", "object", "null"]
+    },
+    "choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "labelKey"],
+      "properties": {
+        "value": { "$ref": "#/$defs/jsonValue" },
+        "labelKey": { "type": "string", "minLength": 1 }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fieldKey", "operator", "value"],
+      "properties": {
+        "fieldKey": { "type": "string", "minLength": 1 },
+        "operator": { "enum": ["EQUALS", "NOT_EQUALS", "IN", "NOT_IN"] },
+        "value": { "$ref": "#/$defs/jsonValue" }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "labelKey",
+        "inputKind",
+        "required",
+        "defaultValue",
+        "choices",
+        "validationErrors"
+      ],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "labelKey": { "type": "string", "minLength": 1 },
+        "helpTextKey": { "type": "string", "minLength": 1 },
+        "inputKind": {
+          "enum": ["TEXT", "NUMBER", "SELECT", "BOOLEAN", "SECRET", "FILE_PATH"]
+        },
+        "required": { "type": "boolean" },
+        "defaultValue": { "$ref": "#/$defs/jsonValue" },
+        "currentValue": { "$ref": "#/$defs/jsonValue" },
+        "isSet": { "type": "boolean" },
+        "maskedValue": { "type": "string", "minLength": 1 },
+        "choices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/choice" }
+        },
+        "visibleWhen": { "$ref": "#/$defs/condition" },
+        "validationErrors": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "inputKind": { "const": "SECRET" } },
+            "required": ["inputKind"]
+          },
+          "then": {
+            "required": ["isSet", "maskedValue"],
+            "properties": {
+              "currentValue": false,
+              "defaultValue": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "isSet": false,
+              "maskedValue": false
+            }
+          }
+        }
+      ]
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "messageKey", "fieldKeys"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "messageKey": { "type": "string", "minLength": 1 },
+        "fieldKeys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "blockers"],
+      "properties": {
+        "ready": { "type": "boolean" },
+        "blockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/blocker" }
+        }
+      }
+    },
+    "probeSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "configRevision", "status", "completedAt"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1 },
+        "configRevision": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["SUCCEEDED", "FAILED", "TIMEOUT", "BLOCKED"] },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "runtimeState": {
+      "enum": ["INACTIVE", "ACTIVATING", "ACTIVE", "DEACTIVATING", "ERROR"]
+    },
+    "runtimeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connectionId",
+        "profileRef",
+        "configRevision",
+        "configFingerprint",
+        "runtimeRevision",
+        "runtimeFingerprint"
+      ],
+      "properties": {
+        "connectionId": { "type": "string", "minLength": 1 },
+        "profileRef": { "$ref": "#/$defs/profileRef" },
+        "configRevision": { "type": "integer", "minimum": 1 },
+        "configFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "runtimeRevision": { "type": "integer", "minimum": 1 },
+        "runtimeFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

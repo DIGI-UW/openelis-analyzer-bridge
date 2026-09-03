@@ -1,0 +1,642 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openelis-global.org/contracts/analyzer/v1/normalized-fhir-bundle.schema.json",
+  "title": "Analyzer Bridge normalized FHIR Bundle v1",
+  "type": "object",
+  "required": ["resourceType", "meta", "identifier", "type", "entry"],
+  "properties": {
+    "resourceType": { "const": "Bundle" },
+    "meta": {
+      "type": "object",
+      "required": ["profile"],
+      "properties": {
+        "profile": {
+          "type": "array",
+          "contains": {
+            "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-normalized-bundle-v1"
+          }
+        }
+      }
+    },
+    "identifier": {
+      "type": "object",
+      "required": ["system", "value"],
+      "properties": {
+        "system": {
+          "const": "https://openelis-global.org/fhir/analyzer-message-id"
+        },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    },
+    "type": { "const": "transaction" },
+    "entry": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["fullUrl", "resource", "request"],
+        "properties": {
+          "fullUrl": { "type": "string", "minLength": 1 },
+          "resource": {
+            "type": "object",
+            "required": ["resourceType"],
+            "properties": {
+              "resourceType": {
+                "enum": [
+                  "Device",
+                  "Specimen",
+                  "Observation",
+                  "DiagnosticReport"
+                ]
+              }
+            }
+          },
+          "request": {
+            "type": "object",
+            "required": ["method", "url"],
+            "properties": {
+              "method": { "const": "POST" },
+              "url": {
+                "enum": [
+                  "Device",
+                  "Specimen",
+                  "Observation",
+                  "DiagnosticReport"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/$defs/containsDevice" },
+    { "$ref": "#/$defs/containsSpecimen" },
+    { "$ref": "#/$defs/containsObservation" },
+    { "$ref": "#/$defs/everyObservation" },
+    { "$ref": "#/$defs/containsDiagnosticReport" }
+  ],
+  "$defs": {
+    "extensionWithUrl": {
+      "type": "object",
+      "required": ["url"]
+    },
+    "resultClassificationExtension": {
+      "type": "object",
+      "required": ["url", "valueCode"],
+      "properties": {
+        "url": {
+          "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+        },
+        "valueCode": { "enum": ["PATIENT", "CONTROL"] }
+      }
+    },
+    "recognitionEvaluation": {
+      "type": "object",
+      "required": ["url", "extension"],
+      "properties": {
+        "url": { "const": "evaluation" },
+        "extension": {
+          "type": "array",
+          "allOf": [
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "ruleKey" },
+                  "valueString": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueBoolean"],
+                "properties": {
+                  "url": { "const": "matched" },
+                  "valueBoolean": { "type": "boolean" }
+                }
+              },
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "sourceField" },
+                  "valueString": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "rawValue" },
+                  "valueString": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "matchedRecognitionEvaluation": {
+      "allOf": [
+        { "$ref": "#/$defs/recognitionEvaluation" },
+        {
+          "properties": {
+            "extension": {
+              "contains": {
+                "required": ["url", "valueBoolean"],
+                "properties": {
+                  "url": { "const": "matched" },
+                  "valueBoolean": { "const": true }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "controlRecognitionExtension": {
+      "type": "object",
+      "required": ["url", "extension"],
+      "properties": {
+        "url": {
+          "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition"
+        },
+        "extension": {
+          "type": "array",
+          "allOf": [
+            {
+              "contains": {
+                "required": ["url", "valueCode"],
+                "properties": {
+                  "url": { "const": "mode" },
+                  "valueCode": { "enum": ["RULES", "NONE"] }
+                }
+              },
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "required": ["url", "valueCode"],
+                "properties": {
+                  "url": { "const": "outcome" },
+                  "valueCode": {
+                    "enum": ["MATCH", "NO_MATCH", "NOT_EVALUATED"]
+                  }
+                }
+              },
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": { "const": "recognitionFingerprint" },
+                  "valueString": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                }
+              },
+              "maxContains": 1
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "extension": {
+                "contains": {
+                  "required": ["url", "valueCode"],
+                  "properties": {
+                    "url": { "const": "mode" },
+                    "valueCode": { "const": "RULES" }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "extension": {
+                "allOf": [
+                  {
+                    "contains": { "$ref": "#/$defs/recognitionEvaluation" }
+                  },
+                  {
+                    "not": {
+                      "contains": {
+                        "required": ["url", "valueCode"],
+                        "properties": {
+                          "url": { "const": "outcome" },
+                          "valueCode": { "const": "NOT_EVALUATED" }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "contains": {
+                        "required": ["url", "valueCode"],
+                        "properties": {
+                          "url": { "const": "outcome" },
+                          "valueCode": { "const": "MATCH" }
+                        }
+                      }
+                    },
+                    "then": {
+                      "contains": {
+                        "$ref": "#/$defs/matchedRecognitionEvaluation"
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "contains": {
+                        "required": ["url", "valueCode"],
+                        "properties": {
+                          "url": { "const": "outcome" },
+                          "valueCode": { "const": "NO_MATCH" }
+                        }
+                      }
+                    },
+                    "then": {
+                      "not": {
+                        "contains": {
+                          "$ref": "#/$defs/matchedRecognitionEvaluation"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "extension": {
+                "contains": {
+                  "required": ["url", "valueCode"],
+                  "properties": {
+                    "url": { "const": "mode" },
+                    "valueCode": { "const": "NONE" }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "extension": {
+                "allOf": [
+                  {
+                    "contains": {
+                      "required": ["url", "valueCode"],
+                      "properties": {
+                        "url": { "const": "outcome" },
+                        "valueCode": { "const": "NOT_EVALUATED" }
+                      }
+                    }
+                  },
+                  {
+                    "not": {
+                      "contains": {
+                        "properties": { "url": { "const": "evaluation" } },
+                        "required": ["url"]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "containsDevice": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "type": "object",
+                "required": ["resourceType", "identifier", "extension"],
+                "properties": {
+                  "resourceType": { "const": "Device" },
+                  "identifier": { "type": "array", "minItems": 1 },
+                  "extension": {
+                    "type": "array",
+                    "allOf": [
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-contract-version"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-id"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-revision"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "allOf": [
+                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-protocol"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "containsSpecimen": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "properties": { "resourceType": { "const": "Specimen" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "everyObservation": {
+      "properties": {
+        "entry": {
+          "items": {
+            "if": {
+              "required": ["resource"],
+              "properties": {
+                "resource": {
+                  "required": ["resourceType"],
+                  "properties": {
+                    "resourceType": { "const": "Observation" }
+                  }
+                }
+              }
+            },
+            "then": {
+              "$ref": "#/$defs/containsObservation/properties/entry/contains"
+            }
+          }
+        }
+      }
+    },
+    "containsObservation": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "type": "object",
+                "required": [
+                  "resourceType",
+                  "code",
+                  "extension",
+                  "specimen",
+                  "device"
+                ],
+                "properties": {
+                  "resourceType": { "const": "Observation" },
+                  "code": {
+                    "type": "object",
+                    "required": ["coding"],
+                    "properties": {
+                      "coding": {
+                        "type": "array",
+                        "contains": {
+                          "type": "object",
+                          "required": ["system", "code"],
+                          "properties": {
+                            "system": {
+                              "const": "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code"
+                            },
+                            "code": { "type": "string", "minLength": 1 }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "extension": {
+                    "type": "array",
+                    "allOf": [
+                      {
+                        "contains": {
+                          "properties": {
+                            "url": {
+                              "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value"
+                            }
+                          },
+                          "required": ["url", "valueString"]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "properties": {
+                            "url": {
+                              "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-source-transport"
+                            }
+                          },
+                          "required": ["url", "valueCode"]
+                        }
+                      },
+                      {
+                        "contains": {
+                          "$ref": "#/$defs/resultClassificationExtension"
+                        }
+                      },
+                      {
+                        "contains": {
+                          "$ref": "#/$defs/controlRecognitionExtension"
+                        },
+                        "maxContains": 1
+                      }
+                    ]
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "extension": {
+                          "contains": {
+                            "required": ["url", "valueCode"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+                              },
+                              "valueCode": { "const": "CONTROL" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": ["meta"],
+                      "properties": {
+                        "meta": {
+                          "properties": {
+                            "tag": {
+                              "contains": {
+                                "required": ["code"],
+                                "properties": { "code": { "const": "QC" } }
+                              }
+                            }
+                          },
+                          "required": ["tag"]
+                        },
+                        "extension": {
+                          "contains": {
+                            "allOf": [
+                              { "$ref": "#/$defs/controlRecognitionExtension" },
+                              {
+                                "properties": {
+                                  "extension": {
+                                    "contains": {
+                                      "required": ["url", "valueCode"],
+                                      "properties": {
+                                        "url": { "const": "outcome" },
+                                        "valueCode": { "const": "MATCH" }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "extension": {
+                          "contains": {
+                            "required": ["url", "valueCode"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+                              },
+                              "valueCode": { "const": "PATIENT" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "meta": {
+                          "properties": {
+                            "tag": {
+                              "not": {
+                                "contains": {
+                                  "required": ["code"],
+                                  "properties": { "code": { "const": "QC" } }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "extension": {
+                          "contains": {
+                            "allOf": [
+                              { "$ref": "#/$defs/controlRecognitionExtension" },
+                              {
+                                "properties": {
+                                  "extension": {
+                                    "contains": {
+                                      "required": ["url", "valueCode"],
+                                      "properties": {
+                                        "url": { "const": "outcome" },
+                                        "valueCode": {
+                                          "enum": ["NO_MATCH", "NOT_EVALUATED"]
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "containsDiagnosticReport": {
+      "properties": {
+        "entry": {
+          "contains": {
+            "properties": {
+              "resource": {
+                "properties": {
+                  "resourceType": { "const": "DiagnosticReport" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
