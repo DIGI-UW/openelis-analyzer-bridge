@@ -13,7 +13,7 @@ import java.util.Optional;
  * its complete payload, until OpenELIS durably accepts it or an operator can see why it could not be
  * delivered. Nothing in this interface deletes an undelivered entry.
  */
-public interface OutboxStore {
+public interface OutboxStore extends AutoCloseable {
   /**
    * Persist a message on receipt, before the source is identified or anything is parsed. Returns a
    * receipt naming the RECEIVED row. Re-receiving identical content from the same source returns the
@@ -116,5 +116,6 @@ public interface OutboxStore {
   /** Whether the store had to recover from a corrupt database on open, which means data was lost. */
   boolean recoveredFromCorruption();
 
+  @Override
   void close();
 }

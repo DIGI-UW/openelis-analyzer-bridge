@@ -167,3 +167,5 @@ management:
       enabled: true
     httpforward:
       enabled: true
+    outbox:
+      enabled: true

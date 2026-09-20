@@ -134,6 +134,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.outbox.retention.delivered` | How long delivered entries are kept as proof of delivery | 30d |
 | `bridge.outbox.retention.dismissed` | How long dismissed dead letters are kept. Undismissed dead letters are never purged | 90d |
 | `bridge.outbox.payload-access-enabled` | Whether `/admin/outbox/<id>/payload` serves clinical content. Access is audited either way | true |
+| `management.health.outbox.enabled` | Report the delivery queue in `/actuator/health`. UP while results are queued, since riding out an outage is the job; DOWN only when the store is unreadable or had to be replaced | true |
 | **ASTM TCP** | | |
 | **MLLP (HL7)** | | |
 | `org.itech.ahb.mllp.enabled` | Permit saved HL7 server connections to start listeners | false |
