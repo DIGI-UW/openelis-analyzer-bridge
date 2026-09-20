@@ -857,7 +857,11 @@ public class FileWatcher {
             return;
         }
 
-        long delay = fileConfig.getRetryDelayMs() * (long) Math.pow(2, attempts - 1);
+        // Capped, and computed in double before narrowing: an uncapped shift over a large attempt
+        // count overflows, and an overflowed delay would silently park the file forever.
+        long delay = (long) Math.min(
+                fileConfig.getRetryDelayMs() * Math.pow(2, attempts - 1),
+                (double) fileConfig.getMaxRetryDelayMs());
         Instant nextAt = Instant.now().plusMillis(delay);
         stateStore.setNextAttemptAt(analyzerId, fileHash, nextAt);
         log.info("Recorded retry deadline for file: {} in {}ms (next_attempt_at={})",

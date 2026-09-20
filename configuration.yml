@@ -50,8 +50,12 @@ bridge:
     stateStorePath: ${BRIDGE_FILE_STATE_STORE_PATH:/data/openelis-analyzer-bridge/file-state.db}
     pollIntervalMs: 5000
     fileStabilityTimeoutMs: 3000
-    maxRetryAttempts: 3
+    # Sized like the delivery outbox below: an overnight OpenELIS outage must not park a whole
+    # run of file results. The source files are never deleted, so a parked file is recoverable,
+    # but only by a person noticing.
+    maxRetryAttempts: 150
     retryDelayMs: 1000
+    maxRetryDelayMs: 600000
 
   # Durable delivery outbox. Every received result is persisted here before any
   # network I/O and stays, with its complete payload, until OpenELIS durably
