@@ -18,16 +18,9 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
-import org.itech.ahb.fhir.ASTMResultParser;
-import org.itech.ahb.fhir.FhirBundleBuilder;
-import org.itech.ahb.fhir.FileResultParser;
-import org.itech.ahb.fhir.HL7ResultParser;
 import org.itech.ahb.file.SqliteFileStateStore;
-import org.itech.ahb.model.Protocol;
-import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
-import org.itech.ahb.outbox.DeliveryIdentity;
-import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.outbox.RenderedDelivery;
 import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -54,6 +47,7 @@ public class HttpForwardingRouter implements MessageRouter {
   private final HTTPForwardServerConfigurationProperties httpConfig;
   private final SqliteFileStateStore stateStore;
   private final AnalyzerRuntimeRegistry registry;
+  private final NormalizedBundleRenderer renderer;
   private final int connectTimeoutSeconds;
   private final int readTimeoutSeconds;
   private final HttpClient httpClient;
@@ -75,6 +69,7 @@ public class HttpForwardingRouter implements MessageRouter {
     this.httpConfig = httpConfig;
     this.stateStore = stateStore;
     this.registry = registry;
+    this.renderer = new NormalizedBundleRenderer(registry);
     this.connectTimeoutSeconds = httpConfig.getConnectTimeoutSeconds();
     this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
     this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
@@ -152,180 +147,39 @@ public class HttpForwardingRouter implements MessageRouter {
    * <p>Parses the raw message using the protocol-specific parser, builds a FHIR
    * Bundle, and POSTs to OE's {@code /analyzer/fhir} endpoint.
    */
+  /**
+   * Render the message into deliverable bundles, then POST each one.
+   *
+   * <p>Rendering is done up front for the whole message so that a configuration problem is reported
+   * as one failure rather than discovered partway through delivering.
+   */
   private boolean routeNormalized(MessageEnvelope envelope) {
-    var registeredAnalyzer = registry == null || envelope.getSourceId() == null
-      ? java.util.Optional.<AnalyzerRuntimeRegistry.AnalyzerEntry>empty()
-      : registry.findAnalyzerEntry(envelope.getSourceId());
-    if (registeredAnalyzer.isEmpty() || registeredAnalyzer.get().getControlResultRecognition() == null) {
-      String reason = "FHIR routing requires control-result recognition from a pinned profile";
-      log.error("{} for analyzer source {}", reason, envelope.getSourceId());
-      recordRejection(envelope, envelope.getRawMessage(), 0, reason);
+    URI targetUri = buildNormalizedTargetUri();
+    NormalizedBundleRenderer.Outcome outcome = renderer.render(envelope, targetUri.toString());
+    if (outcome instanceof NormalizedBundleRenderer.Outcome.Failed failed) {
+      log.error("{} for analyzer source {}", failed.message(), envelope.getSourceId());
+      recordRejection(envelope, envelope.getRawMessage(), 0, failed.message());
       return false;
     }
-
-    ControlResultRecognition profileRecognition = registeredAnalyzer.get().getControlResultRecognition();
-    if (envelope.getProtocol() == Protocol.ASTM && registeredAnalyzer.get().getAstmResultRecordSelection() == null) {
-      String reason = "FHIR routing requires ASTM result-record selection from a pinned profile";
-      log.error("{} for analyzer source {}", reason, envelope.getSourceId());
-      recordRejection(envelope, envelope.getRawMessage(), 0, reason);
-      return false;
-    }
-    if (envelope.getProtocol() == Protocol.CSV) {
-      return routeCsv(envelope, registeredAnalyzer.orElseThrow());
-    }
-    HL7ResultParser.ParsedResults parsed =
-      switch (envelope.getProtocol()) {
-        case HL7 -> {
-          String raw = envelope.getRawMessage();
-          if (raw == null || raw.isBlank()) yield null;
-          String normalized = raw.replace("\r\n", "\r").replace("\n", "\r");
-          java.util.List<String> segments = new java.util.ArrayList<>();
-          for (String seg : normalized.split("\r")) {
-            if (!seg.isBlank()) segments.add(seg);
-          }
-          yield HL7ResultParser.parse(segments, profileRecognition);
-        }
-        case ASTM -> {
-          String raw = envelope.getRawMessage();
-          if (raw == null || raw.isBlank()) yield null;
-          java.util.List<String> lines = new java.util.ArrayList<>();
-          for (String l : raw.split("[\\r\\n]+")) {
-            if (!l.isBlank()) lines.add(l);
-          }
-          yield ASTMResultParser.parse(
-            lines,
-            profileRecognition,
-            registeredAnalyzer.get().getAstmResultRecordSelection()
-          );
-        }
-        default -> {
-          log.error(
-            "FHIR routing: unsupported protocol {} from {} — cannot parse",
-            envelope.getProtocol(),
-            envelope.getSourceId()
-          );
-          yield null;
-        }
-      };
-
-    if (parsed == null || parsed.results().isEmpty()) {
-      String raw = envelope.getRawMessage();
-      String preview = raw != null
-        ? raw.substring(0, Math.min(300, raw.length())).replace("\r", "\\r").replace("\n", "\\n")
-        : "null";
-      log.error(
-        "FHIR parse produced no results for {} message from {}. " + "Raw length: {} chars. Preview: [{}]",
-        envelope.getProtocol(),
-        envelope.getSourceId(),
-        raw != null ? raw.length() : 0,
-        preview
-      );
-      recordRejection(envelope, raw, 0, envelope.getProtocol() + " parsing produced no results");
-      return false;
-    }
-
-    AnalyzerRuntimeRegistry.AnalyzerEntry resolved = registeredAnalyzer.orElseThrow();
-    // Derive the delivery identity from the received bytes, not per attempt: OpenELIS deduplicates
-    // on it, so a redelivery of the same message after a restart must carry the same value.
-    String messageId = DeliveryIdentity.forAccession(
-      envelope.getProtocol(),
-      resolved.getBridgeConnectionId(),
-      DeliveryIdentity.contentHash(envelope.getRawMessage()),
-      parsed.accessionNumber()
-    );
-    return forwardResults(envelope, resolved, parsed, messageId);
-  }
-
-  private boolean routeCsv(MessageEnvelope envelope, AnalyzerRuntimeRegistry.AnalyzerEntry analyzer) {
-    if (
-      envelope.getTransport() != Transport.HTTP ||
-      !"HTTP".equals(analyzer.getInboundTransport()) ||
-      !"FILE".equals(analyzer.getExpectedProtocol()) ||
-      !("CSV".equals(analyzer.getFileFormat()) || "TSV".equals(analyzer.getFileFormat())) ||
-      analyzer.getTabularResultValueSelection() == null
-    ) {
-      recordRejection(
-        envelope,
-        envelope.getRawMessage(),
-        0,
-        "CSV input requires a saved HTTP connection with a pinned tabular profile"
-      );
-      return false;
-    }
-    byte[] content = envelope.getRawMessage().getBytes(StandardCharsets.UTF_8);
-    List<HL7ResultParser.ParsedResults> accessions = FileResultParser.parseCsv(
-      content,
-      analyzer.getColumnMappings(),
-      analyzer.getDelimiter(),
-      analyzer.getSkipRows(),
-      analyzer.getFileTestCode(),
-      analyzer.getControlResultRecognition(),
-      analyzer.getTabularFileLayout(),
-      analyzer.getTabularResultValueSelection()
-    );
-    if (accessions == null || accessions.isEmpty()) {
-      recordRejection(envelope, envelope.getRawMessage(), 0, "CSV input produced no results");
-      return false;
-    }
-    String hash = DeliveryIdentity.contentHash(content);
-    for (HL7ResultParser.ParsedResults parsed : accessions) {
-      String messageId = DeliveryIdentity.forAccession(
-        envelope.getProtocol(),
-        analyzer.getBridgeConnectionId(),
-        hash,
-        parsed.accessionNumber()
-      );
-      if (!forwardResults(envelope, analyzer, parsed, messageId)) {
+    for (RenderedDelivery delivery : ((NormalizedBundleRenderer.Outcome.Rendered) outcome).deliveries()) {
+      if (!forwardDelivery(envelope, delivery, targetUri)) {
         return false;
       }
     }
     return true;
   }
 
-  private boolean forwardResults(
-    MessageEnvelope envelope,
-    AnalyzerRuntimeRegistry.AnalyzerEntry analyzer,
-    HL7ResultParser.ParsedResults parsed,
-    String messageId
-  ) {
-    // Build a FHIR Bundle with the registered analyzer identity.
-    FhirBundleBuilder.DeviceInfo deviceInfo = FhirBundleBuilder.DeviceInfo.fromSenderToken(
-      envelope.getSourceId(),
-      envelope.getProtocolAnalyzerHint()
-    );
-    FhirBundleBuilder.AnalyzerContext analyzerContext = new FhirBundleBuilder.AnalyzerContext(
-      analyzer.getBridgeConnectionId(),
-      analyzer.getId(),
-      analyzer.getProfileId(),
-      analyzer.getProfileRevision(),
-      envelope.getProtocol().name(),
-      envelope.getTransport().name(),
-      deviceInfo,
-      analyzer.getControlResultRecognition(),
-      analyzer.getRecognitionFingerprint()
-    );
-    // Resolve analyzer code to LOINC from the same registered profile pin.
-    java.util.function.Function<String, String> codeToLoinc = analyzer::getLoincForCode;
-    String fhirJson = FhirBundleBuilder.buildNormalizedBundle(
-      parsed.accessionNumber(),
-      parsed.results(),
-      analyzerContext,
-      codeToLoinc,
-      messageId
-    );
-
-    // Build target URI for /analyzer/fhir
-    URI targetUri = buildNormalizedTargetUri();
+  private boolean forwardDelivery(MessageEnvelope envelope, RenderedDelivery delivery, URI targetUri) {
+    String fhirJson = delivery.fhirJson();
 
     log.info(
-      "FHIR routing {} results for accession {} from {} to {}",
-      parsed.results().size(),
-      parsed.accessionNumber(),
+      "FHIR routing accession {} from {} to {}",
+      delivery.accession(),
       envelope.getSourceId(),
       targetUri
     );
 
-    // Send with retry
+        // Send with retry
     int maxAttempts = httpConfig.getMaxAttempts();
     long backoffMs = httpConfig.getBackoffMs();
 
@@ -344,7 +198,7 @@ public class HttpForwardingRouter implements MessageRouter {
         HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
-          log.info("FHIR Bundle accepted by OE ({} results)", parsed.results().size());
+          log.info("FHIR Bundle accepted by OE for accession {}", delivery.accession());
           return true;
         }
         if (response.statusCode() >= 400 && response.statusCode() < 500) {
