@@ -119,8 +119,21 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `org.itech.ahb.forward-http-server.insecure-tls` | Disable TLS verification for forwarding and health checks | false |
 | `org.itech.ahb.forward-http-server.connect-timeout-seconds` | HTTP connect timeout | 30 |
 | `org.itech.ahb.forward-http-server.read-timeout-seconds` | HTTP read timeout | 30 |
-| `org.itech.ahb.forward-http-server.max-attempts` | Outbound retry attempts | 3 |
-| `org.itech.ahb.forward-http-server.backoff-ms` | Initial outbound retry backoff in ms | 1000 |
+| `org.itech.ahb.forward-http-server.health-uri` | Endpoint the forwarding health check probes. Must be the same host as the forward URI, or a green probe does not mean deliveries are arriving; the bridge logs an ERROR at startup if they differ | Optional |
+| `org.itech.ahb.forward-http-server.max-attempts` | Deprecated. Retry scheduling moved to `bridge.outbox.retry.*` when delivery became durable; this property is still bound but unused | 3 |
+| `org.itech.ahb.forward-http-server.backoff-ms` | Deprecated, as above | 1000 |
+| **Delivery Outbox** | | |
+| `bridge.outbox.db-path` | Durable store holding received results until OpenELIS accepts them. This is the only copy of a result between receipt and delivery, so it must be on a persistent volume | JVM temporary directory |
+| `bridge.outbox.poll-interval` | Dispatcher idle wait. The receive path wakes it directly, so this is a safety net rather than the normal path to delivery | 1s |
+| `bridge.outbox.lease` | How long a claimed delivery stays leased. Must exceed connect plus read timeout | 120s |
+| `bridge.outbox.retry.max-attempts` | Attempts before a delivery is dead-lettered. Sized for an overnight OpenELIS outage | 150 |
+| `bridge.outbox.retry.base-delay` | Delay before the first retry | 5s |
+| `bridge.outbox.retry.multiplier` | Growth factor per attempt | 2.0 |
+| `bridge.outbox.retry.max-delay` | Ceiling on the delay | 10m |
+| `bridge.outbox.retry.jitter` | Random proportion applied to each delay, so analyzers that failed together do not retry together | 0.2 |
+| `bridge.outbox.retention.delivered` | How long delivered entries are kept as proof of delivery | 30d |
+| `bridge.outbox.retention.dismissed` | How long dismissed dead letters are kept. Undismissed dead letters are never purged | 90d |
+| `bridge.outbox.payload-access-enabled` | Whether `/admin/outbox/<id>/payload` serves clinical content. Access is audited either way | true |
 | **ASTM TCP** | | |
 | **MLLP (HL7)** | | |
 | `org.itech.ahb.mllp.enabled` | Permit saved HL7 server connections to start listeners | false |
@@ -130,8 +143,9 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.file.stateStorePath` | Durable file-processing state database | JVM temporary directory |
 | `bridge.file.pollIntervalMs` | Poll interval | 5000 |
 | `bridge.file.fileStabilityTimeoutMs` | Stable-file wait | 3000 |
-| `bridge.file.maxRetryAttempts` | Processing attempts | 3 |
+| `bridge.file.maxRetryAttempts` | Processing attempts before a file is parked for an operator | 150 |
 | `bridge.file.retryDelayMs` | Initial retry backoff | 1000 |
+| `bridge.file.maxRetryDelayMs` | Ceiling on the file retry backoff | 600000 |
 | **Profile Catalog** | | |
 | `bridge.profile-catalog.directory` | Durable site-profile revision store | `/data/openelis-analyzer-bridge/profile-catalog` |
 | `bridge.profile-catalog.shipped-pattern` | Packaged profile resource pattern | `classpath*:/analyzer-profiles/**/*.json` |
@@ -370,6 +384,100 @@ bridge:
   revision, raw analyzer code and value, transport, and control-recognition
   evidence. OpenELIS does not infer identity from source headers or analyzer
   names.
+
+### The delivery guarantee
+
+Once the bridge receives a result it keeps the complete message until OpenELIS
+durably accepts it. DNS failures, OpenELIS outages, bridge restarts and
+exhausted retries cannot discard it. Every received result ends up in one of two
+places: delivered, or in the dead-message queue with its full payload and a
+reason a person can act on.
+
+This matters because most analyzer protocols give the bridge no way to refuse a
+message after the fact. ASTM acknowledges each frame as it arrives, so by the
+time a forward could fail the analyzer's session is over. The only thing that
+can save the result is the bridge having stored it first, which is what it now
+does before any network I/O.
+
+Lifecycle of one delivery:
+
+```
+RECEIVED ──▶ PENDING ──▶ RETRYING ──▶ DELIVERED
+     │            │           │
+     └────────────┴───────────┴────▶ DMQ  (needs a person; payload intact)
+```
+
+| State | Meaning |
+|---|---|
+| `RECEIVED` | Stored on arrival, before the source is identified or anything is parsed |
+| `PENDING` | Rendered into the OpenELIS contract and waiting for its first attempt |
+| `RETRYING` | An attempt failed in a way that can still succeed; scheduled with backoff |
+| `DELIVERED` | OpenELIS durably accepted it and returned a receipt |
+| `DMQ` | Cannot be delivered without a person: retries spent, or OpenELIS refused it |
+
+What a transport reports back to an analyzer means "the bridge is holding this
+result", not "OpenELIS has it". The bridge refuses a message only when it does
+not have it, because for analyzers that resend on failure that is the one answer
+that can still save the result.
+
+Retries are safe because each delivery carries an identity derived from the
+received content, which OpenELIS deduplicates on. A redelivery after a restart
+carries the same identity as the first attempt, so a result accepted once is
+never staged twice.
+
+### Operating the delivery queue
+
+All endpoints require authentication (see Security) and live under `/admin/outbox`.
+
+```bash
+# What is the bridge holding, and is anything stuck?
+curl -u "$USER:$PASS" https://bridge:8443/admin/outbox/stats
+
+# Everything waiting for a person, most recent first
+curl -u "$USER:$PASS" "https://bridge:8443/admin/outbox?state=DMQ"
+
+# One entry, with what OpenELIS said on each attempt
+curl -u "$USER:$PASS" https://bridge:8443/admin/outbox/<id>
+
+# Send one held result again
+curl -u "$USER:$PASS" -X POST https://bridge:8443/admin/outbox/<id>/retry
+
+# After fixing an outage, release everything it stopped
+curl -u "$USER:$PASS" -X POST https://bridge:8443/admin/outbox/retry \
+  -H 'Content-Type: application/json' \
+  -d '{"all":true,"failureReason":"RETRY_EXHAUSTED"}'
+```
+
+Listings never contain the result itself. The message is served only from
+`/admin/outbox/<id>/payload?part=raw|fhir`, every read is logged with the user
+who made it, and a deployment can switch that endpoint off with
+`bridge.outbox.payload-access-enabled=false`.
+
+#### Triaging by failure reason
+
+| Reason | What happened | What to do |
+|---|---|---|
+| `RETRY_EXHAUSTED` | OpenELIS stayed unreachable for the whole retry budget | Fix the outage, then bulk retry |
+| `OE_CONFIG_STATE` | OpenELIS returned 422: its own configuration does not accept this delivery yet (unknown connection, missing site binding, profile mismatch) | Fix it in OpenELIS, then retry |
+| `OE_REJECTED` | OpenELIS refused the delivery outright | Read the attempt history; usually a contract or credentials problem |
+| `UNREGISTERED_SOURCE` | No saved, active connection for the sender | Register the analyzer, then retry |
+| `CONNECTION_TRANSPORT_MISMATCH` | Known sender, wrong transport for its saved connection | Correct the connection, then retry |
+| `UNPINNED_PROFILE` | The connection has no pinned profile, so results cannot be classified | Pin a profile revision, then retry |
+| `PARSE_NO_RESULTS` | The message parsed but produced nothing to deliver | Read the payload; usually a profile or fixture mismatch |
+| `OE_UNEXPECTED_REDIRECT` | Something answered with a redirect, which a result POST never follows | Check what sits between the bridge and OpenELIS |
+
+An operator retry re-sends the stored bundle as-is. Retries triggered by the
+dispatcher never re-render, so the identity OpenELIS deduplicates on cannot
+change between attempts.
+
+#### If the outbox database is lost
+
+The outbox is the only copy of a result between receipt and delivery. If it
+fails to open because the file is damaged, the bridge renames it aside and
+starts a fresh one so the site keeps working, and logs the renamed path at
+ERROR. That renamed file is incident evidence: preserve it, and reconcile
+against OpenELIS before trusting that nothing was lost. The bridge cannot
+recover those results by itself.
 
 ### OpenELIS -> Analyzer (query/config)
 
