@@ -489,6 +489,18 @@ curl -X POST "http://bridge:8443/?forwardAddress=192.168.1.10&forwardPort=5000" 
 
 ## Testing
 
+The acceptance suite builds the Docker image and drives it through the delivery
+outage scenarios, so a green run means the release artifact survives them, not
+just the source tree:
+
+```bash
+ANALYZER_MOCK_DIR=/path/to/analyzer-mock-server ./scripts/e2e-tests/run-all.sh
+```
+
+It covers OpenELIS unreachable with a bridge restart mid-outage, an answer lost
+after OpenELIS accepted the result, and a result recovered from the dead-message
+queue by an operator retry. It runs in CI as the `Docker acceptance` job.
+
 ### Unit Tests
 
 ```bash

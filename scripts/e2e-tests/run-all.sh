@@ -74,11 +74,6 @@ if [ $ELAPSED -ge $TIMEOUT ]; then
     exit 1
 fi
 
-curl --silent --show-error --fail-with-body \
-    --request POST \
-    --header 'Content-Type: application/json' \
-    --data '{"request":{"method":"POST","urlPath":"/api/OpenELIS-Global/analyzer/fhir"},"response":{"status":202,"jsonBody":{"accepted":true}}}' \
-    "${WIREMOCK_URL}/__admin/mappings" >/dev/null
 
 GENEXPERT_CONNECTION_ID="$(create_connection \
     "genexpert-astm" \
@@ -100,10 +95,23 @@ echo "--- Running ASTM TCP test ---"
 bash "${SCRIPT_DIR}/test-astm-tcp.sh"
 echo ""
 
+echo "--- Running delivery outbox DNS-outage test ---"
+bash "${SCRIPT_DIR}/test-outbox-dns-outage.sh"
+echo ""
+
+echo "--- Running delivery outbox lost-response test ---"
+bash "${SCRIPT_DIR}/test-outbox-lost-response.sh"
+echo ""
+
 echo "--- Running FILE test ---"
 bash "${SCRIPT_DIR}/test-file-csv.sh"
 echo ""
 
+# Last: recreates the bridge with a different retry budget.
+echo "--- Running delivery outbox dead-message-queue test ---"
+bash "${SCRIPT_DIR}/test-outbox-dmq-retry.sh"
+echo ""
+
 echo "========================================"
-echo "PRIORITY RESULT-TRAFFIC TESTS PASSED (2/2)"
+echo "PRIORITY RESULT-TRAFFIC TESTS PASSED (5/5)"
 echo "========================================"

@@ -156,3 +156,129 @@ assert_normalized_capture() {
                 .url == "https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value"))' \
         <<<"${body}" >/dev/null
 }
+
+# --- Delivery outbox ---------------------------------------------------------
+#
+# The bridge holds every received result until OpenELIS accepts it. These helpers
+# let a scenario watch that happen: find the entry for an accession, wait for it
+# to reach a state, read the payload it is holding, and stop or restart the
+# services the delivery depends on.
+
+OUTBOX_URL="${OUTBOX_URL:-http://localhost:8443/admin/outbox}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
+
+outbox_api() {
+    local path="$1"
+    shift
+    curl --silent --show-error --fail-with-body \
+        --user "${BRIDGE_USER}:${BRIDGE_PASSWORD}" \
+        "$@" \
+        "${OUTBOX_URL}${path}"
+}
+
+# Identifier of the outbox entry for an accession, or empty if the bridge has none.
+outbox_find_by_accession() {
+    local accession="$1"
+    outbox_api "?limit=200&includeDismissed=true" \
+        | jq --raw-output --arg accession "${accession}" \
+            'first(.rows[] | select(.accession == $accession) | .id) // empty'
+}
+
+# Wait for an accession to appear in the outbox at all, and print its id.
+wait_for_outbox_entry() {
+    local accession="$1"
+    local timeout="${2:-30}"
+    local id
+
+    for _ in $(seq 1 "${timeout}"); do
+        id="$(outbox_find_by_accession "${accession}")"
+        if [ -n "${id}" ]; then
+            printf '%s' "${id}"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "No outbox entry appeared for accession ${accession}" >&2
+    outbox_api "?limit=20&includeDismissed=true" | jq '.rows[] | {id, state, accession, failureReason}' >&2 || true
+    return 1
+}
+
+outbox_state() {
+    outbox_api "/$1" | jq --raw-output '.state'
+}
+
+wait_for_outbox_state() {
+    local id="$1"
+    local expected="$2"
+    local timeout="${3:-60}"
+    local state
+
+    for _ in $(seq 1 "${timeout}"); do
+        state="$(outbox_state "${id}" 2>/dev/null || true)"
+        if [ "${state}" = "${expected}" ]; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Outbox entry ${id} did not reach ${expected} within ${timeout}s (last state: ${state:-unknown})" >&2
+    outbox_api "/${id}" | jq '{state, attempts, failureReason, lastError, lastHttpStatus}' >&2 || true
+    return 1
+}
+
+# The message the bridge is holding: "raw" as received, or "fhir" as it will be sent.
+outbox_payload() {
+    local id="$1"
+    local part="${2:-raw}"
+    outbox_api "/${id}/payload?part=${part}"
+}
+
+outbox_retry() {
+    outbox_api "/$1/retry" --request POST >/dev/null
+}
+
+# Take OpenELIS away by name. The container is removed rather than stopped: a
+# stopped container keeps its entry in Docker's embedded DNS, so the bridge would
+# see a connect timeout. Removing it makes the name stop resolving, which is the
+# failure that lost results in production.
+openelis_stop() {
+    docker compose -f "${COMPOSE_FILE}" rm --stop --force --volumes wiremock >/dev/null 2>&1
+}
+
+openelis_start() {
+    docker compose -f "${COMPOSE_FILE}" up -d --no-deps wiremock >/dev/null 2>&1
+    for _ in $(seq 1 30); do
+        if curl --silent --fail "${WIREMOCK_URL}/__admin/health" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "OpenELIS capture did not come back" >&2
+    return 1
+}
+
+bridge_restart() {
+    docker compose -f "${COMPOSE_FILE}" restart openelis-analyzer-bridge >/dev/null 2>&1
+    for _ in $(seq 1 60); do
+        if curl --silent --fail http://localhost:8443/actuator/health/readiness >/dev/null 2>&1 \
+            || outbox_api "/stats" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "Bridge did not come back after a restart" >&2
+    return 1
+}
+
+# How many times OpenELIS was sent a bundle carrying this delivery identity.
+wiremock_deliveries_for_id() {
+    local delivery_id="$1"
+    curl --silent --show-error --fail "${WIREMOCK_URL}/__admin/requests" \
+        | jq --arg path "${NORMALIZED_PATH}" --arg id "${delivery_id}" \
+            '[.requests[] | select(.request.url == $path) | select(.request.body | contains($id))] | length'
+}
+
+reset_wiremock_requests() {
+    curl --silent --show-error --fail --request DELETE "${WIREMOCK_URL}/__admin/requests" >/dev/null
+}

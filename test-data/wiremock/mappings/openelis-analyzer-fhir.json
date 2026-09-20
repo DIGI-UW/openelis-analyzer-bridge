@@ -1,0 +1,17 @@
+{
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/api/OpenELIS-Global/analyzer/fhir"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "success": true,
+      "receiptId": "wiremock-receipt",
+      "resultsStaged": 1,
+      "resultsHeld": 0,
+      "controlResultsProcessed": 0
+    }
+  }
+}
