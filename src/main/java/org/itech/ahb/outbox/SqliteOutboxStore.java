@@ -46,6 +46,16 @@ public class SqliteOutboxStore implements OutboxStore {
 
   private static final String RECEIPT_PREFIX = "recv-v1";
 
+  /** Lease owner recorded on a row the receiving thread is still rendering. */
+  private static final String RECEIVE_OWNER = "receive";
+
+  /**
+   * How long the receiving thread holds a message before the dispatcher may render it instead.
+   * Long enough to cover parsing and bundle building on a loaded host, short enough that a crash
+   * mid-render does not strand the result for long.
+   */
+  private static final Duration RENDER_LEASE = Duration.ofMinutes(2);
+
   private static final String COLUMNS =
     "id, state, raw_hash, " +
     "(SELECT byte_length FROM outbox_raw r WHERE r.raw_hash = outbox.raw_hash) AS raw_byte_length, " +
@@ -102,7 +112,8 @@ public class SqliteOutboxStore implements OutboxStore {
       try (
         PreparedStatement entry = conn.prepareStatement(
           "INSERT INTO outbox (id, state, raw_hash, source_id, source_port, protocol, transport, protocol_hint, " +
-          "received_at, updated_at) VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+          "received_at, lease_until, lease_owner, updated_at) " +
+          "VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
         )
       ) {
         entry.setString(1, id);
@@ -113,7 +124,12 @@ public class SqliteOutboxStore implements OutboxStore {
         entry.setString(6, message.transport() == null ? "UNKNOWN" : message.transport().name());
         entry.setString(7, message.protocolHint());
         entry.setString(8, ts(receivedAt));
-        entry.setString(9, now);
+        // Leased to the thread that received it. Rendering happens next, on this thread, and the
+        // dispatcher must not claim the row and render it concurrently. If this process dies before
+        // rendering, the lease expires and the dispatcher recovers the message instead.
+        entry.setString(9, ts(Instant.now().plus(RENDER_LEASE)));
+        entry.setString(10, RECEIVE_OWNER);
+        entry.setString(11, now);
         inserted = entry.executeUpdate();
       }
       return new Receipt(id, rawHash, inserted == 0);
@@ -127,9 +143,18 @@ public class SqliteOutboxStore implements OutboxStore {
     if (deliveries == null || deliveries.isEmpty()) {
       throw new IllegalArgumentException("a rendered message must produce at least one delivery");
     }
-    OutboxEntry receipt = get(receiptId).orElseThrow(
-      () -> new IllegalStateException("no received entry " + receiptId + " to attach deliveries to")
-    );
+    OutboxEntry receipt = get(receiptId).orElse(null);
+    if (receipt == null) {
+      // The receipt row is gone, which means these deliveries were already created: either the
+      // dispatcher recovered the message after this process appeared to stall, or two copies of the
+      // same message arrived at once. Either way the work is queued and there is nothing to add.
+      // Only complain if the deliveries are genuinely absent.
+      if (deliveries.stream().anyMatch(delivery -> get(delivery.deliveryId()).isPresent())) {
+        log.debug("Outbox receipt {} was already rendered by another worker; keeping those deliveries", receiptId);
+        return;
+      }
+      throw new IllegalStateException("no received entry " + receiptId + " to attach deliveries to");
+    }
     String now = ts(Instant.now());
     inTransaction(() -> {
       for (RenderedDelivery delivery : deliveries) {

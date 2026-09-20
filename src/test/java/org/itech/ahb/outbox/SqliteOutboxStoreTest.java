@@ -170,6 +170,48 @@ class SqliteOutboxStoreTest {
     }
 
     @Test
+    @DisplayName("is not claimable by the dispatcher while the receiving thread is still rendering")
+    void receiptIsHeldByTheReceivingThread() {
+      Receipt receipt = store.receive(astm(RAW_ASTM));
+
+      assertTrue(
+        store.claimNextDue(Instant.now(), Duration.ofMinutes(2), "dispatcher").isEmpty(),
+        "a dispatcher that rendered this row concurrently would race the receiving thread and " +
+        "leave it with nothing to attach its deliveries to"
+      );
+
+      OutboxEntry held = store.get(receipt.id()).orElseThrow();
+      assertEquals("receive", held.leaseOwner());
+    }
+
+    @Test
+    @DisplayName("becomes the dispatcher's work once the receiving process is gone")
+    void abandonedReceiptIsRecovered() {
+      Receipt receipt = store.receive(astm(RAW_ASTM));
+      store.close();
+      store = new SqliteOutboxStore(dbPath);
+
+      assertEquals(1, store.recoverInterrupted(Instant.now()));
+      assertEquals(
+        receipt.id(),
+        store.claimNextDue(Instant.now(), Duration.ofMinutes(2), "dispatcher").orElseThrow().id(),
+        "a message received but never rendered must be picked up rather than stranded"
+      );
+    }
+
+    @Test
+    @DisplayName("treats an already-rendered message as done rather than an error")
+    void toleratesAMessageRenderedByAnotherWorker() {
+      Receipt receipt = store.receive(astm(RAW_ASTM));
+      store.markRendered(receipt.id(), List.of(delivery("astm-v1:a", "ACC-1")));
+
+      // The same deliveries offered again, as a second worker would.
+      store.markRendered(receipt.id(), List.of(delivery("astm-v1:a", "ACC-1")));
+
+      assertEquals(1, store.countsByState().get(OutboxState.PENDING));
+    }
+
+    @Test
     @DisplayName("refuses to render nothing")
     void refusesEmptyRender() {
       Receipt receipt = store.receive(astm(RAW_ASTM));
