@@ -1,5 +1,6 @@
 package org.itech.ahb.serial;
 
+import org.itech.ahb.outbox.OutboxTestSupport;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -226,9 +227,8 @@ class SerialIntegrationTest {
                 entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
             }
             registry.register("connection:serial-it", entry);
-            HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, registry);
-            MessageNormalizer normalizer = new MessageNormalizer(
-                    forwardingRouter, new AnalyzerIdentifier(registry), null);
+            OutboxTestSupport outbox = OutboxTestSupport.createTemp(httpConfig, registry);
+            MessageNormalizer normalizer = outbox.normalizer(new AnalyzerIdentifier(registry), null);
             return new SerialMessageHandler(normalizer);
         }
 

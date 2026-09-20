@@ -17,305 +17,334 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Device;
 import org.hl7.fhir.r4.model.Observation;
+import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
-import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
-import org.itech.ahb.file.RejectedBundle;
-import org.itech.ahb.file.SqliteFileStateStore;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
-import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.outbox.FailureReason;
+import org.itech.ahb.outbox.OutboxEntry;
+import org.itech.ahb.outbox.OutboxQuery;
+import org.itech.ahb.outbox.OutboxState;
+import org.itech.ahb.outbox.OutboxTestSupport;
 import org.itech.ahb.profile.AstmResultRecordSelection;
+import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Focused tests for {@link HttpForwardingRouter}'s B1 rejection persistence
- * hook.
- * <p>
- * Runs a minimal {@link HttpServer} as the "OE webapp" stand-in. The router
- * is configured against it with a single attempt so retry-exhaustion fires
- * deterministically. A real {@link SqliteFileStateStore} (tempdir-backed)
- * verifies the full write path — no mocks at the persistence boundary.
- * </p>
+ * What happens to a received result on its way to OpenELIS, exercised end to end against a stub
+ * OpenELIS on a real socket and a real tempdir-backed outbox: no mocks at the persistence boundary,
+ * and no mocks at the network boundary either.
+ *
+ * <p>The behavior under test is the one the Madagascar incident broke. Before the outbox, a forward
+ * failure kept an 800-character snippet and dropped the message; these tests assert that every
+ * outcome now leaves the complete message somewhere an operator can reach it.
  */
 class HttpForwardingRouterTest {
 
-    private HttpServer server;
-    private int port;
-    private AtomicInteger statusCodeToReturn;
-    private AtomicInteger requestCount;
-    private AtomicReference<String> requestBody;
-    private AtomicReference<String> requestPath;
-    private SqliteFileStateStore stateStore;
+  private HttpServer server;
+  private int port;
+  private AtomicInteger statusCodeToReturn;
+  private AtomicInteger requestCount;
+  private AtomicReference<String> requestBody;
+  private AtomicReference<String> requestPath;
+  private Path tmpDir;
+  private OutboxTestSupport pipeline;
 
-    @BeforeEach
-    void setUp(@TempDir Path tmp) throws IOException {
-        statusCodeToReturn = new AtomicInteger(200);
-        requestCount = new AtomicInteger();
-        requestBody = new AtomicReference<>();
-        requestPath = new AtomicReference<>();
-        server = HttpServer.create(new InetSocketAddress(0), 0);
-        port = server.getAddress().getPort();
-        server.createContext("/analyzer", exchange -> {
-            requestCount.incrementAndGet();
-            requestPath.set(exchange.getRequestURI().getPath());
-            requestBody.set(new String(exchange.getRequestBody().readAllBytes()));
-            int code = statusCodeToReturn.get();
-            byte[] body = ("status " + code).getBytes();
-            exchange.sendResponseHeaders(code, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.close();
-        });
-        server.start();
-        stateStore = new SqliteFileStateStore(tmp.resolve("state.db"));
+  @BeforeEach
+  void setUp(@TempDir Path tmp) throws IOException {
+    this.tmpDir = tmp;
+    statusCodeToReturn = new AtomicInteger(200);
+    requestCount = new AtomicInteger();
+    requestBody = new AtomicReference<>();
+    requestPath = new AtomicReference<>();
+    server = HttpServer.create(new InetSocketAddress(0), 0);
+    port = server.getAddress().getPort();
+    server.createContext("/analyzer", exchange -> {
+      requestCount.incrementAndGet();
+      requestPath.set(exchange.getRequestURI().getPath());
+      requestBody.set(new String(exchange.getRequestBody().readAllBytes()));
+      int code = statusCodeToReturn.get();
+      byte[] body = ("status " + code).getBytes();
+      exchange.sendResponseHeaders(code, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.start();
+  }
+
+  @AfterEach
+  void tearDown() {
+    if (server != null) {
+      server.stop(0);
     }
-
-    @AfterEach
-    void tearDown() {
-        if (server != null) server.stop(0);
-        if (stateStore != null) stateStore.close();
+    if (pipeline != null) {
+      pipeline.close();
     }
+  }
 
-    @Test
-    void fourHundredOne_persistsRejectedBundleWithHttpStatusAndPayload() {
-        HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = registeredRouter(httpConfig, stateStore, "100.127.144.150");
+  @Test
+  @DisplayName("an accepted delivery is recorded as delivered, with OpenELIS's answer")
+  void acceptedDeliveryIsRecorded() {
+    pipeline = registeredPipeline("10.0.0.6");
+    statusCodeToReturn.set(200);
 
-        statusCodeToReturn.set(401);
-        MessageEnvelope env = envelope("100.127.144.150");
-        boolean result = router.route(env);
+    assertTrue(pipeline.receiveAndDeliver(envelope("10.0.0.6")));
 
-        assertFalse(result, "4xx must be reported as a routing failure");
-        List<RejectedBundle> rows = stateStore.listRejections(10);
-        assertEquals(1, rows.size(), "non-retryable 4xx must persist exactly one rejection");
-        RejectedBundle r = rows.get(0);
-        assertEquals("100.127.144.150", r.sourceId());
-        assertEquals("ASTM", r.protocol());
-        assertEquals(401, r.httpStatus());
-        assertNotNull(r.lastError());
-        assertTrue(r.lastError().contains("401"),
-                "lastError should name the status code for operator triage");
-        assertNotNull(r.payloadSnippet());
-        assertTrue(r.payloadSnippet().contains("Bundle"),
-                "payloadSnippet must reflect the normalized bundle the bridge tried to forward");
+    assertEquals(1, requestCount.get());
+    OutboxEntry entry = onlyEntry();
+    assertEquals(OutboxState.DELIVERED, entry.state());
+    assertEquals(200, entry.lastHttpStatus());
+    assertEquals(1, entry.attempts());
+    assertNotNull(entry.oeReceipt(), "an operator confirms delivery against OpenELIS, not against our log");
+  }
+
+  @Test
+  @DisplayName("OpenELIS being unreachable keeps the complete message and schedules a retry")
+  void unreachableOpenElisKeepsTheMessage() {
+    pipeline = registeredPipeline("10.0.0.9");
+    server.stop(0);
+    server = null;
+
+    assertTrue(
+      pipeline.receiveAndDeliver(envelope("10.0.0.9")),
+      "the analyzer's session is over; the bridge reports receipt because it has the result, not because OpenELIS does"
+    );
+
+    OutboxEntry entry = onlyEntry();
+    assertEquals(OutboxState.RETRYING, entry.state());
+    assertEquals(1, entry.attempts());
+    assertNotNull(entry.nextAttemptAt());
+    String raw = pipeline.store.rawPayload(entry.id()).orElseThrow();
+    assertTrue(raw.contains("R|1|^^^WBC|7.5"), "the message as received is kept whole, not as a snippet");
+    assertTrue(pipeline.store.fhirPayload(entry.id()).orElseThrow().contains("Bundle"));
+  }
+
+  @Test
+  @DisplayName("a delivery is redelivered byte-identically until OpenELIS accepts it")
+  void retriesUntilAccepted() {
+    pipeline = registeredPipeline("10.0.0.10");
+    statusCodeToReturn.set(503);
+
+    pipeline.receiveAndDeliver(envelope("10.0.0.10"));
+    String firstBody = requestBody.get();
+    assertEquals(OutboxState.RETRYING, onlyEntry().state());
+
+    statusCodeToReturn.set(200);
+    awaitBackoff();
+    pipeline.dispatcher.dispatchDue();
+
+    assertEquals(2, requestCount.get());
+    assertEquals(firstBody, requestBody.get(), "a retry must carry the identity OpenELIS deduplicates on");
+    OutboxEntry entry = onlyEntry();
+    assertEquals(OutboxState.DELIVERED, entry.state());
+    assertEquals(2, entry.attempts());
+  }
+
+  @Test
+  @DisplayName("OpenELIS rejecting the delivery holds it for an operator instead of retrying")
+  void rejectionIsHeldForAnOperator() {
+    pipeline = registeredPipeline("100.127.144.150");
+    statusCodeToReturn.set(401);
+
+    pipeline.receiveAndDeliver(envelope("100.127.144.150"));
+
+    OutboxEntry entry = onlyEntry();
+    assertEquals(OutboxState.DMQ, entry.state());
+    assertEquals(FailureReason.OE_REJECTED, entry.failureReason());
+    assertEquals(401, entry.lastHttpStatus());
+    assertEquals("100.127.144.150", entry.sourceId());
+    assertEquals(Protocol.ASTM, entry.protocol());
+    assertTrue(pipeline.store.rawPayload(entry.id()).orElseThrow().contains("SAMPLE-1"));
+  }
+
+  @Test
+  @DisplayName("an OpenELIS configuration refusal is named as such, so the operator knows where to fix it")
+  void configurationRefusalIsNamed() {
+    pipeline = registeredPipeline("10.0.0.11");
+    statusCodeToReturn.set(422);
+
+    pipeline.receiveAndDeliver(envelope("10.0.0.11"));
+
+    OutboxEntry entry = onlyEntry();
+    assertEquals(OutboxState.DMQ, entry.state());
+    assertEquals(FailureReason.OE_CONFIG_STATE, entry.failureReason());
+    assertEquals(1, requestCount.get(), "a configuration refusal will not resolve itself, so it is not retried");
+  }
+
+  @Test
+  @DisplayName("an analyzer with no pinned recognition is held, not forwarded")
+  void unpinnedAnalyzerIsHeld() {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerEntry entry = new AnalyzerEntry();
+    entry.setId("analyzer-1");
+    entry.setExpectedProtocol("ASTM");
+    registry.register("10.0.0.7", entry);
+    pipeline = OutboxTestSupport.create(tmpDir, minimalConfig(), registry);
+
+    pipeline.receiveAndDeliver(envelope("10.0.0.7"));
+
+    assertEquals(0, requestCount.get(), "traffic without a pinned-profile recognition mode must not be forwarded");
+    OutboxEntry held = onlyEntry();
+    assertEquals(OutboxState.DMQ, held.state());
+    assertEquals(FailureReason.UNPINNED_PROFILE, held.failureReason());
+    assertTrue(pipeline.store.rawPayload(held.id()).orElseThrow().contains("SAMPLE-1"));
+  }
+
+  @Test
+  @DisplayName("an ASTM analyzer with no pinned result selection is held, not forwarded")
+  void astmWithoutResultSelectionIsHeld() {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerEntry entry = new AnalyzerEntry();
+    entry.setId("analyzer-1");
+    entry.setExpectedProtocol("ASTM");
+    entry.setControlResultRecognition(ControlResultRecognition.none());
+    entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+    registry.register("10.0.0.8", entry);
+    pipeline = OutboxTestSupport.create(tmpDir, minimalConfig(), registry);
+
+    pipeline.receiveAndDeliver(envelope("10.0.0.8"));
+
+    assertEquals(0, requestCount.get());
+    OutboxEntry held = onlyEntry();
+    assertEquals(OutboxState.DMQ, held.state());
+    assertEquals(FailureReason.UNPINNED_PROFILE, held.failureReason());
+    assertTrue(held.lastError().contains("result-record selection"));
+  }
+
+  @Test
+  @DisplayName("a message that parses to nothing is held with its content for diagnosis")
+  void unparseableMessageIsHeld() {
+    for (String raw : new String[] { "H|\\^&|||Analyzer\rL|1", "", "   " }) {
+      pipeline = registeredPipeline("10.0.0.20");
+      MessageEnvelope message = MessageEnvelope.builder()
+        .protocol(Protocol.ASTM)
+        .transport(Transport.HTTP)
+        .sourceId("10.0.0.20")
+        .resolvedAnalyzerId("analyzer-1")
+        .rawMessage(raw)
+        .build();
+
+      if (raw.isBlank()) {
+        // Nothing was received, so there is nothing to keep; the transport refuses it outright.
+        assertFalse(pipeline.receive(message));
+      } else {
+        pipeline.receiveAndDeliver(message);
+        OutboxEntry held = onlyEntry();
+        assertEquals(OutboxState.DMQ, held.state());
+        assertEquals(FailureReason.PARSE_NO_RESULTS, held.failureReason());
+        assertEquals(raw, pipeline.store.rawPayload(held.id()).orElseThrow());
+      }
+      assertEquals(0, requestCount.get());
+      pipeline.close();
+      pipeline = null;
     }
+  }
 
-    @Test
-    void fiveHundred_exhaustedRetries_persistsWithStatusZero() {
-        HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = registeredRouter(httpConfig, stateStore, "10.0.0.5");
+  @Test
+  @DisplayName("the delivered bundle carries the pinned connection identity and analyzer-native codes")
+  void deliveredBundlePreservesConnectionContext() {
+    pipeline = registeredPipeline("10.0.0.30");
+    statusCodeToReturn.set(200);
 
-        statusCodeToReturn.set(500);
-        boolean result = router.route(envelope("10.0.0.5"));
+    assertTrue(pipeline.receiveAndDeliver(envelope("10.0.0.30")));
 
-        assertFalse(result);
-        List<RejectedBundle> rows = stateStore.listRejections(10);
-        assertEquals(1, rows.size(),
-                "retry-exhausted 5xx must persist exactly one rejection (not one per attempt)");
-        assertEquals(0, rows.get(0).httpStatus(),
-                "httpStatus=0 distinguishes transport/5xx exhaustion from a deterministic 4xx");
-        assertTrue(rows.get(0).lastError().contains("attempts failed"));
+    assertEquals("/analyzer/fhir", requestPath.get());
+    Bundle bundle = FhirContext.forR4().newJsonParser().parseResource(Bundle.class, requestBody.get());
+    Device device = bundle
+      .getEntry()
+      .stream()
+      .map(Bundle.BundleEntryComponent::getResource)
+      .filter(Device.class::isInstance)
+      .map(Device.class::cast)
+      .findFirst()
+      .orElseThrow();
+    Observation observation = bundle
+      .getEntry()
+      .stream()
+      .map(Bundle.BundleEntryComponent::getResource)
+      .filter(Observation.class::isInstance)
+      .map(Observation.class::cast)
+      .findFirst()
+      .orElseThrow();
+    assertEquals(
+      "bridge-connection-7f3c",
+      device
+        .getIdentifier()
+        .stream()
+        .filter(value -> "https://openelis-global.org/fhir/analyzer-connection-id".equals(value.getSystem()))
+        .findFirst()
+        .orElseThrow()
+        .getValue()
+    );
+    assertTrue(
+      observation
+        .getCode()
+        .getCoding()
+        .stream()
+        .anyMatch(
+          value ->
+            "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code".equals(value.getSystem()) &&
+            "WBC".equals(value.getCode())
+        )
+    );
+    assertEquals(
+      onlyEntry().id(),
+      bundle.getIdentifier().getValue(),
+      "the bundle identity and the outbox identity are the same value, which is what makes a retry safe"
+    );
+  }
+
+  /** The test pipeline retries after a millisecond; wait past it rather than racing the clock. */
+  private static void awaitBackoff() {
+    try {
+      Thread.sleep(50);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
+  }
 
-    @Test
-    void twoHundred_doesNotPersistAnything() {
-        HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = registeredRouter(httpConfig, stateStore, "10.0.0.6");
+  private OutboxEntry onlyEntry() {
+    List<OutboxEntry> entries = pipeline.store.list(OutboxQuery.all(10));
+    assertEquals(1, entries.size(), "expected exactly one outbox entry");
+    return entries.get(0);
+  }
 
-        statusCodeToReturn.set(200);
-        boolean result = router.route(envelope("10.0.0.6"));
+  private HTTPForwardServerConfigurationProperties minimalConfig() {
+    HTTPForwardServerConfigurationProperties c = new HTTPForwardServerConfigurationProperties();
+    c.setUri(URI.create("http://localhost:" + port + "/analyzer"));
+    c.setConnectTimeoutSeconds(2);
+    c.setReadTimeoutSeconds(2);
+    return c;
+  }
 
-        assertTrue(result, "2xx must succeed");
-        assertEquals(0, stateStore.listRejections(10).size(),
-                "successful forward must not generate a rejected_bundles row");
-    }
+  private OutboxTestSupport registeredPipeline(String sourceId) {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerEntry entry = new AnalyzerEntry();
+    entry.setId("analyzer-1");
+    entry.setBridgeConnectionId("bridge-connection-7f3c");
+    entry.setProfileId("site.mock-hematology");
+    entry.setProfileRevision(3);
+    entry.setExpectedProtocol("ASTM");
+    entry.setControlResultRecognition(ControlResultRecognition.none());
+    entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
+    entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+    registry.register(sourceId, entry);
+    return OutboxTestSupport.create(tmpDir, minimalConfig(), registry);
+  }
 
-    @Test
-    void nullStateStore_rejectsPayloadLogsOnly_noThrow() {
-        HTTPForwardServerConfigurationProperties httpConfig = minimalConfig();
-        HttpForwardingRouter router = registeredRouter(httpConfig, null, "src");
-
-        statusCodeToReturn.set(401);
-        // Must not throw; router must still return false; the log line is the
-        // only diagnostic available in this path.
-        boolean result = router.route(envelope("src"));
-        assertFalse(result);
-    }
-
-    @Test
-    void fhirRoutingRejectsAnAnalyzerWithoutProfileOwnedRecognition() {
-        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-        AnalyzerEntry entry = new AnalyzerEntry();
-        entry.setId("analyzer-1");
-        entry.setExpectedProtocol("ASTM");
-        registry.register("10.0.0.7", entry);
-        HttpForwardingRouter router = new HttpForwardingRouter(
-                minimalConfig(), stateStore, registry);
-
-        MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.TCP)
-                .sourceId("10.0.0.7")
-                .resolvedAnalyzerId("analyzer-1")
-                .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\rR|1|^^^WBC|7.5|10*3/uL\rL|1")
-                .build();
-
-        assertFalse(router.route(envelope));
-        assertEquals(0, requestCount.get(),
-                "traffic without an explicit pinned-profile recognition mode must not be forwarded");
-    }
-
-    @Test
-    void fhirRoutingRejectsAnAstmAnalyzerWithoutProfileOwnedResultSelection() {
-        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-        AnalyzerEntry entry = new AnalyzerEntry();
-        entry.setId("analyzer-1");
-        entry.setExpectedProtocol("ASTM");
-        entry.setControlResultRecognition(ControlResultRecognition.none());
-        entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
-        registry.register("10.0.0.8", entry);
-        HttpForwardingRouter router = new HttpForwardingRouter(
-                minimalConfig(), stateStore, registry);
-
-        MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.TCP)
-                .sourceId("10.0.0.8")
-                .resolvedAnalyzerId("analyzer-1")
-                .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\rR|1|^^^WBC|7.5|10*3/uL\rL|1")
-                .build();
-
-        assertFalse(router.route(envelope));
-        assertEquals(0, requestCount.get());
-        assertTrue(stateStore.listRejections(10).get(0).lastError().contains("result-record selection"));
-    }
-
-    @Test
-    void emptyParsingPersistsRejectionWithoutDispatch() {
-        int expectedCount = 0;
-        for (String raw : new String[] {
-                "MSH|^~\\&|SENDER|LAB|LIS|LAB|20260909000000||ORU^R01|1|P|2.5.1",
-                "not a result", "", null}) {
-            String source = "source-" + expectedCount;
-            AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-            AnalyzerEntry entry = new AnalyzerEntry();
-            entry.setId("analyzer-1");
-            entry.setExpectedProtocol("HL7");
-            entry.setControlResultRecognition(ControlResultRecognition.none());
-            registry.register(source, entry);
-            HttpForwardingRouter router = new HttpForwardingRouter(
-                    minimalConfig(), stateStore, registry);
-            MessageEnvelope message = MessageEnvelope.builder()
-                    .protocol(Protocol.HL7).transport(Transport.MLLP).sourceId(source)
-                    .resolvedAnalyzerId("analyzer-1").rawMessage(raw).build();
-
-            assertFalse(router.route(message));
-            assertEquals(0, requestCount.get(), "unparseable input must not reach OpenELIS");
-            List<RejectedBundle> rows = stateStore.listRejections(10);
-            assertEquals(++expectedCount, rows.size(), "each failed parse must produce one rejection");
-            RejectedBundle rejection = rows.stream()
-                    .filter(row -> source.equals(row.sourceId())).findFirst().orElseThrow();
-            assertEquals("HL7", rejection.protocol());
-            assertEquals(0, rejection.httpStatus());
-            assertTrue(rejection.lastError().contains(
-                    raw == null || raw.isBlank() ? "missing rawMessage" : "produced no results"));
-        }
-    }
-
-    @Test
-    void normalizedRoutingRequiresNoFeatureSwitchAndPreservesExactConnectionContext() {
-        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-        AnalyzerEntry entry = new AnalyzerEntry();
-        entry.setId("analyzer-1");
-        entry.setBridgeConnectionId("bridge-connection-7f3c");
-        entry.setProfileId("site.mock-hematology");
-        entry.setProfileRevision(3);
-        entry.setExpectedProtocol("ASTM");
-        entry.setControlResultRecognition(ControlResultRecognition.none());
-        entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
-        entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
-        entry.setCodeToLoinc(java.util.Map.of("WBC", "6690-2"));
-        registry.register("10.0.0.9", entry);
-        HttpForwardingRouter router = new HttpForwardingRouter(
-                minimalConfig(), stateStore, registry);
-
-        MessageEnvelope envelope = MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.TCP)
-                .sourceId("10.0.0.9")
-                .resolvedAnalyzerId("analyzer-1")
-                .protocolAnalyzerHint("LAB^Hematology^1")
-                .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\rR|1|^^^WBC|7.5|10*3/uL\rL|1")
-                .build();
-
-        assertTrue(router.route(envelope));
-        assertEquals("/analyzer/fhir", requestPath.get());
-        Bundle bundle = FhirContext.forR4().newJsonParser().parseResource(Bundle.class, requestBody.get());
-        Device device = bundle.getEntry().stream()
-                .map(Bundle.BundleEntryComponent::getResource)
-                .filter(Device.class::isInstance)
-                .map(Device.class::cast)
-                .findFirst()
-                .orElseThrow();
-        Observation observation = bundle.getEntry().stream()
-                .map(Bundle.BundleEntryComponent::getResource)
-                .filter(Observation.class::isInstance)
-                .map(Observation.class::cast)
-                .findFirst()
-                .orElseThrow();
-        assertEquals("bridge-connection-7f3c", device.getIdentifier().stream()
-                .filter(value -> "https://openelis-global.org/fhir/analyzer-connection-id"
-                        .equals(value.getSystem()))
-                .findFirst()
-                .orElseThrow()
-                .getValue());
-        assertTrue(observation.getCode().getCoding().stream().anyMatch(value ->
-                "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code".equals(value.getSystem())
-                        && "WBC".equals(value.getCode())));
-        assertTrue(observation.getCode().getCoding().stream().anyMatch(value ->
-                "http://loinc.org".equals(value.getSystem()) && "6690-2".equals(value.getCode())));
-    }
-
-    private HTTPForwardServerConfigurationProperties minimalConfig() {
-        HTTPForwardServerConfigurationProperties c = new HTTPForwardServerConfigurationProperties();
-        c.setUri(URI.create("http://localhost:" + port + "/analyzer"));
-        c.setMaxAttempts(2);
-        c.setBackoffMs(1);
-        c.setConnectTimeoutSeconds(2);
-        c.setReadTimeoutSeconds(2);
-        return c;
-    }
-
-    private HttpForwardingRouter registeredRouter(
-            HTTPForwardServerConfigurationProperties config,
-            SqliteFileStateStore rejectionStore,
-            String sourceId) {
-        AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-        AnalyzerEntry entry = new AnalyzerEntry();
-        entry.setId("analyzer-1");
-        entry.setBridgeConnectionId("bridge-connection-7f3c");
-        entry.setProfileId("site.mock-hematology");
-        entry.setProfileRevision(3);
-        entry.setExpectedProtocol("ASTM");
-        entry.setControlResultRecognition(ControlResultRecognition.none());
-        entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
-        entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
-        registry.register(sourceId, entry);
-        return new HttpForwardingRouter(config, rejectionStore, registry);
-    }
-
-    private MessageEnvelope envelope(String sourceId) {
-        return MessageEnvelope.builder()
-                .protocol(Protocol.ASTM)
-                .transport(Transport.HTTP)
-                .sourceId(sourceId)
-                .resolvedAnalyzerId("analyzer-1")
-                .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\r"
-                        + "R|1|^^^WBC|7.5|10*3/uL\rL|1")
-                .build();
-    }
+  private MessageEnvelope envelope(String sourceId) {
+    return MessageEnvelope.builder()
+      .protocol(Protocol.ASTM)
+      .transport(Transport.HTTP)
+      .sourceId(sourceId)
+      .resolvedAnalyzerId("analyzer-1")
+      .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\rR|1|^^^WBC|7.5|10*3/uL\rL|1")
+      .build();
+  }
 }

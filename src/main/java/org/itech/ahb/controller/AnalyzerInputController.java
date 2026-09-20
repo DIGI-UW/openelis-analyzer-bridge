@@ -142,16 +142,20 @@ public class AnalyzerInputController {
       boolean success = normalizer.process(envelope);
 
       if (!success) {
-        log.error("Failed to route {} message from {}", protocol, sourceIp);
+        // The bridge does not hold the message: either it could not be stored, or its source is not
+        // a connection this bridge accepts. Refusing is the honest answer, and for analyzers that
+        // resend on failure it is the one that can still save the result.
+        log.error("Refused {} message from {}: the bridge is not holding it", protocol, sourceIp);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-          new InputResponse(false, "Message routing failed", sourceIp, protocol.name(), null)
+          new InputResponse(false, "Message not accepted", sourceIp, protocol.name(), null)
         );
       }
 
+      // Accepted, not delivered: the result is durably held and the dispatcher takes it from here.
       return ResponseEntity.ok(
         new InputResponse(
           true,
-          "Message routed successfully",
+          "Message accepted; delivery to OpenELIS is durable and continues in the background",
           sourceIp,
           protocol.name(),
           envelope.getReceivedAt().toString()

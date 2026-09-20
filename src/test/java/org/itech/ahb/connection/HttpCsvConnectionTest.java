@@ -1,5 +1,6 @@
 package org.itech.ahb.connection;
 
+import org.itech.ahb.outbox.OutboxTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -40,6 +41,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /** Uses the durable catalogs, actual runtime/normalizer/parser, and an HTTP receiver. */
 class HttpCsvConnectionTest {
+
+  private OutboxTestSupport outbox;
 
   @TempDir
   Path directory;
@@ -130,9 +133,9 @@ class HttpCsvConnectionTest {
     config.setMaxAttempts(1);
     config.setConnectTimeoutSeconds(2);
     config.setReadTimeoutSeconds(2);
-    var router = new HttpForwardingRouter(config, null, registry);
+    outbox = OutboxTestSupport.createTemp(config, registry);
     input = MockMvcBuilders.standaloneSetup(
-      new AnalyzerInputController(new MessageNormalizer(router, new AnalyzerIdentifier(registry), registry, null, null))
+      new AnalyzerInputController(outbox.normalizer(new AnalyzerIdentifier(registry), registry))
     ).build();
   }
 
@@ -171,6 +174,7 @@ class HttpCsvConnectionTest {
       )
       .andReturn()
       .getResponse();
+    outbox.dispatcher.dispatchDue();
     assertThat(response.getStatus()).isEqualTo(200);
     assertThat(received).hasSize(1);
     assertThat(received.get(0).path("identifier").path("value").asText()).startsWith("file-v1:");
@@ -207,17 +211,34 @@ class HttpCsvConnectionTest {
   }
 
   @Test
-  void retriesAPartiallyAcceptedCsvWithoutChangingAccessionIdentities() {
+  void retriesARejectedAccessionWithItsOriginalIdentityAndLeavesTheAcceptedOneAlone() {
     activate("oe-http", "192.0.2.25");
     rejectDeliveryNumber.set(2);
-    assertThat(send("192.0.2.25", null)).isNotEqualTo(200);
-    assertThat(received).hasSize(2);
-    var firstIds = received.stream().map(bundle -> bundle.path("identifier").path("value").asText()).toList();
-    reopen();
+
+    // The request succeeds because the bridge durably holds both results, not because OpenELIS took
+    // them. That is the change the outbox makes: receipt and delivery are separate answers.
     assertThat(send("192.0.2.25", null)).isEqualTo(200);
-    assertThat(
-      received.subList(2, 4).stream().map(bundle -> bundle.path("identifier").path("value").asText())
-    ).containsExactlyInAnyOrderElementsOf(firstIds);
+    assertThat(received).hasSize(2);
+    String acceptedId = received.get(0).path("identifier").path("value").asText();
+    String rejectedId = received.get(1).path("identifier").path("value").asText();
+
+    rejectDeliveryNumber.set(0);
+    sleepPastBackoff();
+    outbox.dispatcher.dispatchDue();
+
+    assertThat(received).hasSize(3);
+    assertThat(received.get(2).path("identifier").path("value").asText())
+      .as("only the accession OpenELIS refused is sent again, and it keeps the identity OpenELIS deduplicates on")
+      .isEqualTo(rejectedId)
+      .isNotEqualTo(acceptedId);
+  }
+
+  private static void sleepPastBackoff() {
+    try {
+      Thread.sleep(50);
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   @Test
@@ -328,7 +349,11 @@ class HttpCsvConnectionTest {
       });
     if (forwarded != null) request.header("X-Forwarded-For", forwarded);
     try {
-      return input.perform(request).andReturn().getResponse().getStatus();
+      int status = input.perform(request).andReturn().getResponse().getStatus();
+      // Receipt and delivery are separate now: the request returns once the result is durably held,
+      // and the dispatcher delivers it. Drive the dispatcher so the assertions see the delivery.
+      outbox.dispatcher.dispatchDue();
+      return status;
     } catch (Exception exception) {
       throw new AssertionError("HTTP CSV request failed", exception);
     }

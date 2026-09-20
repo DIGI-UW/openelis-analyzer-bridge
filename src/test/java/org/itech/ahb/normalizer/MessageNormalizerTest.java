@@ -10,8 +10,17 @@ import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.routing.HttpForwardingRouter;
-import org.itech.ahb.util.DeadLetterWriter;
+import java.nio.file.Path;
+import java.util.List;
+import org.itech.ahb.outbox.FailureReason;
+import org.itech.ahb.outbox.OutboxEntry;
+import org.itech.ahb.outbox.OutboxQuery;
+import org.itech.ahb.outbox.OutboxState;
+import org.itech.ahb.outbox.OutboxStore;
+import org.itech.ahb.outbox.SqliteOutboxStore;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -37,12 +46,29 @@ class MessageNormalizerTest {
 
     private MessageNormalizer normalizer;
 
+    /**
+     * A real store on a temp directory rather than a mock: persistence is the behavior under test
+     * here, and a mock would let a change that silently stops persisting still pass.
+     */
+    @TempDir
+    Path outboxDir;
+
+    private OutboxStore outbox;
+
     @BeforeEach
     void setUp() {
-        normalizer = new MessageNormalizer(mockForwardingRouter, mockIdentifier, null);
+        outbox = new SqliteOutboxStore(outboxDir.resolve("outbox.db"));
+        normalizer = new MessageNormalizer(mockForwardingRouter, mockIdentifier, outbox, null, null);
         // Lenient: some tests override these stubs
         lenient().when(mockForwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
         lenient().when(mockIdentifier.identify(any(MessageEnvelope.class))).thenReturn("DEFAULT-ANALYZER");
+    }
+
+    @AfterEach
+    void closeOutbox() {
+        if (outbox != null) {
+            outbox.close();
+        }
     }
 
     @Nested
@@ -149,7 +175,7 @@ class MessageNormalizerTest {
             registry.register("10.42.59.10", entry);
 
             MessageNormalizer metadataAwareNormalizer =
-                new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null, null);
+                new MessageNormalizer(mockForwardingRouter, mockIdentifier, outbox, registry, null);
 
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.ASTM)
@@ -200,7 +226,7 @@ class MessageNormalizerTest {
         entry.setExpectedProtocol("FILE");
         entry.setInboundTransport("HTTP");
         registry.register("connection:test", entry);
-        var bound = new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null, null);
+        var bound = new MessageNormalizer(mockForwardingRouter, mockIdentifier, outbox, registry, null);
         for (MessageEnvelope envelope : new MessageEnvelope[] {
           MessageEnvelope.builder()
             .protocol(Protocol.HL7)
@@ -241,7 +267,7 @@ class MessageNormalizerTest {
           entry.setExpectedProtocol((String) pair[0]);
           entry.setInboundTransport((String) pair[1]);
           registry.register("connection:test", entry);
-          var bound = new MessageNormalizer(mockForwardingRouter, mockIdentifier, registry, null, null);
+          var bound = new MessageNormalizer(mockForwardingRouter, mockIdentifier, outbox, registry, null);
           assertTrue(
             bound.process(
               MessageEnvelope.builder()
@@ -482,9 +508,6 @@ class MessageNormalizerTest {
     @DisplayName("Unknown source rejection")
     class UnknownSourceRejectionTests {
 
-        @Mock
-        private DeadLetterWriter mockDeadLetterWriter;
-
         private MessageNormalizer normalizerWithUnknownSource;
 
         private AnalyzerIdentifier rejectingIdentifier;
@@ -496,12 +519,11 @@ class MessageNormalizerTest {
             // Q-only-message path short-circuits before identifier is called
             // (avoids Mockito strict-mode UnnecessaryStubbing failures).
             normalizerWithUnknownSource = new MessageNormalizer(
-                mockForwardingRouter, rejectingIdentifier,
-                null, null, mockDeadLetterWriter);
+                mockForwardingRouter, rejectingIdentifier, outbox, null, null);
         }
 
         @Test
-        @DisplayName("Rejects and dead-letters an unknown-source message")
+        @DisplayName("Rejects an unknown-source message but keeps it, complete, in the dead-message queue")
         void shouldRejectAndDeadLetterUnknownSource() {
             when(rejectingIdentifier.identify(any())).thenReturn(null);
 
@@ -516,7 +538,13 @@ class MessageNormalizerTest {
 
             assertFalse(result);
             verifyNoInteractions(mockForwardingRouter);
-            verify(mockDeadLetterWriter).write(envelope, "UNREGISTERED_SOURCE");
+            List<OutboxEntry> dead = outbox.list(OutboxQuery.inState(OutboxState.DMQ, 10));
+            assertEquals(1, dead.size(), "an unidentifiable message is still a received result and must be kept");
+            assertEquals(FailureReason.UNREGISTERED_SOURCE, dead.get(0).failureReason());
+            assertEquals(
+                "MSH|^~\\&|||UNKNOWN-DEVICE",
+                outbox.rawPayload(dead.get(0).id()).orElseThrow(),
+                "the operator needs the whole message to decide what to register");
         }
 
         @Test
@@ -540,7 +568,9 @@ class MessageNormalizerTest {
             // don't retry / log errors.
             assertTrue(result);
             verify(mockForwardingRouter, never()).route(any(MessageEnvelope.class));
-            verify(mockDeadLetterWriter, never()).write(any(), any());
+            assertTrue(
+                outbox.list(OutboxQuery.all(10)).isEmpty(),
+                "a query carries no result, so storing it would only fill the queue with undeliverable traffic");
         }
     }
 }

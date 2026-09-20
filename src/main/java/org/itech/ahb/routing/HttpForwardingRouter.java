@@ -1,38 +1,22 @@
 package org.itech.ahb.routing;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharsetEncoder;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
-import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
-import org.itech.ahb.file.SqliteFileStateStore;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.outbox.FhirDeliveryClient;
+import org.itech.ahb.outbox.OutboxDispatcher;
+import org.itech.ahb.outbox.OutboxStore;
 import org.itech.ahb.outbox.RenderedDelivery;
-import org.itech.ahb.util.HttpClientFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * HTTP forwarding implementation of MessageRouter.
- * <p>
- * Parses registered analyzer traffic using the pinned Bridge profile and sends
- * the versioned normalized result contract to OpenELIS at
- * {@code /analyzer/fhir}. The durable Bridge connection identifier in the
- * bundle is the routing identity consumed by OpenELIS.
- * </p>
+ * Renders registered analyzer traffic into the versioned OpenELIS result contract and hands it to
+ * the delivery outbox.
+ *
+ * <p>Despite the name this class no longer forwards anything itself. It used to POST on the
+ * receiving thread and retry three times over about three seconds, after which the message was gone;
+ * a DNS failure that brief was enough to lose results in production. Delivery now belongs to
+ * {@link OutboxDispatcher}, which works from durable rows and can keep trying across restarts.
  *
  * @see MessageRouter
  * @see org.itech.ahb.normalizer.MessageEnvelope
@@ -41,75 +25,30 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class HttpForwardingRouter implements MessageRouter {
 
-  /** Maximum backoff wait time in milliseconds (1 minute cap to prevent overflow) */
-  private static final long MAX_BACKOFF_MS = 60_000;
-
-  private final HTTPForwardServerConfigurationProperties httpConfig;
-  private final SqliteFileStateStore stateStore;
-  private final AnalyzerRuntimeRegistry registry;
+  private final OutboxStore outbox;
+  private final OutboxDispatcher dispatcher;
+  private final FhirDeliveryClient deliveryClient;
   private final NormalizedBundleRenderer renderer;
-  private final int connectTimeoutSeconds;
-  private final int readTimeoutSeconds;
-  private final HttpClient httpClient;
 
-  /**
-   * Constructs a new HttpForwardingRouter with the specified configuration.
-   *
-   * @param httpConfig the HTTP forwarding server configuration
-   * @param stateStore shared SQLite state store (optional — when absent the
-   *                   router logs rejections without persisting them, same
-   *                   as the pre-B1 behavior)
-   * @param registry   the analyzer registry for pinned profile recognition
-   */
   public HttpForwardingRouter(
-    HTTPForwardServerConfigurationProperties httpConfig,
-    @Autowired(required = false) SqliteFileStateStore stateStore,
-    @Autowired(required = false) AnalyzerRuntimeRegistry registry
+    OutboxStore outbox,
+    OutboxDispatcher dispatcher,
+    FhirDeliveryClient deliveryClient,
+    NormalizedBundleRenderer renderer
   ) {
-    this.httpConfig = httpConfig;
-    this.stateStore = stateStore;
-    this.registry = registry;
-    this.renderer = new NormalizedBundleRenderer(registry);
-    this.connectTimeoutSeconds = httpConfig.getConnectTimeoutSeconds();
-    this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
-    this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, httpConfig.isInsecureTls(), "forwarding");
-
-    log.info(
-      "HttpForwardingRouter configured with retry: maxAttempts={}, backoffMs={}",
-      httpConfig.getMaxAttempts(),
-      httpConfig.getBackoffMs()
-    );
-    log.info("HttpForwardingRouter timeouts: connect={}s read={}s", connectTimeoutSeconds, readTimeoutSeconds);
-    if (stateStore == null) {
-      log.warn(
-        "HttpForwardingRouter: no SqliteFileStateStore bean available — " +
-        "rejected bundles will be logged only, not persisted. The admin " +
-        "/admin/rejected-bundles endpoint will be empty until a state store is wired."
-      );
-    }
+    this.outbox = outbox;
+    this.dispatcher = dispatcher;
+    this.deliveryClient = deliveryClient;
+    this.renderer = renderer;
   }
 
   /**
-   * Routes a message envelope to the appropriate HTTP endpoint.
-   * <p>
-   * Implements retry with exponential backoff configured via
-   * {@link HTTPForwardServerConfigurationProperties}.
-   * Retries are attempted for:
-   * <ul>
-   *   <li>5xx server errors (may be transient)</li>
-   *   <li>Network/IO errors (connection failures, timeouts)</li>
-   * </ul>
-   * </p>
-   * <p>
-   * Non-retryable failures:
-   * <ul>
-   *   <li>4xx client errors (bad request, authentication failure, etc.)</li>
-   *   <li>Thread interruption</li>
-   * </ul>
-   * </p>
+   * Accept a message that has already been persisted, render it, and queue it for delivery.
    *
-   * @param envelope the message with transport metadata
-   * @return true if routing succeeded (HTTP 2xx response), false otherwise
+   * @param envelope the message, carrying the outbox receipt written when it was received
+   * @return true when the message is durably accounted for, whether that means queued for delivery
+   *     or held in the dead-message queue for an operator. False means it was not persisted and the
+   *     transport should refuse it so the analyzer can send it again.
    */
   @Override
   public boolean route(MessageEnvelope envelope) {
@@ -127,7 +66,6 @@ public class HttpForwardingRouter implements MessageRouter {
     }
     if (envelope.getRawMessage() == null || envelope.getRawMessage().trim().isEmpty()) {
       log.error("MessageEnvelope missing rawMessage");
-      recordRejection(envelope, envelope.getRawMessage(), 0, "MessageEnvelope missing rawMessage");
       return false;
     }
 
@@ -148,201 +86,39 @@ public class HttpForwardingRouter implements MessageRouter {
    * Bundle, and POSTs to OE's {@code /analyzer/fhir} endpoint.
    */
   /**
-   * Render the message into deliverable bundles, then POST each one.
+   * Render the message into deliverable bundles and hand them to the outbox.
    *
-   * <p>Rendering is done up front for the whole message so that a configuration problem is reported
-   * as one failure rather than discovered partway through delivering.
+   * <p>No network I/O happens here any more. The bridge's promise is that a received result survives
+   * until OpenELIS accepts it, and a delivery attempt made on the receiving thread cannot keep that
+   * promise: the analyzer's session is already over, so a failure has nowhere to go. Delivery is the
+   * dispatcher's job, against durable rows, for as long as it takes.
    */
   private boolean routeNormalized(MessageEnvelope envelope) {
-    URI targetUri = buildNormalizedTargetUri();
-    NormalizedBundleRenderer.Outcome outcome = renderer.render(envelope, targetUri.toString());
-    if (outcome instanceof NormalizedBundleRenderer.Outcome.Failed failed) {
-      log.error("{} for analyzer source {}", failed.message(), envelope.getSourceId());
-      recordRejection(envelope, envelope.getRawMessage(), 0, failed.message());
+    String receiptId = envelope.getOutboxReceiptId();
+    if (receiptId == null) {
+      log.error(
+        "Refusing to route a message that was not persisted first (source {}); this is a wiring error",
+        envelope.getSourceId()
+      );
       return false;
     }
-    for (RenderedDelivery delivery : ((NormalizedBundleRenderer.Outcome.Rendered) outcome).deliveries()) {
-      if (!forwardDelivery(envelope, delivery, targetUri)) {
-        return false;
-      }
+    NormalizedBundleRenderer.Outcome outcome = renderer.render(envelope, deliveryClient.targetUri().toString());
+    if (outcome instanceof NormalizedBundleRenderer.Outcome.Failed failed) {
+      log.error("{} for analyzer source {}", failed.message(), envelope.getSourceId());
+      outbox.markDeadLettered(receiptId, failed.reason(), failed.message());
+      // The message is held with its complete payload, so the transport can report a clean receipt:
+      // there is nothing the analyzer could usefully resend.
+      return true;
     }
-    return true;
-  }
-
-  private boolean forwardDelivery(MessageEnvelope envelope, RenderedDelivery delivery, URI targetUri) {
-    String fhirJson = delivery.fhirJson();
-
+    List<RenderedDelivery> deliveries = ((NormalizedBundleRenderer.Outcome.Rendered) outcome).deliveries();
+    outbox.markRendered(receiptId, deliveries);
+    dispatcher.signal();
     log.info(
-      "FHIR routing accession {} from {} to {}",
-      delivery.accession(),
-      envelope.getSourceId(),
-      targetUri
-    );
-
-        // Send with retry
-    int maxAttempts = httpConfig.getMaxAttempts();
-    long backoffMs = httpConfig.getBackoffMs();
-
-    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-          .uri(targetUri)
-          .header("Content-Type", "application/fhir+json")
-          .timeout(Duration.ofSeconds(readTimeoutSeconds))
-          .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
-
-        if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
-          addBasicAuth(builder, httpConfig.getUsername(), httpConfig.getPassword());
-        }
-
-        HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 200 && response.statusCode() < 300) {
-          log.info("FHIR Bundle accepted by OE for accession {}", delivery.accession());
-          return true;
-        }
-        if (response.statusCode() >= 400 && response.statusCode() < 500) {
-          log.error("OE rejected FHIR Bundle (HTTP {}): {}", response.statusCode(), response.body());
-          recordRejection(
-            envelope,
-            fhirJson,
-            response.statusCode(),
-            "OE rejected FHIR Bundle: " + truncate(response.body(), 400)
-          );
-          return false;
-        }
-        log.warn("OE returned {} for FHIR Bundle, attempt {}/{}", response.statusCode(), attempt, maxAttempts);
-      } catch (IOException e) {
-        log.warn("IO error sending FHIR Bundle, attempt {}/{}: {}", attempt, maxAttempts, e.getMessage());
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return false;
-      }
-
-      if (attempt < maxAttempts) {
-        long waitMs = Math.min(backoffMs * (1L << (attempt - 1)), MAX_BACKOFF_MS);
-        try {
-          Thread.sleep(waitMs);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          return false;
-        }
-      }
-    }
-    log.error(
-      "All {} FHIR forwarding attempts failed for {} message from {}",
-      maxAttempts,
+      "Queued {} deliveries from {} message from {} for OpenELIS",
+      deliveries.size(),
       envelope.getProtocol(),
       envelope.getSourceId()
     );
-    recordRejection(envelope, fhirJson, 0, "All " + maxAttempts + " FHIR attempts failed (5xx / IO)");
-    return false;
-  }
-
-  /**
-   * Persist a rejected payload to the shared state store so the admin
-   * endpoint and OE Import Issues dashboard can surface it. No-op when
-   * {@code stateStore} is null (unit tests without Spring context, or
-   * {@code bridge.file.enabled=false}) — the ERROR log above still fires.
-   */
-  private void recordRejection(MessageEnvelope envelope, String payload, int httpStatus, String lastError) {
-    if (stateStore == null) {
-      return;
-    }
-    try {
-      String id = stateStore.recordRejection(
-        envelope.getSourceId(),
-        envelope.getProtocol() == null ? null : envelope.getProtocol().name(),
-        httpStatus,
-        lastError,
-        payload
-      );
-      log.warn("Recorded rejected bundle id={} source={} httpStatus={}", id, envelope.getSourceId(), httpStatus);
-    } catch (RuntimeException e) {
-      // Never let the diagnostic store block the hot path; worst case
-      // the rejection is visible in logs only.
-      log.error(
-        "Failed to persist rejected bundle (source={}, httpStatus={}): {}",
-        envelope.getSourceId(),
-        httpStatus,
-        e.getMessage()
-      );
-    }
-  }
-
-  private static String truncate(String s, int max) {
-    if (s == null) return null;
-    return s.length() <= max ? s : s.substring(0, max);
-  }
-
-  private URI buildNormalizedTargetUri() {
-    URI baseUri = httpConfig.getUri();
-    String basePath = baseUri.getPath();
-    if (basePath == null || basePath.isEmpty()) basePath = "/analyzer";
-    else if (basePath.endsWith("/")) basePath = basePath.substring(0, basePath.length() - 1);
-    try {
-      return new URI(
-        baseUri.getScheme(),
-        baseUri.getUserInfo(),
-        baseUri.getHost(),
-        baseUri.getPort(),
-        basePath + "/fhir",
-        baseUri.getQuery(),
-        baseUri.getFragment()
-      );
-    } catch (URISyntaxException e) {
-      log.error("Failed to build FHIR target URI", e);
-      return baseUri;
-    }
-  }
-
-  /**
-   * Adds HTTP Basic authentication to the request.
-   * <p>
-   * Uses CharsetEncoder to convert the password char[] directly to bytes
-   * without creating an intermediate String (which would be interned in the
-   * String pool and cannot be reliably cleared from memory).
-   * </p>
-   *
-   * @param builder the HTTP request builder
-   * @param username the username
-   * @param password the password (char array for security)
-   */
-  private void addBasicAuth(HttpRequest.Builder builder, String username, char[] password) {
-    if (password == null || password.length == 0) {
-      log.warn("Password is null or empty, skipping Basic auth");
-      return;
-    }
-
-    byte[] usernameBytes = username.getBytes(StandardCharsets.UTF_8);
-    byte[] colonBytes = ":".getBytes(StandardCharsets.UTF_8);
-
-    // Convert char[] to UTF-8 bytes via CharsetEncoder (avoids String pool exposure)
-    byte[] passwordBytes;
-    try {
-      CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
-        .onMalformedInput(CodingErrorAction.REPLACE)
-        .onUnmappableCharacter(CodingErrorAction.REPLACE);
-      ByteBuffer byteBuffer = encoder.encode(CharBuffer.wrap(password));
-      passwordBytes = new byte[byteBuffer.remaining()];
-      byteBuffer.get(passwordBytes);
-    } catch (Exception e) {
-      log.error("Failed to encode password bytes", e);
-      return;
-    }
-
-    // Combine username:password
-    byte[] authBytes = new byte[usernameBytes.length + colonBytes.length + passwordBytes.length];
-    System.arraycopy(usernameBytes, 0, authBytes, 0, usernameBytes.length);
-    System.arraycopy(colonBytes, 0, authBytes, usernameBytes.length, colonBytes.length);
-    System.arraycopy(passwordBytes, 0, authBytes, usernameBytes.length + colonBytes.length, passwordBytes.length);
-
-    // Encode and add header
-    String encodedAuth = Base64.getEncoder().encodeToString(authBytes);
-    builder.header("Authorization", "Basic " + encodedAuth);
-
-    // Clear sensitive data immediately
-    Arrays.fill(passwordBytes, (byte) 0);
-    Arrays.fill(authBytes, (byte) 0);
+    return true;
   }
 }

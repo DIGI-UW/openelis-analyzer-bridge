@@ -24,6 +24,7 @@ if [[ "${ACK}" != *"MSA|AA|${MESSAGE_ID}"* ]]; then
     exit 1
 fi
 
-# The ACK follows forwarding, so no fixed processing delay is needed.
+# The ACK follows durable receipt, not delivery: the bridge stores the result and answers, and
+# the outbox dispatcher delivers it. Wait on the OpenELIS stub below rather than on the ACK.
 assert_normalized_capture "${BRIDGE_CONNECTION_ID}" "${PROFILE_ID}" "TEST" "MLLP"
 echo "PASS: saved connection identity delivered through its own HL7 listener"

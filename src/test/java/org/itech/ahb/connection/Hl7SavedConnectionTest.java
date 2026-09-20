@@ -1,5 +1,6 @@
 package org.itech.ahb.connection;
 
+import org.itech.ahb.outbox.OutboxTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -40,6 +41,11 @@ import org.springframework.core.io.ByteArrayResource;
 
 /** Real saved catalog -> owned MLLP socket -> normalizer -> HTTP delivery. */
 class Hl7SavedConnectionTest {
+
+  private final java.util.concurrent.atomic.AtomicInteger messageControlId =
+    new java.util.concurrent.atomic.AtomicInteger();
+
+  private OutboxTestSupport outbox;
 
   @TempDir
   Path directory;
@@ -208,13 +214,8 @@ class Hl7SavedConnectionTest {
     registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties forwarding = new HTTPForwardServerConfigurationProperties();
     forwarding.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
-    MessageNormalizer normalizer = new MessageNormalizer(
-      new HttpForwardingRouter(forwarding, null, registry),
-      new AnalyzerIdentifier(registry),
-      registry,
-      null,
-      null
-    );
+    outbox = OutboxTestSupport.createTemp(forwarding, registry).startDispatcher();
+    MessageNormalizer normalizer = outbox.normalizer(new AnalyzerIdentifier(registry), registry);
     MLLPConfig config = new MLLPConfig();
     config.setEnabled(enabled);
     listeners = new ManagedHl7ConnectionListeners(config, normalizer);
@@ -264,8 +265,13 @@ class Hl7SavedConnectionTest {
     try (Socket socket = new Socket("127.0.0.1", port)) {
       socket.setSoTimeout(5000);
       // Both sockets use the same peer IP and a spoofed sender; neither determines identity.
+      // A distinct MSH-10 message control id per transmission, as real analyzer traffic carries.
+      // Byte-identical repeats are retransmissions by definition, and the outbox now recognizes them
+      // as such rather than delivering the same result to OpenELIS twice.
       String message =
-        "MSH|^~\\&|SPOOF|OTHER|OE|LAB|20260909120000||ORU^R01|MSG-1|P|2.5.1\r" +
+        "MSH|^~\\&|SPOOF|OTHER|OE|LAB|20260909120000||ORU^R01|MSG-" +
+        messageControlId.incrementAndGet() +
+        "|P|2.5.1\r" +
         "PID|1||PATIENT\rOBR|1||ACCESSION|PANEL\r" +
         "OBX|1|NM|T1^PATIENT||1|unit\rOBX|2|NM|T2^CONTROL||2|unit\rOBX|3|NM|T3||3|unit\r";
       socket.getOutputStream().write(("\u000b" + message + "\u001c\r").getBytes(StandardCharsets.UTF_8));

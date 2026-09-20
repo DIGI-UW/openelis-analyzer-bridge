@@ -1,5 +1,6 @@
 package org.itech.ahb.integration;
 
+import org.itech.ahb.outbox.OutboxTestSupport;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.sun.net.httpserver.HttpServer;
@@ -59,6 +60,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 @DisplayName("Unified Routing Integration Tests (M7)")
 class UnifiedRoutingTest {
 
+  private OutboxTestSupport outbox;
+
     private HttpServer httpServer;
     private int serverPort;
     private MessageNormalizer normalizer;
@@ -116,7 +119,8 @@ class UnifiedRoutingTest {
         httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
 
         AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-        HttpForwardingRouter forwardingRouter = new HttpForwardingRouter(httpConfig, null, registry);
+        outbox = OutboxTestSupport.createTemp(httpConfig, registry).startDispatcher();
+        HttpForwardingRouter forwardingRouter = outbox.router;
         registry.register("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
         registry.register("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));
         registry.register("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV"));
@@ -131,7 +135,7 @@ class UnifiedRoutingTest {
         registry.register("/tmp/quantstudio", fileAnalyzer("QUANTSTUDIO-001"));
 
         AnalyzerIdentifier identifier = new AnalyzerIdentifier(registry);
-        normalizer = new MessageNormalizer(forwardingRouter, identifier, null);
+        normalizer = outbox.normalizer(identifier, null);
 
         serialHandler = new SerialMessageHandler(normalizer);
 
