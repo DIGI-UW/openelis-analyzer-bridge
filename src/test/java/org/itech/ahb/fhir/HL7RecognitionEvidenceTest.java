@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 class HL7RecognitionEvidenceTest {
 
+  private static final String DELIVERY_ID = "hl7-v1:" + "b".repeat(64);
+
   @Test
   void normalizedObservationsRetainTheirOwnFieldEvidence() {
     var recognition = TestControlRecognitions.rule("FIELD_EQUALS", "OBX.3.2", "CONTROL");
@@ -40,7 +42,8 @@ class HL7RecognitionEvidenceTest {
       parsed.accessionNumber(),
       parsed.results(),
       context,
-      code -> null
+      code -> null,
+      DELIVERY_ID
     );
     Bundle bundle = FhirContext.forR4().newJsonParser().parseResource(Bundle.class, json);
     var observations = bundle

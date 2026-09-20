@@ -22,11 +22,11 @@ import org.itech.ahb.fhir.ASTMResultParser;
 import org.itech.ahb.fhir.FhirBundleBuilder;
 import org.itech.ahb.fhir.FileResultParser;
 import org.itech.ahb.fhir.HL7ResultParser;
-import org.itech.ahb.file.FileDeliveryIdentity;
 import org.itech.ahb.file.SqliteFileStateStore;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.outbox.DeliveryIdentity;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.util.HttpClientFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -224,7 +224,16 @@ public class HttpForwardingRouter implements MessageRouter {
       return false;
     }
 
-    return forwardResults(envelope, registeredAnalyzer.orElseThrow(), parsed, null);
+    AnalyzerRuntimeRegistry.AnalyzerEntry resolved = registeredAnalyzer.orElseThrow();
+    // Derive the delivery identity from the received bytes, not per attempt: OpenELIS deduplicates
+    // on it, so a redelivery of the same message after a restart must carry the same value.
+    String messageId = DeliveryIdentity.forAccession(
+      envelope.getProtocol(),
+      resolved.getBridgeConnectionId(),
+      DeliveryIdentity.contentHash(envelope.getRawMessage()),
+      parsed.accessionNumber()
+    );
+    return forwardResults(envelope, resolved, parsed, messageId);
   }
 
   private boolean routeCsv(MessageEnvelope envelope, AnalyzerRuntimeRegistry.AnalyzerEntry analyzer) {
@@ -258,9 +267,10 @@ public class HttpForwardingRouter implements MessageRouter {
       recordRejection(envelope, envelope.getRawMessage(), 0, "CSV input produced no results");
       return false;
     }
-    String hash = FileDeliveryIdentity.contentHash(content);
+    String hash = DeliveryIdentity.contentHash(content);
     for (HL7ResultParser.ParsedResults parsed : accessions) {
-      String messageId = FileDeliveryIdentity.forAccession(
+      String messageId = DeliveryIdentity.forAccession(
+        envelope.getProtocol(),
         analyzer.getBridgeConnectionId(),
         hash,
         parsed.accessionNumber()
@@ -296,20 +306,13 @@ public class HttpForwardingRouter implements MessageRouter {
     );
     // Resolve analyzer code to LOINC from the same registered profile pin.
     java.util.function.Function<String, String> codeToLoinc = analyzer::getLoincForCode;
-    String fhirJson = messageId == null
-      ? FhirBundleBuilder.buildNormalizedBundle(
-        parsed.accessionNumber(),
-        parsed.results(),
-        analyzerContext,
-        codeToLoinc
-      )
-      : FhirBundleBuilder.buildNormalizedBundle(
-        parsed.accessionNumber(),
-        parsed.results(),
-        analyzerContext,
-        codeToLoinc,
-        messageId
-      );
+    String fhirJson = FhirBundleBuilder.buildNormalizedBundle(
+      parsed.accessionNumber(),
+      parsed.results(),
+      analyzerContext,
+      codeToLoinc,
+      messageId
+    );
 
     // Build target URI for /analyzer/fhir
     URI targetUri = buildNormalizedTargetUri();

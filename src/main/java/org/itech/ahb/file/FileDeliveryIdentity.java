@@ -1,38 +1,23 @@
 package org.itech.ahb.file;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
+import org.itech.ahb.outbox.DeliveryIdentity;
 
-/** Stable identity for one accession delivery, independent of file path or process lifetime. */
+/**
+ * Stable identity for one accession delivery, independent of file path or process lifetime.
+ *
+ * <p>Retained as the FILE transport's entry point; the derivation is shared with every other
+ * transport in {@link DeliveryIdentity} and produces byte-identical values to before, so identities
+ * already recorded by OpenELIS stay valid.
+ */
 public final class FileDeliveryIdentity {
 
   private FileDeliveryIdentity() {}
 
   public static String contentHash(byte[] content) {
-    return HexFormat.of().formatHex(sha256().digest(content));
+    return DeliveryIdentity.contentHash(content);
   }
 
   public static String forAccession(String connectionId, String contentHash, String accessionNumber) {
-    MessageDigest digest = sha256();
-    for (String component : new String[] { connectionId, contentHash, accessionNumber }) {
-      if (component == null || component.isBlank()) {
-        throw new IllegalArgumentException("FILE delivery requires connection, content hash, and accession");
-      }
-      byte[] bytes = component.getBytes(StandardCharsets.UTF_8);
-      digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
-      digest.update(bytes);
-    }
-    return "file-v1:" + HexFormat.of().formatHex(digest.digest());
-  }
-
-  private static MessageDigest sha256() {
-    try {
-      return MessageDigest.getInstance("SHA-256");
-    } catch (NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is required for FILE delivery", exception);
-    }
+    return DeliveryIdentity.forAccession("file-v1", connectionId, contentHash, accessionNumber);
   }
 }
