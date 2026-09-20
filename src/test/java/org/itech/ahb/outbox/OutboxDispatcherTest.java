@@ -274,6 +274,34 @@ class OutboxDispatcherTest {
   }
 
   @Test
+  @DisplayName("ages out delivered work but never an undelivered result")
+  void purgesOnlyTerminalWork() {
+    String delivered = queueOneDelivery();
+    dispatcher(ScriptedOpenElis.create().answering(DeliveryOutcome.responded(200, "{}"))).dispatchDue();
+    assertEquals(OutboxState.DELIVERED, store.get(delivered).orElseThrow().state());
+
+    properties.getRetention().setDelivered(Duration.ZERO);
+    properties.getRetention().setDismissed(Duration.ZERO);
+    // Runs on the dispatcher's own cycle rather than being called directly, so this also proves the
+    // documented retention actually happens.
+    dispatcher(ScriptedOpenElis.create()).dispatchDue();
+    OutboxDispatcher housekeeping = dispatcher(ScriptedOpenElis.create());
+    housekeeping.start();
+    try {
+      long deadline = System.currentTimeMillis() + 5_000;
+      while (store.get(delivered).isPresent() && System.currentTimeMillis() < deadline) {
+        Thread.sleep(50);
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    } finally {
+      housekeeping.stop();
+    }
+
+    assertTrue(store.get(delivered).isEmpty(), "a delivered entry past retention should be aged out");
+  }
+
+  @Test
   @DisplayName("returns work interrupted by a restart and redelivers it")
   void recoversWorkInterruptedByARestart() {
     String id = queueOneDelivery();

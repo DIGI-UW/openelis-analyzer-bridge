@@ -35,6 +35,9 @@ public class OutboxDispatcher {
   private final BackoffPolicy backoff;
   private final String owner;
 
+  /** Housekeeping cadence. Retention is measured in days, so hourly is frequent enough. */
+  private static final Duration PURGE_INTERVAL = Duration.ofHours(1);
+
   /** Wake-ups from the receive path and the retry endpoint, so a new delivery does not wait for a poll. */
   private final BlockingQueue<Object> signals = new LinkedBlockingQueue<>(1);
 
@@ -42,6 +45,7 @@ public class OutboxDispatcher {
   private volatile boolean stopping;
   private volatile String inFlightId;
   private volatile Instant lastPollAt;
+  private volatile Instant lastPurgeAt;
   private Thread worker;
 
   public OutboxDispatcher(
@@ -112,6 +116,7 @@ public class OutboxDispatcher {
   private void runLoop() {
     while (!stopping) {
       try {
+        purgeIfDue();
         int delivered = dispatchDue();
         if (delivered == 0) {
           signals.poll(properties.getPollInterval().toMillis(), TimeUnit.MILLISECONDS);
@@ -164,6 +169,39 @@ public class OutboxDispatcher {
       handled++;
     }
     return handled;
+  }
+
+  /**
+   * Age out terminal entries, hourly.
+   *
+   * <p>Only delivered entries and dead letters an operator has dismissed. Anything still undelivered
+   * stays, however old: the point of this store is that a result the laboratory produced is still
+   * here when someone comes looking for it.
+   */
+  private void purgeIfDue() {
+    Instant now = Instant.now();
+    if (lastPurgeAt != null && lastPurgeAt.plus(PURGE_INTERVAL).isAfter(now)) {
+      return;
+    }
+    lastPurgeAt = now;
+    try {
+      int removed = store.purgeExpired(
+        now,
+        properties.getRetention().getDelivered(),
+        properties.getRetention().getDismissed()
+      );
+      if (removed > 0) {
+        log.info(
+          "Purged {} terminal outbox entries past retention (delivered after {}, dismissed after {})",
+          removed,
+          properties.getRetention().getDelivered(),
+          properties.getRetention().getDismissed()
+        );
+      }
+    } catch (RuntimeException e) {
+      // Retention housekeeping must never stop deliveries.
+      log.warn("Outbox retention purge failed; it will be retried on the next cycle: {}", e.getMessage());
+    }
   }
 
   private void attempt(OutboxEntry entry) {
