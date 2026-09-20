@@ -122,7 +122,7 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
                 throw new ReceivingApplicationException("Message routing failed");
             }
 
-            log.info("Successfully processed HL7 message from {} (analyzer: {})", sourceIp, analyzerId);
+            log.info("Accepted HL7 message from {} (analyzer: {}); it is durably held and delivery continues in the background", sourceIp, analyzerId);
 
             // HAPI generates properly-formed ACK with all required MSH fields
             return message.generateACK();

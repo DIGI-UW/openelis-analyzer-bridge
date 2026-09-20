@@ -51,3 +51,43 @@ jobs:
           path: "**/surefire-reports/*.xml"
           reporter: java-junit
           fail-on-error: true
+
+  e2e:
+    name: Docker acceptance
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout analyzer mock fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: DIGI-UW/analyzer-mock-server
+          ref: cbdfbcbf73505464ded23d14c5e08638afb4f4c0
+          path: analyzer-mock-server
+
+      # Builds the image from the Dockerfile and drives it through the same
+      # scenarios an operator would see, so a green run is a green release
+      # artifact rather than a green source tree. Includes the delivery-outage
+      # scenarios: OpenELIS unreachable, a bridge restart mid-outage, a lost
+      # answer, and a result recovered from the dead-message queue by hand.
+      - name: Run acceptance suite
+        env:
+          ANALYZER_MOCK_DIR: ${{ github.workspace }}/analyzer-mock-server
+        run: ./scripts/e2e-tests/run-all.sh
+
+      - name: Capture service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs --no-color --tail=400 > e2e-service-logs.txt || true
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-service-logs
+          path: e2e-service-logs.txt
+          if-no-files-found: ignore

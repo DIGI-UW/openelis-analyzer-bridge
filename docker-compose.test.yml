@@ -15,11 +15,13 @@ services:
       SPRING_PROFILE: test
       LOGGING_LEVEL_ORG_ITECH: DEBUG
       LOGGING_LEVEL_ROOT: INFO
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-150}
     volumes:
       - ./configuration.test.yml:/app/configuration.yml:ro
       - analyzer-input:/mnt/analyzer-import
-    tmpfs:
-      - /data/openelis-analyzer-bridge:uid=9257,gid=9257,mode=0770
+      # A named volume, not tmpfs: the outbox has to survive `docker restart`, which is the whole
+      # point of the restart-recovery scenario.
+      - bridge-state:/data/openelis-analyzer-bridge
     networks:
       astm-test-net:
         ipv4_address: 172.28.0.100
@@ -85,3 +87,4 @@ networks:
 
 volumes:
   analyzer-input:
+  bridge-state:

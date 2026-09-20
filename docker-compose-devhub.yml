@@ -19,7 +19,9 @@ services:
     logging: *local-logging
     environment:
       SPRING_PROFILE: dev
-      LOGGING_LEVEL_ORG_ITECH: TRACE
+      # INFO, not TRACE: the vendored ASTM library logs whole clinical messages at TRACE, so that
+      # level puts patient results into ordinary container logs.
+      LOGGING_LEVEL_ORG_ITECH: INFO
     healthcheck:
       test: ["CMD", "/app/healthcheck.sh"]
       timeout: 10s

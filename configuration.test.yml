@@ -14,13 +14,19 @@ bridge:
   connection-catalog:
     directory: /data/openelis-analyzer-bridge/connections
 
-  openelis:
-    url: http://172.28.0.200:8080
-    connectTimeoutSeconds: 10
-    readTimeoutSeconds: 10
+  # Fast schedule so a scenario can watch a delivery fail, retry and recover without waiting out
+  # production backoff. maxAttempts is overridable per scenario: the dead-message-queue test needs
+  # the budget to run out, the others need it not to.
+  outbox:
+    dbPath: /data/openelis-analyzer-bridge/outbox.db
+    pollInterval: 500ms
+    lease: 30s
     retry:
-      maxAttempts: 1
-      backoffMs: 500
+      maxAttempts: ${OUTBOX_MAX_ATTEMPTS:150}
+      baseDelay: 1s
+      multiplier: 2
+      maxDelay: 3s
+      jitter: 0
 
   file:
     enabled: true
@@ -29,12 +35,19 @@ bridge:
     fileStabilityTimeoutMs: 2000
     maxRetryAttempts: 2
     retryDelayMs: 500
+    maxRetryDelayMs: 5000
 
 org:
   itech:
     ahb:
       forward-http-server:
-        uri: http://172.28.0.200:8080/api/OpenELIS-Global/analyzer
+        # By hostname, not by address: stopping the container removes the name from Docker's
+        # embedded DNS, which is how a scenario reproduces the DNS failure that lost results in
+        # production. An IP literal would only ever produce a refused connection.
+        uri: http://wiremock:8080/api/OpenELIS-Global/analyzer
+        healthUri: http://wiremock:8080/api/OpenELIS-Global/health
+        connectTimeoutSeconds: 5
+        readTimeoutSeconds: 5
 
       listen-astm-server:
         port: 12001
@@ -75,4 +88,6 @@ management:
     filewatcher:
       enabled: true
     httpforward:
+      enabled: true
+    outbox:
       enabled: true

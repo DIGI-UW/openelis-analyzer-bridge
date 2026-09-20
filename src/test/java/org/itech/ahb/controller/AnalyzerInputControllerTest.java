@@ -563,7 +563,7 @@ class AnalyzerInputControllerTest {
       assertEquals(HttpStatus.OK, response.getStatusCode());
       assertNotNull(response.getBody());
       assertTrue(response.getBody().success());
-      assertEquals("Message routed successfully", response.getBody().message());
+      assertTrue(response.getBody().message().startsWith("Message accepted"));
       assertEquals("192.168.1.50", response.getBody().sourceIp());
       assertEquals("HL7", response.getBody().protocol());
       assertNotNull(response.getBody().receivedAt());
@@ -748,7 +748,7 @@ class AnalyzerInputControllerTest {
       assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
       assertNotNull(response.getBody());
       assertFalse(response.getBody().success());
-      assertEquals("Message routing failed", response.getBody().message());
+      assertEquals("Message not accepted", response.getBody().message());
     }
 
     @Test
@@ -767,7 +767,7 @@ class AnalyzerInputControllerTest {
       assertEquals(HttpStatus.OK, response.getStatusCode());
       assertNotNull(response.getBody());
       assertTrue(response.getBody().success());
-      assertEquals("Message routed successfully", response.getBody().message());
+      assertTrue(response.getBody().message().startsWith("Message accepted"));
     }
 
     @Test

@@ -33,6 +33,8 @@ import org.junit.jupiter.api.Test;
 @DisplayName("FhirBundleBuilder")
 class FhirBundleBuilderTest {
 
+    private static final String DELIVERY_ID = "astm-v1:" + "c".repeat(64);
+
     private static final FhirContext CTX = FhirContext.forR4();
     private static final String ACCESSION = "ACC-2026-001";
 
@@ -64,7 +66,7 @@ class FhirBundleBuilderTest {
                 DeviceInfo.fromSenderToken("127.0.0.1", "TEST"),
                 recognition,
                 "sha256:" + "0".repeat(64));
-        return FhirBundleBuilder.buildNormalizedBundle(ACCESSION, assessed, context, code -> null);
+        return FhirBundleBuilder.buildNormalizedBundle(ACCESSION, assessed, context, code -> null, DELIVERY_ID);
     }
 
     @Nested

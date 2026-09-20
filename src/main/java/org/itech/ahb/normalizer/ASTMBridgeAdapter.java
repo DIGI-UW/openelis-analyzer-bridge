@@ -13,9 +13,15 @@ import org.itech.ahb.model.Transport;
  * ASTM bridge adapter that implements the ASTM library's {@link ASTMHandler} interface
  * and delegates to {@link MessageNormalizer} for routing to OpenELIS.
  * <p>
- * All transport listeners, including ASTM TCP, route through the normalizer for
- * profile-driven parsing, normalized delivery, retry, audit logging, and saved
- * connection identification.
+ * All transport listeners, including ASTM TCP, route through the normalizer for durable receipt,
+ * profile-driven parsing, normalized delivery, audit logging, and saved connection identification.
+ * </p>
+ * <p>
+ * <b>What SUCCESS means here:</b> the bridge is durably holding the result, not that OpenELIS has
+ * it. LIS1-A acknowledges each frame as it arrives, so by the time this adapter runs the analyzer's
+ * session is already over and there is nothing left to refuse. The only way a result survives an
+ * OpenELIS outage is for the bridge to have stored it first, which is what the normalizer does
+ * before this status is decided.
  * </p>
  * <p>
  * The adapter:

@@ -60,13 +60,25 @@ public class FileConfig {
     private long fileStabilityTimeoutMs = 3000;
 
     /**
-     * Maximum number of retry attempts for failed file processing
+     * How many times a file is retried before it is parked for an operator.
+     * <p>
+     * Sized for an overnight OpenELIS outage rather than a brief blip, matching the delivery
+     * outbox. At three attempts a DNS failure lasting seconds was enough to park a whole run of
+     * file results, which is the failure this deployment already lived through on the socket
+     * transports.
+     * </p>
      */
-    private int maxRetryAttempts = 3;
+    private int maxRetryAttempts = 150;
 
     /**
      * Initial retry delay in milliseconds (exponential backoff)
      */
     private long retryDelayMs = 1000;
+
+    /**
+     * Ceiling on the exponential retry delay, so a long outage settles into steady polling instead
+     * of growing without bound.
+     */
+    private long maxRetryDelayMs = 600_000;
 
 }

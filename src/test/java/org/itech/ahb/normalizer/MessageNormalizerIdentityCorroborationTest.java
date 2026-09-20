@@ -1,5 +1,9 @@
 package org.itech.ahb.normalizer;
 
+import java.nio.file.Path;
+import org.itech.ahb.outbox.OutboxStore;
+import org.itech.ahb.outbox.SqliteOutboxStore;
+import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +33,11 @@ import org.junit.jupiter.api.Test;
  */
 class MessageNormalizerIdentityCorroborationTest {
 
+    @TempDir
+    Path outboxDir;
+
+    private OutboxStore outbox;
+
     private static final String SOURCE_IP = "10.42.21.10";
 
     private SimpleMeterRegistry meters;
@@ -45,8 +54,9 @@ class MessageNormalizerIdentityCorroborationTest {
         forwardingRouter = mock(HttpForwardingRouter.class);
         identifier = mock(AnalyzerIdentifier.class);
         when(forwardingRouter.route(any(MessageEnvelope.class))).thenReturn(true);
+        outbox = new SqliteOutboxStore(outboxDir.resolve("outbox.db"));
         normalizer = new MessageNormalizer(
-            forwardingRouter, identifier, analyzerRegistry, metrics, null);
+            forwardingRouter, identifier, outbox, analyzerRegistry, metrics);
     }
 
     private void registerAnalyzer(String id, String name) {

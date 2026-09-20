@@ -2,14 +2,12 @@ package org.itech.ahb.file;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.IOException;
-import java.nio.file.Files;
+import org.itech.ahb.store.SqliteSupport;
+
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -95,6 +93,16 @@ public class SqliteFileStateStore implements FileStateStore {
 
     private static final int PAYLOAD_SNIPPET_MAX = 800;
 
+    private static final String STORE_NAME = "FileStateStore";
+
+    /**
+     * Replacing this store re-offers already-processed files; the source files themselves are never
+     * deleted, so nothing is lost.
+     */
+    private static final String CORRUPTION_CONSEQUENCE =
+            "Already-processed files may be re-POSTed to OpenELIS; delivery is deduplicated on the "
+                    + "stable per-accession delivery id so this is safe.";
+
     private final Path dbPath;
     private final Connection conn;
 
@@ -104,123 +112,27 @@ public class SqliteFileStateStore implements FileStateStore {
      * it is renamed out of the way and a fresh store is created.
      */
     public SqliteFileStateStore(Path dbPath) {
-        this.dbPath = dbPath.toAbsolutePath();
-        try {
-            Files.createDirectories(this.dbPath.getParent());
-        } catch (IOException e) {
-            throw new IllegalStateException(
-                    "Failed to create parent directory for state store: " + this.dbPath, e);
-        }
-        this.conn = openOrRecover(this.dbPath);
+        this.dbPath = SqliteSupport.prepareDirectory(dbPath, STORE_NAME);
+        this.conn = SqliteSupport.openOrRecover(this.dbPath, STORE_NAME, SqliteSupport.Synchronous.NORMAL,
+                CORRUPTION_CONSEQUENCE).connection();
         initializeSchema();
         log.info("FileStateStore opened at {} (WAL mode)", this.dbPath);
     }
 
-    private static Connection openOrRecover(Path dbPath) {
-        try {
-            return openWithPragmas(dbPath);
-        } catch (SQLException e) {
-            if (!isCorruptionException(e)) {
-                // Not corruption — could be missing driver, permission denied,
-                // disk full, busy lock, etc. Destroying the database in those
-                // cases would be a catastrophic response to a transient or
-                // operator-fixable problem. Propagate loudly instead.
-                log.error("FileStateStore at {} failed to open with a NON-CORRUPTION SQLException. "
-                        + "Refusing to rename-and-replace the file. Investigate driver, filesystem "
-                        + "permissions, disk state. Cause: {}", dbPath, e.getMessage(), e);
-                throw new IllegalStateException(
-                        "FileStateStore failed to open (non-corruption error): " + dbPath, e);
-            }
-            log.error("CRITICAL: FileStateStore database at {} is CORRUPT (error code {}): {}",
-                    dbPath, e.getErrorCode(), e.getMessage(), e);
-            Path corrupt = dbPath.resolveSibling(
-                    dbPath.getFileName() + ".corrupt-" + Instant.now().toString().replace(':', '-'));
-            try {
-                Files.move(dbPath, corrupt, StandardCopyOption.REPLACE_EXISTING);
-                log.error("CRITICAL: Renamed corrupt state store to {}. A fresh empty store will be created. "
-                        + "Already-processed files may be re-POSTed to OpenELIS; the FHIR upsert path is "
-                        + "idempotent on (sampleAccession, testCode, analyzerId) so this is safe.", corrupt);
-            } catch (IOException moveErr) {
-                throw new IllegalStateException(
-                        "Failed to rename corrupt state store " + dbPath + " to " + corrupt, moveErr);
-            }
-            try {
-                return openWithPragmas(dbPath);
-            } catch (SQLException retryErr) {
-                throw new IllegalStateException(
-                        "Failed to open fresh state store after corruption recovery", retryErr);
-            }
-        }
-    }
-
     /**
-     * Classify an {@link SQLException} thrown during connection open as
-     * corruption (the db file is damaged or is not a SQLite file at all) vs
-     * anything else (missing JDBC driver, filesystem permission denied, disk
-     * full, concurrent-open lock, malformed connection string, etc.).
+     * Corruption classification, retained here so existing tests and callers keep a stable entry
+     * point; the implementation lives in {@link SqliteSupport#isCorruptionException(SQLException)}
+     * and is shared with the delivery outbox store.
      *
-     * <p>For xerial sqlite-jdbc, corruption surfaces via SQLite error codes:
-     * <ul>
-     *   <li>{@code SQLITE_CORRUPT} (11) — on-disk format is damaged</li>
-     *   <li>{@code SQLITE_NOTADB} (26) — file header isn't a SQLite header</li>
-     * </ul>
-     *
-     * <p>{@link #openWithPragmas} also runs {@code PRAGMA integrity_check} and
-     * throws a synthetic {@code SQLException} whose message starts with
-     * {@code "Integrity check failed"}; that path lacks an error code, so the
-     * classifier matches on message text as a fallback. A handful of
-     * driver-independent messages ("file is not a database", "database disk
-     * image is malformed") are also treated as corruption.
-     *
-     * <p>Visible-for-testing (package-private) so unit tests can assert the
-     * classification directly without simulating real on-disk corruption.
+     * <p>Visible-for-testing (package-private) so unit tests can assert the classification directly
+     * without simulating real on-disk corruption.
      *
      * @param e the SQLException from the failed open
-     * @return true iff the error indicates a damaged/non-SQLite file, in which
-     *         case the rename-and-replace recovery path is appropriate
+     * @return true iff the error indicates a damaged/non-SQLite file, in which case the
+     *         rename-and-replace recovery path is appropriate
      */
     static boolean isCorruptionException(SQLException e) {
-        Throwable t = e;
-        while (t != null) {
-            if (t instanceof SQLException sql) {
-                int code = sql.getErrorCode();
-                // 11 = SQLITE_CORRUPT, 26 = SQLITE_NOTADB (xerial + libsqlite3)
-                if (code == 11 || code == 26) {
-                    return true;
-                }
-                String msg = sql.getMessage();
-                if (msg != null && (msg.startsWith("Integrity check failed")
-                        || msg.contains("file is not a database")
-                        || msg.contains("database disk image is malformed"))) {
-                    return true;
-                }
-            }
-            t = t.getCause();
-        }
-        return false;
-    }
-
-    private static Connection openWithPragmas(Path dbPath) throws SQLException {
-        String url = "jdbc:sqlite:" + dbPath;
-        Connection c = DriverManager.getConnection(url);
-        try (Statement st = c.createStatement()) {
-            st.execute("PRAGMA journal_mode = WAL");
-            st.execute("PRAGMA synchronous = NORMAL");
-            st.execute("PRAGMA busy_timeout = 5000");
-            st.execute("PRAGMA foreign_keys = ON");
-        }
-        // Quick integrity probe — causes SQLException on a corrupt file
-        try (Statement st = c.createStatement();
-                ResultSet rs = st.executeQuery("PRAGMA integrity_check")) {
-            if (rs.next()) {
-                String result = rs.getString(1);
-                if (!"ok".equalsIgnoreCase(result)) {
-                    c.close();
-                    throw new SQLException("Integrity check failed: " + result);
-                }
-            }
-        }
-        return c;
+        return SqliteSupport.isCorruptionException(e);
     }
 
     private void initializeSchema() {

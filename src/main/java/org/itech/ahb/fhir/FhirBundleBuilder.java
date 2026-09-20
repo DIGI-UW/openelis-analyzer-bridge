@@ -42,19 +42,13 @@ public class FhirBundleBuilder {
   private static final String EXTENSION_ROOT = "https://openelis-global.org/fhir/StructureDefinition/";
 
   /**
-   * Build the versioned Bridge-to-OpenELIS result contract while preserving
-   * analyzer-native identity and optional terminology hints independently.
+   * Build the versioned Bridge-to-OpenELIS result contract while preserving analyzer-native identity
+   * and optional terminology hints independently.
+   *
+   * <p>The delivery identity is supplied by the caller and must be derived from the received content
+   * (see {@code DeliveryIdentity}), never minted here. OpenELIS deduplicates on this value, so a
+   * bundle rebuilt for a retry has to carry the identity the first attempt used.
    */
-  public static String buildNormalizedBundle(
-    String accessionNumber,
-    List<AnalyzerResult> results,
-    AnalyzerContext context,
-    java.util.function.Function<String, String> codeToLoinc
-  ) {
-    return buildNormalizedBundle(accessionNumber, results, context, codeToLoinc, UUID.randomUUID().toString());
-  }
-
-  /** Build a normalized bundle with a transport-owned delivery identity. */
   public static String buildNormalizedBundle(
     String accessionNumber,
     List<AnalyzerResult> results,

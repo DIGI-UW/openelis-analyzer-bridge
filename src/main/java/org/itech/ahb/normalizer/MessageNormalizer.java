@@ -7,9 +7,12 @@ import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
+import org.itech.ahb.outbox.FailureReason;
+import org.itech.ahb.outbox.OutboxStore;
+import org.itech.ahb.outbox.Receipt;
+import org.itech.ahb.outbox.ReceivedMessage;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.routing.MessageRouter;
-import org.itech.ahb.util.DeadLetterWriter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -50,30 +53,28 @@ public class MessageNormalizer implements MessageRouter {
     private final AnalyzerIdentifier identifier;
     private final AnalyzerRuntimeRegistry registry;
     private final MetricsService metricsService;  // nullable — optional dependency
-    private final DeadLetterWriter deadLetterWriter;
 
     /**
-     * Minimal constructor for tests and non-discovery use cases.
+     * Durable store for every received message. Deliberately required rather than optional: the
+     * store this replaced was optional and gated on the FILE transport being enabled, so switching
+     * off the file watcher silently switched off failure tracking for every transport. A store whose
+     * whole purpose is that nothing received is lost cannot be something a deployment turns off by
+     * accident.
      */
-    public MessageNormalizer(
-            HttpForwardingRouter forwardingRouter,
-            AnalyzerIdentifier identifier,
-            MetricsService metricsService) {
-        this(forwardingRouter, identifier, null, metricsService, null);
-    }
+    private final OutboxStore outbox;
 
     @Autowired
     public MessageNormalizer(
             HttpForwardingRouter forwardingRouter,
             AnalyzerIdentifier identifier,
+            OutboxStore outbox,
             @Autowired(required = false) AnalyzerRuntimeRegistry registry,
-            @Autowired(required = false) MetricsService metricsService,
-            @Autowired(required = false) DeadLetterWriter deadLetterWriter) {
+            @Autowired(required = false) MetricsService metricsService) {
         this.forwardingRouter = forwardingRouter;
         this.identifier = identifier;
+        this.outbox = outbox;
         this.registry = registry;
         this.metricsService = metricsService;
-        this.deadLetterWriter = deadLetterWriter;
     }
 
     /**
@@ -137,6 +138,41 @@ public class MessageNormalizer implements MessageRouter {
         // Start timing
         Timer.Sample sample = metricsService != null ? metricsService.startRouting() : null;
 
+        // ASTM queries carry no results. Persisting them would fill the dead-message queue with
+        // traffic that was never deliverable, so they are recognized before anything is stored and
+        // handled where they always were, below.
+        boolean queryOnly = envelope.getProtocol() == Protocol.ASTM
+            && isQueryOnlyAstmMessage(envelope.getRawMessage());
+
+        // Persist before anything else can fail. From here the message is recoverable even if
+        // identity resolution, parsing or OpenELIS itself is what goes wrong.
+        Receipt receipt = null;
+        if (!queryOnly) {
+            try {
+                receipt = outbox.receive(new ReceivedMessage(
+                    envelope.getSourceId(),
+                    envelope.getSourcePort(),
+                    envelope.getProtocol(),
+                    envelope.getTransport(),
+                    envelope.getProtocolAnalyzerHint(),
+                    envelope.getRawMessage(),
+                    null,
+                    envelope.getReceivedAt()));
+            } catch (RuntimeException e) {
+                // Nothing was stored, so the transport must refuse the message rather than imply the
+                // bridge has it. For analyzers that resend on a negative acknowledgement this is the
+                // one response that can still save the result.
+                log.error("Could not persist a received {} message from {}; refusing it so it is not lost silently",
+                    protocol, envelope.getSourceId(), e);
+                if (metricsService != null) metricsService.recordRouted(sample, protocol, transport, false);
+                return false;
+            }
+            if (receipt.alreadyPresent()) {
+                log.info("Message from {} is identical to one already held in the outbox ({}); not storing it twice",
+                    envelope.getSourceId(), receipt.id());
+            }
+        }
+
         // Record message received
         if (metricsService != null) {
             metricsService.recordReceived(protocol, transport);
@@ -153,8 +189,14 @@ public class MessageNormalizer implements MessageRouter {
             "Rejecting protocol/transport inconsistent with saved connection for source '{}'",
             envelope.getSourceId()
           );
-          if (deadLetterWriter != null) deadLetterWriter.write(envelope,
-              registryEntry == null ? "UNREGISTERED_SOURCE" : "CONNECTION_TRANSPORT_MISMATCH");
+          if (receipt != null) {
+            outbox.markDeadLettered(
+              receipt.id(),
+              registryEntry == null ? FailureReason.UNREGISTERED_SOURCE : FailureReason.CONNECTION_TRANSPORT_MISMATCH,
+              registryEntry == null
+                ? "No saved analyzer connection for source " + envelope.getSourceId()
+                : "Source " + envelope.getSourceId() + " sent over a transport its saved connection does not accept");
+          }
           if (metricsService != null) metricsService.recordRouted(sample, protocol, transport, false);
           return false;
         }
@@ -163,7 +205,7 @@ public class MessageNormalizer implements MessageRouter {
         // results to forward. Until bidirectional order-response is implemented
         // (OGC-335/336), log INFO and ack as success. Without this, the result
         // parser logs ERROR for every Q-record and clutters operational telemetry.
-        if (envelope.getProtocol() == Protocol.ASTM && isQueryOnlyAstmMessage(envelope.getRawMessage())) {
+        if (queryOnly) {
             log.info("ASTM query message from source '{}' (no R-records) — protocolHint='{}'. "
                 + "Skipping result-parser path; bidirectional order-response not implemented.",
                 envelope.getSourceId(), protocolHint);
@@ -179,8 +221,11 @@ public class MessageNormalizer implements MessageRouter {
             recordIdentity(protocol, transport, "unregistered_source");
             log.warn("Rejecting unregistered analyzer source '{}'; protocolHint='{}' is evidence only",
                 envelope.getSourceId(), protocolHint);
-            if (deadLetterWriter != null) {
-                deadLetterWriter.write(envelope, "UNREGISTERED_SOURCE");
+            if (receipt != null) {
+                outbox.markDeadLettered(
+                    receipt.id(),
+                    FailureReason.UNREGISTERED_SOURCE,
+                    "No registered analyzer resolves source " + envelope.getSourceId());
             }
             if (metricsService != null) {
                 metricsService.recordRouted(sample, protocol, transport, false);
@@ -217,6 +262,7 @@ public class MessageNormalizer implements MessageRouter {
             .receivedAt(envelope.getReceivedAt())
             .protocolAnalyzerHint(protocolHint)
             .resolvedAnalyzerId(resolvedAnalyzerId)
+            .outboxReceiptId(receipt == null ? null : receipt.id())
             .build();
 
         // 3. Audit log

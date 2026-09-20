@@ -47,6 +47,16 @@ public class MessageEnvelope {
     private final String rawMessage;
 
     /**
+     * Identifier of the outbox row written when this message was received.
+     * <p>
+     * Present once the message is durably stored, which happens before identity resolution or any
+     * parsing. Rendering attaches its deliveries to this row, and a failure attaches its reason to
+     * it, so nothing that arrives can go unaccounted for.
+     * </p>
+     */
+    private final String outboxReceiptId;
+
+    /**
      * Timestamp when the message was received by the bridge
      */
     @Builder.Default

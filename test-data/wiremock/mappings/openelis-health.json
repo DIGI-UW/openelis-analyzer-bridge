@@ -1,0 +1,11 @@
+{
+  "priority": 10,
+  "request": {
+    "method": "GET",
+    "urlPath": "/api/OpenELIS-Global/health"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": { "status": "UP" }
+  }
+}

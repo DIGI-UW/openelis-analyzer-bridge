@@ -1,5 +1,6 @@
 package org.itech.ahb.health;
 
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -9,6 +10,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Arrays;
@@ -54,6 +56,32 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
     this.connectTimeoutSeconds = properties.getConnectTimeoutSeconds();
     this.readTimeoutSeconds = properties.getReadTimeoutSeconds();
     this.httpClient = HttpClientFactory.create(connectTimeoutSeconds, properties.isInsecureTls(), "healthcheck");
+  }
+
+  /**
+   * Warn when the health probe and the forwards point at different hosts.
+   *
+   * <p>That split is what made the Madagascar outage invisible: health was checked against one host
+   * and results were sent to another that did not resolve, so the bridge reported healthy while
+   * every delivery failed. A green probe has to mean the place the results actually go is up.
+   */
+  @PostConstruct
+  void warnIfHealthAndForwardTargetsDiffer() {
+    URI forward = properties.getUri();
+    URI health = properties.getHealthUri();
+    if (forward == null || health == null) {
+      return;
+    }
+    String forwardAuthority = forward.getHost() + ":" + forward.getPort();
+    String healthAuthority = health.getHost() + ":" + health.getPort();
+    if (!forwardAuthority.equals(healthAuthority)) {
+      log.error(
+        "Forwarding health is checked against {} but results are sent to {}. A healthy probe will not " +
+        "mean deliveries are reaching OpenELIS. Point both at the same host.",
+        healthAuthority,
+        forwardAuthority
+      );
+    }
   }
 
   /**

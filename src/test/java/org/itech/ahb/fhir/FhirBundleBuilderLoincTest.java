@@ -25,6 +25,8 @@ import org.junit.jupiter.api.Test;
 @DisplayName("FhirBundleBuilder normalized analyzer identity and coding")
 class FhirBundleBuilderLoincTest {
 
+  private static final String DELIVERY_ID = "astm-v1:" + "a".repeat(64);
+
   private static final FhirContext FHIR = FhirContext.forR4();
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final String CONNECTION_ID_SYSTEM =
@@ -51,7 +53,8 @@ class FhirBundleBuilderLoincTest {
       "ACC-1",
       List.of(AnalyzerResult.numeric("WBC", "White Blood Cell", "7.5", "10*3/uL")),
       context,
-      Map.of("WBC", "6690-2")::get
+      Map.of("WBC", "6690-2")::get,
+      DELIVERY_ID
     );
 
     Bundle bundle = FHIR.newJsonParser().parseResource(Bundle.class, json);
@@ -89,7 +92,8 @@ class FhirBundleBuilderLoincTest {
         ControlResultRecognition.none(),
         "sha256:" + "0".repeat(64)
       ),
-      code -> null
+      code -> null,
+      DELIVERY_ID
     );
 
     Observation observation = resource(
@@ -117,7 +121,8 @@ class FhirBundleBuilderLoincTest {
         ControlResultRecognition.none(),
         "sha256:" + "0".repeat(64)
       ),
-      code -> null
+      code -> null,
+      DELIVERY_ID
     );
 
     assertConforms(json);
@@ -158,7 +163,8 @@ class FhirBundleBuilderLoincTest {
         recognition,
         "sha256:" + "1".repeat(64)
       ),
-      Map.of("WBC", "6690-2")::get
+      Map.of("WBC", "6690-2")::get,
+      DELIVERY_ID
     );
 
     assertConforms(json);
@@ -199,7 +205,8 @@ class FhirBundleBuilderLoincTest {
         recognition,
         "sha256:" + "2".repeat(64)
       ),
-      code -> null
+      code -> null,
+      DELIVERY_ID
     );
 
     assertConforms(json);
