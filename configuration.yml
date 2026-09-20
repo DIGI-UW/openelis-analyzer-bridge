@@ -53,6 +53,30 @@ bridge:
     maxRetryAttempts: 3
     retryDelayMs: 1000
 
+  # Durable delivery outbox. Every received result is persisted here before any
+  # network I/O and stays, with its complete payload, until OpenELIS durably
+  # accepts it or an operator can see why it could not be delivered.
+  #
+  # Unlike bridge.file above, this store cannot be disabled: it is the only copy
+  # of a received result once the analyzer has sent it.
+  outbox:
+    dbPath: ${BRIDGE_OUTBOX_DB_PATH:/data/openelis-analyzer-bridge/outbox.db}
+    pollInterval: 1s        # safety net; the receive path wakes the dispatcher directly
+    lease: 120s             # must exceed connect + read timeout below
+    retry:
+      # Sized for an overnight OpenELIS outage: ~24h of retrying at the capped
+      # interval. Dead-lettering a day of results because OpenELIS was down for
+      # an evening would recreate the failure this outbox prevents.
+      maxAttempts: ${BRIDGE_OUTBOX_RETRY_MAX_ATTEMPTS:150}
+      baseDelay: 5s
+      multiplier: 2.0
+      maxDelay: 10m
+      jitter: 0.2
+    retention:
+      delivered: 30d        # proof of delivery
+      dismissed: 90d        # only entries an operator dismissed; undismissed dead letters are never purged
+    payloadAccessEnabled: true
+
 # OpenELIS forwarding configuration
 # NOTE: All bridge → OpenELIS transport forwarding uses this single configuration path.
 org:
