@@ -18,6 +18,19 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 class ShippedProfileCatalogTest {
 
+  private static final Map<Integer, String> GENEXPERT_PUBLISHED_FINGERPRINTS = Map.of(
+    1,
+    "sha256:57fb4fdee4db022236defb64a9fd5822b7714687031a895861f018b4875eafbb",
+    2,
+    "sha256:30f66fae19909799e88cc57b104fa72e6f6bfdf53016ccb81ea5573a8bdb8e90",
+    3,
+    "sha256:8ce4aea990149d459811fd735c6c5a090a0960f48742b2a0b6316b89e31548a7",
+    4,
+    "sha256:26f400271c3ecd14dd5ddf0e7b47a36995db7e740e6abf006aebb003b7815ba0",
+    5,
+    "sha256:3ea1cb123338481ee499a90168583d58369b8d3a6b7520b368324aa5bb8bc314"
+  );
+
   private static final Map<String, String> REVISION_ONE_FINGERPRINTS = Map.of(
     "fluorocycler-xt",
     "sha256:8d099084227b7de083a6f8f0511234c8f09540534182a380060fe921a7f28c21",
@@ -120,6 +133,15 @@ class ShippedProfileCatalogTest {
           default -> throw new AssertionError("Unexpected priority profile");
         }
       });
+
+    // Connections pin a revision by fingerprint: a published revision can never change, only be
+    // followed by a new one. Revision 5 added host for SERVER connections and senderId.
+    GENEXPERT_PUBLISHED_FINGERPRINTS.forEach((revision, fingerprint) ->
+      assertThat(catalog.require("genexpert-astm", revision).profile().path("catalog").path("revisionFingerprint").asText())
+        .as("genexpert-astm revision %d", revision)
+        .isEqualTo(fingerprint)
+    );
+    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(5);
 
     REVISION_ONE_FINGERPRINTS.forEach((profileId, fingerprint) -> {
       ObjectNode revisionOne = catalog.require(profileId, 1).profile();
