@@ -1,5 +1,6 @@
 package org.itech.ahb.normalizer;
 
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.lib.astm.concept.ASTMMessage;
 import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
@@ -44,7 +45,7 @@ import org.itech.ahb.model.Transport;
 public class ASTMBridgeAdapter implements ASTMHandler {
 
     private final MessageNormalizer normalizer;
-    private final String sourceBindingId;
+    private final Supplier<String> sourceBindingId;
 
     /**
      * Constructs a new ASTMBridgeAdapter.
@@ -52,11 +53,19 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * @param normalizer the message normalizer for routing
      */
     public ASTMBridgeAdapter(MessageNormalizer normalizer) {
-        this(normalizer, null);
+        this(normalizer, (String) null);
     }
 
     /** Creates an adapter bound to one durable Bridge connection listener. */
     public ASTMBridgeAdapter(MessageNormalizer normalizer, String sourceBindingId) {
+        this(normalizer, () -> sourceBindingId);
+    }
+
+    /**
+     * Creates an adapter for a shared listener whose owning binding can change while it runs.
+     * The binding is read for each message; when it is absent the peer IP identifies the source.
+     */
+    public ASTMBridgeAdapter(MessageNormalizer normalizer, Supplier<String> sourceBindingId) {
         this.normalizer = normalizer;
         this.sourceBindingId = sourceBindingId;
     }
@@ -102,11 +111,12 @@ public class ASTMBridgeAdapter implements ASTMHandler {
         String analyzerId = extractSenderFromHRecord(rawMessage);
 
         // Create MessageEnvelope
+        String binding = sourceBindingId.get();
         MessageEnvelope envelope = MessageEnvelope.builder()
             .protocol(Protocol.ASTM)
             .transport(Transport.TCP)
-            .sourceId(sourceBindingId != null && !sourceBindingId.isBlank()
-                ? sourceBindingId
+            .sourceId(binding != null && !binding.isBlank()
+                ? binding
                 : sourceIp != null ? sourceIp : "unknown")
             .rawMessage(rawMessage)
             .protocolAnalyzerHint(analyzerId)

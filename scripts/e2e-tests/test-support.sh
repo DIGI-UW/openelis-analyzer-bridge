@@ -2,11 +2,16 @@
 
 set -euo pipefail
 
-BRIDGE_API_URL="${BRIDGE_API_URL:-http://localhost:8443/api}"
+# Host ports of the test stack (docker-compose.test.yml); run-all.sh picks free ones outside CI.
+E2E_BRIDGE_PORT="${E2E_BRIDGE_PORT:-8443}"
+E2E_WIREMOCK_PORT="${E2E_WIREMOCK_PORT:-8080}"
+E2E_MOCK_PORT="${E2E_MOCK_PORT:-18080}"
+
+BRIDGE_API_URL="${BRIDGE_API_URL:-http://localhost:${E2E_BRIDGE_PORT}/api}"
 BRIDGE_USER="${BRIDGE_USER:-bridge}"
 BRIDGE_PASSWORD="${BRIDGE_PASSWORD:-changeme}"
-WIREMOCK_URL="${WIREMOCK_URL:-http://localhost:8080}"
-ANALYZER_MOCK_URL="${ANALYZER_MOCK_URL:-http://localhost:18080}"
+WIREMOCK_URL="${WIREMOCK_URL:-http://localhost:${E2E_WIREMOCK_PORT}}"
+ANALYZER_MOCK_URL="${ANALYZER_MOCK_URL:-http://localhost:${E2E_MOCK_PORT}}"
 NORMALIZED_PATH="/api/OpenELIS-Global/analyzer/fhir"
 
 bridge_api() {
@@ -164,7 +169,7 @@ assert_normalized_capture() {
 # to reach a state, read the payload it is holding, and stop or restart the
 # services the delivery depends on.
 
-OUTBOX_URL="${OUTBOX_URL:-http://localhost:8443/admin/outbox}"
+OUTBOX_URL="${OUTBOX_URL:-http://localhost:${E2E_BRIDGE_PORT}/admin/outbox}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
 
 outbox_api() {
@@ -261,7 +266,7 @@ openelis_start() {
 bridge_restart() {
     docker compose -f "${COMPOSE_FILE}" restart openelis-analyzer-bridge >/dev/null 2>&1
     for _ in $(seq 1 60); do
-        if curl --silent --fail http://localhost:8443/actuator/health/readiness >/dev/null 2>&1 \
+        if curl --silent --fail "http://localhost:${E2E_BRIDGE_PORT}/actuator/health/readiness" >/dev/null 2>&1 \
             || outbox_api "/stats" >/dev/null 2>&1; then
             return 0
         fi

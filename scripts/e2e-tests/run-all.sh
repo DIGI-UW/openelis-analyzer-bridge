@@ -13,6 +13,7 @@ echo ""
 
 cd "${PROJECT_DIR}"
 
+source "${SCRIPT_DIR}/isolation.sh"
 source "${SCRIPT_DIR}/test-support.sh"
 
 for command in docker curl jq; do
@@ -57,9 +58,9 @@ echo "Waiting for services to be healthy..."
 TIMEOUT=120
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    if curl --silent --fail http://localhost:8443/actuator/health >/dev/null 2>&1 \
-        && curl --silent --fail http://localhost:18080/health >/dev/null 2>&1 \
-        && curl --silent --fail http://localhost:8080/__admin/health >/dev/null 2>&1; then
+    if curl --silent --fail "http://localhost:${E2E_BRIDGE_PORT}/actuator/health" >/dev/null 2>&1 \
+        && curl --silent --fail "${ANALYZER_MOCK_URL}/health" >/dev/null 2>&1 \
+        && curl --silent --fail "${WIREMOCK_URL}/__admin/health" >/dev/null 2>&1; then
         echo "Bridge, analyzer-mock, and OpenELIS capture are ready."
         break
     fi

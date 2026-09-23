@@ -2,6 +2,9 @@
 org:
   itech:
     ahb:
+      # Generic context tests must not bind the analyzer-facing boot listeners.
+      astm:
+        enabled: false
       forward-http-server:
         uri: http://localhost:8080/test
       forward-astm-server:

@@ -5,7 +5,7 @@ echo "=== E2E Test: Saved HL7 Connection ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/test-support.sh"
-BRIDGE_MLLP_PORT="${BRIDGE_MLLP_PORT:-2575}"
+BRIDGE_MLLP_PORT="${BRIDGE_MLLP_PORT:-${E2E_MLLP_PORT:-2575}}"
 : "${BRIDGE_CONNECTION_ID:?Activate a saved HL7 server connection and set BRIDGE_CONNECTION_ID first}"
 CONNECTION=$(bridge_api "${BRIDGE_API_URL}/connections/${BRIDGE_CONNECTION_ID}")
 echo "${CONNECTION}" | jq -e --argjson port "${BRIDGE_MLLP_PORT}" '

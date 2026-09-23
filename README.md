@@ -502,6 +502,13 @@ It covers OpenELIS unreachable with a bridge restart mid-outage, an answer lost
 after OpenELIS accepted the result, and a result recovered from the dead-message
 queue by an operator retry. It runs in CI as the `Docker acceptance` job.
 
+Locally the suite starts its own isolated stack: a compose project named after
+the checkout, free host ports, and a free test subnet (`scripts/e2e-tests/isolation.sh`),
+so it runs next to any other stack on the machine. Set `E2E_BRIDGE_PORT`,
+`E2E_WIREMOCK_PORT`, `E2E_MOCK_PORT`, `E2E_ASTM_LIS1A_PORT`, `E2E_ASTM_E1381_PORT`,
+`E2E_MLLP_PORT`, `E2E_SUBNET_PREFIX` or `COMPOSE_PROJECT_NAME` to pin any of them.
+In CI (`CI` set) the fixed defaults in `docker-compose.test.yml` apply.
+
 ### Unit Tests
 
 ```bash
