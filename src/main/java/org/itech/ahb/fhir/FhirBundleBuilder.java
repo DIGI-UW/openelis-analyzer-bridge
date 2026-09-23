@@ -15,6 +15,7 @@ import org.hl7.fhir.r4.model.Quantity;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Specimen;
 import org.hl7.fhir.r4.model.StringType;
+import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.profile.ControlResultRecognition;
 
 /**
@@ -30,6 +31,7 @@ import org.itech.ahb.profile.ControlResultRecognition;
  *   <li>One DiagnosticReport grouping all Observations</li>
  * </ul>
  */
+@Slf4j
 public class FhirBundleBuilder {
 
   private static final FhirContext CTX = FhirContext.forR4();
@@ -251,12 +253,13 @@ public class FhirBundleBuilder {
         );
       }
 
-      // Analyzer completion timestamp
+      // When the analyzer performed the test; OpenELIS falls back to the import time without it.
       if (result.timestamp() != null && !result.timestamp().isBlank()) {
         try {
           obs.setEffective(new org.hl7.fhir.r4.model.DateTimeType(result.timestamp()));
-        } catch (Exception ignored) {
-          // Timestamp format not parseable — skip
+        } catch (RuntimeException e) {
+          // An unreadable time from an analyzer or file must not stop the result being delivered.
+          log.warn("Result {} has an unreadable test time '{}': {}", result.testCode(), result.timestamp(), e.getMessage());
         }
       }
 

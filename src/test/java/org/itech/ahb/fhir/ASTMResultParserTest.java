@@ -33,8 +33,8 @@ class ASTMResultParserTest {
             "H|\\^&|||GeneXpert^1.0|||||||LIS2-A2\r"
             + "P|1\r"
             + "O|1|SAMPLE001|||||||||P\r"
-            + "R|1|^^^HIV-VL|1520.5|copies/mL|||||20260326120000\r"
-            + "R|2|^^^CT|28.5|cycles|||||20260326120000\r"
+            + "R|1|^^^HIV-VL|1520.5|copies/mL||N||F|||20260326114500|20260326120000\r"
+            + "R|2|^^^CT|28.5|cycles||N||F|||20260326114500|20260326120000\r"
             + "L|1\r";
 
     // Real Cepheid GeneXpert H-record uses H|@^\  (repeat=@ component=^ escape=\)
@@ -323,35 +323,68 @@ class ASTMResultParserTest {
     }
 
     @Nested
-    @DisplayName("Timestamp extraction")
-    class TimestampExtraction {
+    @DisplayName("Test time (R.13 completed, else R.12 started)")
+    class TestTime {
 
-        @Test
-        @DisplayName("R.9 timestamp extracted when present")
-        void timestampExtracted() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
+        private String resultWithTimes(String started, String completed) {
+            return "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|5.0|units||N||F|||" + started + "|" + completed + "\r"
+                    + "L|1\r";
+        }
 
+        private String testTime(String message) {
+            ParsedResults parsed = ASTMResultParser.parseRaw(message, ControlResultRecognition.none(), ALL_RESULTS);
             assertNotNull(parsed);
-            assertEquals("20260326120000", parsed.results().get(0).timestamp());
+            return parsed.results().get(0).timestamp();
+        }
+
+        private String local(int year, int month, int day, int hour, int minute, int second) {
+            return java.time.LocalDateTime.of(year, month, day, hour, minute, second)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"));
         }
 
         @Test
-        @DisplayName("Missing R.9 timestamp -> null timestamp")
-        void missingTimestamp() {
+        @DisplayName("R.13 completion time is read in the JVM zone as ISO-8601")
+        void completionTime() {
+            assertEquals(local(2026, 3, 26, 12, 0, 0), testTime(VALID_ASTM_MESSAGE));
+        }
+
+        @Test
+        @DisplayName("R.12 start time when R.13 is empty")
+        void startTimeWhenCompletionMissing() {
+            assertEquals(local(2025, 10, 21, 14, 45, 7), testTime(resultWithTimes("20251021144507", "")));
+        }
+
+        @Test
+        @DisplayName("Minute precision and date-only forms")
+        void shorterForms() {
+            assertEquals(local(2025, 10, 21, 16, 12, 0), testTime(resultWithTimes("", "202510211612")));
+            assertEquals("2025-10-21", testTime(resultWithTimes("", "20251021")));
+        }
+
+        @Test
+        @DisplayName("R.10 (normative-values change date) is not a test time")
+        void normativeValuesDateIgnored() {
             String msg = "H|\\^&|||Analyzer\r"
                     + "P|1\r"
                     + "O|1|ACC001\r"
-                    + "R|1|^^^TEST|5.0|units\r"
+                    + "R|1|^^^TEST|5.0|units|||||20260326120000\r"
                     + "L|1\r";
+            assertNull(testTime(msg));
+        }
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
-
-            assertNotNull(parsed);
-            assertNull(parsed.results().get(0).timestamp());
+        @Test
+        @DisplayName("Unreadable or missing times -> null")
+        void unreadableOrMissing() {
+            assertNull(testTime(resultWithTimes("", "2025-10-21")));
+            assertNull(testTime(resultWithTimes("", "20251321999999")));
+            assertNull(testTime(resultWithTimes("", "")));
         }
     }
-
-    @Nested
+ @Nested
     @DisplayName("Numeric detection")
     class NumericDetection {
 
