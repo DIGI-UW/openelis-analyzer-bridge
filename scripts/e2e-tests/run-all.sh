@@ -92,8 +92,20 @@ FLUOROCYCLER_CONNECTION_ID="$(create_connection \
 export FLUOROCYCLER_CONNECTION_ID
 activate_connection "${FLUOROCYCLER_CONNECTION_ID}"
 
+HL7_PROFILE_ID="$(publish_hl7_fixture_profile)"
+HL7_CONNECTION_ID="$(create_connection \
+    "${HL7_PROFILE_ID}" \
+    "oe-e2e-hl7" \
+    "HL7 acceptance connection" \
+    '{"transport":"TCP/IP","connectionRole":"SERVER","port":2575}')"
+activate_connection "${HL7_CONNECTION_ID}"
+
 echo "--- Running ASTM TCP test ---"
 bash "${SCRIPT_DIR}/test-astm-tcp.sh"
+echo ""
+
+echo "--- Running HL7 MLLP test ---"
+BRIDGE_CONNECTION_ID="${HL7_CONNECTION_ID}" bash "${SCRIPT_DIR}/test-mllp.sh"
 echo ""
 
 echo "--- Running delivery outbox DNS-outage test ---"
@@ -114,5 +126,5 @@ bash "${SCRIPT_DIR}/test-outbox-dmq-retry.sh"
 echo ""
 
 echo "========================================"
-echo "PRIORITY RESULT-TRAFFIC TESTS PASSED (5/5)"
+echo "PRIORITY RESULT-TRAFFIC TESTS PASSED (6/6)"
 echo "========================================"

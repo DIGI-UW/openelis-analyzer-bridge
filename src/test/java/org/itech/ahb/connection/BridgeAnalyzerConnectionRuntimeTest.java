@@ -302,12 +302,10 @@ class BridgeAnalyzerConnectionRuntimeTest {
     connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 9123);
 
     runtime.activate(connection, profile);
-    verify(listeners).start(
-      "00000000-0000-0000-0000-000000000042",
-      "connection:00000000-0000-0000-0000-000000000042",
-      9123
-    );
+    verify(listeners).start("00000000-0000-0000-0000-000000000042", 9123);
     assertThat(registry.findAnalyzerId("connection:00000000-0000-0000-0000-000000000042")).contains("oe-42");
+    assertThat(registry.findAnalyzerEntryByConnectionId("00000000-0000-0000-0000-000000000042").orElseThrow().getListenerPort())
+      .isEqualTo(9123);
     runtime.deactivate(connection, profile);
     verify(listeners).stop("00000000-0000-0000-0000-000000000042");
     assertThat(registry.getRegisteredAnalyzers()).isEmpty();

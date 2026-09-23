@@ -63,6 +63,33 @@ create_connection() {
     jq --exit-status --raw-output '.connectionId' <<<"${response}"
 }
 
+# Publish a site HL7 profile the way an operator would (draft, edit, publish) and print its id.
+# The bridge ships no HL7 profile; this is the ASTM contract fixture recast as HL7, the same fixture
+# Hl7SavedConnectionTest uses.
+publish_hl7_fixture_profile() {
+    local draft draft_id profile_id candidate
+
+    draft="$(bridge_api --request POST --header 'Content-Type: application/json' \
+        --data '{"actor":"e2e","displayName":"Saved HL7 fixture"}' \
+        "${BRIDGE_API_URL}/profiles/drafts")"
+    draft_id="$(jq --exit-status --raw-output '.draftId' <<<"${draft}")"
+    profile_id="$(jq --exit-status --raw-output '.profile.profileMeta.id' <<<"${draft}")"
+    candidate="$(jq --compact-output --arg id "${profile_id}" '
+        .profileMeta.id = $id
+        | .profileMeta.displayName = "Saved HL7 fixture"
+        | .protocol = {name: "HL7", version: "2.5.1"}
+        | del(.configDefaults.extractionOverrides)
+        | .controlResultRecognition = {mode: "RULES", rules: {"control-label":
+            {ruleType: "FIELD_EQUALS", targetField: "OBX.3.2", operand: "CONTROL"}}}
+        | del(.catalog)' contracts/analyzer/v1/fixtures/analyzer-profile-astm.json)"
+    bridge_api --request PUT --header 'Content-Type: application/json' \
+        --data "$(jq --null-input --compact-output --argjson profile "${candidate}" '{actor: "e2e", profile: $profile}')" \
+        "${BRIDGE_API_URL}/profiles/drafts/${draft_id}" >/dev/null
+    bridge_api --request POST --header 'Content-Type: application/json' --data '{"actor":"e2e"}' \
+        "${BRIDGE_API_URL}/profiles/drafts/${draft_id}/publish" \
+        | jq --exit-status --raw-output '.profile.profileMeta.id'
+}
+
 activate_connection() {
     local connection_id="$1"
     local command

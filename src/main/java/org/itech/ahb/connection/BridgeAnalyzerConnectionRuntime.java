@@ -222,7 +222,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
         throw new AnalyzerConnectionException("Inbound HL7 TCP requires a saved SERVER connection");
       }
       if (hl7Listeners == null) throw new AnalyzerConnectionException("HL7 listener runtime is unavailable");
-      hl7Listeners.start(connectionId, sourceBindingId, requiredPort(values, "port"));
+      hl7Listeners.start(connectionId, requiredPort(values, "port"));
       return;
     }
 
@@ -310,7 +310,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     } else if (
       "TCP/IP".equals(entry.getInboundTransport()) &&
       "SERVER".equals(nullableText(values, "connectionRole")) &&
-      "ASTM".equals(entry.getExpectedProtocol())
+      ("ASTM".equals(entry.getExpectedProtocol()) || "HL7".equals(entry.getExpectedProtocol()))
     ) {
       // The analyzer connects to a shared listener; its connection is resolved per message.
       entry.setListenerPort(requiredPort(values, "port"));

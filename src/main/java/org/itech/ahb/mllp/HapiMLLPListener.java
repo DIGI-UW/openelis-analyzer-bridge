@@ -14,7 +14,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.itech.ahb.routing.MessageRouter;
 
-/** HAPI transport owned by one saved connection, never a global Spring listener. */
+/**
+ * One HAPI MLLP server socket. A shared listener (no source binding) stamps each message with its
+ * peer address and this port, and the registry resolves the connection; a bound listener stamps
+ * the one saved connection it serves.
+ */
 public final class HapiMLLPListener {
 
   private final int port;
@@ -30,9 +34,18 @@ public final class HapiMLLPListener {
   private RateLimitingReceivingApplication rateLimiter;
   private boolean stopped;
 
+  /** A shared listener on {@code port}: each message is attributed by the registry. */
+  public HapiMLLPListener(int port, MessageRouter router) {
+    this(port, null, router, true);
+  }
+
   public HapiMLLPListener(int port, String sourceBindingId, MessageRouter router) {
+    this(port, sourceBindingId, router, false);
+  }
+
+  private HapiMLLPListener(int port, String sourceBindingId, MessageRouter router, boolean shared) {
     if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid HL7 listen port");
-    if (sourceBindingId == null || sourceBindingId.isBlank()) {
+    if (!shared && (sourceBindingId == null || sourceBindingId.isBlank())) {
       throw new IllegalArgumentException("A saved-connection source binding is required");
     }
     this.port = port;
@@ -43,7 +56,9 @@ public final class HapiMLLPListener {
   public synchronized void start() {
     if (stopping) throw new IllegalStateException("Cannot restart a stopped HL7 listener instance");
     if (isRunning()) return;
-    executor = Executors.newCachedThreadPool(Thread.ofPlatform().name("hl7-" + sourceBindingId + "-", 0).factory());
+    executor = Executors.newCachedThreadPool(
+      Thread.ofPlatform().name("hl7-" + (sourceBindingId == null ? port : sourceBindingId) + "-", 0).factory()
+    );
     context = new DefaultHapiContext(executor);
     context.setSocketFactory(
       new StandardSocketFactory() {
@@ -86,7 +101,9 @@ public final class HapiMLLPListener {
       }
     );
     try {
-      application = new HapiReceivingApplication(router, sourceBindingId);
+      application = sourceBindingId == null
+        ? new HapiReceivingApplication(router, port)
+        : new HapiReceivingApplication(router, sourceBindingId);
       rateLimiter = new RateLimitingReceivingApplication(application);
       server = context.newServer(port, false);
       server.registerApplication("*", "*", rateLimiter);

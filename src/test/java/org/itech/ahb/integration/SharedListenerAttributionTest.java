@@ -9,7 +9,10 @@ import java.util.Map;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
+import ca.uhn.hl7v2.model.Message;
+import ca.uhn.hl7v2.parser.PipeParser;
 import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
+import org.itech.ahb.mllp.HapiReceivingApplication;
 import org.itech.ahb.normalizer.ASTMBridgeAdapter;
 import org.itech.ahb.normalizer.AnalyzerIdentifier;
 import org.itech.ahb.normalizer.MessageNormalizer;
@@ -33,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
 class SharedListenerAttributionTest {
 
   private static final int SHARED_PORT = 12001;
+  private static final int MLLP_PORT = 2575;
 
   @TempDir
   Path directory;
@@ -40,6 +44,7 @@ class SharedListenerAttributionTest {
   private AnalyzerRuntimeRegistry registry;
   private OutboxTestSupport outbox;
   private ASTMBridgeAdapter sharedListener;
+  private HapiReceivingApplication sharedMllpListener;
 
   @BeforeEach
   void setUp() {
@@ -50,6 +55,7 @@ class SharedListenerAttributionTest {
     outbox = OutboxTestSupport.create(directory, http, registry);
     MessageNormalizer normalizer = outbox.normalizer(new AnalyzerIdentifier(registry), registry);
     sharedListener = new ASTMBridgeAdapter(normalizer, SHARED_PORT);
+    sharedMllpListener = new HapiReceivingApplication(normalizer, MLLP_PORT);
   }
 
   @AfterEach
@@ -111,6 +117,55 @@ class SharedListenerAttributionTest {
     outbox.dispatcher.dispatchDue();
 
     assertThat(connectionFor("ACC-Y")).isEqualTo("gx-lab-a");
+  }
+
+  @Test
+  void hl7ResultsOnOneMllpListenerAreSeparatedByAddressAndBySendingApplication() throws Exception {
+    registerHl7("hl7-by-address", "10.0.0.31", null);
+    registerHl7("hl7-lab-a", null, "GX-LAB-A");
+    registerHl7("hl7-lab-b", null, "GX-LAB-B");
+
+    sharedMllpListener.processMessage(hl7("GX-LAB-B", "ACC-H1"), metadata("10.0.0.31"));
+    sharedMllpListener.processMessage(hl7("GX-LAB-A", "ACC-H2"), metadata("10.0.0.77"));
+    sharedMllpListener.processMessage(hl7("GX-LAB-B", "ACC-H3"), metadata("10.0.0.77"));
+
+    assertThat(pendingConnectionFor("ACC-H1")).as("address wins over the sender").isEqualTo("hl7-by-address");
+    assertThat(pendingConnectionFor("ACC-H2")).isEqualTo("hl7-lab-a");
+    assertThat(pendingConnectionFor("ACC-H3")).isEqualTo("hl7-lab-b");
+  }
+
+  private void registerHl7(String connectionId, String host, String senderId) {
+    AnalyzerEntry entry = new AnalyzerEntry();
+    entry.setId("oe-" + connectionId);
+    entry.setBridgeConnectionId(connectionId);
+    entry.setName(connectionId);
+    entry.setProfileId("hl7-fixture");
+    entry.setProfileRevision(1);
+    entry.setExpectedProtocol("HL7");
+    entry.setInboundTransport("TCP/IP");
+    entry.setListenerPort(MLLP_PORT);
+    entry.setInboundAddress(host);
+    entry.setInboundSourceId(host);
+    entry.setSenderId(senderId);
+    entry.setControlResultRecognition(ControlResultRecognition.none());
+    entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+    entry.setCodeToLoinc(Map.of("WBC", "6690-2"));
+    registry.register("connection:" + connectionId, entry);
+  }
+
+  private static Message hl7(String sendingApplication, String accession) throws Exception {
+    return new PipeParser().parse(
+      "MSH|^~\\&|" + sendingApplication + "^GeneXpert^6.1||OE|LAB|20260922120000||ORU^R01|" + accession + "|P|2.5.1\r" +
+      "PID|1||PAT-1\r" +
+      "OBR|1||" + accession + "|CBC\r" +
+      "OBX|1|NM|WBC||7.5|10^3/uL||||F"
+    );
+  }
+
+  private static Map<String, Object> metadata(String peer) {
+    Map<String, Object> metadata = new java.util.HashMap<>();
+    metadata.put("SENDING_IP", peer);
+    return metadata;
   }
 
   private void register(String connectionId, String host) {
