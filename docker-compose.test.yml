@@ -27,6 +27,10 @@ services:
     networks:
       astm-test-net:
         ipv4_address: ${E2E_SUBNET_PREFIX:-172.28.0}.100
+      # A second network gives the mock a second real source address, so two analyzers on one
+      # shared listener can be told apart by address.
+      astm-test-net-b:
+        ipv4_address: ${E2E_SUBNET_B_PREFIX:-172.28.1}.100
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8443/actuator/health"]
       interval: 10s
@@ -51,6 +55,8 @@ services:
     networks:
       astm-test-net:
         ipv4_address: ${E2E_SUBNET_PREFIX:-172.28.0}.150
+      astm-test-net-b:
+        ipv4_address: ${E2E_SUBNET_B_PREFIX:-172.28.1}.150
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
       interval: 5s
@@ -85,6 +91,11 @@ networks:
     ipam:
       config:
         - subnet: ${E2E_SUBNET_PREFIX:-172.28.0}.0/24
+  astm-test-net-b:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${E2E_SUBNET_B_PREFIX:-172.28.1}.0/24
 
 volumes:
   analyzer-input:

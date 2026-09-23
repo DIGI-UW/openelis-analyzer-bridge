@@ -110,18 +110,20 @@ org:
         establishment-timeout-seconds: 15
         receive-timeout-seconds: 30
 
-      # ASTM E1381-95 Server - Listens for legacy ASTM messages
-      listen-astm-e1381-95-server:
-        port: 12011
+        # ASTM E1381-95 Server - Listens for legacy ASTM messages
+        e1381-95:
+          port: 12011
 
       # Forward ASTM Server - Default target for sending messages TO analyzers
       forward-astm-server:
         host-name: localhost
         port: 5000
 
-      # Saved HL7 server connections own their individual listening ports.
+      # HL7 MLLP: when enabled, the shared listener on this port is bound at boot, and HL7 server
+      # connections that declare it join it. A connection on another port gets its own listener.
       mllp:
-        enabled: false  # Permit activation of saved HL7 listeners when true
+        enabled: false
+        port: 2575
         # Rate limiting: per source IP, prevents flooding
         # rateLimit:
         #   messagesPerSecond: 10

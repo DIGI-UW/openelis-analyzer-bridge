@@ -54,8 +54,8 @@ org:
         establishment-timeout-seconds: 15
         receive-timeout-seconds: 30
 
-      listen-astm-e1381-95-server:
-        port: 12011
+        e1381-95:
+          port: 12011
 
       forward-astm-server:
         host-name: localhost

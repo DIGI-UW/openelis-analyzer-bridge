@@ -27,20 +27,29 @@ for isolation_var in E2E_BRIDGE_PORT E2E_WIREMOCK_PORT E2E_MOCK_PORT E2E_ASTM_LI
     fi
 done
 
-# Docker refuses a network whose subnet overlaps an existing one, so take the first free /24.
-if [ -z "${E2E_SUBNET_PREFIX:-}" ]; then
-    isolation_used_subnets="$(docker network inspect $(docker network ls --quiet) \
-        --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)"
-    for isolation_octet in $(seq 28 31); do
-        for isolation_third in $(seq 0 255); do
-            isolation_candidate="172.${isolation_octet}.${isolation_third}"
-            if ! grep -q "${isolation_candidate}\." <<<"${isolation_used_subnets}" \
-                && ! grep -q "172\.${isolation_octet}\.0\.0/16" <<<"${isolation_used_subnets}"; then
-                export E2E_SUBNET_PREFIX="${isolation_candidate}"
-                break 2
+# Docker refuses a network whose subnet overlaps an existing one, so take free /24s.
+isolation_used_subnets="$(docker network inspect $(docker network ls --quiet) \
+    --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)"
+free_subnet_prefix() {
+    local skip="${1:-}" octet third candidate
+    for octet in $(seq 28 31); do
+        for third in $(seq 0 255); do
+            candidate="172.${octet}.${third}"
+            if [ "${candidate}" != "${skip}" ] \
+                && ! grep -q "${candidate}\." <<<"${isolation_used_subnets}" \
+                && ! grep -q "172\.${octet}\.0\.0/16" <<<"${isolation_used_subnets}"; then
+                printf '%s' "${candidate}"
+                return 0
             fi
         done
     done
+    return 1
+}
+if [ -z "${E2E_SUBNET_PREFIX:-}" ]; then
+    export E2E_SUBNET_PREFIX="$(free_subnet_prefix)"
+fi
+if [ -z "${E2E_SUBNET_B_PREFIX:-}" ]; then
+    export E2E_SUBNET_B_PREFIX="$(free_subnet_prefix "${E2E_SUBNET_PREFIX}")"
 fi
 
-echo "Isolated acceptance stack: project=${COMPOSE_PROJECT_NAME} bridge=:${E2E_BRIDGE_PORT} wiremock=:${E2E_WIREMOCK_PORT} mock=:${E2E_MOCK_PORT} subnet=${E2E_SUBNET_PREFIX:-172.28.0}.0/24"
+echo "Isolated acceptance stack: project=${COMPOSE_PROJECT_NAME} bridge=:${E2E_BRIDGE_PORT} wiremock=:${E2E_WIREMOCK_PORT} mock=:${E2E_MOCK_PORT} subnets=${E2E_SUBNET_PREFIX}.0/24,${E2E_SUBNET_B_PREFIX}.0/24"

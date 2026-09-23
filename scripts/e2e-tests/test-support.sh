@@ -6,6 +6,10 @@ set -euo pipefail
 E2E_BRIDGE_PORT="${E2E_BRIDGE_PORT:-8443}"
 E2E_WIREMOCK_PORT="${E2E_WIREMOCK_PORT:-8080}"
 E2E_MOCK_PORT="${E2E_MOCK_PORT:-18080}"
+E2E_ASTM_LIS1A_PORT="${E2E_ASTM_LIS1A_PORT:-12001}"
+E2E_MLLP_PORT="${E2E_MLLP_PORT:-2575}"
+E2E_SUBNET_PREFIX="${E2E_SUBNET_PREFIX:-172.28.0}"
+E2E_SUBNET_B_PREFIX="${E2E_SUBNET_B_PREFIX:-172.28.1}"
 
 BRIDGE_API_URL="${BRIDGE_API_URL:-http://localhost:${E2E_BRIDGE_PORT}/api}"
 BRIDGE_USER="${BRIDGE_USER:-bridge}"
@@ -22,8 +26,9 @@ bridge_api() {
 
 profile_fingerprint() {
     local profile_id="$1"
+    local revision="${2:-1}"
 
-    bridge_api "${BRIDGE_API_URL}/profiles/${profile_id}?revision=1" \
+    bridge_api "${BRIDGE_API_URL}/profiles/${profile_id}?revision=${revision}" \
         | jq --exit-status --raw-output '.profile.catalog.revisionFingerprint'
 }
 
@@ -32,15 +37,17 @@ create_connection() {
     local client_analyzer_id="$2"
     local display_name="$3"
     local values="$4"
+    local revision="${5:-1}"
     local fingerprint request response
 
-    fingerprint="$(profile_fingerprint "${profile_id}")"
+    fingerprint="$(profile_fingerprint "${profile_id}" "${revision}")"
     request="$(jq --null-input --compact-output \
         --arg request_id "create-${client_analyzer_id}" \
         --arg client_analyzer_id "${client_analyzer_id}" \
         --arg profile_id "${profile_id}" \
         --arg fingerprint "${fingerprint}" \
         --arg display_name "${display_name}" \
+        --argjson revision "${revision}" \
         --argjson values "${values}" \
         '{
             schemaVersion: "1.0",
@@ -48,7 +55,7 @@ create_connection() {
             clientAnalyzerId: $client_analyzer_id,
             profileRef: {
                 profileId: $profile_id,
-                revision: 1,
+                revision: $revision,
                 fingerprint: $fingerprint
             },
             displayName: $display_name,
@@ -90,27 +97,52 @@ publish_hl7_fixture_profile() {
         | jq --exit-status --raw-output '.profile.profileMeta.id'
 }
 
+# Activate a connection. Each call is a new command: runtime commands are idempotent by commandId,
+# so reusing an id after a deactivation would only replay the old acknowledgement.
 activate_connection() {
+    runtime_command "$1" ACTIVATE \
+        | jq --exit-status '.outcome == "APPLIED" or .outcome == "ALREADY_APPLIED"' >/dev/null
+}
+
+# Send a runtime command; prints the bridge's answer and fails on an HTTP error.
+runtime_command() {
     local connection_id="$1"
-    local command
-
-    command="$(jq --null-input --compact-output \
-        --arg command_id "activate-${connection_id}" \
-        --arg connection_id "${connection_id}" \
-        '{
-            schemaVersion: "1.0",
-            commandId: $command_id,
-            connectionId: $connection_id,
-            action: "ACTIVATE",
-            expectedConfigRevision: 1
-        }')"
-
+    local action="$2"
     bridge_api \
         --request POST \
         --header 'Content-Type: application/json' \
-        --data "${command}" \
-        "${BRIDGE_API_URL}/connections/${connection_id}/runtime" \
+        --data "$(jq --null-input --compact-output \
+            --arg command_id "$(printf '%s' "${action}" | tr '[:upper:]' '[:lower:]')-${connection_id}-$(date +%s)-${RANDOM}" \
+            --arg connection_id "${connection_id}" \
+            --arg action "${action}" \
+            '{schemaVersion: "1.0", commandId: $command_id, connectionId: $connection_id,
+              action: $action, expectedConfigRevision: 1}')" \
+        "${BRIDGE_API_URL}/connections/${connection_id}/runtime"
+}
+
+deactivate_connection() {
+    runtime_command "$1" DEACTIVATE \
         | jq --exit-status '.outcome == "APPLIED" or .outcome == "ALREADY_APPLIED"' >/dev/null
+}
+
+# Wait for a dead letter with the given reason whose detail mentions every given text, and print its id.
+wait_for_dead_letter() {
+    local reason="$1"
+    shift
+    local id
+    for _ in $(seq 1 30); do
+        id="$(outbox_api "?state=DMQ&failureReason=${reason}&limit=200" | jq --raw-output --args '
+            first(.rows[] | select(.lastError as $e | $ARGS.positional | all(. as $t | $e | contains($t))) | .id) // empty' \
+            "$@")"
+        if [ -n "${id}" ]; then
+            printf '%s' "${id}"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "No ${reason} dead letter mentioning: $*" >&2
+    outbox_api "?state=DMQ&limit=20" | jq '.rows[] | {id, failureReason, lastError}' >&2 || true
+    return 1
 }
 
 wait_for_normalized_capture() {

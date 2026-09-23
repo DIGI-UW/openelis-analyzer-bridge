@@ -83,9 +83,10 @@ java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configu
 | External | Internal | Service |
 |----------|----------|---------|
 | 8442 | 8443 | HTTPS API endpoint |
-| 12000 | 12001 | ASTM LIS1-A listener |
-| 12010 | 12011 | ASTM E1381-95 listener |
-| Saved port | Saved port | Active HL7 server connection (publish each configured port) |
+| 12000 | 12001 | Shared ASTM LIS1-A listener, bound at boot |
+| 12010 | 12011 | Shared ASTM E1381-95 listener, bound at boot |
+| 2575 | 2575 | Shared HL7 MLLP listener, bound at boot when `org.itech.ahb.mllp.enabled` |
+| Saved port | Saved port | Only for a connection that declares a port of its own (publish it too) |
 
 ### Volume Mounts
 
@@ -136,8 +137,12 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.outbox.payload-access-enabled` | Whether `/admin/outbox/<id>/payload` serves clinical content. Access is audited either way | true |
 | `management.health.outbox.enabled` | Report the delivery queue in `/actuator/health`. UP while results are queued, since riding out an outage is the job; DOWN only when the store is unreadable or had to be replaced | true |
 | **ASTM TCP** | | |
+| `org.itech.ahb.astm.enabled` | Bind the shared ASTM listeners at boot | true |
+| `org.itech.ahb.listen-astm-server.port` | Shared ASTM LIS1-A listener port (`ORG_ITECH_AHB_LISTEN_ASTM_SERVER_PORT`) | 12001 |
+| `org.itech.ahb.listen-astm-server.e1381-95.port` | Shared ASTM E1381-95 listener port | 12011 |
 | **MLLP (HL7)** | | |
-| `org.itech.ahb.mllp.enabled` | Permit saved HL7 server connections to start listeners | false |
+| `org.itech.ahb.mllp.enabled` | Run HL7 MLLP: bind the shared listener at boot and allow HL7 server connections | false |
+| `org.itech.ahb.mllp.port` | Shared MLLP listener port | 2575 |
 | **Serial** | | |
 | **File Watcher** | | |
 | `bridge.file.enabled` | Enable FILE connection runtime | true |
@@ -161,27 +166,33 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Server** | | |
 | `server.port` | HTTP server port | 8443 |
 
-### Saved HL7 listeners
+### Shared analyzer listeners
 
-Enable `org.itech.ahb.mllp.enabled` (or `MLLP_ENABLED` with the production profile)
-to permit activation of saved HL7 connections with `transport=TCP/IP` and
-`connectionRole=SERVER`. Each connection owns its saved `port`; publish those
-ports in the container configuration. Enabling the runtime alone opens no port.
-The former global `org.itech.ahb.mllp.port` / `MLLP_PORT` setting no longer creates
-a listener. TCP client-mode inbound activation is not supported and is rejected.
+The bridge binds its analyzer ports at boot, whether or not any analyzer is
+configured yet: ASTM LIS1-A on 12001, ASTM E1381-95 on 12011, and, when
+`org.itech.ahb.mllp.enabled` is set (`MLLP_ENABLED` with the production
+profile), HL7 MLLP on 2575. An analyzer that connects before OpenELIS has
+finished configuring it reaches a listening port, and its results are kept in
+the outbox until they can be attributed.
 
-Activation succeeds only after that connection's socket binds. The listener's
-saved connection binding identifies incoming results; neither the peer IP nor
-MSH sender fields can select another analyzer. Use network access controls to
-restrict who can reach each analyzer port; the binding is not peer authentication.
-Deactivation closes admissions and waits up to 30 seconds for active delivery
-before removing routing authority. Failed drains report failure and retain
-ownership. On restart, the durable connection catalog restores active listeners
-from their last successfully activated values and pinned profiles, even when a
-newer saved edit has not been activated. These values remain internal to Bridge;
-OpenELIS receives the active reference, not a second configuration copy.
-Health reports each owned listener,
-not a global socket.
+A saved TCP/IP `SERVER` connection declares a `port`. A connection on one of
+the shared ports joins that listener, and any number of connections can share
+it. A connection that declares any other port gets a listener of its own, bound
+on activation and closed when its last connection is deactivated. Activation
+still fails if another process holds that port. HL7 TCP client-mode inbound
+activation is not supported and is rejected.
+
+Attribution is not peer authentication: a message is attributed, not
+authorized, by its address and sender name. Use network access controls to
+restrict who can reach the analyzer ports.
+
+Deactivating an HL7 connection that owns its listener closes admissions and
+waits up to 30 seconds for active delivery before removing routing authority.
+Failed drains report failure and keep ownership. On restart, the durable
+connection catalog restores active connections from their last successfully
+activated values and pinned profiles, even when a newer saved edit has not been
+activated. These values remain internal to Bridge; OpenELIS receives the active
+reference, not a second configuration copy.
 
 ### FILE shutdown and recovery
 
@@ -208,19 +219,55 @@ the runtime registry. There is no separate static analyzer map.
 
 Analyzer identification uses three distinct concepts:
 
-- **Source binding**: where a message came from (IP/port, serial port, file directory, HTTP source).
-- **Protocol hint**: what the payload claims (e.g., HL7 sender app/facility, ASTM sender token).
+- **Source binding**: where a message came from (serial port, file directory,
+  HTTP sender, or the shared listener and peer address for ASTM and HL7 over TCP).
+- **Sender name**: how the instrument names itself in the message, component 1
+  of ASTM H.5 or HL7 MSH-3 (with MSH-4 when present). A GeneXpert sends the System
+  Name from its own configuration there.
 - **Bridge connection ID**: the durable identity emitted in every normalized
   result bundle and used by OpenELIS for exact lookup.
 
-Policy rules:
+A message received on a shared listener is resolved among the active
+connections that declare that listener, in this order:
 
-- The saved connection bound to the source is authoritative for routing.
-- Protocol hints are validation evidence and diagnostics only.
-- Protocol hints alone must not select routing targets.
-- An unregistered source is rejected and dead-lettered before delivery.
-- A contradictory hint is recorded but cannot override the source-bound
-  connection.
+1. **Address.** The one connection whose `host` is the peer address.
+2. **Sender name.** The one connection whose `senderId` matches the sender name,
+   ignoring case.
+3. **Profile pattern.** The pinned profile's `identifier_pattern` rules out
+   connections for another kind of analyzer. It is type-level
+   (`GENEXPERT|CEPHEID`), so it never chooses between two of the same kind.
+4. **Uniqueness.** One candidate left.
+
+A connection whose `host` is a different literal address, or whose `senderId`
+names a different instrument, is never a candidate. When none or several remain,
+the message is dead-lettered with its complete payload: `UNREGISTERED_SOURCE`,
+or `AMBIGUOUS_SOURCE` naming the connections that could own it. Once the
+configuration is fixed, retrying the dead letter resolves it again.
+
+When each value is needed:
+
+| Situation | `host` | `senderId` |
+|---|---|---|
+| One analyzer on a listener | optional | optional |
+| Several analyzers, each at a fixed address | set on each | optional |
+| Several analyzers without fixed addresses, or behind one address | optional | set on all but at most one |
+
+Activating a connection that no message could tell apart from an active one on
+the same listener (the same address, or neither has one, and no `senderId`
+separates them) is refused, and the refusal names the other connection. Restoring
+connections at boot only logs a warning, so an existing pair cannot stop the
+bridge.
+
+`host` must be a literal IP address to match: a hostname is kept as entered and
+never resolved, because sender identity is numeric. Each GeneXpert needs a
+unique System Name (Cepheid LIS Interface Protocol Specification 302-2261,
+Table 10-1); where two share a listener, enter that name as `senderId`. GeneXpert
+profile revision 5 offers both fields for SERVER connections. Earlier revisions
+keep working and resolve by uniqueness.
+
+For serial, FILE and HTTP input the source binding is looked up directly, as
+before. On any transport a sender name that contradicts the resolved connection
+is recorded as a mismatch, but it never overrides the connection.
 
 ## Monitoring & Observability
 
