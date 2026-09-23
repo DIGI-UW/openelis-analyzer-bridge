@@ -386,7 +386,6 @@ class AnalyzerConnectionCatalogTest {
       .isEqualTo("ACTIVE");
     verify(restartedListeners).start(
       created.path("connectionId").asText(),
-      "connection:" + created.path("connectionId").asText(),
       "oe-56",
       9_102,
       "LIS01_A"

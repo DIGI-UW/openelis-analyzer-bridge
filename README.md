@@ -462,13 +462,16 @@ who made it, and a deployment can switch that endpoint off with
 | `OE_CONFIG_STATE` | OpenELIS returned 422: its own configuration does not accept this delivery yet (unknown connection, missing site binding, profile mismatch) | Fix it in OpenELIS, then retry |
 | `OE_REJECTED` | OpenELIS refused the delivery outright | Read the attempt history; usually a contract or credentials problem |
 | `UNREGISTERED_SOURCE` | No saved, active connection for the sender | Register the analyzer, then retry |
+| `AMBIGUOUS_SOURCE` | Two or more connections on the same listener could own the message and nothing in it tells them apart; the detail names them | Give each a distinct `host`, or set `senderId` to each instrument's system name, then retry |
 | `CONNECTION_TRANSPORT_MISMATCH` | Known sender, wrong transport for its saved connection | Correct the connection, then retry |
 | `UNPINNED_PROFILE` | The connection has no pinned profile, so results cannot be classified | Pin a profile revision, then retry |
 | `PARSE_NO_RESULTS` | The message parsed but produced nothing to deliver | Read the payload; usually a profile or fixture mismatch |
 | `OE_UNEXPECTED_REDIRECT` | Something answered with a redirect, which a result POST never follows | Check what sits between the bridge and OpenELIS |
 
-An operator retry re-sends the stored bundle as-is. Retries triggered by the
-dispatcher never re-render, so the identity OpenELIS deduplicates on cannot
+An operator retry re-sends the stored bundle as-is. A message that was never
+rendered (unregistered or ambiguous source, for example) has no bundle yet, so a
+retry renders it against the current configuration first. Retries triggered by
+the dispatcher never re-render, so the identity OpenELIS deduplicates on cannot
 change between attempts.
 
 #### If the outbox database is lost

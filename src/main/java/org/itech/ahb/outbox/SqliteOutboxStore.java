@@ -63,7 +63,7 @@ public class SqliteOutboxStore implements OutboxStore {
     "source_port, protocol, transport, protocol_hint, profile_id, profile_revision, accession, target_uri, " +
     "attempts, received_at, rendered_at, next_attempt_at, last_attempt_at, delivered_at, dmq_at, lease_until, " +
     "lease_owner, failure_reason, last_error, last_http_status, last_response_excerpt, oe_receipt, dismissed_at, " +
-    "dismissed_by, retry_requested_by, retry_requested_at, updated_at";
+    "dismissed_by, retry_requested_by, retry_requested_at, updated_at, listener_port";
 
   private final Path dbPath;
   private final Connection conn;
@@ -112,8 +112,8 @@ public class SqliteOutboxStore implements OutboxStore {
       try (
         PreparedStatement entry = conn.prepareStatement(
           "INSERT INTO outbox (id, state, raw_hash, source_id, source_port, protocol, transport, protocol_hint, " +
-          "received_at, lease_until, lease_owner, updated_at) " +
-          "VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+          "received_at, lease_until, lease_owner, updated_at, listener_port) " +
+          "VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
         )
       ) {
         entry.setString(1, id);
@@ -130,6 +130,7 @@ public class SqliteOutboxStore implements OutboxStore {
         entry.setString(9, ts(Instant.now().plus(RENDER_LEASE)));
         entry.setString(10, RECEIVE_OWNER);
         entry.setString(11, now);
+        setNullableInt(entry, 12, message.listenerPort());
         inserted = entry.executeUpdate();
       }
       return new Receipt(id, rawHash, inserted == 0);
@@ -162,8 +163,8 @@ public class SqliteOutboxStore implements OutboxStore {
           PreparedStatement insert = conn.prepareStatement(
             "INSERT INTO outbox (id, state, raw_hash, fhir_json, fhir_hash, connection_id, analyzer_id, source_id, " +
             "source_port, protocol, transport, protocol_hint, profile_id, profile_revision, accession, target_uri, " +
-            "received_at, rendered_at, updated_at) " +
-            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+            "received_at, rendered_at, updated_at, listener_port) " +
+            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
           )
         ) {
           insert.setString(1, delivery.deliveryId());
@@ -184,6 +185,7 @@ public class SqliteOutboxStore implements OutboxStore {
           insert.setString(16, ts(receipt.receivedAt()));
           insert.setString(17, now);
           insert.setString(18, now);
+          setNullableInt(insert, 19, receipt.listenerPort());
           if (insert.executeUpdate() == 0) {
             // Same content, same accession, same connection: the analyzer retransmitted, or the
             // bridge restarted between rendering and deleting the receipt. Keeping the first row is
@@ -403,7 +405,11 @@ public class SqliteOutboxStore implements OutboxStore {
   @Override
   public synchronized void requestRetry(String id, String actor, Instant now) {
     String nowTs = ts(now);
-    update("UPDATE outbox SET state = 'PENDING', next_attempt_at = NULL, lease_until = NULL, lease_owner = NULL, " +
+    // A message that was never rendered (its source was unregistered or ambiguous, say) goes back to
+    // RECEIVED, so the dispatcher renders it against the corrected configuration instead of finding
+    // no payload to send and dead-lettering it again.
+    update("UPDATE outbox SET state = CASE WHEN fhir_json IS NULL THEN 'RECEIVED' ELSE 'PENDING' END, " +
+      "next_attempt_at = NULL, lease_until = NULL, lease_owner = NULL, " +
       "failure_reason = NULL, dmq_at = NULL, retry_requested_by = ?, retry_requested_at = ?, updated_at = ? " +
       "WHERE id = ? AND state != 'DELIVERED'", st -> {
         st.setString(1, actor);
@@ -779,7 +785,8 @@ public class SqliteOutboxStore implements OutboxStore {
       rs.getString("dismissed_by"),
       rs.getString("retry_requested_by"),
       instant(rs.getString("retry_requested_at")),
-      instant(rs.getString("updated_at"))
+      instant(rs.getString("updated_at")),
+      nullableInt(rs, "listener_port")
     );
   }
 

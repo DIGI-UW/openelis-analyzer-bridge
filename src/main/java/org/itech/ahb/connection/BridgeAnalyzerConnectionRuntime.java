@@ -188,7 +188,6 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       if ("SERVER".equals(nullableText(values, "connectionRole"))) {
         astmListeners.start(
           connectionId,
-          sourceBindingId,
           analyzerId,
           requiredPort(values, "port"),
           requiredText(profile.path("protocol"), "lowerLayerVersion", "ASTM lower-layer version")
@@ -287,6 +286,20 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       "TCP/IP".equals(entry.getInboundTransport()) && "CLIENT".equals(nullableText(values, "connectionRole"))
     ) {
       entry.setInboundSourceId(requiredText(values, "host", "Analyzer host"));
+    } else if (
+      "TCP/IP".equals(entry.getInboundTransport()) &&
+      "SERVER".equals(nullableText(values, "connectionRole")) &&
+      "ASTM".equals(entry.getExpectedProtocol())
+    ) {
+      // The analyzer connects to a shared listener; its connection is resolved per message.
+      entry.setListenerPort(requiredPort(values, "port"));
+      String host = nullableText(values, "host");
+      if (host != null) {
+        String address = IpLiteral.canonicalize(host);
+        entry.setInboundSourceId(address != null ? address : host.trim());
+        // A hostname is kept as entered and never resolved: sender identity is numeric only.
+        entry.setInboundAddress(address);
+      }
     }
     entry.setOutboundHost(nullableText(values, "host"));
     entry.setOutboundPort(values.path("port").asInt(0));

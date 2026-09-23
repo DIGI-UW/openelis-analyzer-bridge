@@ -46,7 +46,7 @@ class ManagedAstmConnectionListenersTest {
     int port = availablePort();
     runAsBootTrigger(listeners.holdBootListener(port, "LIS01_A"));
 
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", port, "LIS01_A");
+    listeners.start("bridge-42", "oe-42", port, "LIS01_A");
 
     assertThat(listeners.isRunning("bridge-42")).isTrue();
     assertPortOccupied(port);
@@ -63,7 +63,7 @@ class ManagedAstmConnectionListenersTest {
     int port = availablePort();
     listeners.holdBootListener(port, "LIS01_A");
 
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", port, "LIS01_A");
+    listeners.start("bridge-42", "oe-42", port, "LIS01_A");
 
     assertThat(listeners.isListening(port)).isTrue();
     listeners.stop("bridge-42");
@@ -74,7 +74,7 @@ class ManagedAstmConnectionListenersTest {
   void connectionOnAnUnsharedPortGetsItsOwnListenerClosedByItsLastRelease() throws Exception {
     int port = availablePort();
 
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", port, "LIS01_A");
+    listeners.start("bridge-42", "oe-42", port, "LIS01_A");
 
     assertThat(listeners.isRunning("bridge-42")).isTrue();
     assertPortOccupied(port);
@@ -91,8 +91,8 @@ class ManagedAstmConnectionListenersTest {
   void reactivatingTheSameConnectionKeepsItsListener() throws Exception {
     int port = availablePort();
 
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", port, "LIS01_A");
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", port, "LIS01_A");
+    listeners.start("bridge-42", "oe-42", port, "LIS01_A");
+    listeners.start("bridge-42", "oe-42", port, "LIS01_A");
 
     assertThat(listeners.isRunning("bridge-42")).isTrue();
   }
@@ -102,22 +102,30 @@ class ManagedAstmConnectionListenersTest {
     int first = availablePort();
     int second = availablePort();
 
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", first, "LIS01_A");
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", second, "LIS01_A");
+    listeners.start("bridge-42", "oe-42", first, "LIS01_A");
+    listeners.start("bridge-42", "oe-42", second, "LIS01_A");
 
     assertThat(listeners.isListening(first)).isFalse();
     assertThat(listeners.isListening(second)).isTrue();
   }
 
   @Test
-  void secondConnectionOnAPortIsRefusedUntilSourceResolutionCanSeparateThem() throws Exception {
+  void twoConnectionsOnOnePortShareOneSocketUntilTheLastReleases() throws Exception {
     int port = availablePort();
-    listeners.start("bridge-42", "connection:bridge-42", "oe-42", port, "LIS01_A");
 
-    assertThatThrownBy(() -> listeners.start("bridge-43", "connection:bridge-43", "oe-43", port, "LIS01_A"))
-      .isInstanceOf(AnalyzerConnectionException.class)
-      .hasMessageContaining("already used by Bridge connection bridge-42");
+    listeners.start("bridge-42", "oe-42", port, "LIS01_A");
+    listeners.start("bridge-43", "oe-43", port, "LIS01_A");
+
     assertThat(listeners.isRunning("bridge-42")).isTrue();
+    assertThat(listeners.isRunning("bridge-43")).isTrue();
+    assertPortOccupied(port);
+
+    listeners.stop("bridge-42");
+    assertThat(listeners.isListening(port)).isTrue();
+    assertAcceptsTcp(port);
+
+    listeners.stop("bridge-43");
+    assertThat(listeners.isListening(port)).isFalse();
   }
 
   @Test
@@ -125,7 +133,7 @@ class ManagedAstmConnectionListenersTest {
     int port = availablePort();
     runAsBootTrigger(listeners.holdBootListener(port, "LIS01_A"));
 
-    assertThatThrownBy(() -> listeners.start("bridge-42", "connection:bridge-42", "oe-42", port, "E1381_95"))
+    assertThatThrownBy(() -> listeners.start("bridge-42", "oe-42", port, "E1381_95"))
       .isInstanceOf(AnalyzerConnectionException.class)
       .hasMessageContaining("already listens for LIS01_A");
     assertThat(listeners.isRunning("bridge-42")).isFalse();
@@ -137,7 +145,6 @@ class ManagedAstmConnectionListenersTest {
       assertThatThrownBy(() ->
         listeners.start(
           "bridge-42",
-          "connection:bridge-42",
           "oe-42",
           occupied.getLocalPort(),
           "LIS01_A"

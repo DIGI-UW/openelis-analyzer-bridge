@@ -4,7 +4,9 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,6 +22,7 @@ import org.itech.ahb.fhir.TabularFileLayout;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
+import org.itech.ahb.util.IpLiteral;
 import org.springframework.stereotype.Component;
 
 /**
@@ -95,6 +98,79 @@ public class AnalyzerRuntimeRegistry {
     }
 
     return Optional.empty();
+  }
+
+  /** How a message received on a shared listener resolved to a saved connection, or why it did not. */
+  public sealed interface Resolution {
+    /** The one connection the message belongs to, and which rung of the ladder decided it. */
+    record Resolved(AnalyzerEntry entry, String basis) implements Resolution {}
+
+    /** No active connection can own the message. */
+    record Unregistered(String detail) implements Resolution {}
+
+    /** More than one connection could own the message and nothing in it tells them apart. */
+    record Ambiguous(List<String> connectionIds, String detail) implements Resolution {}
+  }
+
+  /**
+   * Resolves the saved connection for one inbound message.
+   *
+   * <p>A message that arrived on a shared network listener ({@code listenerPort} set) is resolved
+   * among the active connections that declare that listener: first by the peer address against each
+   * connection's {@code host}, then by uniqueness. It is never attributed to a connection whose
+   * literal {@code host} is a different address, and never guessed between two that remain: those
+   * cases come back unregistered or ambiguous so the message is dead-lettered with its payload.
+   *
+   * <p>Without a listener port (serial, file, HTTP, and messages stored before 3.2.0 under a
+   * {@code connection:} key) the source identifier is looked up directly, as before.
+   */
+  public synchronized Resolution resolve(Integer listenerPort, String sourceId, String senderHint) {
+    if (listenerPort == null) {
+      return findAnalyzerEntry(sourceId)
+        .<Resolution>map(entry -> new Resolution.Resolved(entry, "source"))
+        .orElseGet(() -> new Resolution.Unregistered("No saved analyzer connection for source " + sourceId));
+    }
+
+    List<AnalyzerEntry> onListener = analyzers
+      .values()
+      .stream()
+      .filter(entry -> listenerPort.equals(entry.getListenerPort()))
+      .sorted(Comparator.comparing(AnalyzerEntry::getBridgeConnectionId, Comparator.nullsLast(String::compareTo)))
+      .toList();
+    if (onListener.isEmpty()) {
+      return new Resolution.Unregistered("No active analyzer connection listens on port " + listenerPort);
+    }
+
+    String peer = IpLiteral.canonicalize(sourceId);
+    List<AnalyzerEntry> byAddress = onListener
+      .stream()
+      .filter(entry -> peer != null && peer.equals(entry.getInboundAddress()))
+      .toList();
+    if (byAddress.size() == 1) {
+      return new Resolution.Resolved(byAddress.get(0), "address");
+    }
+
+    // A connection whose host is a different literal address is another machine: never a candidate.
+    List<AnalyzerEntry> candidates = byAddress.isEmpty()
+      ? onListener.stream().filter(entry -> entry.getInboundAddress() == null).toList()
+      : byAddress;
+
+    if (candidates.size() == 1) {
+      return new Resolution.Resolved(candidates.get(0), "uniqueness");
+    }
+    if (candidates.isEmpty()) {
+      return new Resolution.Unregistered(
+        "No active analyzer connection on port " + listenerPort + " is configured for address " + sourceId
+      );
+    }
+    List<String> ids = new ArrayList<>();
+    candidates.forEach(entry -> ids.add(entry.getBridgeConnectionId()));
+    return new Resolution.Ambiguous(
+      ids,
+      "Connections " + String.join(", ", ids) + " on port " + listenerPort +
+      " cannot be told apart for a message from " + sourceId +
+      "; set a distinct host on each, or set senderId to each instrument's system name"
+    );
   }
 
   /** Finds the active runtime projection for one durable Bridge connection. */
@@ -198,6 +274,15 @@ public class AnalyzerRuntimeRegistry {
 
     /** Optional host alias; never used as the durable connection's registry key. */
     private String inboundSourceId;
+
+    /**
+     * Shared network listener this connection receives on (the saved {@code port} of a SERVER
+     * connection), or null when the transport has no shared listener.
+     */
+    private Integer listenerPort;
+
+    /** Canonical literal IP from the saved {@code host}; null when unset or given as a hostname. */
+    private String inboundAddress;
 
     /** Saved transport, used to restrict incoming traffic to the configured delivery path. */
     private String inboundTransport;

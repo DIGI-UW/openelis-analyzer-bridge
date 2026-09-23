@@ -58,8 +58,12 @@ public class AnalyzerIdentifier {
             return null;
         }
 
-        // Lookup by sourceId (IP address, serial port path, or file path pattern)
-        String analyzerId = registry.findAnalyzerId(sourceId).orElse(null);
+        // A shared listener resolves among the connections that declare it; everything else is a
+        // direct lookup by sourceId (IP address, serial port path, or file path pattern).
+        String analyzerId = envelope.getListenerPort() != null
+            ? registry.resolve(envelope.getListenerPort(), sourceId, envelope.getProtocolAnalyzerHint())
+                instanceof AnalyzerRuntimeRegistry.Resolution.Resolved resolved ? resolved.entry().getId() : null
+            : registry.findAnalyzerId(sourceId).orElse(null);
 
         if (analyzerId != null) {
             log.info("Identified analyzer '{}' from source '{}' ({} transport)",

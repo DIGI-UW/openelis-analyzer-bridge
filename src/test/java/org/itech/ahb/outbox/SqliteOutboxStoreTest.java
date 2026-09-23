@@ -380,6 +380,24 @@ class SqliteOutboxStoreTest {
     }
 
     @Test
+    @DisplayName("sends a never-rendered dead letter back to be rendered, not to be sent")
+    void retriesAnUnrenderedDeadLetterByRenderingItAgain() {
+      Receipt receipt = store.receive(astm(RAW_ASTM));
+      store.markDeadLettered(receipt.id(), FailureReason.UNREGISTERED_SOURCE, "no saved connection for 192.168.1.10");
+
+      store.requestRetry(receipt.id(), "admin", Instant.now());
+
+      OutboxEntry entry = store.get(receipt.id()).orElseThrow();
+      assertEquals(
+        OutboxState.RECEIVED,
+        entry.state(),
+        "without a rendered payload there is nothing to send; the dispatcher must render it first"
+      );
+      assertNull(entry.failureReason());
+      assertTrue(store.claimNextDue(Instant.now(), Duration.ofMinutes(2), "worker-1").isPresent());
+    }
+
+    @Test
     @DisplayName("will not resurrect a delivered entry")
     void refusesToRetryDeliveredEntry() {
       receiveAndRender(RAW_ASTM, "astm-v1:a", "ACC-1");

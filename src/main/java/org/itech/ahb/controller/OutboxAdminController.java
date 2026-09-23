@@ -286,6 +286,7 @@ public class OutboxAdminController {
     row.put("id", entry.id());
     row.put("state", entry.state().name());
     row.put("sourceId", entry.sourceId());
+    row.put("listenerPort", entry.listenerPort());
     row.put("connectionId", entry.connectionId());
     row.put("analyzerId", entry.analyzerId());
     row.put("protocol", entry.protocol().name());

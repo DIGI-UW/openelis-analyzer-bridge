@@ -22,7 +22,8 @@ import org.springframework.stereotype.Component;
  * <p>The configured boot listeners are held for the life of the application, so an analyzer can
  * reach them before any connection exists. A connection that declares a boot port joins that
  * listener; a connection that declares any other port gets a listener of its own, closed when its
- * last holder releases it.
+ * last holder releases it. Any number of connections may share a listener: each message is
+ * attributed by {@link AnalyzerRuntimeRegistry#resolve}.
  */
 @Component
 public final class ManagedAstmConnectionListeners implements AstmConnectionListeners {
@@ -61,7 +62,6 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
   @Override
   public synchronized void start(
     String connectionId,
-    String sourceBindingId,
     String analyzerId,
     int port,
     String lowerLayerVersion
@@ -77,12 +77,6 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
       listener = newListener(port, lowerLayerVersion);
     } else {
       listener.requireVersion(lowerLayerVersion);
-      String owner = listener.connections.stream().filter(id -> !id.equals(connectionId)).findFirst().orElse(null);
-      if (owner != null) {
-        throw new AnalyzerConnectionException(
-          "ASTM port " + port + " is already used by Bridge connection " + owner
-        );
-      }
     }
 
     try {
@@ -97,7 +91,6 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
       listenersByPort.put(port, listener);
     }
     listener.connections.add(connectionId);
-    listener.sourceBindingId = sourceBindingId;
     portByConnection.put(connectionId, port);
   }
 
@@ -112,9 +105,6 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
       return;
     }
     listener.connections.remove(connectionId);
-    if (listener.connections.isEmpty()) {
-      listener.sourceBindingId = null;
-    }
     if (listener.connections.isEmpty() && !listener.bootHeld) {
       listenersByPort.remove(port);
       stopServlet(listener);
@@ -143,7 +133,9 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
   private SharedListener newListener(int port, String lowerLayerVersion) {
     SharedListener listener = new SharedListener(port, lowerLayerVersion);
     ASTMHandlerService handlers = new ASTMHandlerService(
-      List.of(new ASTMBridgeAdapter(normalizer, () -> listener.sourceBindingId)),
+      // Unbound: every message carries its peer address and this listener's port, and the
+      // registry resolves which of the connections on this port it belongs to.
+      List.of(new ASTMBridgeAdapter(normalizer, port)),
       Mode.FIRST
     );
     listener.servlet = new ASTMServlet(handlers, interpreterFactory, port, version(lowerLayerVersion));
@@ -207,7 +199,6 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
     private ASTMServlet servlet;
     private Thread thread;
     private boolean bootHeld;
-    private volatile String sourceBindingId;
 
     private SharedListener(int port, String lowerLayerVersion) {
       this.port = port;

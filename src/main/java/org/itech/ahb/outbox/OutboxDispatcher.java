@@ -346,6 +346,7 @@ public class OutboxDispatcher {
       .rawMessage(raw.get())
       .receivedAt(entry.receivedAt())
       .protocolAnalyzerHint(entry.protocolHint())
+      .listenerPort(entry.listenerPort())
       .build();
     NormalizedBundleRenderer.Outcome outcome = renderer.render(envelope, client.targetUri().toString());
     if (outcome instanceof NormalizedBundleRenderer.Outcome.Failed failed) {

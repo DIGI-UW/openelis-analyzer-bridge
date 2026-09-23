@@ -100,7 +100,8 @@ public final class OutboxTestSupport implements AutoCloseable {
         envelope.getProtocolAnalyzerHint(),
         envelope.getRawMessage(),
         null,
-        envelope.getReceivedAt()
+        envelope.getReceivedAt(),
+        envelope.getListenerPort()
       )
     );
     return router.route(withReceipt(envelope, receipt.id()));
@@ -122,6 +123,7 @@ public final class OutboxTestSupport implements AutoCloseable {
       .rawMessage(envelope.getRawMessage())
       .receivedAt(envelope.getReceivedAt())
       .protocolAnalyzerHint(envelope.getProtocolAnalyzerHint())
+      .listenerPort(envelope.getListenerPort())
       .resolvedAnalyzerId(envelope.getResolvedAnalyzerId())
       .outboxReceiptId(receiptId)
       .build();

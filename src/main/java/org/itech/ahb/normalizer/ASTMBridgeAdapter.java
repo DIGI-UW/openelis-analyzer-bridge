@@ -1,6 +1,5 @@
 package org.itech.ahb.normalizer;
 
-import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.lib.astm.concept.ASTMMessage;
 import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
@@ -45,7 +44,8 @@ import org.itech.ahb.model.Transport;
 public class ASTMBridgeAdapter implements ASTMHandler {
 
     private final MessageNormalizer normalizer;
-    private final Supplier<String> sourceBindingId;
+    private final String sourceBindingId;
+    private final Integer listenerPort;
 
     /**
      * Constructs a new ASTMBridgeAdapter.
@@ -53,21 +53,26 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * @param normalizer the message normalizer for routing
      */
     public ASTMBridgeAdapter(MessageNormalizer normalizer) {
-        this(normalizer, (String) null);
+        this(normalizer, null, null);
     }
 
     /** Creates an adapter bound to one durable Bridge connection listener. */
     public ASTMBridgeAdapter(MessageNormalizer normalizer, String sourceBindingId) {
-        this(normalizer, () -> sourceBindingId);
+        this(normalizer, sourceBindingId, null);
     }
 
     /**
-     * Creates an adapter for a shared listener whose owning binding can change while it runs.
-     * The binding is read for each message; when it is absent the peer IP identifies the source.
+     * Creates the adapter for a shared listener: messages carry the peer IP and this listener's
+     * port, and the registry resolves which connection on the port each one belongs to.
      */
-    public ASTMBridgeAdapter(MessageNormalizer normalizer, Supplier<String> sourceBindingId) {
+    public ASTMBridgeAdapter(MessageNormalizer normalizer, int listenerPort) {
+        this(normalizer, null, listenerPort);
+    }
+
+    private ASTMBridgeAdapter(MessageNormalizer normalizer, String sourceBindingId, Integer listenerPort) {
         this.normalizer = normalizer;
         this.sourceBindingId = sourceBindingId;
+        this.listenerPort = listenerPort;
     }
 
     /**
@@ -111,13 +116,13 @@ public class ASTMBridgeAdapter implements ASTMHandler {
         String analyzerId = extractSenderFromHRecord(rawMessage);
 
         // Create MessageEnvelope
-        String binding = sourceBindingId.get();
         MessageEnvelope envelope = MessageEnvelope.builder()
             .protocol(Protocol.ASTM)
             .transport(Transport.TCP)
-            .sourceId(binding != null && !binding.isBlank()
-                ? binding
+            .sourceId(sourceBindingId != null && !sourceBindingId.isBlank()
+                ? sourceBindingId
                 : sourceIp != null ? sourceIp : "unknown")
+            .listenerPort(listenerPort)
             .rawMessage(rawMessage)
             .protocolAnalyzerHint(analyzerId)
             .build();

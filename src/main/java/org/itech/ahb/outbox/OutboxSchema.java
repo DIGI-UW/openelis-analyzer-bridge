@@ -12,7 +12,29 @@ final class OutboxSchema {
   private OutboxSchema() {}
 
   static List<SqliteSupport.Migration> migrations() {
-    return List.of(v1());
+    return List.of(v1(), v2());
+  }
+
+  /** 3.2.0: the shared listener a message arrived on, needed to resolve its connection again on retry. */
+  private static SqliteSupport.Migration v2() {
+    return new SqliteSupport.Migration() {
+      @Override
+      public int version() {
+        return 2;
+      }
+
+      @Override
+      public String name() {
+        return "add-listener-port";
+      }
+
+      @Override
+      public void apply(Connection connection) throws SQLException {
+        try (Statement st = connection.createStatement()) {
+          st.execute("ALTER TABLE outbox ADD COLUMN listener_port INTEGER");
+        }
+      }
+    };
   }
 
   private static SqliteSupport.Migration v1() {
