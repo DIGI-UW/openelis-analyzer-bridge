@@ -11,6 +11,7 @@ logging:
 
 # Saved-connection HL7 listener runtime (HAPI SimpleServer)
 # Disabled by default in production for safety. Set MLLP_ENABLED=true
-# in the environment to enable. Ports come only from saved connection values.
+# in the environment to enable. When enabled, the shared MLLP port (org.itech.ahb.mllp.port,
+# default 2575) is bound at boot; a saved HL7 connection on another port gets its own listener.
 org.itech.ahb.mllp:
   enabled: ${MLLP_ENABLED:false}

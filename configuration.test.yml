@@ -1,5 +1,5 @@
 # Test configuration for E2E Docker testing
-# WireMock at 172.28.0.200:8080 acts as OpenELIS capture server
+# WireMock (service "wiremock", port 8080 on the test network) acts as OpenELIS capture server
 
 bridge:
   security:
@@ -54,8 +54,8 @@ org:
         establishment-timeout-seconds: 15
         receive-timeout-seconds: 30
 
-      listen-astm-e1381-95-server:
-        port: 12011
+        e1381-95:
+          port: 12011
 
       forward-astm-server:
         host-name: localhost

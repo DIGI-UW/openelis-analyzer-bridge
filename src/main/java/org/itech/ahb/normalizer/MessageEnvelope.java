@@ -85,4 +85,10 @@ public class MessageEnvelope {
      * {@link #sourceId}.
      */
     private final Integer sourcePort;
+
+    /**
+     * Port of the shared network listener the message arrived on. The connection is resolved among
+     * the connections that declare this listener. Null for transports without a shared listener.
+     */
+    private final Integer listenerPort;
 }

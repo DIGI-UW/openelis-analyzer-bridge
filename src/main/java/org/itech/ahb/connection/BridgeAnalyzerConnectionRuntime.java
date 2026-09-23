@@ -18,9 +18,13 @@ import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
 import org.itech.ahb.util.IpLiteral;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Materializes durable connections into the established Bridge runtime. */
 public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnectionRuntime {
+
+  private static final Logger log = LoggerFactory.getLogger(BridgeAnalyzerConnectionRuntime.class);
 
   private final AnalyzerRuntimeRegistry registry;
   private final FileWatcher fileWatcher;
@@ -54,8 +58,25 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
 
   @Override
   public synchronized void activate(ObjectNode connection, ObjectNode profile) {
+    activate(connection, profile, true);
+  }
+
+  private void activate(ObjectNode connection, ObjectNode profile, boolean refuseIndistinguishable) {
     String connectionId = requiredText(connection, "connectionId", "Connection ID");
     ActiveMaterialization replacement = materialization(connection, profile);
+    AnalyzerEntry twin = registry.indistinguishableFrom(replacement.entry());
+    if (twin != null) {
+      String detail =
+        "Connection " + connectionId + " on port " + replacement.entry().getListenerPort() +
+        " cannot be told apart from active connection " + twin.getBridgeConnectionId() +
+        " (" + twin.getName() + "): give each a distinct host, or set senderId to each instrument's system name";
+      if (refuseIndistinguishable) {
+        throw new AnalyzerConnectionException(AnalyzerConnectionException.Kind.CONFLICT, detail);
+      }
+      // Restoring what was already active must not stop the bridge from starting; messages the
+      // pair cannot be told apart for are dead-lettered as AMBIGUOUS_SOURCE instead.
+      log.warn("{}. Restoring it anyway; its unattributable messages will be held as AMBIGUOUS_SOURCE", detail);
+    }
     ActiveMaterialization previous = activeConnections.get(connectionId);
     if (previous != null) {
       deactivateMaterialization(previous);
@@ -96,8 +117,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
   }
 
   @Override
-  public void restore(ObjectNode connection, ObjectNode profile) {
-    activate(connection, profile);
+  public synchronized void restore(ObjectNode connection, ObjectNode profile) {
+    activate(connection, profile, false);
   }
 
   private ActiveMaterialization materialization(ObjectNode connection, ObjectNode profile) {
@@ -188,7 +209,6 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       if ("SERVER".equals(nullableText(values, "connectionRole"))) {
         astmListeners.start(
           connectionId,
-          sourceBindingId,
           analyzerId,
           requiredPort(values, "port"),
           requiredText(profile.path("protocol"), "lowerLayerVersion", "ASTM lower-layer version")
@@ -202,7 +222,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
         throw new AnalyzerConnectionException("Inbound HL7 TCP requires a saved SERVER connection");
       }
       if (hl7Listeners == null) throw new AnalyzerConnectionException("HL7 listener runtime is unavailable");
-      hl7Listeners.start(connectionId, sourceBindingId, requiredPort(values, "port"));
+      hl7Listeners.start(connectionId, requiredPort(values, "port"));
       return;
     }
 
@@ -287,6 +307,22 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       "TCP/IP".equals(entry.getInboundTransport()) && "CLIENT".equals(nullableText(values, "connectionRole"))
     ) {
       entry.setInboundSourceId(requiredText(values, "host", "Analyzer host"));
+    } else if (
+      "TCP/IP".equals(entry.getInboundTransport()) &&
+      "SERVER".equals(nullableText(values, "connectionRole")) &&
+      ("ASTM".equals(entry.getExpectedProtocol()) || "HL7".equals(entry.getExpectedProtocol()))
+    ) {
+      // The analyzer connects to a shared listener; its connection is resolved per message.
+      entry.setListenerPort(requiredPort(values, "port"));
+      String host = nullableText(values, "host");
+      if (host != null) {
+        String address = IpLiteral.canonicalize(host);
+        entry.setInboundSourceId(address != null ? address : host.trim());
+        // A hostname is kept as entered and never resolved: sender identity is numeric only.
+        entry.setInboundAddress(address);
+      }
+      String senderId = nullableText(values, "senderId");
+      entry.setSenderId(senderId == null ? null : senderId.trim());
     }
     entry.setOutboundHost(nullableText(values, "host"));
     entry.setOutboundPort(values.path("port").asInt(0));

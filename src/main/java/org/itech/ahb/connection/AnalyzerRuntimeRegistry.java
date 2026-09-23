@@ -4,7 +4,9 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,6 +22,7 @@ import org.itech.ahb.fhir.TabularFileLayout;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
+import org.itech.ahb.util.IpLiteral;
 import org.springframework.stereotype.Component;
 
 /**
@@ -95,6 +98,151 @@ public class AnalyzerRuntimeRegistry {
     }
 
     return Optional.empty();
+  }
+
+  /** How a message received on a shared listener resolved to a saved connection, or why it did not. */
+  public sealed interface Resolution {
+    /** The one connection the message belongs to, and which rung of the ladder decided it. */
+    record Resolved(AnalyzerEntry entry, String basis) implements Resolution {}
+
+    /** No active connection can own the message. */
+    record Unregistered(String detail) implements Resolution {}
+
+    /** More than one connection could own the message and nothing in it tells them apart. */
+    record Ambiguous(List<String> connectionIds, String detail) implements Resolution {}
+  }
+
+  /**
+   * Resolves the saved connection for one inbound message.
+   *
+   * <p>A message that arrived on a shared network listener ({@code listenerPort} set) is resolved
+   * among the active connections that declare that listener, in this order:
+   * <ol>
+   *   <li>the peer address against each connection's {@code host};</li>
+   *   <li>the message's sender name (ASTM H.5 or HL7 MSH-3, component 1) against each connection's
+   *       {@code senderId};</li>
+   *   <li>the pinned profile's {@code identifier_pattern}, which can only rule a connection out;</li>
+   *   <li>uniqueness: one candidate left.</li>
+   * </ol>
+   * A connection whose literal {@code host} is a different address, or whose {@code senderId} names a
+   * different instrument, is never a candidate. Nothing is guessed between the candidates that
+   * remain: those cases come back unregistered or ambiguous so the message is dead-lettered with its
+   * payload.
+   *
+   * <p>Without a listener port (serial, file, HTTP, and messages stored before 3.2.0 under a
+   * {@code connection:} key) the source identifier is looked up directly, as before.
+   */
+  public synchronized Resolution resolve(Integer listenerPort, String sourceId, String senderHint) {
+    if (listenerPort == null) {
+      return findAnalyzerEntry(sourceId)
+        .<Resolution>map(entry -> new Resolution.Resolved(entry, "source"))
+        .orElseGet(() -> new Resolution.Unregistered("No saved analyzer connection for source " + sourceId));
+    }
+
+    List<AnalyzerEntry> onListener = analyzers
+      .values()
+      .stream()
+      .filter(entry -> listenerPort.equals(entry.getListenerPort()))
+      .sorted(Comparator.comparing(AnalyzerEntry::getBridgeConnectionId, Comparator.nullsLast(String::compareTo)))
+      .toList();
+    if (onListener.isEmpty()) {
+      return new Resolution.Unregistered("No active analyzer connection listens on port " + listenerPort);
+    }
+
+    String peer = IpLiteral.canonicalize(sourceId);
+    List<AnalyzerEntry> byAddress = onListener
+      .stream()
+      .filter(entry -> peer != null && peer.equals(entry.getInboundAddress()))
+      .toList();
+    if (byAddress.size() == 1) {
+      return new Resolution.Resolved(byAddress.get(0), "address");
+    }
+
+    // A connection whose host is a different literal address is another machine: never a candidate.
+    List<AnalyzerEntry> candidates = byAddress.isEmpty()
+      ? onListener.stream().filter(entry -> entry.getInboundAddress() == null).toList()
+      : byAddress;
+
+    String sender = senderName(senderHint);
+    if (sender != null && candidates.size() > 1) {
+      List<AnalyzerEntry> bySender = candidates
+        .stream()
+        .filter(entry -> entry.getSenderId() != null && entry.getSenderId().equalsIgnoreCase(sender))
+        .toList();
+      if (bySender.size() == 1) {
+        return new Resolution.Resolved(bySender.get(0), "sender");
+      }
+      if (bySender.isEmpty()) {
+        // A connection that names another instrument is that instrument, not this one.
+        candidates = candidates.stream().filter(entry -> entry.getSenderId() == null).toList();
+      } else {
+        candidates = bySender;
+      }
+    }
+    if (senderHint != null && candidates.size() > 1) {
+      // A type-level pattern (GENEXPERT|CEPHEID) rules out another kind of analyzer; it never picks one.
+      candidates = candidates
+        .stream()
+        .filter(entry ->
+          entry.getCompiledIdentifierPattern() == null || entry.getCompiledIdentifierPattern().matcher(senderHint).find()
+        )
+        .toList();
+    }
+
+    if (candidates.size() == 1) {
+      return new Resolution.Resolved(candidates.get(0), "uniqueness");
+    }
+    if (candidates.isEmpty()) {
+      return new Resolution.Unregistered(
+        "No active analyzer connection on port " + listenerPort + " is configured for address " + sourceId +
+        (sender == null ? "" : " and sender " + sender)
+      );
+    }
+    List<String> ids = new ArrayList<>();
+    candidates.forEach(entry -> ids.add(entry.getBridgeConnectionId()));
+    return new Resolution.Ambiguous(
+      ids,
+      "Connections " + String.join(", ", ids) + " on port " + listenerPort +
+      " cannot be told apart for a message from " + sourceId +
+      "; set a distinct host on each, or set senderId to each instrument's system name"
+    );
+  }
+
+  /**
+   * The instrument's own name from a sender field: component 1 of ASTM H.5 or HL7 MSH-3, which a
+   * GeneXpert fills with the System Name from its configuration.
+   */
+  static String senderName(String senderHint) {
+    if (senderHint == null) {
+      return null;
+    }
+    String first = senderHint.split("\\^", -1)[0].trim();
+    return first.isEmpty() ? null : first;
+  }
+
+  /**
+   * Another active connection on the same listener that no message could be told apart from, or
+   * null. Two connections are indistinguishable when they share an address (or both have none) and
+   * their sender names do not separate them.
+   */
+  public synchronized AnalyzerEntry indistinguishableFrom(AnalyzerEntry candidate) {
+    if (candidate.getListenerPort() == null) {
+      return null;
+    }
+    return analyzers
+      .values()
+      .stream()
+      .filter(other -> candidate.getListenerPort().equals(other.getListenerPort()))
+      .filter(other -> !java.util.Objects.equals(other.getBridgeConnectionId(), candidate.getBridgeConnectionId()))
+      .filter(other -> java.util.Objects.equals(other.getInboundAddress(), candidate.getInboundAddress()))
+      .filter(other -> sameSender(other.getSenderId(), candidate.getSenderId()))
+      .findFirst()
+      .orElse(null);
+  }
+
+  /** Both unnamed, or both the same name: a message's sender cannot tell them apart. */
+  private static boolean sameSender(String left, String right) {
+    return left == null ? right == null : left.equalsIgnoreCase(right);
   }
 
   /** Finds the active runtime projection for one durable Bridge connection. */
@@ -198,6 +346,21 @@ public class AnalyzerRuntimeRegistry {
 
     /** Optional host alias; never used as the durable connection's registry key. */
     private String inboundSourceId;
+
+    /**
+     * Shared network listener this connection receives on (the saved {@code port} of a SERVER
+     * connection), or null when the transport has no shared listener.
+     */
+    private Integer listenerPort;
+
+    /** Canonical literal IP from the saved {@code host}; null when unset or given as a hostname. */
+    private String inboundAddress;
+
+    /**
+     * The instrument's own name as it sends it (ASTM H.5 / HL7 MSH-3 component 1; a GeneXpert's
+     * configured System Name). Separates connections that share a listener and an address.
+     */
+    private String senderId;
 
     /** Saved transport, used to restrict incoming traffic to the configured delivery path. */
     private String inboundTransport;

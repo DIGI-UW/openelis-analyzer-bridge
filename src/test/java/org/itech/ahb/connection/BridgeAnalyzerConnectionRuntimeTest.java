@@ -161,7 +161,6 @@ class BridgeAnalyzerConnectionRuntimeTest {
 
     verify(astmListeners).start(
       "00000000-0000-0000-0000-000000000042",
-      "connection:00000000-0000-0000-0000-000000000042",
       "oe-42",
       9_101,
       "LIS01_A"
@@ -174,6 +173,8 @@ class BridgeAnalyzerConnectionRuntimeTest {
       .findFirst()
       .orElseThrow();
     assertThat(entry.getExpectedProtocol()).isEqualTo("ASTM");
+    assertThat(entry.getListenerPort()).isEqualTo(9_101);
+    assertThat(entry.getInboundAddress()).isNull();
     assertThat(entry.getAstmResultRecordSelection()).isNotNull();
     assertThat(entry.getControlResultRecognition()).isNotNull();
 
@@ -182,6 +183,103 @@ class BridgeAnalyzerConnectionRuntimeTest {
     verify(astmListeners).stop("00000000-0000-0000-0000-000000000042");
     assertThat(registry.getRegisteredAnalyzers().values()).noneMatch(candidate -> "oe-42".equals(candidate.getId()));
     verifyNoInteractions(serialListeners);
+  }
+
+  @Test
+  void astmServerHostIsCanonicalisedWhenLiteralAndKeptAsEnteredWhenAHostname() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+    );
+    ObjectNode literal = baseConnection(profile, "GeneXpert bench 1");
+    literal.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
+    literal.withObject("values").put("port", 12_001).put("host", " 2001:db8:0:0:0:0:0:21 ");
+
+    runtime.activate(literal, profile);
+
+    AnalyzerEntry entry = registry.getRegisteredAnalyzers().values().iterator().next();
+    assertThat(entry.getListenerPort()).isEqualTo(12_001);
+    assertThat(entry.getInboundAddress()).isEqualTo("2001:db8:0:0:0:0:0:21");
+
+    ObjectNode hostname = literal.deepCopy();
+    hostname.put("configRevision", 2);
+    hostname.withObject("values").put("host", "gx-bench-1.lab.local");
+
+    runtime.activate(hostname, profile);
+
+    entry = registry.getRegisteredAnalyzers().values().iterator().next();
+    // Never resolved: a hostname cannot claim a peer address, so it never matches on address.
+    assertThat(entry.getInboundAddress()).isNull();
+    assertThat(entry.getInboundSourceId()).isEqualTo("gx-bench-1.lab.local");
+    assertThat(entry.getListenerPort()).isEqualTo(12_001);
+  }
+
+  @Test
+  void refusesToActivateASecondConnectionThatNoMessageCouldBeToldApartFrom() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+    );
+    ObjectNode first = sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A");
+    ObjectNode second = sharedPortConnection(profile, "gx-b", "oe-b", "GeneXpert B");
+    runtime.activate(first, profile);
+
+    assertThatThrownBy(() -> runtime.activate(second, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("gx-a")
+      .hasMessageContaining("GeneXpert A")
+      .hasMessageContaining("senderId");
+    assertThat(registry.getRegisteredAnalyzers()).containsOnlyKeys("connection:gx-a");
+
+    second.withObject("values").put("senderId", "GX-LAB-B");
+    runtime.activate(second, profile);
+    assertThat(registry.getRegisteredAnalyzers()).containsOnlyKeys("connection:gx-a", "connection:gx-b");
+    assertThat(registry.findAnalyzerEntryByConnectionId("gx-b").orElseThrow().getSenderId()).isEqualTo("GX-LAB-B");
+
+    ObjectNode third = sharedPortConnection(profile, "gx-c", "oe-c", "GeneXpert C");
+    third.withObject("values").put("host", "10.0.0.23");
+    runtime.activate(third, profile);
+    assertThat(registry.getRegisteredAnalyzers()).containsKey("connection:gx-c");
+  }
+
+  @Test
+  void restoringAnIndistinguishablePairDoesNotStopTheBridge() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+    );
+
+    runtime.restore(sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A"), profile);
+    runtime.restore(sharedPortConnection(profile, "gx-b", "oe-b", "GeneXpert B"), profile);
+
+    assertThat(registry.getRegisteredAnalyzers()).containsOnlyKeys("connection:gx-a", "connection:gx-b");
+  }
+
+  private ObjectNode sharedPortConnection(ObjectNode profile, String connectionId, String analyzerId, String name) {
+    ObjectNode connection = baseConnection(profile, name);
+    connection.put("connectionId", connectionId);
+    connection.put("clientAnalyzerId", analyzerId);
+    connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
+    connection.withObject("values").put("port", 12_001);
+    return connection;
   }
 
   @Test
@@ -204,12 +302,10 @@ class BridgeAnalyzerConnectionRuntimeTest {
     connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 9123);
 
     runtime.activate(connection, profile);
-    verify(listeners).start(
-      "00000000-0000-0000-0000-000000000042",
-      "connection:00000000-0000-0000-0000-000000000042",
-      9123
-    );
+    verify(listeners).start("00000000-0000-0000-0000-000000000042", 9123);
     assertThat(registry.findAnalyzerId("connection:00000000-0000-0000-0000-000000000042")).contains("oe-42");
+    assertThat(registry.findAnalyzerEntryByConnectionId("00000000-0000-0000-0000-000000000042").orElseThrow().getListenerPort())
+      .isEqualTo(9123);
     runtime.deactivate(connection, profile);
     verify(listeners).stop("00000000-0000-0000-0000-000000000042");
     assertThat(registry.getRegisteredAnalyzers()).isEmpty();
@@ -305,7 +401,6 @@ class BridgeAnalyzerConnectionRuntimeTest {
       .when(astmListeners)
       .start(
         "00000000-0000-0000-0000-000000000042",
-        "connection:00000000-0000-0000-0000-000000000042",
         "oe-42",
         9_101,
         "LIS01_A"
@@ -388,7 +483,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
     replacement.withObject("values").put("connectionRole", "SERVER");
     doThrow(new AnalyzerConnectionException("occupied"))
       .when(listeners)
-      .start("connection-a", "connection:connection-a", "oe-a", 9101, "LIS01_A");
+      .start("connection-a", "oe-a", 9101, "LIS01_A");
     assertThatThrownBy(() -> runtime.activate(replacement, profile))
       .isInstanceOf(AnalyzerConnectionException.class)
       .hasMessage("occupied");

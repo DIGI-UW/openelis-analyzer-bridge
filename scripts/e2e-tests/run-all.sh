@@ -13,6 +13,7 @@ echo ""
 
 cd "${PROJECT_DIR}"
 
+source "${SCRIPT_DIR}/isolation.sh"
 source "${SCRIPT_DIR}/test-support.sh"
 
 for command in docker curl jq; do
@@ -57,9 +58,9 @@ echo "Waiting for services to be healthy..."
 TIMEOUT=120
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    if curl --silent --fail http://localhost:8443/actuator/health >/dev/null 2>&1 \
-        && curl --silent --fail http://localhost:18080/health >/dev/null 2>&1 \
-        && curl --silent --fail http://localhost:8080/__admin/health >/dev/null 2>&1; then
+    if curl --silent --fail "http://localhost:${E2E_BRIDGE_PORT}/actuator/health" >/dev/null 2>&1 \
+        && curl --silent --fail "${ANALYZER_MOCK_URL}/health" >/dev/null 2>&1 \
+        && curl --silent --fail "${WIREMOCK_URL}/__admin/health" >/dev/null 2>&1; then
         echo "Bridge, analyzer-mock, and OpenELIS capture are ready."
         break
     fi
@@ -74,6 +75,28 @@ if [ $ELAPSED -ge $TIMEOUT ]; then
     exit 1
 fi
 
+echo "--- Checking the shared listeners exist before any analyzer is configured ---"
+for port in "${E2E_ASTM_LIS1A_PORT}" "${E2E_MLLP_PORT}"; do
+    if ! (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then
+        echo "FAIL: nothing accepts a TCP session on host port ${port} with no connection configured" >&2
+        exit 1
+    fi
+done
+# The ports this compose file publishes for the bridge are the ports it binds at boot.
+listening="$(docker compose -f docker-compose.test.yml exec -T openelis-analyzer-bridge sh -c \
+    'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null' \
+    | awk 'NR>1 && $4=="0A" {split($2, a, ":"); print a[2]}' | sort -u \
+    | while read -r hex; do printf '%d\n' "0x${hex}"; done)"
+for published in $(docker compose -f docker-compose.test.yml config --format json \
+    | jq -r '.services["openelis-analyzer-bridge"].ports[].target'); do
+    if ! grep -qx "${published}" <<<"${listening}"; then
+        echo "FAIL: docker-compose.test.yml publishes container port ${published}, but the bridge does not listen on it at boot" >&2
+        echo "Listening: $(tr '\n' ' ' <<<"${listening}")" >&2
+        exit 1
+    fi
+done
+echo "Listening at boot on every published port: $(tr '\n' ' ' <<<"${listening}")"
+echo ""
 
 GENEXPERT_CONNECTION_ID="$(create_connection \
     "genexpert-astm" \
@@ -91,8 +114,20 @@ FLUOROCYCLER_CONNECTION_ID="$(create_connection \
 export FLUOROCYCLER_CONNECTION_ID
 activate_connection "${FLUOROCYCLER_CONNECTION_ID}"
 
+HL7_PROFILE_ID="$(publish_hl7_fixture_profile)"
+HL7_CONNECTION_ID="$(create_connection \
+    "${HL7_PROFILE_ID}" \
+    "oe-e2e-hl7" \
+    "HL7 acceptance connection" \
+    '{"transport":"TCP/IP","connectionRole":"SERVER","port":2575}')"
+activate_connection "${HL7_CONNECTION_ID}"
+
 echo "--- Running ASTM TCP test ---"
 bash "${SCRIPT_DIR}/test-astm-tcp.sh"
+echo ""
+
+echo "--- Running HL7 MLLP test ---"
+BRIDGE_CONNECTION_ID="${HL7_CONNECTION_ID}" bash "${SCRIPT_DIR}/test-mllp.sh"
 echo ""
 
 echo "--- Running delivery outbox DNS-outage test ---"
@@ -107,11 +142,15 @@ echo "--- Running FILE test ---"
 bash "${SCRIPT_DIR}/test-file-csv.sh"
 echo ""
 
+echo "--- Running shared-listener attribution test ---"
+bash "${SCRIPT_DIR}/test-shared-listener.sh"
+echo ""
+
 # Last: recreates the bridge with a different retry budget.
 echo "--- Running delivery outbox dead-message-queue test ---"
 bash "${SCRIPT_DIR}/test-outbox-dmq-retry.sh"
 echo ""
 
 echo "========================================"
-echo "PRIORITY RESULT-TRAFFIC TESTS PASSED (5/5)"
+echo "PRIORITY RESULT-TRAFFIC TESTS PASSED (7/7)"
 echo "========================================"

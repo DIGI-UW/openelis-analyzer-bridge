@@ -17,6 +17,6 @@ bridge:
     poll-interval-ms: 1000
     file-stability-timeout-ms: 500
 
-# Permit saved HL7 server connections; listening ports come from saved values.
+# Run HL7 MLLP: the shared listener (org.itech.ahb.mllp.port, default 2575) is bound at boot.
 org.itech.ahb.mllp:
   enabled: true

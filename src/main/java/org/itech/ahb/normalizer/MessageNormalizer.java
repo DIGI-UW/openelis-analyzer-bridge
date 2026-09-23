@@ -157,7 +157,8 @@ public class MessageNormalizer implements MessageRouter {
                     envelope.getProtocolAnalyzerHint(),
                     envelope.getRawMessage(),
                     null,
-                    envelope.getReceivedAt()));
+                    envelope.getReceivedAt(),
+                    envelope.getListenerPort()));
             } catch (RuntimeException e) {
                 // Nothing was stored, so the transport must refuse the message rather than imply the
                 // bridge has it. For analyzers that resend on a negative acknowledgement this is the
@@ -180,9 +181,20 @@ public class MessageNormalizer implements MessageRouter {
 
         String protocolHint = envelope.getProtocolAnalyzerHint();
 
-        AnalyzerRuntimeRegistry.AnalyzerEntry registryEntry = registry != null
-          ? registry.findAnalyzerEntry(envelope.getSourceId()).orElse(null)
+        AnalyzerRuntimeRegistry.Resolution resolution = registry != null
+          ? registry.resolve(envelope.getListenerPort(), envelope.getSourceId(), protocolHint)
           : null;
+        AnalyzerRuntimeRegistry.AnalyzerEntry registryEntry =
+          resolution instanceof AnalyzerRuntimeRegistry.Resolution.Resolved resolved ? resolved.entry() : null;
+        if (resolution instanceof AnalyzerRuntimeRegistry.Resolution.Ambiguous ambiguous) {
+          recordIdentity(protocol, transport, "ambiguous_source");
+          log.warn("Holding message from '{}' in the dead-message queue: {}", envelope.getSourceId(), ambiguous.detail());
+          if (receipt != null) {
+            outbox.markDeadLettered(receipt.id(), FailureReason.AMBIGUOUS_SOURCE, ambiguous.detail());
+          }
+          if (metricsService != null) metricsService.recordRouted(sample, protocol, transport, false);
+          return false;
+        }
         if (registry != null && !matchesSavedTransport(envelope, registryEntry)) {
           recordIdentity(protocol, transport, registryEntry == null ? "unregistered_source" : "transport_mismatch");
           log.warn(
@@ -194,7 +206,7 @@ public class MessageNormalizer implements MessageRouter {
               receipt.id(),
               registryEntry == null ? FailureReason.UNREGISTERED_SOURCE : FailureReason.CONNECTION_TRANSPORT_MISMATCH,
               registryEntry == null
-                ? "No saved analyzer connection for source " + envelope.getSourceId()
+                ? ((AnalyzerRuntimeRegistry.Resolution.Unregistered) resolution).detail()
                 : "Source " + envelope.getSourceId() + " sent over a transport its saved connection does not accept");
           }
           if (metricsService != null) metricsService.recordRouted(sample, protocol, transport, false);
@@ -261,6 +273,7 @@ public class MessageNormalizer implements MessageRouter {
             .rawMessage(envelope.getRawMessage())
             .receivedAt(envelope.getReceivedAt())
             .protocolAnalyzerHint(protocolHint)
+            .listenerPort(envelope.getListenerPort())
             .resolvedAnalyzerId(resolvedAnalyzerId)
             .outboxReceiptId(receipt == null ? null : receipt.id())
             .build();

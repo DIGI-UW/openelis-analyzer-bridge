@@ -59,9 +59,16 @@ public class NormalizedBundleRenderer {
    *     delivery so an operator can see where a stored delivery was aimed
    */
   public Outcome render(MessageEnvelope envelope, String targetUri) {
-    Optional<AnalyzerRuntimeRegistry.AnalyzerEntry> registered = registry == null || envelope.getSourceId() == null
-      ? Optional.empty()
-      : registry.findAnalyzerEntry(envelope.getSourceId());
+    AnalyzerRuntimeRegistry.Resolution resolution = registry == null || envelope.getSourceId() == null
+      ? null
+      : registry.resolve(envelope.getListenerPort(), envelope.getSourceId(), envelope.getProtocolAnalyzerHint());
+    if (resolution instanceof AnalyzerRuntimeRegistry.Resolution.Ambiguous ambiguous) {
+      return new Outcome.Failed(FailureReason.AMBIGUOUS_SOURCE, ambiguous.detail());
+    }
+    Optional<AnalyzerRuntimeRegistry.AnalyzerEntry> registered =
+      resolution instanceof AnalyzerRuntimeRegistry.Resolution.Resolved resolved
+        ? Optional.of(resolved.entry())
+        : Optional.empty();
     if (registered.isEmpty()) {
       return new Outcome.Failed(
         FailureReason.UNREGISTERED_SOURCE,

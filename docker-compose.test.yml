@@ -7,10 +7,12 @@ services:
   openelis-analyzer-bridge:
     build: .
     ports:
-      - "12001:12001"   # ASTM LIS1-A listener
-      - "12011:12011"   # ASTM E1381-95 listener
-      - "2575:2575"     # Saved HL7 test connection port (activation is still required)
-      - "8443:8443"     # HTTP /input endpoint + actuator
+      # Host ports come from the environment so run-all.sh can start an isolated stack next to
+      # anything else on the machine; the defaults are the ports CI has always used.
+      - "${E2E_ASTM_LIS1A_PORT:-12001}:12001"   # ASTM LIS1-A listener
+      - "${E2E_ASTM_E1381_PORT:-12011}:12011"   # ASTM E1381-95 listener
+      - "${E2E_MLLP_PORT:-2575}:2575"           # Shared MLLP listener, bound at boot
+      - "${E2E_BRIDGE_PORT:-8443}:8443"         # HTTP /input endpoint + actuator
     environment:
       SPRING_PROFILE: test
       LOGGING_LEVEL_ORG_ITECH: DEBUG
@@ -24,7 +26,11 @@ services:
       - bridge-state:/data/openelis-analyzer-bridge
     networks:
       astm-test-net:
-        ipv4_address: 172.28.0.100
+        ipv4_address: ${E2E_SUBNET_PREFIX:-172.28.0}.100
+      # A second network gives the mock a second real source address, so two analyzers on one
+      # shared listener can be told apart by address.
+      astm-test-net-b:
+        ipv4_address: ${E2E_SUBNET_B_PREFIX:-172.28.1}.100
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8443/actuator/health"]
       interval: 10s
@@ -42,13 +48,15 @@ services:
     environment:
       ANALYZER_BRIDGE_PROFILES_DIR: /bridge-profiles
     ports:
-      - "18080:8080"
+      - "${E2E_MOCK_PORT:-18080}:8080"
     volumes:
       - ./src/main/resources/analyzer-profiles:/bridge-profiles:ro
       - analyzer-input:/data/analyzer-imports
     networks:
       astm-test-net:
-        ipv4_address: 172.28.0.150
+        ipv4_address: ${E2E_SUBNET_PREFIX:-172.28.0}.150
+      astm-test-net-b:
+        ipv4_address: ${E2E_SUBNET_B_PREFIX:-172.28.1}.150
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
       interval: 5s
@@ -56,13 +64,12 @@ services:
       retries: 10
 
   # WireMock — captures forwarded messages for verification
-  # Query API: GET http://localhost:8080/__admin/requests
-  # Reset:     DELETE http://localhost:8080/__admin/requests
+  # Query API: GET http://localhost:${E2E_WIREMOCK_PORT}/__admin/requests
+  # Reset:     DELETE http://localhost:${E2E_WIREMOCK_PORT}/__admin/requests
   wiremock:
     image: wiremock/wiremock:3.3.1
-    container_name: wiremock-capture
     ports:
-      - "8080:8080"
+      - "${E2E_WIREMOCK_PORT:-8080}:8080"
     command:
       - --port=8080
       - --verbose
@@ -71,7 +78,7 @@ services:
       - ./test-data/wiremock:/home/wiremock
     networks:
       astm-test-net:
-        ipv4_address: 172.28.0.200
+        ipv4_address: ${E2E_SUBNET_PREFIX:-172.28.0}.200
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/health"]
       interval: 5s
@@ -83,7 +90,12 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/24
+        - subnet: ${E2E_SUBNET_PREFIX:-172.28.0}.0/24
+  astm-test-net-b:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${E2E_SUBNET_B_PREFIX:-172.28.1}.0/24
 
 volumes:
   analyzer-input:

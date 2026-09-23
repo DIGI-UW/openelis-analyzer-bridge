@@ -21,7 +21,9 @@ import org.itech.ahb.routing.MessageRouter;
  * <ul>
  *   <li>Receives parsed HL7 messages from HAPI SimpleServer</li>
  *   <li>Extracts source IP from HAPI connection metadata</li>
- *   <li>Uses the saved listener binding as source authority; MSH-3/MSH-4 are diagnostic hints only</li>
+ *   <li>On a shared listener, stamps the peer address and listener port so the registry resolves the
+ *       saved connection (address, then MSH-3/MSH-4 sender, then uniqueness); on a bound listener,
+ *       stamps that listener's saved connection</li>
  *   <li>Creates a MessageEnvelope for internal routing</li>
  *   <li>Delegates to MessageRouter for HTTP forwarding</li>
  *   <li>Returns HAPI-generated ACK/NAK responses</li>
@@ -52,6 +54,7 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
     private final MessageRouter router;
     private final PipeParser pipeParser;
     private final String sourceBindingId;
+    private final Integer listenerPort;
     private final Object lifecycle = new Object();
     private boolean accepting = true;
     private int inFlight;
@@ -68,6 +71,21 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
         }
         this.router = router;
         this.sourceBindingId = sourceBindingId;
+        this.listenerPort = null;
+        this.pipeParser = new PipeParser();
+    }
+
+    /**
+     * Receiving application for a shared listener: the peer IP is the source and the registry
+     * resolves which connection on {@code listenerPort} the message belongs to.
+     *
+     * @param router the message router for forwarding messages
+     * @param listenerPort the port of the shared listener this application serves
+     */
+    public HapiReceivingApplication(MessageRouter router, int listenerPort) {
+        this.router = router;
+        this.sourceBindingId = null;
+        this.listenerPort = listenerPort;
         this.pipeParser = new PipeParser();
     }
 
@@ -107,7 +125,8 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
             MessageEnvelope envelope = MessageEnvelope.builder()
                 .protocol(Protocol.HL7)
                 .transport(Transport.MLLP)
-                .sourceId(sourceBindingId)
+                .sourceId(sourceBindingId != null ? sourceBindingId : sourceIp)
+                .listenerPort(listenerPort)
                 .sourcePort(sourcePort)
                 .rawMessage(rawMessage)
                 .receivedAt(Instant.now())

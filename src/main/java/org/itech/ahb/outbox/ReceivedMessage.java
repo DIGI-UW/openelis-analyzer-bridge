@@ -18,5 +18,20 @@ public record ReceivedMessage(
   String protocolHint,
   String rawText,
   String rawCharset,
-  Instant receivedAt
-) {}
+  Instant receivedAt,
+  Integer listenerPort
+) {
+  /** A message that did not arrive on a shared network listener. */
+  public ReceivedMessage(
+    String sourceId,
+    Integer sourcePort,
+    Protocol protocol,
+    Transport transport,
+    String protocolHint,
+    String rawText,
+    String rawCharset,
+    Instant receivedAt
+  ) {
+    this(sourceId, sourcePort, protocol, transport, protocolHint, rawText, rawCharset, receivedAt, null);
+  }
+}

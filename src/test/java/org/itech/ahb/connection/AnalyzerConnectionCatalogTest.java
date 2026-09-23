@@ -386,11 +386,84 @@ class AnalyzerConnectionCatalogTest {
       .isEqualTo("ACTIVE");
     verify(restartedListeners).start(
       created.path("connectionId").asText(),
-      "connection:" + created.path("connectionId").asText(),
       "oe-56",
       9_102,
       "LIS01_A"
     );
+  }
+
+  @Test
+  void genexpertRevisionFiveOffersHostAndSenderIdForAServerConnectionWithoutRequiringThem() {
+    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode request = createRequest(profile, "create-gx-v5", "oe-gx-v5");
+    request.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 12_001);
+
+    ObjectNode created = catalog(UUID::randomUUID).create(request);
+
+    assertThat(created.path("readiness").path("ready").asBoolean())
+      .as("host and senderId are optional for a SERVER connection")
+      .isTrue();
+    assertThat(field(created, "host").path("required").asBoolean()).isFalse();
+    assertThat(field(created, "host").path("visibleWhen").path("fieldKey").asText()).isEqualTo("transport");
+    assertThat(field(created, "senderId").path("labelKey").asText()).isEqualTo("analyzer.connection.field.senderId");
+  }
+
+  @Test
+  void genexpertRevisionFiveConnectionActivatesWithHostAndSenderIdMaterialised() {
+    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerConnectionCatalog catalog = catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        registry,
+        null,
+        org.mockito.Mockito.mock(AstmConnectionListeners.class),
+        org.mockito.Mockito.mock(SerialConnectionListeners.class)
+      )
+    );
+    ObjectNode request = createRequest(profile, "create-gx-v5-named", "oe-gx-v5-named");
+    request
+      .withObject("values")
+      .put("transport", "TCP/IP")
+      .put("connectionRole", "SERVER")
+      .put("port", 12_001)
+      .put("host", "10.0.0.21")
+      .put("senderId", "GX-LAB-A");
+    ObjectNode created = catalog.create(request);
+
+    ObjectNode activated = catalog.applyRuntimeCommand(runtimeCommand(created, "activate-gx-v5", "ACTIVATE"));
+
+    assertThat(activated.path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
+    var entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
+    assertThat(entry.getListenerPort()).isEqualTo(12_001);
+    assertThat(entry.getInboundAddress()).isEqualTo("10.0.0.21");
+    assertThat(entry.getSenderId()).isEqualTo("GX-LAB-A");
+    assertThat(entry.getProfileRevision()).isEqualTo(5);
+  }
+
+  @Test
+  void aConnectionPinnedToRevisionFourKeepsItsRevisionAndStillActivates() {
+    ObjectNode profile = profiles.require("genexpert-astm", 4).profile();
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerConnectionCatalog catalog = catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        registry,
+        null,
+        org.mockito.Mockito.mock(AstmConnectionListeners.class),
+        org.mockito.Mockito.mock(SerialConnectionListeners.class)
+      )
+    );
+    ObjectNode request = createRequest(profile, "create-gx-v4", "oe-gx-v4");
+    request.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 9_600);
+    ObjectNode created = catalog.create(request);
+
+    catalog.applyRuntimeCommand(runtimeCommand(created, "activate-gx-v4", "ACTIVATE"));
+
+    var entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
+    assertThat(entry.getProfileRevision()).isEqualTo(4);
+    assertThat(entry.getListenerPort()).isEqualTo(9_600);
+    assertThat(entry.getInboundAddress()).isNull();
   }
 
   private AnalyzerConnectionCatalog catalog(java.util.function.Supplier<UUID> ids) {

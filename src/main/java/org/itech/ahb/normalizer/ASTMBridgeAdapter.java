@@ -45,6 +45,7 @@ public class ASTMBridgeAdapter implements ASTMHandler {
 
     private final MessageNormalizer normalizer;
     private final String sourceBindingId;
+    private final Integer listenerPort;
 
     /**
      * Constructs a new ASTMBridgeAdapter.
@@ -52,13 +53,26 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * @param normalizer the message normalizer for routing
      */
     public ASTMBridgeAdapter(MessageNormalizer normalizer) {
-        this(normalizer, null);
+        this(normalizer, null, null);
     }
 
     /** Creates an adapter bound to one durable Bridge connection listener. */
     public ASTMBridgeAdapter(MessageNormalizer normalizer, String sourceBindingId) {
+        this(normalizer, sourceBindingId, null);
+    }
+
+    /**
+     * Creates the adapter for a shared listener: messages carry the peer IP and this listener's
+     * port, and the registry resolves which connection on the port each one belongs to.
+     */
+    public ASTMBridgeAdapter(MessageNormalizer normalizer, int listenerPort) {
+        this(normalizer, null, listenerPort);
+    }
+
+    private ASTMBridgeAdapter(MessageNormalizer normalizer, String sourceBindingId, Integer listenerPort) {
         this.normalizer = normalizer;
         this.sourceBindingId = sourceBindingId;
+        this.listenerPort = listenerPort;
     }
 
     /**
@@ -108,6 +122,7 @@ public class ASTMBridgeAdapter implements ASTMHandler {
             .sourceId(sourceBindingId != null && !sourceBindingId.isBlank()
                 ? sourceBindingId
                 : sourceIp != null ? sourceIp : "unknown")
+            .listenerPort(listenerPort)
             .rawMessage(rawMessage)
             .protocolAnalyzerHint(analyzerId)
             .build();

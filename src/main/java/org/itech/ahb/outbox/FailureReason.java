@@ -4,6 +4,11 @@ package org.itech.ahb.outbox;
 public enum FailureReason {
   /** The source is not a saved, active analyzer connection. Register it, then retry. */
   UNREGISTERED_SOURCE,
+  /**
+   * More than one saved connection on the listener could own the message and nothing in it tells
+   * them apart. Give each a distinct host or senderId, then retry.
+   */
+  AMBIGUOUS_SOURCE,
   /** The source is known but sent over a transport its connection does not accept. */
   CONNECTION_TRANSPORT_MISMATCH,
   /** The connection has no pinned profile, so results cannot be classified. */
