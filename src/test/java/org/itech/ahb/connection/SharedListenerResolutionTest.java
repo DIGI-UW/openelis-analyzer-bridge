@@ -115,6 +115,91 @@ class SharedListenerResolutionTest {
     assertThat(registry.resolve(null, "/dev/ttyUSB9", null)).isInstanceOf(Resolution.Unregistered.class);
   }
 
+  @Test
+  void senderNameSeparatesTwoConnectionsWithoutHosts() {
+    registerNamed("gx-a", null, "GX-LAB-A", null);
+    registerNamed("gx-b", null, "GX-LAB-B", null);
+
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-A^GeneXpert^6.2"), "gx-a", "sender");
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "gx-lab-b^GeneXpert^6.2"), "gx-b", "sender");
+  }
+
+  @Test
+  void senderNameSeparatesTwoConnectionsBehindOneAddress() {
+    registerNamed("gx-a", "10.0.0.21", "GX-LAB-A", null);
+    registerNamed("gx-b", "10.0.0.21", "GX-LAB-B", null);
+
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-B^GeneXpert^6.2"), "gx-b", "sender");
+  }
+
+  @Test
+  void aConnectionNamingAnotherInstrumentIsNeverACandidate() {
+    registerNamed("gx-a", null, "GX-LAB-A", null);
+    registerNamed("gx-open", null, null, null);
+
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-C^GeneXpert^6.2"), "gx-open", "uniqueness");
+  }
+
+  @Test
+  void aSenderNoConnectionNamesIsUnregisteredWhenEveryConnectionIsNamed() {
+    registerNamed("gx-a", null, "GX-LAB-A", null);
+    registerNamed("gx-b", null, "GX-LAB-B", null);
+
+    Resolution resolution = registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-C^GeneXpert^6.2");
+
+    assertThat(resolution).isInstanceOf(Resolution.Unregistered.class);
+    assertThat(((Resolution.Unregistered) resolution).detail()).contains("GX-LAB-C");
+  }
+
+  @Test
+  void profilePatternRulesOutAnotherKindOfAnalyzer() {
+    registerNamed("gx-a", null, null, "GENEXPERT|CEPHEID");
+    registerNamed("bs-a", null, null, "MINDRAY|BS-");
+
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "MINDRAY^BS-200^1.0"), "bs-a", "uniqueness");
+  }
+
+  @Test
+  void profilePatternNeverPicksBetweenTwoAnalyzersOfTheSameKind() {
+    registerNamed("gx-a", null, null, "GENEXPERT|CEPHEID");
+    registerNamed("gx-b", null, null, "GENEXPERT|CEPHEID");
+
+    assertThat(registry.resolve(SHARED_PORT, "10.0.0.21", "GENEXPERT^GeneXpert^4.6.0"))
+      .isInstanceOf(Resolution.Ambiguous.class);
+  }
+
+  @Test
+  void pairsAreIndistinguishableOnlyWhenNeitherAddressNorSenderSeparatesThem() {
+    AnalyzerEntry hostless = registerNamed("gx-a", null, null, null);
+
+    assertThat(registry.indistinguishableFrom(named("gx-b", null, null, null))).isSameAs(hostless);
+    assertThat(registry.indistinguishableFrom(named("gx-b", null, "GX-LAB-B", null))).isNull();
+    assertThat(registry.indistinguishableFrom(named("gx-b", "10.0.0.22", null, null))).isNull();
+    assertThat(registry.indistinguishableFrom(named("gx-a", null, null, null)))
+      .as("a connection is never its own twin")
+      .isNull();
+
+    registry.unregister("connection:gx-a", "oe-gx-a");
+    AnalyzerEntry named = registerNamed("gx-a", null, "GX-LAB-A", null);
+    assertThat(registry.indistinguishableFrom(named("gx-b", null, "gx-lab-a", null))).isSameAs(named);
+    assertThat(registry.indistinguishableFrom(named("gx-b", null, null, null)))
+      .as("one unnamed connection beside named ones is still separable")
+      .isNull();
+  }
+
+  private AnalyzerEntry registerNamed(String connectionId, String address, String senderId, String pattern) {
+    AnalyzerEntry entry = named(connectionId, address, senderId, pattern);
+    registry.register("connection:" + connectionId, entry);
+    return entry;
+  }
+
+  private static AnalyzerEntry named(String connectionId, String address, String senderId, String pattern) {
+    AnalyzerEntry entry = entry(connectionId, SHARED_PORT, address);
+    entry.setSenderId(senderId);
+    entry.setIdentifierPattern(pattern);
+    return entry;
+  }
+
   private void register(String connectionId, int listenerPort, String address) {
     registry.register("connection:" + connectionId, entry(connectionId, listenerPort, address));
   }

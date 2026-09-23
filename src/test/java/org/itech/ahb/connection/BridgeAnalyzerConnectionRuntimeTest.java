@@ -221,6 +221,68 @@ class BridgeAnalyzerConnectionRuntimeTest {
   }
 
   @Test
+  void refusesToActivateASecondConnectionThatNoMessageCouldBeToldApartFrom() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+    );
+    ObjectNode first = sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A");
+    ObjectNode second = sharedPortConnection(profile, "gx-b", "oe-b", "GeneXpert B");
+    runtime.activate(first, profile);
+
+    assertThatThrownBy(() -> runtime.activate(second, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("gx-a")
+      .hasMessageContaining("GeneXpert A")
+      .hasMessageContaining("senderId");
+    assertThat(registry.getRegisteredAnalyzers()).containsOnlyKeys("connection:gx-a");
+
+    second.withObject("values").put("senderId", "GX-LAB-B");
+    runtime.activate(second, profile);
+    assertThat(registry.getRegisteredAnalyzers()).containsOnlyKeys("connection:gx-a", "connection:gx-b");
+    assertThat(registry.findAnalyzerEntryByConnectionId("gx-b").orElseThrow().getSenderId()).isEqualTo("GX-LAB-B");
+
+    ObjectNode third = sharedPortConnection(profile, "gx-c", "oe-c", "GeneXpert C");
+    third.withObject("values").put("host", "10.0.0.23");
+    runtime.activate(third, profile);
+    assertThat(registry.getRegisteredAnalyzers()).containsKey("connection:gx-c");
+  }
+
+  @Test
+  void restoringAnIndistinguishablePairDoesNotStopTheBridge() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+    );
+
+    runtime.restore(sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A"), profile);
+    runtime.restore(sharedPortConnection(profile, "gx-b", "oe-b", "GeneXpert B"), profile);
+
+    assertThat(registry.getRegisteredAnalyzers()).containsOnlyKeys("connection:gx-a", "connection:gx-b");
+  }
+
+  private ObjectNode sharedPortConnection(ObjectNode profile, String connectionId, String analyzerId, String name) {
+    ObjectNode connection = baseConnection(profile, name);
+    connection.put("connectionId", connectionId);
+    connection.put("clientAnalyzerId", analyzerId);
+    connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
+    connection.withObject("values").put("port", 12_001);
+    return connection;
+  }
+
+  @Test
   void activatesAndDeactivatesAnHl7ServerWithItsOwnConnectionIdentity() throws Exception {
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     Hl7ConnectionListeners listeners = mock(Hl7ConnectionListeners.class);
