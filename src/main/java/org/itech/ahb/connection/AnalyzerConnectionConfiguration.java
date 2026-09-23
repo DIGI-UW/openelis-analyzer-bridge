@@ -59,8 +59,19 @@ public class AnalyzerConnectionConfiguration {
   public AnalyzerConnectionProbe analyzerConnectionProbe(
     ObjectMapper objectMapper,
     Clock profileCatalogClock,
-    ConnectionProbeExecutor executor
+    ConnectionProbeExecutor executor,
+    AstmConnectionListeners astmConnectionListeners,
+    Hl7ConnectionListeners hl7ConnectionListeners
   ) {
-    return new AnalyzerConnectionProbe(objectMapper, profileCatalogClock, executor);
+    return new AnalyzerConnectionProbe(
+      objectMapper,
+      profileCatalogClock,
+      executor,
+      (protocol, port) -> switch (protocol) {
+        case "ASTM" -> astmConnectionListeners.isListening(port);
+        case "HL7" -> hl7ConnectionListeners.isListening(port);
+        default -> false;
+      }
+    );
   }
 }

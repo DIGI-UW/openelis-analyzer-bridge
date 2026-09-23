@@ -30,7 +30,8 @@ class AnalyzerConnectionProbeTest {
     probe = new AnalyzerConnectionProbe(
       objectMapper,
       Clock.fixed(Instant.parse("2026-08-24T20:00:00Z"), ZoneOffset.UTC),
-      executor
+      executor,
+      (protocol, port) -> false
     );
   }
 

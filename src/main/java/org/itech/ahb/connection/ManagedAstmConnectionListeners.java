@@ -116,7 +116,8 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
     return port != null && isListening(port);
   }
 
-  synchronized boolean isListening(int port) {
+  @Override
+  public synchronized boolean isListening(int port) {
     SharedListener listener = listenersByPort.get(port);
     return listener != null && listener.servlet.isRunning();
   }

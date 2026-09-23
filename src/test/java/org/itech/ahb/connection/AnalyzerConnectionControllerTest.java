@@ -67,7 +67,7 @@ class AnalyzerConnectionControllerTest {
       new AnalyzerConnectionController(
         connections,
         new AnalyzerConnectionContractValidator(objectMapper),
-        new AnalyzerConnectionProbe(objectMapper, clock, executor)
+        new AnalyzerConnectionProbe(objectMapper, clock, executor, (protocol, port) -> false)
       )
     ).build();
   }

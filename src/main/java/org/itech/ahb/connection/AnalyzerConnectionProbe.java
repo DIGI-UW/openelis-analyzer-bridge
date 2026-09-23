@@ -14,14 +14,27 @@ public final class AnalyzerConnectionProbe {
 
   private static final int DEFAULT_TIMEOUT_MILLIS = 5_000;
 
+  /** Whether one of the Bridge's own listeners for {@code protocol} is already running on a port. */
+  @FunctionalInterface
+  public interface BridgeListeners {
+    boolean isListening(String protocol, int port);
+  }
+
   private final ObjectMapper objectMapper;
   private final Clock clock;
   private final ConnectionProbeExecutor executor;
+  private final BridgeListeners bridgeListeners;
 
-  public AnalyzerConnectionProbe(ObjectMapper objectMapper, Clock clock, ConnectionProbeExecutor executor) {
+  public AnalyzerConnectionProbe(
+    ObjectMapper objectMapper,
+    Clock clock,
+    ConnectionProbeExecutor executor,
+    BridgeListeners bridgeListeners
+  ) {
     this.objectMapper = objectMapper;
     this.clock = clock;
     this.executor = executor;
+    this.bridgeListeners = bridgeListeners;
   }
 
   ObjectNode execute(ObjectNode request, ObjectNode connection, ObjectNode profile) {
@@ -86,6 +99,10 @@ public final class AnalyzerConnectionProbe {
             protocolCheck.responseTimeMs(),
             protocolCheck.args()
           );
+      }
+      if (bridgeListeners.isListening(protocol, port)) {
+        // A shared or boot listener already serves this port; binding it again would only fail.
+        return new ProbeCheck("LISTENER", "PASSED", "listener.ready", 0, Map.of("port", port));
       }
       return executor.probeListener(port);
     }
