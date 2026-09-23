@@ -86,14 +86,24 @@ class AnalyzerConnectionProbeTest {
   @Test
   void probesAnAstmServerConnectionUsingItsSavedListenerPort() {
     when(executor.probeListener(5001)).thenReturn(check("LISTENER", "PASSED", "listener.ready", Map.of("port", 5001)));
+    when(executor.probeHost("192.0.2.40", 5_000)).thenReturn(
+      check("ANALYZER", "PASSED", "analyzer.reachable", Map.of("host", "192.0.2.40"))
+    );
     ObjectNode connection = connection();
-    connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 5001);
+    connection
+      .withObject("values")
+      .put("transport", "TCP/IP")
+      .put("connectionRole", "SERVER")
+      .put("port", 5001)
+      .put("host", "192.0.2.40");
 
     ObjectNode result = probe.execute(request(), connection, profile("ASTM"));
 
     assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
     assertThat(result.path("checks").get(0).path("key").asText()).isEqualTo("listener");
+    assertThat(result.path("checks").get(1).path("key").asText()).isEqualTo("analyzer");
     verify(executor).probeListener(5001);
+    verify(executor).probeHost("192.0.2.40", 5_000);
   }
 
   @Test
@@ -101,8 +111,16 @@ class AnalyzerConnectionProbeTest {
     when(executor.probeRemote("ASTM", "127.0.0.1", 5001, 5_000)).thenReturn(
       check("REMOTE_PROTOCOL", "PASSED", "remote.astm.ready", Map.of("port", 5001))
     );
+    when(executor.probeHost("192.0.2.40", 5_000)).thenReturn(
+      check("ANALYZER", "PASSED", "analyzer.reachable", Map.of("host", "192.0.2.40"))
+    );
     ObjectNode connection = connection();
-    connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 5001);
+    connection
+      .withObject("values")
+      .put("transport", "TCP/IP")
+      .put("connectionRole", "SERVER")
+      .put("port", 5001)
+      .put("host", "192.0.2.40");
     connection.put("actualRuntimeState", "ACTIVE");
     ObjectNode activeRuntimeRef = connection.putObject("activeRuntimeRef");
     activeRuntimeRef.set("profileRef", connection.path("profileRef").deepCopy());

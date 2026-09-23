@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ConnectException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -44,6 +45,25 @@ public final class DefaultConnectionProbeExecutor
       return check("LISTENER", "PASSED", "listener.ready", started, args);
     } catch (IOException exception) {
       return check("LISTENER", "FAILED", "listener.port.in.use", started, args);
+    }
+  }
+
+  /**
+   * ICMP where the process may send it; otherwise the JDK falls back to TCP port 7, where a refused
+   * connection still proves the host is up. A firewall that silently drops both reads as unreachable.
+   */
+  @Override
+  public ProbeCheck probeHost(String host, int timeoutMs) {
+    long started = System.nanoTime();
+    Map<String, Object> args = Map.of("host", host);
+    try {
+      return InetAddress.getByName(host).isReachable(timeoutMs)
+        ? check("ANALYZER", "PASSED", "analyzer.reachable", started, args)
+        : check("ANALYZER", "FAILED", "analyzer.unreachable", started, args);
+    } catch (UnknownHostException exception) {
+      return check("ANALYZER", "FAILED", "analyzer.host.unknown", started, args);
+    } catch (IOException exception) {
+      return check("ANALYZER", "FAILED", "analyzer.unreachable", started, args);
     }
   }
 

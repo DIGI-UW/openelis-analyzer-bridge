@@ -3,6 +3,7 @@ package org.itech.ahb.connection;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.ServerSocket;
@@ -16,11 +17,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Checking a SERVER connection that is not active yet, against real sockets: a port the Bridge
- * already serves through a boot or shared listener is ready, a port held by another process is in
- * use, and a free port is ready to be bound.
+ * Checking a connection the analyzer opens, against real sockets. The Bridge's listener is one
+ * check: a port it already serves through a boot or shared listener is ready, a port held by
+ * another process is in use, a free port is ready to be bound. The analyzer is the other: its saved
+ * address is either reachable or not, and without one it cannot be checked, which is never a pass.
  */
 class SharedListenerProbeTest {
+
+  /** Reserved for documentation (RFC 5737), so it never routes. */
+  private static final String UNROUTABLE = "192.0.2.1";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final ManagedAstmConnectionListeners astmListeners = new ManagedAstmConnectionListeners(
@@ -46,10 +51,9 @@ class SharedListenerProbeTest {
     Thread.ofPlatform().start(boot::listen);
     boot.awaitStarted(Duration.ofSeconds(5));
 
-    ObjectNode result = probe.execute(request(), inactiveServerConnection(port), astmProfile());
+    ObjectNode result = probe.execute(request(), serverConnection(port, null), astmProfile());
 
-    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
-    assertThat(result.path("checks").get(0).path("messageKey").asText()).isEqualTo("listener.ready");
+    assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
   }
 
   @Test
@@ -57,28 +61,63 @@ class SharedListenerProbeTest {
     int port = availablePort();
     astmListeners.start("gx-lab-a", "oe-gx-lab-a", port, "LIS01_A");
 
-    ObjectNode result = probe.execute(request(), inactiveServerConnection(port), astmProfile());
+    ObjectNode result = probe.execute(request(), serverConnection(port, null), astmProfile());
 
-    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
-    assertThat(result.path("checks").get(0).path("messageKey").asText()).isEqualTo("listener.ready");
+    assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
   }
 
   @Test
   void aPortHeldByAnotherProcessIsStillReportedInUse() throws Exception {
     try (ServerSocket foreign = new ServerSocket(0)) {
-      ObjectNode result = probe.execute(request(), inactiveServerConnection(foreign.getLocalPort()), astmProfile());
+      ObjectNode result = probe.execute(request(), serverConnection(foreign.getLocalPort(), null), astmProfile());
 
       assertThat(result.path("status").asText()).isEqualTo("FAILED");
-      assertThat(result.path("checks").get(0).path("messageKey").asText()).isEqualTo("listener.port.in.use");
+      assertCheck(result.path("checks").get(0), "listener", "FAILED", "listener.port.in.use");
     }
   }
 
   @Test
   void aFreePortIsReadyToBind() throws Exception {
-    ObjectNode result = probe.execute(request(), inactiveServerConnection(availablePort()), astmProfile());
+    ObjectNode result = probe.execute(request(), serverConnection(availablePort(), null), astmProfile());
+
+    assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
+  }
+
+  @Test
+  void withoutAnAnalyzerAddressTheAnalyzerCannotBeCheckedAndThatIsNotAPass() throws Exception {
+    ObjectNode result = probe.execute(request(), serverConnection(availablePort(), null), astmProfile());
+
+    assertThat(result.path("status").asText()).isEqualTo("BLOCKED");
+    assertCheck(result.path("checks").get(1), "analyzer", "SKIPPED", "analyzer.address.missing");
+    new AnalyzerConnectionContractValidator(objectMapper).validateProbeResult(result);
+  }
+
+  @Test
+  void aReachableAnalyzerAddressPasses() throws Exception {
+    ObjectNode result = probe.execute(request(), serverConnection(availablePort(), "127.0.0.1"), astmProfile());
 
     assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
-    assertThat(result.path("checks").get(0).path("messageKey").asText()).isEqualTo("listener.ready");
+    assertCheck(result.path("checks").get(1), "analyzer", "PASSED", "analyzer.reachable");
+  }
+
+  @Test
+  void anUnreachableAnalyzerAddressFailsWhileTheListenerIsReady() throws Exception {
+    ObjectNode connection = serverConnection(availablePort(), UNROUTABLE);
+    connection.withObject("values").put("connectTimeoutMillis", 500);
+
+    ObjectNode result = probe.execute(request(), connection, astmProfile());
+
+    assertThat(result.path("status").asText()).isEqualTo("FAILED");
+    assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
+    assertCheck(result.path("checks").get(1), "analyzer", "FAILED", "analyzer.unreachable");
+    assertThat(result.path("checks").get(1).path("details").path("host").asText()).isEqualTo(UNROUTABLE);
+    new AnalyzerConnectionContractValidator(objectMapper).validateProbeResult(result);
+  }
+
+  private static void assertCheck(JsonNode check, String key, String status, String messageKey) {
+    assertThat(check.path("key").asText()).isEqualTo(key);
+    assertThat(check.path("status").asText()).isEqualTo(status);
+    assertThat(check.path("messageKey").asText()).isEqualTo(messageKey);
   }
 
   private ObjectNode request() {
@@ -91,7 +130,7 @@ class SharedListenerProbeTest {
     return profile;
   }
 
-  private ObjectNode inactiveServerConnection(int port) {
+  private ObjectNode serverConnection(int port, String host) {
     ObjectNode connection = objectMapper.createObjectNode();
     connection.put("connectionId", "gx-lab-b");
     ObjectNode profileRef = connection.putObject("profileRef");
@@ -100,7 +139,11 @@ class SharedListenerProbeTest {
     profileRef.put("fingerprint", "sha256:" + "1".repeat(64));
     connection.put("configRevision", 1);
     connection.put("configFingerprint", "sha256:" + "3".repeat(64));
-    connection.putObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", port);
+    ObjectNode values = connection.putObject("values");
+    values.put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", port);
+    if (host != null) {
+      values.put("host", host);
+    }
     return connection;
   }
 
