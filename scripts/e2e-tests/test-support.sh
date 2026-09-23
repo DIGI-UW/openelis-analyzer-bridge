@@ -120,6 +120,20 @@ runtime_command() {
         "${BRIDGE_API_URL}/connections/${connection_id}/runtime"
 }
 
+# Check a saved connection without changing it; prints the bridge's probe result.
+probe_connection() {
+    local connection_id="$1"
+    bridge_api \
+        --request POST \
+        --header 'Content-Type: application/json' \
+        --data "$(jq --null-input --compact-output \
+            --arg request_id "probe-${connection_id}-$(date +%s)-${RANDOM}" \
+            --arg connection_id "${connection_id}" \
+            '{schemaVersion: "1.0", requestId: $request_id, connectionId: $connection_id,
+              expectedConfigRevision: 1}')" \
+        "${BRIDGE_API_URL}/connections/${connection_id}/probe"
+}
+
 deactivate_connection() {
     runtime_command "$1" DEACTIVATE \
         | jq --exit-status '.outcome == "APPLIED" or .outcome == "ALREADY_APPLIED"' >/dev/null
