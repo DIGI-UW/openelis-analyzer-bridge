@@ -27,6 +27,7 @@ if ! jq --exit-status --arg expected "${expected_time}" \
     '[.entry[].resource | select(.resourceType == "Observation") | .effectiveDateTime]
         | length > 0 and all(. == $expected)' <<<"${body}" >/dev/null; then
     echo "FAIL: expected every GeneXpert observation to carry the instrument's completion time ${expected_time}" >&2
+    echo "      Times near now mean the analyzer mock ignored completed_at: check its pin in .github/workflows/test.yml." >&2
     jq '[.entry[].resource | select(.resourceType == "Observation") | {code: .code.coding[0].code, effectiveDateTime}]' <<<"${body}" >&2
     exit 1
 fi

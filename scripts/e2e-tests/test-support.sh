@@ -168,9 +168,10 @@ wait_for_normalized_capture() {
         if jq --exit-status --compact-output \
             --arg path "${NORMALIZED_PATH}" \
             --arg connection_id "${connection_id}" \
-            '.requests[]
+            # WireMock lists newest first; one request, so assertions never run over several bodies.
+            'first(.requests[]
                 | select(.request.url == $path)
-                | select(.request.body | contains($connection_id))' \
+                | select(.request.body | contains($connection_id)))' \
             <<<"${capture}" 2>/dev/null; then
             return 0
         fi
