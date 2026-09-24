@@ -165,10 +165,10 @@ wait_for_normalized_capture() {
 
     for _ in $(seq 1 45); do
         capture="$(curl --silent --show-error --fail "${WIREMOCK_URL}/__admin/requests")"
+        # WireMock lists newest first; one request, so assertions never run over several bodies.
         if jq --exit-status --compact-output \
             --arg path "${NORMALIZED_PATH}" \
             --arg connection_id "${connection_id}" \
-            # WireMock lists newest first; one request, so assertions never run over several bodies.
             'first(.requests[]
                 | select(.request.url == $path)
                 | select(.request.body | contains($connection_id)))' \
