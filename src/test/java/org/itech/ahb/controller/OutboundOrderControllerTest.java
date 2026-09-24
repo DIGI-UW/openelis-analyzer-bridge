@@ -174,6 +174,34 @@ class OutboundOrderControllerTest {
     Mockito.verifyNoInteractions(mllp);
   }
 
+  /** Real runtime capability resolution and controller rejection; protocol clients are mocks to detect forbidden dispatch. */
+  @ParameterizedTest
+  @ValueSource(strings = { "SERVER", "CLIENT" })
+  void resultsOnlyConnectionCannotDispatchOrdersEvenWhenTheProfileSupportsThem(String role) throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode profile = (ObjectNode) mapper.readTree(
+      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json")
+    );
+    ObjectNode connection = mapper
+      .createObjectNode()
+      .put("connectionId", "results-only")
+      .put("clientAnalyzerId", "oe-results-only")
+      .put("displayName", "Results only");
+    connection.putObject("profileRef").put("profileId", "genexpert-astm").put("revision", 5);
+    connection.putObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
+    connection.withObject("values").put("connectionRole", role).put("host", "192.0.2.10").put("port", 9101);
+    new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      Mockito.mock(AstmConnectionListeners.class),
+      Mockito.mock(SerialConnectionListeners.class)
+    ).activate(connection, profile);
+    var response = controller.sendOrder(req("results-only", List.of("85362-2")));
+    assertTrue(response.getStatusCode().is4xxClientError());
+    assertEquals(false, response.getBody().get("dispatched"));
+    Mockito.verifyNoInteractions(astm, mllp);
+  }
+
   @ParameterizedTest
   @ValueSource(strings = { "outboundOrders", "supports_lis_initiated" })
   void profileCanForbidOrdersEvenWithAnOutboundEndpoint(String disabledCapability) throws Exception {

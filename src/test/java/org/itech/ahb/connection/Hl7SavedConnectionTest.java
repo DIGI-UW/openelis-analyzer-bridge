@@ -1,10 +1,10 @@
 package org.itech.ahb.connection;
 
-import org.itech.ahb.outbox.OutboxTestSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ca.uhn.fhir.context.FhirContext;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.JsonSchemaFactory;
@@ -30,6 +30,7 @@ import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.mllp.MLLPConfig;
 import org.itech.ahb.normalizer.AnalyzerIdentifier;
 import org.itech.ahb.normalizer.MessageNormalizer;
+import org.itech.ahb.outbox.OutboxTestSupport;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
 import org.itech.ahb.profile.ProfileFingerprintService;
 import org.itech.ahb.routing.HttpForwardingRouter;
@@ -57,9 +58,12 @@ class Hl7SavedConnectionTest {
   private ManagedHl7ConnectionListeners listeners;
   private AnalyzerRuntimeRegistry registry;
   private AnalyzerConnectionCatalog catalog;
+  private MLLPConfig listenerConfig;
+  private int sharedPort;
 
   @BeforeEach
   void setUp() throws Exception {
+    sharedPort = freePort();
     receiver = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     receiver.createContext("/", exchange -> {
       deliveries.add(
@@ -96,6 +100,19 @@ class Hl7SavedConnectionTest {
       .put("ruleType", "FIELD_EQUALS")
       .put("targetField", "OBX.3.2")
       .put("operand", "CONTROL");
+    profile
+      .withArray("connectionFields")
+      .forEach(field -> {
+        if ("port".equals(field.path("key").asText())) ((ObjectNode) field).put("required", false);
+      });
+    profile
+      .withArray("connectionFields")
+      .addObject()
+      .put("key", "senderId")
+      .put("labelKey", "analyzer.connection.field.senderId")
+      .put("inputKind", "TEXT")
+      .put("required", false)
+      .putArray("choices");
     ProfileFingerprintService fingerprints = new ProfileFingerprintService();
     profile.withObject("catalog").put("recognitionFingerprint", fingerprints.recognitionFingerprint(recognition));
     profile.withObject("catalog").put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
@@ -107,47 +124,110 @@ class Hl7SavedConnectionTest {
     try {
       if (listeners != null) listeners.stopAll();
     } finally {
+      if (outbox != null) outbox.close();
       if (receiver != null) receiver.stop(0);
     }
   }
 
   @Test
-  void samePeerConnectionsKeepTheirIdentityAcrossDiskBackedRestartAndIndependentDeactivation() throws Exception {
-    int firstPort = freePort();
-    String first = create("oe-first", firstPort);
+  void samePeerConnectionsKeepTheirIdentityOnOneSharedListenerAcrossRestartAndDeactivation() throws Exception {
+    String first = create("oe-first");
     activate(first);
-    int secondPort = freePort();
-    String second = create("oe-second", secondPort);
+    String second = create("oe-second");
     ObjectNode activation = command(second, "ACTIVATE");
     assertThat(catalog.applyRuntimeCommand(activation).path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
     assertThat(catalog.applyRuntimeCommand(activation).path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
     assertThat(listeners.runningConnections()).hasSize(2);
-    assertDelivery(firstPort, first, "oe-first");
-    assertDelivery(secondPort, second, "oe-second");
+    assertDelivery(sharedPort, first, "oe-first");
+    assertDelivery(sharedPort, second, "oe-second");
     listeners.stopAll();
-    assertClosed(firstPort);
-    assertClosed(secondPort);
+    assertClosed(sharedPort);
     boot(true); // Fresh catalogs, registry and listeners; only the files survive.
     assertThat(catalog.require(first).path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
     assertThat(listeners.runningConnections()).containsEntry(first, true).containsEntry(second, true);
-    assertDelivery(firstPort, first, "oe-first");
-    assertDelivery(secondPort, second, "oe-second");
+    assertDelivery(sharedPort, first, "oe-first");
+    assertDelivery(sharedPort, second, "oe-second");
     catalog.applyRuntimeCommand(command(first, "DEACTIVATE"));
-    assertClosed(firstPort);
     assertThat(registry.findAnalyzerId("connection:" + first)).isEmpty();
-    assertDelivery(secondPort, second, "oe-second");
+    sendFixture(sharedPort, "oe-first");
+    assertThat(outbox.store.list(org.itech.ahb.outbox.OutboxQuery.all(100))).anySatisfy(entry -> {
+      assertThat(entry.failureReason()).isEqualTo(org.itech.ahb.outbox.FailureReason.UNREGISTERED_SOURCE);
+      assertThat(entry.protocolHint()).contains("oe-first");
+      assertThat(entry.rawByteLength()).isPositive();
+      assertThat(entry.fhirByteLength()).isZero();
+    });
+    // Any incorrectly forwarded first message would be consumed here and fail the identity assertions.
+    assertDelivery(sharedPort, second, "oe-second");
     assertThat(catalog.applyRuntimeCommand(command(first, "DEACTIVATE")).path("actualRuntimeState").asText()).isEqualTo(
       "INACTIVE"
     );
+    catalog.applyRuntimeCommand(command(second, "DEACTIVATE"));
+    assertClosed(sharedPort);
   }
 
   @Test
-  void occupiedPortFailsActivationWithoutAuthorizingAConnectionAndCanBeRetried() throws Exception {
+  void historicalApplicationFacilityHintRetriesFromRetainedRawMessageAfterRestart() throws Exception {
+    String id = create("oe-first");
+    activate(id);
+    outbox.dispatcher.stop();
+    String raw =
+      "MSH|^~\\&|oe-first|OTHER|OE|LAB|20260909120000||ORU^R01|OLD-HINT|P|2.5.1\r" +
+      "PID|1||PATIENT\rOBR|1||OLD-ACCESSION|PANEL\rOBX|1|NM|T1^PATIENT||1|unit\r";
+    var receipt = outbox.store.receive(
+      new org.itech.ahb.outbox.ReceivedMessage(
+        "127.0.0.1",
+        55000,
+        org.itech.ahb.model.Protocol.HL7,
+        org.itech.ahb.model.Transport.MLLP,
+        "oe-first-OTHER",
+        raw,
+        "UTF-8",
+        java.time.Instant.now(),
+        sharedPort
+      )
+    );
+    outbox.store.markDeadLettered(
+      receipt.id(),
+      org.itech.ahb.outbox.FailureReason.UNREGISTERED_SOURCE,
+      "Historical combined sender hint"
+    );
+    listeners.stopAll();
+    boot(true);
+    assertThat(outbox.store.rawPayload(receipt.id())).contains(raw);
+    outbox.store.requestRetry(receipt.id(), "operator", java.time.Instant.now());
+    outbox.dispatcher.dispatchDue();
+    Delivery delivery = deliveries.poll(5, TimeUnit.SECONDS);
+    assertThat(delivery).isNotNull();
+    JsonNode bundle = mapper.readTree(delivery.body());
+    JsonNode device = java.util.stream.StreamSupport.stream(bundle.path("entry").spliterator(), false)
+      .map(entry -> entry.path("resource"))
+      .filter(resource -> "Device".equals(resource.path("resourceType").asText()))
+      .findFirst()
+      .orElseThrow();
+    assertThat(device.path("identifier")).anySatisfy(identifier -> {
+      assertThat(identifier.path("system").asText()).isEqualTo(
+        "https://openelis-global.org/fhir/analyzer-connection-id"
+      );
+      assertThat(identifier.path("value").asText()).isEqualTo(id);
+    });
+    assertThat(delivery.body()).contains("OLD-ACCESSION");
+    var rendered = outbox.store
+      .list(org.itech.ahb.outbox.OutboxQuery.all(100))
+      .stream()
+      .filter(entry -> "OLD-ACCESSION".equals(entry.accession()))
+      .findFirst()
+      .orElseThrow();
+    assertThat(rendered.protocolHint()).isEqualTo("oe-first-OTHER");
+    assertThat(outbox.store.rawPayload(rendered.id())).contains(raw);
+  }
+
+  @Test
+  void occupiedDeploymentPortFailsActivationWithoutAuthorizingAConnectionAndCanBeRetried() throws Exception {
     String id;
-    int port;
     try (ServerSocket occupied = new ServerSocket(0)) {
-      port = occupied.getLocalPort();
-      id = create("oe-occupied", port);
+      sharedPort = occupied.getLocalPort();
+      listenerConfig.setPort(sharedPort);
+      id = create("oe-occupied");
       String connectionId = id;
       assertThatThrownBy(() -> activate(connectionId)).isInstanceOf(AnalyzerConnectionException.class);
       assertThat(catalog.require(id).path("actualRuntimeState").asText()).isEqualTo("INACTIVE");
@@ -156,55 +236,51 @@ class Hl7SavedConnectionTest {
       assertThat(occupied.isClosed()).isFalse();
     }
     activate(id);
-    assertDelivery(port, id, "oe-occupied");
+    assertDelivery(sharedPort, id, "oe-occupied");
   }
 
   @Test
-  void failedReplacementAndRestartKeepTheLastActivatedPort() throws Exception {
-    int originalPort = freePort();
-    String id = create("oe-replacement", originalPort);
-    activate(id);
-    try (ServerSocket occupied = new ServerSocket(0)) {
-      ObjectNode saved = catalog.require(id);
-      ObjectNode update = mapper
-        .createObjectNode()
-        .put("schemaVersion", "1.0")
-        .put("requestId", UUID.randomUUID().toString())
-        .put("connectionId", id)
-        .put("expectedConfigRevision", 1)
-        .put("displayName", "oe-replacement");
-      update.set("profileRef", saved.path("profileRef").deepCopy());
-      update.putObject("values").put("port", occupied.getLocalPort());
-      catalog.update(update);
-      ObjectNode replacement = command(id, "ACTIVATE").put("expectedConfigRevision", 2);
-      assertThatThrownBy(() -> catalog.applyRuntimeCommand(replacement)).isInstanceOf(
-        AnalyzerConnectionException.class
-      );
-      assertDelivery(originalPort, id, "oe-replacement");
-      listeners.stopAll();
-      boot(true);
-      assertThat(catalog.require(id).path("configRevision").asInt()).isEqualTo(2);
-      assertThat(catalog.require(id).path("activeRuntimeRef").path("configRevision").asInt()).isEqualTo(1);
-      assertDelivery(originalPort, id, "oe-replacement");
-      catalog.applyRuntimeCommand(command(id, "DEACTIVATE").put("expectedConfigRevision", 2));
-      assertClosed(originalPort);
-    }
+  void failedSenderReplacementAndRestartKeepTheLastActivatedIdentity() throws Exception {
+    String first = create("oe-first");
+    String second = create("oe-second");
+    activate(first);
+    activate(second);
+    ObjectNode saved = catalog.require(first);
+    ObjectNode update = mapper
+      .createObjectNode()
+      .put("schemaVersion", "1.0")
+      .put("requestId", UUID.randomUUID().toString())
+      .put("connectionId", first)
+      .put("expectedConfigRevision", 1)
+      .put("displayName", "oe-first");
+    update.set("profileRef", saved.path("profileRef").deepCopy());
+    update.putObject("values").put("senderId", "oe-second");
+    catalog.update(update);
+    ObjectNode replacement = command(first, "ACTIVATE").put("expectedConfigRevision", 2);
+    assertThatThrownBy(() -> catalog.applyRuntimeCommand(replacement)).isInstanceOf(AnalyzerConnectionException.class);
+    assertDelivery(sharedPort, first, "oe-first");
+    listeners.stopAll();
+    boot(true);
+    assertThat(catalog.require(first).path("configRevision").asInt()).isEqualTo(2);
+    assertThat(catalog.require(first).path("activeRuntimeRef").path("configRevision").asInt()).isEqualTo(1);
+    assertDelivery(sharedPort, first, "oe-first");
+    assertDelivery(sharedPort, second, "oe-second");
   }
 
   @Test
   void disabledRuntimeDoesNotAuthorizeOrOpenSavedConnections() throws Exception {
     listeners.stopAll();
     boot(false);
-    int port = freePort();
-    String id = create("oe-disabled", port);
+    String id = create("oe-disabled");
     assertThatThrownBy(() -> activate(id))
       .isInstanceOf(AnalyzerConnectionException.class)
       .hasMessageContaining("disabled");
     assertThat(registry.findAnalyzerId("connection:" + id)).isEmpty();
-    assertClosed(port);
+    assertClosed(sharedPort);
   }
 
   private void boot(boolean enabled) throws Exception {
+    if (outbox != null) outbox.close();
     AnalyzerProfileCatalog profiles = new AnalyzerProfileCatalog(
       directory.resolve("profiles"),
       List.of(new ByteArrayResource(mapper.writeValueAsBytes(profile))),
@@ -214,22 +290,34 @@ class Hl7SavedConnectionTest {
     registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties forwarding = new HTTPForwardServerConfigurationProperties();
     forwarding.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
-    outbox = OutboxTestSupport.createTemp(forwarding, registry).startDispatcher();
+    outbox = OutboxTestSupport.create(directory.resolve("outbox"), forwarding, registry).startDispatcher();
     MessageNormalizer normalizer = outbox.normalizer(new AnalyzerIdentifier(registry), registry);
-    MLLPConfig config = new MLLPConfig();
-    config.setEnabled(enabled);
-    listeners = new ManagedHl7ConnectionListeners(config, normalizer);
+    listenerConfig = new MLLPConfig();
+    listenerConfig.setEnabled(enabled);
+    listenerConfig.setPort(sharedPort);
+    listeners = new ManagedHl7ConnectionListeners(listenerConfig, normalizer);
     catalog = new AnalyzerConnectionCatalog(
       directory.resolve("connections"),
       profiles,
       mapper,
       Clock.systemUTC(),
       UUID::randomUUID,
-      new BridgeAnalyzerConnectionRuntime(registry, null, null, null, listeners)
+      new BridgeAnalyzerConnectionRuntime(
+        registry,
+        null,
+        null,
+        null,
+        listeners,
+        new AnalyzerListenerPorts(
+          new org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties(),
+          new org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties(),
+          listenerConfig
+        )
+      )
     );
   }
 
-  private String create(String analyzerId, int port) {
+  private String create(String analyzerId) {
     ObjectNode request = mapper.createObjectNode();
     request
       .put("schemaVersion", "1.0")
@@ -241,8 +329,10 @@ class Hl7SavedConnectionTest {
       .put("profileId", "saved-hl7-fixture")
       .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
-    request.putObject("values").put("port", port);
-    return catalog.create(request).path("connectionId").asText();
+    request.putObject("values").put("host", "127.0.0.1").put("senderId", analyzerId);
+    ObjectNode created = catalog.create(request);
+    assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
+    return created.path("connectionId").asText();
   }
 
   private void activate(String id) {
@@ -261,15 +351,17 @@ class Hl7SavedConnectionTest {
       .put("expectedConfigRevision", 1);
   }
 
-  private void assertDelivery(int port, String id, String analyzerId) throws Exception {
+  private String sendFixture(int port, String analyzerId) throws Exception {
     try (Socket socket = new Socket("127.0.0.1", port)) {
       socket.setSoTimeout(5000);
-      // Both sockets use the same peer IP and a spoofed sender; neither determines identity.
+      // Same peer address and listener: the saved sender distinguishes these analyzers.
       // A distinct MSH-10 message control id per transmission, as real analyzer traffic carries.
       // Byte-identical repeats are retransmissions by definition, and the outbox now recognizes them
       // as such rather than delivering the same result to OpenELIS twice.
       String message =
-        "MSH|^~\\&|SPOOF|OTHER|OE|LAB|20260909120000||ORU^R01|MSG-" +
+        "MSH|^~\\&|" +
+        analyzerId +
+        "|OTHER|OE|LAB|20260909120000||ORU^R01|MSG-" +
         messageControlId.incrementAndGet() +
         "|P|2.5.1\r" +
         "PID|1||PATIENT\rOBR|1||ACCESSION|PANEL\r" +
@@ -278,8 +370,12 @@ class Hl7SavedConnectionTest {
       StringBuilder ack = new StringBuilder();
       int next;
       while ((next = socket.getInputStream().read()) != -1 && next != 0x1c) ack.append((char) next);
-      assertThat(ack.toString()).contains("MSA|AA|");
+      return ack.toString();
     }
+  }
+
+  private void assertDelivery(int port, String id, String analyzerId) throws Exception {
+    assertThat(sendFixture(port, analyzerId)).contains("MSA|AA|");
     Delivery delivery = deliveries.poll(5, TimeUnit.SECONDS);
     assertThat(delivery).isNotNull();
     assertThat(delivery.path()).isEqualTo("/analyzer/fhir");

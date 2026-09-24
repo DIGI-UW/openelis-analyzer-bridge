@@ -429,7 +429,7 @@ public final class AnalyzerConnectionCatalog {
   private ObjectNode effectiveValues(ObjectNode profile, ObjectNode suppliedValues, ObjectNode existingValues) {
     ObjectNode values = profileDefaults(profile);
     if (existingValues != null) {
-      for (JsonNode descriptor : profile.path("connectionFields")) {
+      for (JsonNode descriptor : connectionFields(profile)) {
         String key = descriptor.path("key").asText();
         if (!suppliedValues.has(key) && existingValues.has(key)) {
           values.set(key, existingValues.path(key).deepCopy());
@@ -437,6 +437,14 @@ public final class AnalyzerConnectionCatalog {
       }
     }
     suppliedValues.fields().forEachRemaining(entry -> values.set(entry.getKey(), entry.getValue().deepCopy()));
+    if (
+      existingValues != null &&
+      "SERVER".equals(existingValues.path("connectionRole").asText()) &&
+      "CLIENT".equals(values.path("connectionRole").asText()) &&
+      !suppliedValues.has("port")
+    ) {
+      values.remove("port");
+    }
     return values;
   }
 
@@ -446,6 +454,7 @@ public final class AnalyzerConnectionCatalog {
     if (defaults.isObject()) {
       defaults.fields().forEachRemaining(entry -> values.set(entry.getKey(), entry.getValue().deepCopy()));
     }
+    if ("SERVER".equals(values.path("connectionRole").asText())) values.remove("port");
     return values;
   }
 
@@ -499,9 +508,10 @@ public final class AnalyzerConnectionCatalog {
     ObjectNode defaults = profileDefaults(profile);
     Map<String, JsonNode> descriptors = fieldDescriptors(profile);
     ArrayNode fields = objectMapper.createArrayNode();
-    for (JsonNode descriptor : profile.path("connectionFields")) {
+    for (JsonNode descriptor : connectionFields(profile)) {
       String key = descriptor.path("key").asText();
-      JsonNode currentValue = values.path(key);
+      boolean historicalIncomingPort = "port".equals(key) && "SERVER".equals(values.path("connectionRole").asText());
+      JsonNode currentValue = historicalIncomingPort ? objectMapper.missingNode() : values.path(key);
       ObjectNode field = fields.addObject();
       field.put("key", key);
       field.put("labelKey", descriptor.path("labelKey").asText());
@@ -538,7 +548,7 @@ public final class AnalyzerConnectionCatalog {
     ObjectNode values = (ObjectNode) record.path("values");
     Map<String, JsonNode> descriptors = fieldDescriptors(profile);
     ArrayList<String> missing = new ArrayList<>();
-    for (JsonNode descriptor : profile.path("connectionFields")) {
+    for (JsonNode descriptor : connectionFields(profile)) {
       String key = descriptor.path("key").asText();
       if (
         descriptor.path("required").asBoolean() &&
@@ -630,12 +640,41 @@ public final class AnalyzerConnectionCatalog {
         throw new AnalyzerConnectionException("Connection value must not be null: " + key);
       }
       validateValueType(key, descriptor, values.path(key));
+      if (
+        ("port".equals(key) || "outboundPort".equals(key)) &&
+        ("ASTM".equals(profile.path("protocol").path("name").asText()) ||
+          "HL7".equals(profile.path("protocol").path("name").asText()))
+      ) {
+        JsonNode port = values.path(key);
+        if (!port.isIntegralNumber() || !port.canConvertToInt() || port.intValue() < 1 || port.intValue() > 65535) {
+          throw new AnalyzerConnectionException(key + " must be an integer between 1 and 65535");
+        }
+      }
     }
+  }
+
+  /** Historical socket port fields no longer configure a per-analyzer inbound listener. */
+  private static JsonNode connectionFields(ObjectNode profile) {
+    JsonNode declared = profile.path("connectionFields");
+    String protocol = profile.path("protocol").path("name").asText();
+    if (!"ASTM".equals(protocol) && !"HL7".equals(protocol)) return declared;
+    JsonNode projected = declared.deepCopy();
+    projected.forEach(field -> {
+      String key = field.path("key").asText();
+      if ("port".equals(key) || "outboundPort".equals(key)) ((ObjectNode) field).put("required", false);
+      if ("port".equals(key)) {
+        ((ObjectNode) field).putObject("visibleWhen")
+          .put("fieldKey", "connectionRole")
+          .put("operator", "EQUALS")
+          .put("value", "CLIENT");
+      }
+    });
+    return projected;
   }
 
   private static Map<String, JsonNode> fieldDescriptors(ObjectNode profile) {
     Map<String, JsonNode> descriptors = new HashMap<>();
-    profile.path("connectionFields").forEach(field -> descriptors.put(field.path("key").asText(), field));
+    connectionFields(profile).forEach(field -> descriptors.put(field.path("key").asText(), field));
     return descriptors;
   }
 

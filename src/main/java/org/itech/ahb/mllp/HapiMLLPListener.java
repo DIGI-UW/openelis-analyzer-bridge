@@ -31,7 +31,6 @@ public final class HapiMLLPListener {
   private DefaultHapiContext context;
   private ExecutorService executor;
   private HapiReceivingApplication application;
-  private RateLimitingReceivingApplication rateLimiter;
   private boolean stopped;
 
   /** A shared listener on {@code port}: each message is attributed by the registry. */
@@ -104,9 +103,8 @@ public final class HapiMLLPListener {
       application = sourceBindingId == null
         ? new HapiReceivingApplication(router, port)
         : new HapiReceivingApplication(router, sourceBindingId);
-      rateLimiter = new RateLimitingReceivingApplication(application);
       server = context.newServer(port, false);
-      server.registerApplication("*", "*", rateLimiter);
+      server.registerApplication("*", "*", application);
       server.start();
       // HAPI's service-start flag precedes the asynchronous acceptor bind.
       // Only this listener's actual bind establishes readiness.
@@ -140,7 +138,6 @@ public final class HapiMLLPListener {
       // Keep routing authority and downstream resources alive through delivery.
       if (application != null) application.awaitDrained();
       if (server != null) server.stopAndWait();
-      if (rateLimiter != null) rateLimiter.shutdown();
       if (context != null) context.close();
       if (executor != null) {
         executor.shutdown();

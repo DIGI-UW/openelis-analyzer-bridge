@@ -31,6 +31,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
   private final AstmConnectionListeners astmListeners;
   private final SerialConnectionListeners serialListeners;
   private final Hl7ConnectionListeners hl7Listeners;
+  private final AnalyzerListenerPorts listenerPorts;
+  private final AnalyzerOutboundEndpoint outboundEndpoint;
   private final Map<String, ActiveMaterialization> activeConnections = new ConcurrentHashMap<>();
 
   public BridgeAnalyzerConnectionRuntime(
@@ -49,6 +51,39 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     SerialConnectionListeners serialListeners,
     Hl7ConnectionListeners hl7Listeners
   ) {
+    this(registry, fileWatcher, astmListeners, serialListeners, hl7Listeners, AnalyzerListenerPorts.defaults());
+  }
+
+  public BridgeAnalyzerConnectionRuntime(
+    AnalyzerRuntimeRegistry registry,
+    FileWatcher fileWatcher,
+    AstmConnectionListeners astmListeners,
+    SerialConnectionListeners serialListeners,
+    Hl7ConnectionListeners hl7Listeners,
+    AnalyzerListenerPorts listenerPorts
+  ) {
+    this(
+      registry,
+      fileWatcher,
+      astmListeners,
+      serialListeners,
+      hl7Listeners,
+      listenerPorts,
+      new AnalyzerOutboundEndpoint(new AnalyzerOutboundDefaults())
+    );
+  }
+
+  public BridgeAnalyzerConnectionRuntime(
+    AnalyzerRuntimeRegistry registry,
+    FileWatcher fileWatcher,
+    AstmConnectionListeners astmListeners,
+    SerialConnectionListeners serialListeners,
+    Hl7ConnectionListeners hl7Listeners,
+    AnalyzerListenerPorts listenerPorts,
+    AnalyzerOutboundEndpoint outboundEndpoint
+  ) {
+    this.outboundEndpoint = outboundEndpoint;
+    this.listenerPorts = listenerPorts;
     this.registry = registry;
     this.fileWatcher = fileWatcher;
     this.astmListeners = astmListeners;
@@ -67,9 +102,15 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     AnalyzerEntry twin = registry.indistinguishableFrom(replacement.entry());
     if (twin != null) {
       String detail =
-        "Connection " + connectionId + " on port " + replacement.entry().getListenerPort() +
-        " cannot be told apart from active connection " + twin.getBridgeConnectionId() +
-        " (" + twin.getName() + "): give each a distinct host, or set senderId to each instrument's system name";
+        "Connection " +
+        connectionId +
+        " on port " +
+        replacement.entry().getListenerPort() +
+        " cannot be told apart from active connection " +
+        twin.getBridgeConnectionId() +
+        " (" +
+        twin.getName() +
+        "): give each a distinct host, or set senderId to each instrument's system name";
       if (refuseIndistinguishable) {
         throw new AnalyzerConnectionException(AnalyzerConnectionException.Kind.CONFLICT, detail);
       }
@@ -210,7 +251,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
         astmListeners.start(
           connectionId,
           analyzerId,
-          requiredPort(values, "port"),
+          listenerPorts.forProfile(profile),
           requiredText(profile.path("protocol"), "lowerLayerVersion", "ASTM lower-layer version")
         );
       }
@@ -222,7 +263,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
         throw new AnalyzerConnectionException("Inbound HL7 TCP requires a saved SERVER connection");
       }
       if (hl7Listeners == null) throw new AnalyzerConnectionException("HL7 listener runtime is unavailable");
-      hl7Listeners.start(connectionId, requiredPort(values, "port"));
+      hl7Listeners.start(connectionId, listenerPorts.forProfile(profile));
       return;
     }
 
@@ -276,14 +317,6 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     return "connection:" + connectionId;
   }
 
-  private static int requiredPort(JsonNode values, String field) {
-    JsonNode value = values.path(field);
-    if (!value.isIntegralNumber() || value.asInt() < 1 || value.asInt() > 65_535) {
-      throw new AnalyzerConnectionException(field + " must be a valid TCP port");
-    }
-    return value.asInt();
-  }
-
   private AnalyzerEntry materialize(String analyzerId, ObjectNode connection, ObjectNode profile, ObjectNode values) {
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId(analyzerId);
@@ -293,10 +326,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setName(requiredText(connection, "displayName", "Connection name"));
     entry.setExpectedProtocol(requiredText(profile.path("protocol"), "name", "Profile protocol"));
     entry.setInboundTransport(nullableText(values, "transport"));
-    entry.setOutboundOrdersSupported(
-      profile.path("capabilities").path("outboundOrders").asBoolean(false) &&
-      profile.path("communication").path("supports_lis_initiated").asBoolean(false)
-    );
+    entry.setOutboundOrdersSupported(AnalyzerOutboundEndpoint.ordersEnabled(profile, values));
     if ("HTTP".equals(entry.getInboundTransport())) {
       String sourceAddress = IpLiteral.canonicalize(requiredText(values, "host", "HTTP analyzer IP address"));
       if (sourceAddress == null) {
@@ -313,7 +343,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       ("ASTM".equals(entry.getExpectedProtocol()) || "HL7".equals(entry.getExpectedProtocol()))
     ) {
       // The analyzer connects to a shared listener; its connection is resolved per message.
-      entry.setListenerPort(requiredPort(values, "port"));
+      entry.setListenerPort(listenerPorts.forProfile(profile));
       String host = nullableText(values, "host");
       if (host != null) {
         String address = IpLiteral.canonicalize(host);
@@ -325,7 +355,9 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       entry.setSenderId(senderId == null ? null : senderId.trim());
     }
     entry.setOutboundHost(nullableText(values, "host"));
-    entry.setOutboundPort(values.path("port").asInt(0));
+    entry.setOutboundPort(
+      AnalyzerOutboundEndpoint.needed(profile, values) ? outboundEndpoint.resolvePort(profile, values).port() : 0
+    );
     entry.setIdentifierPattern(nullableText(profile, "identifier_pattern"));
     entry.setFilePattern(nullableText(values, "filePattern"));
     entry.setColumnMappings(textMap(profile.path("column_mapping")));

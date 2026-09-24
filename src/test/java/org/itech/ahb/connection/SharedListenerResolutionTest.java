@@ -152,6 +152,27 @@ class SharedListenerResolutionTest {
   }
 
   @Test
+  void deactivatedSenderCannotBecomeTheRemainingAnalyzerAtTheSameAddress() {
+    registerNamed("gx-a", "10.0.0.21", "GX-LAB-A", null);
+    registerNamed("gx-b", "10.0.0.21", "GX-LAB-B", null);
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-A"), "gx-a", "sender");
+
+    registry.unregister("connection:gx-a", "oe-gx-a");
+
+    assertThat(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-A")).isInstanceOf(Resolution.Unregistered.class);
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-B"), "gx-b", "sender");
+  }
+
+  @Test
+  void uniqueNamedConnectionStillRequiresItsConfiguredSender() {
+    registerNamed("gx-a", null, "GX-LAB-A", null);
+
+    assertThat(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-B")).isInstanceOf(Resolution.Unregistered.class);
+    assertThat(registry.resolve(SHARED_PORT, "10.0.0.21", null)).isInstanceOf(Resolution.Unregistered.class);
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "GX-LAB-A"), "gx-a", "sender");
+  }
+
+  @Test
   void profilePatternRulesOutAnotherKindOfAnalyzer() {
     registerNamed("gx-a", null, null, "GENEXPERT|CEPHEID");
     registerNamed("bs-a", null, null, "MINDRAY|BS-");
@@ -164,8 +185,9 @@ class SharedListenerResolutionTest {
     registerNamed("gx-a", null, null, "GENEXPERT|CEPHEID");
     registerNamed("gx-b", null, null, "GENEXPERT|CEPHEID");
 
-    assertThat(registry.resolve(SHARED_PORT, "10.0.0.21", "GENEXPERT^GeneXpert^4.6.0"))
-      .isInstanceOf(Resolution.Ambiguous.class);
+    assertThat(registry.resolve(SHARED_PORT, "10.0.0.21", "GENEXPERT^GeneXpert^4.6.0")).isInstanceOf(
+      Resolution.Ambiguous.class
+    );
   }
 
   @Test

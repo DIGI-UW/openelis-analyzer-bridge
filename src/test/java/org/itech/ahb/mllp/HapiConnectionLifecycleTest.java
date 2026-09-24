@@ -41,7 +41,7 @@ class HapiConnectionLifecycleTest {
       listener.start();
       assertTrue(send(listener.getPort()).contains("MSA|AA|"));
       assertEquals("connection:owned", received.get().getSourceId());
-      assertEquals("OTHER-ANALYZER-OTHER-LAB", received.get().getProtocolAnalyzerHint());
+      assertEquals("OTHER-ANALYZER", received.get().getProtocolAnalyzerHint());
     } finally {
       listener.stop();
     }

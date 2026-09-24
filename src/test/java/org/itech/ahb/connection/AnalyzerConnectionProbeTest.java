@@ -22,16 +22,23 @@ class AnalyzerConnectionProbeTest {
   private ObjectMapper objectMapper;
   private ConnectionProbeExecutor executor;
   private AnalyzerConnectionProbe probe;
+  private org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties listenerConfig;
 
   @BeforeEach
   void setUp() {
     objectMapper = new ObjectMapper();
     executor = mock(ConnectionProbeExecutor.class);
+    listenerConfig = new org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties();
     probe = new AnalyzerConnectionProbe(
       objectMapper,
       Clock.fixed(Instant.parse("2026-08-24T20:00:00Z"), ZoneOffset.UTC),
       executor,
-      (protocol, port) -> false
+      (protocol, port) -> false,
+      new AnalyzerListenerPorts(
+        listenerConfig,
+        new org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties(),
+        new org.itech.ahb.mllp.MLLPConfig()
+      )
     );
   }
 
@@ -84,7 +91,8 @@ class AnalyzerConnectionProbeTest {
   }
 
   @Test
-  void probesAnAstmServerConnectionUsingItsSavedListenerPort() {
+  void probesAnAstmServerConnectionUsingItsDeploymentListenerPort() {
+    listenerConfig.setPort(5001);
     when(executor.probeListener(5001)).thenReturn(check("LISTENER", "PASSED", "listener.ready", Map.of("port", 5001)));
     when(executor.probeHost("192.0.2.40", 5_000)).thenReturn(
       check("ANALYZER", "PASSED", "analyzer.reachable", Map.of("host", "192.0.2.40"))
@@ -108,6 +116,7 @@ class AnalyzerConnectionProbeTest {
 
   @Test
   void probesAnActiveAstmServerThroughItsRunningBridgeListener() {
+    listenerConfig.setPort(5001);
     when(executor.probeRemote("ASTM", "127.0.0.1", 5001, 5_000)).thenReturn(
       check("REMOTE_PROTOCOL", "PASSED", "remote.astm.ready", Map.of("port", 5001))
     );
@@ -152,26 +161,33 @@ class AnalyzerConnectionProbeTest {
     ObjectNode result = servedProbe.execute(request(), connection, profile("HL7"));
 
     assertThat(result.path("checks").get(0).path("messageKey").asText()).isEqualTo("listener.ready");
-    assertThat(asked).containsExactly("HL7:5001");
+    assertThat(asked).containsExactly("HL7:2575");
     verify(executor, org.mockito.Mockito.never()).probeListener(5001);
   }
 
   @Test
-  void aServerConnectionWithoutAPortIsBlockedWithoutCheckingTheAnalyzer() {
+  void aServerConnectionWithoutAPortChecksTheDeploymentListener() {
+    when(executor.probeListener(12001)).thenReturn(
+      check("LISTENER", "PASSED", "listener.ready", Map.of("port", 12001))
+    );
     ObjectNode connection = connection();
-    connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("host", "192.0.2.40");
+    connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER");
+    ObjectNode profile = profile("ASTM");
+    profile.withObject("protocol").put("lowerLayerVersion", "LIS01_A");
 
-    ObjectNode result = probe.execute(request(), connection, profile("ASTM"));
+    ObjectNode result = probe.execute(request(), connection, profile);
 
-    assertThat(result.path("status").asText()).isEqualTo("BLOCKED");
-    assertThat(result.path("checks")).hasSize(1);
-    verifyNoInteractions(executor);
+    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
+    assertThat(result.path("checks").get(0).path("details").path("port").asInt()).isEqualTo(12001);
+    verify(executor).probeListener(12001);
   }
 
   @Test
   void theAnalyzerCheckIsAdvisoryAndTheListenerDecides() {
     when(executor.probeListener(5001)).thenReturn(check("LISTENER", "PASSED", "listener.ready", Map.of("port", 5001)));
-    when(executor.probeListener(5002)).thenReturn(check("LISTENER", "FAILED", "listener.port.in.use", Map.of("port", 5002)));
+    when(executor.probeListener(5002)).thenReturn(
+      check("LISTENER", "FAILED", "listener.port.in.use", Map.of("port", 5002))
+    );
     when(executor.probeHost("192.0.2.40", 5_000)).thenReturn(
       check("ANALYZER", "FAILED", "analyzer.unreachable", Map.of("host", "192.0.2.40"))
     );
@@ -184,6 +200,7 @@ class AnalyzerConnectionProbeTest {
   }
 
   private String overallFor(int port, String host) {
+    listenerConfig.setPort(port);
     ObjectNode connection = connection();
     connection
       .withObject("values")
@@ -203,24 +220,34 @@ class AnalyzerConnectionProbeTest {
     when(executor.probeListener(org.mockito.ArgumentMatchers.anyInt())).thenReturn(
       check("LISTENER", "FAILED", "listener.port.in.use", Map.of())
     );
-    AnalyzerConnectionProbe configured = new AnalyzerConnectionConfiguration().analyzerConnectionProbe(
-      objectMapper,
-      Clock.fixed(Instant.parse("2026-08-24T20:00:00Z"), ZoneOffset.UTC),
-      executor,
-      astm,
-      hl7
-    );
+    AnalyzerConnectionProbe configured = new AnalyzerConnectionConfiguration()
+      .analyzerConnectionProbe(
+        objectMapper,
+        Clock.fixed(Instant.parse("2026-08-24T20:00:00Z"), ZoneOffset.UTC),
+        executor,
+        astm,
+        hl7,
+        AnalyzerListenerPorts.defaults(),
+        new AnalyzerOutboundEndpoint(new AnalyzerOutboundDefaults())
+      );
 
     assertThat(listenerKey(configured, "ASTM", 12001)).isEqualTo("listener.ready");
     assertThat(listenerKey(configured, "HL7", 2575)).isEqualTo("listener.ready");
-    assertThat(listenerKey(configured, "HL7", 12001)).as("an ASTM listener does not serve HL7").isEqualTo("listener.port.in.use");
+    assertThat(listenerKey(configured, "HL7", 12001))
+      .as("a saved port cannot replace the configured HL7 listener")
+      .isEqualTo("listener.ready");
     assertThat(listenerKey(configured, "FILE-OVER-TCP", 12001)).isEqualTo("listener.port.in.use");
   }
 
   private String listenerKey(AnalyzerConnectionProbe configured, String protocol, int port) {
     ObjectNode connection = connection();
     connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", port);
-    return configured.execute(request(), connection, profile(protocol)).path("checks").get(0).path("messageKey").asText();
+    return configured
+      .execute(request(), connection, profile(protocol))
+      .path("checks")
+      .get(0)
+      .path("messageKey")
+      .asText();
   }
 
   @Test
@@ -279,7 +306,7 @@ class AnalyzerConnectionProbeTest {
 
   private ObjectNode profile(String protocol) {
     ObjectNode profile = objectMapper.createObjectNode();
-    profile.putObject("protocol").put("name", protocol);
+    profile.putObject("protocol").put("name", protocol).put("lowerLayerVersion", "LIS01_A");
     return profile;
   }
 
