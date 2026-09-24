@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
@@ -15,7 +16,6 @@ import org.hl7.fhir.r4.model.Quantity;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Specimen;
 import org.hl7.fhir.r4.model.StringType;
-import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.profile.ControlResultRecognition;
 
 /**
@@ -259,7 +259,8 @@ public class FhirBundleBuilder {
           obs.setEffective(new org.hl7.fhir.r4.model.DateTimeType(result.timestamp()));
         } catch (RuntimeException e) {
           // An unreadable time from an analyzer or file must not stop the result being delivered.
-          log.warn("Result {} has an unreadable test time '{}': {}", result.testCode(), result.timestamp(), e.getMessage());
+          // Debug, not warn: a file import can carry a free-text date column on every row.
+          log.debug("Result {} has an unreadable test time '{}': {}", result.testCode(), result.timestamp(), e.getMessage());
         }
       }
 

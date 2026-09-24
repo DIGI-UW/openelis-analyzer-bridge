@@ -3,10 +3,13 @@ package org.itech.ahb.fhir;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
+import java.util.TimeZone;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -323,8 +326,22 @@ class ASTMResultParserTest {
     }
 
     @Nested
-    @DisplayName("Test time (R.13 completed, else R.12 started)")
+    @DisplayName("Test time (first readable of R.13 completed and R.12 started)")
     class TestTime {
+
+        private TimeZone originalZone;
+
+        @BeforeEach
+        void pinSiteZone() {
+            originalZone = TimeZone.getDefault();
+            // A zone other than UTC with no daylight saving, so the offset is observable and stable.
+            TimeZone.setDefault(TimeZone.getTimeZone("Pacific/Port_Moresby"));
+        }
+
+        @AfterEach
+        void restoreZone() {
+            TimeZone.setDefault(originalZone);
+        }
 
         private String resultWithTimes(String started, String completed) {
             return "H|\\^&|||Analyzer\r"
@@ -340,28 +357,35 @@ class ASTMResultParserTest {
             return parsed.results().get(0).timestamp();
         }
 
-        private String local(int year, int month, int day, int hour, int minute, int second) {
-            return java.time.LocalDateTime.of(year, month, day, hour, minute, second)
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"));
+        @Test
+        @DisplayName("R.13 completion time is read in the JVM zone")
+        void completionTime() {
+            assertEquals("2026-03-26T12:00:00+10:00", testTime(VALID_ASTM_MESSAGE));
         }
 
         @Test
-        @DisplayName("R.13 completion time is read in the JVM zone as ISO-8601")
-        void completionTime() {
-            assertEquals(local(2026, 3, 26, 12, 0, 0), testTime(VALID_ASTM_MESSAGE));
+        @DisplayName("A UTC zone renders as Z")
+        void utcZone() {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+            assertEquals("2026-03-26T12:00:00Z", testTime(VALID_ASTM_MESSAGE));
         }
 
         @Test
         @DisplayName("R.12 start time when R.13 is empty")
         void startTimeWhenCompletionMissing() {
-            assertEquals(local(2025, 10, 21, 14, 45, 7), testTime(resultWithTimes("20251021144507", "")));
+            assertEquals("2025-10-21T14:45:07+10:00", testTime(resultWithTimes("20251021144507", "")));
+        }
+
+        @Test
+        @DisplayName("R.12 start time when R.13 is unreadable")
+        void startTimeWhenCompletionUnreadable() {
+            assertEquals("2025-10-21T14:45:07+10:00", testTime(resultWithTimes("20251021144507", "2025-10-21")));
         }
 
         @Test
         @DisplayName("Minute precision and date-only forms")
         void shorterForms() {
-            assertEquals(local(2025, 10, 21, 16, 12, 0), testTime(resultWithTimes("", "202510211612")));
+            assertEquals("2025-10-21T16:12:00+10:00", testTime(resultWithTimes("", "202510211612")));
             assertEquals("2025-10-21", testTime(resultWithTimes("", "20251021")));
         }
 
@@ -384,7 +408,8 @@ class ASTMResultParserTest {
             assertNull(testTime(resultWithTimes("", "")));
         }
     }
- @Nested
+
+    @Nested
     @DisplayName("Numeric detection")
     class NumericDetection {
 

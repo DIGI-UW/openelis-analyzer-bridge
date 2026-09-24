@@ -8,10 +8,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.DateTimeType;
 import org.hl7.fhir.r4.model.Observation;
@@ -33,8 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A GeneXpert result keeps the time the instrument performed the test, from receipt on the ASTM
- * listener to the FHIR rendered for OpenELIS, which otherwise records the import time instead.
+ * A GeneXpert result keeps the time the instrument performed the test, from the ASTM listener's
+ * message handler to the FHIR rendered for OpenELIS, which otherwise records the import time.
  *
  * <p>The message follows the record layout of Cepheid's LIS Interface Protocol Specification
  * (302-2261): R.12 is the test start time and R.13 its completion time, and only records whose
@@ -51,9 +50,13 @@ class GeneXpertTestTimeTest {
   private AnalyzerRuntimeRegistry registry;
   private OutboxTestSupport outbox;
   private ASTMBridgeAdapter listener;
+  private TimeZone originalZone;
 
   @BeforeEach
   void setUp() throws Exception {
+    originalZone = TimeZone.getDefault();
+    // The site zone of a real deployment, UTC+10 without daylight saving, so the offset is asserted.
+    TimeZone.setDefault(TimeZone.getTimeZone("Pacific/Port_Moresby"));
     registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties http = new HTTPForwardServerConfigurationProperties();
     // Nothing listens here: these tests stop at rendering and never need OpenELIS to answer.
@@ -66,6 +69,7 @@ class GeneXpertTestTimeTest {
   @AfterEach
   void tearDown() {
     outbox.close();
+    TimeZone.setDefault(originalZone);
   }
 
   @Test
@@ -73,8 +77,7 @@ class GeneXpertTestTimeTest {
     listener.handle(message("TEST-GX-0001", "20251021144507", "20251021161230"), "10.0.0.21");
 
     DateTimeType effective = effectiveTimeOf("TEST-GX-0001");
-    assertThat(effective.getValue().toInstant())
-      .isEqualTo(LocalDateTime.of(2025, 10, 21, 16, 12, 30).atZone(ZoneId.systemDefault()).toInstant());
+    assertThat(effective.getValueAsString()).isEqualTo("2025-10-21T16:12:30+10:00");
     assertThat(effective.getPrecision()).isEqualTo(TemporalPrecisionEnum.SECOND);
   }
 
@@ -82,16 +85,7 @@ class GeneXpertTestTimeTest {
   void aCompletionTimeOnTheMinuteIsKept() {
     listener.handle(message("TEST-GX-0004", "20251021144500", "20251021161200"), "10.0.0.21");
 
-    assertThat(effectiveTimeOf("TEST-GX-0004").getValue().toInstant())
-      .isEqualTo(LocalDateTime.of(2025, 10, 21, 16, 12, 0).atZone(ZoneId.systemDefault()).toInstant());
-  }
-
-  @Test
-  void theStartTimeIsUsedWhenTheCompletionTimeIsMissing() {
-    listener.handle(message("TEST-GX-0002", "20251021144507", ""), "10.0.0.21");
-
-    assertThat(effectiveTimeOf("TEST-GX-0002").getValue().toInstant())
-      .isEqualTo(LocalDateTime.of(2025, 10, 21, 14, 45, 7).atZone(ZoneId.systemDefault()).toInstant());
+    assertThat(effectiveTimeOf("TEST-GX-0004").getValueAsString()).isEqualTo("2025-10-21T16:12:00+10:00");
   }
 
   @Test

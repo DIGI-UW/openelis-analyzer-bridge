@@ -232,30 +232,39 @@ public class ASTMResultParser {
     }
 
     /**
-     * The time the test was performed, as an ISO-8601 date or date-time: R.13 "date/time test
-     * completed", else R.12 "date/time test started". ASTM times carry no offset, so they are read
-     * in the JVM's zone, which follows the container's {@code TZ}.
+     * The time the test was performed, as an ISO-8601 date or date-time: the first readable of R.13
+     * "date/time test completed" and R.12 "date/time test started". ASTM times carry no offset, so
+     * they are read in the JVM's zone, which follows the container's {@code TZ}.
      */
     private static String testTime(String[] resultFields) {
-        String raw = field(resultFields, R_COMPLETED_FIELD);
-        if (raw.isEmpty()) {
-            raw = field(resultFields, R_STARTED_FIELD);
+        for (int index : new int[] {R_COMPLETED_FIELD, R_STARTED_FIELD}) {
+            String raw = field(resultFields, index);
+            String time = raw.isEmpty() ? null : astmTime(raw);
+            if (time != null) {
+                return time;
+            }
         }
-        if (raw.isEmpty()) {
-            return null;
-        }
+        return null;
+    }
+
+    /** LIS2-A2 dates are YYYYMMDDHHMMSS, truncated to the precision the instrument knows. */
+    private static String astmTime(String raw) {
+        ZoneId zone = ZoneId.systemDefault();
+        String time;
         try {
-            ZoneId zone = ZoneId.systemDefault();
-            return switch (raw.length()) {
+            time = switch (raw.length()) {
                 case 8 -> LocalDate.parse(raw, ASTM_DATE).toString();
                 case 12 -> LocalDateTime.parse(raw, ASTM_DATE_TIME_MINUTES).atZone(zone).format(FHIR_DATE_TIME);
                 case 14 -> LocalDateTime.parse(raw, ASTM_DATE_TIME).atZone(zone).format(FHIR_DATE_TIME);
-                default -> throw new DateTimeParseException("unexpected length", raw, 0);
+                default -> null;
             };
         } catch (DateTimeParseException e) {
-            log.warn("Ignoring unreadable ASTM test time '{}'", raw);
-            return null;
+            time = null;
         }
+        if (time == null) {
+            log.warn("Ignoring unreadable ASTM test time '{}'", raw);
+        }
+        return time;
     }
 
     private static String field(String[] fields, int index) {

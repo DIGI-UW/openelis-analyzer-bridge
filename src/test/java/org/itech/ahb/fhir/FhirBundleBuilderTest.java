@@ -340,7 +340,7 @@ class FhirBundleBuilderTest {
         @DisplayName("Valid timestamp -> effectiveDateTime set")
         void validTimestampSetsEffective() {
             AnalyzerResult result = AnalyzerResult.numeric("WBC", "WBC", "7.5", "10*3/uL")
-                    .withTimestamp("2026-03-26T12:00:00");
+                    .withTimestamp("2025-10-21T16:12:30+10:00");
 
             Bundle bundle = parseBundle(
                     buildBundle(List.of(result)));
@@ -351,9 +351,25 @@ class FhirBundleBuilderTest {
                     .findFirst().orElseThrow();
 
             assertNotNull(obs.getEffective(), "effectiveDateTime should be set");
-            assertEquals("2026-03-26T12:00:00", obs.getEffectiveDateTimeType().getValueAsString());
+            assertEquals("2025-10-21T16:12:30+10:00", obs.getEffectiveDateTimeType().getValueAsString());
         }
 
+        @Test
+        @DisplayName("Date-only timestamp -> effectiveDateTime at day precision")
+        void dateOnlyTimestamp() {
+            AnalyzerResult result = AnalyzerResult.numeric("WBC", "WBC", "7.5", "10*3/uL")
+                    .withTimestamp("2025-10-21");
+
+            Bundle bundle = parseBundle(buildBundle(List.of(result)));
+
+            Observation obs = bundle.getEntry().stream()
+                    .filter(e -> e.getResource() instanceof Observation)
+                    .map(e -> (Observation) e.getResource())
+                    .findFirst().orElseThrow();
+            assertEquals("2025-10-21", obs.getEffectiveDateTimeType().getValueAsString());
+        }
+
+        /** A regression pin: a time the builder cannot read never costs the result itself. */
         @Test
         @DisplayName("Unreadable timestamp -> result still built, no effectiveDateTime")
         void unreadableTimestampKeepsTheResult() {
