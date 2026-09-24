@@ -12,4 +12,7 @@ public interface AstmConnectionListeners {
   );
 
   void stop(String connectionId);
+
+  /** Whether a Bridge listener, boot-held or shared by active connections, is running on {@code port}. */
+  boolean isListening(int port);
 }

@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
@@ -30,6 +31,7 @@ import org.itech.ahb.profile.ControlResultRecognition;
  *   <li>One DiagnosticReport grouping all Observations</li>
  * </ul>
  */
+@Slf4j
 public class FhirBundleBuilder {
 
   private static final FhirContext CTX = FhirContext.forR4();
@@ -251,12 +253,14 @@ public class FhirBundleBuilder {
         );
       }
 
-      // Analyzer completion timestamp
+      // When the analyzer performed the test; OpenELIS falls back to the import time without it.
       if (result.timestamp() != null && !result.timestamp().isBlank()) {
         try {
           obs.setEffective(new org.hl7.fhir.r4.model.DateTimeType(result.timestamp()));
-        } catch (Exception ignored) {
-          // Timestamp format not parseable — skip
+        } catch (RuntimeException e) {
+          // An unreadable time from an analyzer or file must not stop the result being delivered.
+          // Debug, not warn: a file import can carry a free-text date column on every row.
+          log.debug("Result {} has an unreadable test time '{}': {}", result.testCode(), result.timestamp(), e.getMessage());
         }
       }
 

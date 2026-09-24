@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Clock;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.itech.ahb.connectivity.ConnectionProbeExecutor;
@@ -14,19 +15,32 @@ public final class AnalyzerConnectionProbe {
 
   private static final int DEFAULT_TIMEOUT_MILLIS = 5_000;
 
+  /** Whether one of the Bridge's own listeners for {@code protocol} is already running on a port. */
+  @FunctionalInterface
+  public interface BridgeListeners {
+    boolean isListening(String protocol, int port);
+  }
+
   private final ObjectMapper objectMapper;
   private final Clock clock;
   private final ConnectionProbeExecutor executor;
+  private final BridgeListeners bridgeListeners;
 
-  public AnalyzerConnectionProbe(ObjectMapper objectMapper, Clock clock, ConnectionProbeExecutor executor) {
+  public AnalyzerConnectionProbe(
+    ObjectMapper objectMapper,
+    Clock clock,
+    ConnectionProbeExecutor executor,
+    BridgeListeners bridgeListeners
+  ) {
     this.objectMapper = objectMapper;
     this.clock = clock;
     this.executor = executor;
+    this.bridgeListeners = bridgeListeners;
   }
 
   ObjectNode execute(ObjectNode request, ObjectNode connection, ObjectNode profile) {
     String startedAt = clock.instant().toString();
-    ProbeCheck check = check(connection, profile, (ObjectNode) connection.path("values"));
+    List<ProbeCheck> checks = checks(connection, profile, (ObjectNode) connection.path("values"));
 
     ObjectNode result = objectMapper.createObjectNode();
     result.put("schemaVersion", "1.0");
@@ -36,11 +50,26 @@ public final class AnalyzerConnectionProbe {
     result.put("configRevision", connection.path("configRevision").asInt());
     result.put("configFingerprint", connection.path("configFingerprint").asText());
     result.put("nonMutating", true);
-    result.put("status", overallStatus(check));
+    result.put("status", overallStatus(checks));
     result.put("startedAt", startedAt);
     result.put("completedAt", clock.instant().toString());
-    result.putArray("checks").add(toContractCheck(check));
+    checks.forEach(check -> result.withArray("checks").add(toContractCheck(check)));
     return result;
+  }
+
+  private List<ProbeCheck> checks(ObjectNode connection, ObjectNode profile, ObjectNode values) {
+    ProbeCheck bridgeSide = check(connection, profile, values);
+    if (!"LISTENER".equals(bridgeSide.kind()) || "MISSING_CONFIGURATION".equals(bridgeSide.status())) {
+      return List.of(bridgeSide);
+    }
+    // The analyzer opens this connection, so the Bridge's listener and the analyzer's reachability
+    // are separate questions; without an address the analyzer cannot be checked at all.
+    // The analyzer check is reported for information and does not decide the overall status.
+    String host = text(values, "host");
+    return List.of(
+      bridgeSide,
+      host == null ? missing("ANALYZER", "analyzer.address.missing") : executor.probeHost(host, timeout(values))
+    );
   }
 
   private ProbeCheck check(ObjectNode connection, ObjectNode profile, ObjectNode values) {
@@ -87,6 +116,10 @@ public final class AnalyzerConnectionProbe {
             protocolCheck.args()
           );
       }
+      if (bridgeListeners.isListening(protocol, port)) {
+        // A shared or boot listener already serves this port; binding it again would only fail.
+        return new ProbeCheck("LISTENER", "PASSED", "listener.ready", 0, Map.of("port", port));
+      }
       return executor.probeListener(port);
     }
 
@@ -119,11 +152,27 @@ public final class AnalyzerConnectionProbe {
     return result;
   }
 
-  private static String overallStatus(ProbeCheck check) {
-    return switch (check.status()) {
-      case "PASSED" -> "SUCCEEDED";
-      case "TIMED_OUT" -> "TIMEOUT";
-      case "MISSING_CONFIGURATION" -> "BLOCKED";
+  /**
+   * The worst of the Bridge-side checks. The analyzer check on a connection the analyzer opens is
+   * advisory: a firewalled or NAT'd analyzer that works still fails a reachability test, and many
+   * profile revisions offer no address for it at all.
+   */
+  private static String overallStatus(List<ProbeCheck> checks) {
+    int worst = checks
+      .stream()
+      .filter(check -> !"ANALYZER".equals(check.kind()))
+      .mapToInt(check -> switch (check.status()) {
+        case "PASSED" -> 0;
+        case "MISSING_CONFIGURATION" -> 1;
+        case "TIMED_OUT" -> 2;
+        default -> 3;
+      })
+      .max()
+      .orElse(0);
+    return switch (worst) {
+      case 0 -> "SUCCEEDED";
+      case 1 -> "BLOCKED";
+      case 2 -> "TIMEOUT";
       default -> "FAILED";
     };
   }

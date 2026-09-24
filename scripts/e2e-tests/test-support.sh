@@ -120,6 +120,20 @@ runtime_command() {
         "${BRIDGE_API_URL}/connections/${connection_id}/runtime"
 }
 
+# Check a saved connection without changing it; prints the bridge's probe result.
+probe_connection() {
+    local connection_id="$1"
+    bridge_api \
+        --request POST \
+        --header 'Content-Type: application/json' \
+        --data "$(jq --null-input --compact-output \
+            --arg request_id "probe-${connection_id}-$(date +%s)-${RANDOM}" \
+            --arg connection_id "${connection_id}" \
+            '{schemaVersion: "1.0", requestId: $request_id, connectionId: $connection_id,
+              expectedConfigRevision: 1}')" \
+        "${BRIDGE_API_URL}/connections/${connection_id}/probe"
+}
+
 deactivate_connection() {
     runtime_command "$1" DEACTIVATE \
         | jq --exit-status '.outcome == "APPLIED" or .outcome == "ALREADY_APPLIED"' >/dev/null
@@ -151,12 +165,13 @@ wait_for_normalized_capture() {
 
     for _ in $(seq 1 45); do
         capture="$(curl --silent --show-error --fail "${WIREMOCK_URL}/__admin/requests")"
+        # WireMock lists newest first; one request, so assertions never run over several bodies.
         if jq --exit-status --compact-output \
             --arg path "${NORMALIZED_PATH}" \
             --arg connection_id "${connection_id}" \
-            '.requests[]
+            'first(.requests[]
                 | select(.request.url == $path)
-                | select(.request.body | contains($connection_id))' \
+                | select(.request.body | contains($connection_id)))' \
             <<<"${capture}" 2>/dev/null; then
             return 0
         fi

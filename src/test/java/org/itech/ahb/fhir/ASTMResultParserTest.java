@@ -3,10 +3,13 @@ package org.itech.ahb.fhir;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
+import java.util.TimeZone;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -33,8 +36,8 @@ class ASTMResultParserTest {
             "H|\\^&|||GeneXpert^1.0|||||||LIS2-A2\r"
             + "P|1\r"
             + "O|1|SAMPLE001|||||||||P\r"
-            + "R|1|^^^HIV-VL|1520.5|copies/mL|||||20260326120000\r"
-            + "R|2|^^^CT|28.5|cycles|||||20260326120000\r"
+            + "R|1|^^^HIV-VL|1520.5|copies/mL||N||F|||20260326114500|20260326120000\r"
+            + "R|2|^^^CT|28.5|cycles||N||F|||20260326114500|20260326120000\r"
             + "L|1\r";
 
     // Real Cepheid GeneXpert H-record uses H|@^\  (repeat=@ component=^ escape=\)
@@ -323,31 +326,86 @@ class ASTMResultParserTest {
     }
 
     @Nested
-    @DisplayName("Timestamp extraction")
-    class TimestampExtraction {
+    @DisplayName("Test time (first readable of R.13 completed and R.12 started)")
+    class TestTime {
 
-        @Test
-        @DisplayName("R.9 timestamp extracted when present")
-        void timestampExtracted() {
-            ParsedResults parsed = ASTMResultParser.parseRaw(VALID_ASTM_MESSAGE, ControlResultRecognition.none(), ALL_RESULTS);
+        private TimeZone originalZone;
 
+        @BeforeEach
+        void pinSiteZone() {
+            originalZone = TimeZone.getDefault();
+            // A zone other than UTC with no daylight saving, so the offset is observable and stable.
+            TimeZone.setDefault(TimeZone.getTimeZone("Pacific/Port_Moresby"));
+        }
+
+        @AfterEach
+        void restoreZone() {
+            TimeZone.setDefault(originalZone);
+        }
+
+        private String resultWithTimes(String started, String completed) {
+            return "H|\\^&|||Analyzer\r"
+                    + "P|1\r"
+                    + "O|1|ACC001\r"
+                    + "R|1|^^^TEST|5.0|units||N||F|||" + started + "|" + completed + "\r"
+                    + "L|1\r";
+        }
+
+        private String testTime(String message) {
+            ParsedResults parsed = ASTMResultParser.parseRaw(message, ControlResultRecognition.none(), ALL_RESULTS);
             assertNotNull(parsed);
-            assertEquals("20260326120000", parsed.results().get(0).timestamp());
+            return parsed.results().get(0).timestamp();
         }
 
         @Test
-        @DisplayName("Missing R.9 timestamp -> null timestamp")
-        void missingTimestamp() {
+        @DisplayName("R.13 completion time is read in the JVM zone")
+        void completionTime() {
+            assertEquals("2026-03-26T12:00:00+10:00", testTime(VALID_ASTM_MESSAGE));
+        }
+
+        @Test
+        @DisplayName("A UTC zone renders as Z")
+        void utcZone() {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+            assertEquals("2026-03-26T12:00:00Z", testTime(VALID_ASTM_MESSAGE));
+        }
+
+        @Test
+        @DisplayName("R.12 start time when R.13 is empty")
+        void startTimeWhenCompletionMissing() {
+            assertEquals("2025-10-21T14:45:07+10:00", testTime(resultWithTimes("20251021144507", "")));
+        }
+
+        @Test
+        @DisplayName("R.12 start time when R.13 is unreadable")
+        void startTimeWhenCompletionUnreadable() {
+            assertEquals("2025-10-21T14:45:07+10:00", testTime(resultWithTimes("20251021144507", "2025-10-21")));
+        }
+
+        @Test
+        @DisplayName("Minute precision and date-only forms")
+        void shorterForms() {
+            assertEquals("2025-10-21T16:12:00+10:00", testTime(resultWithTimes("", "202510211612")));
+            assertEquals("2025-10-21", testTime(resultWithTimes("", "20251021")));
+        }
+
+        @Test
+        @DisplayName("R.10 (normative-values change date) is not a test time")
+        void normativeValuesDateIgnored() {
             String msg = "H|\\^&|||Analyzer\r"
                     + "P|1\r"
                     + "O|1|ACC001\r"
-                    + "R|1|^^^TEST|5.0|units\r"
+                    + "R|1|^^^TEST|5.0|units|||||20260326120000\r"
                     + "L|1\r";
+            assertNull(testTime(msg));
+        }
 
-            ParsedResults parsed = ASTMResultParser.parseRaw(msg, ControlResultRecognition.none(), ALL_RESULTS);
-
-            assertNotNull(parsed);
-            assertNull(parsed.results().get(0).timestamp());
+        @Test
+        @DisplayName("Unreadable or missing times -> null")
+        void unreadableOrMissing() {
+            assertNull(testTime(resultWithTimes("", "2025-10-21")));
+            assertNull(testTime(resultWithTimes("", "20251321999999")));
+            assertNull(testTime(resultWithTimes("", "")));
         }
     }
 

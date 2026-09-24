@@ -104,6 +104,19 @@ GENEXPERT_CONNECTION_ID="$(create_connection \
     "GeneXpert acceptance connection" \
     '{"transport":"TCP/IP","connectionRole":"SERVER","port":12001}')"
 export GENEXPERT_CONNECTION_ID
+# Before activation the boot listener already holds 12001: the bridge's side must check as ready.
+# With no analyzer address saved, the advisory analyzer check is skipped and does not fail the result.
+probe="$(probe_connection "${GENEXPERT_CONNECTION_ID}")"
+if ! jq --exit-status '
+    .status == "SUCCEEDED"
+    and (.checks | length == 2)
+    and any(.checks[]; .key == "listener" and .status == "PASSED" and .messageKey == "listener.ready")
+    and any(.checks[]; .key == "analyzer" and .status == "SKIPPED" and .messageKey == "analyzer.address.missing")' \
+    <<<"${probe}" >/dev/null; then
+    echo "FAIL: check-connection before activation on the shared port: ${probe}" >&2
+    exit 1
+fi
+echo "Check-connection before activation: listener ready on the shared port, analyzer skipped without an address"
 activate_connection "${GENEXPERT_CONNECTION_ID}"
 
 FLUOROCYCLER_CONNECTION_ID="$(create_connection \

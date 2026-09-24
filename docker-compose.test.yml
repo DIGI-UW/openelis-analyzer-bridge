@@ -18,6 +18,8 @@ services:
       LOGGING_LEVEL_ORG_ITECH: DEBUG
       LOGGING_LEVEL_ROOT: INFO
       OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-150}
+      # A site zone other than UTC, so analyzer test times prove they are read in the container's zone.
+      TZ: Pacific/Port_Moresby
     volumes:
       - ./configuration.test.yml:/app/configuration.yml:ro
       - analyzer-input:/mnt/analyzer-import

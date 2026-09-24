@@ -106,7 +106,8 @@ public final class ManagedHl7ConnectionListeners implements Hl7ConnectionListene
     return Map.copyOf(state);
   }
 
-  synchronized boolean isListening(int port) {
+  @Override
+  public synchronized boolean isListening(int port) {
     SharedListener listener = listenersByPort.get(port);
     return listener != null && listener.listener.isRunning();
   }

@@ -1,5 +1,10 @@
 package org.itech.ahb.fhir;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,7 +39,13 @@ public class ASTMResultParser {
     private static final int R_TEST_ID_FIELD = 2;
     private static final int R_VALUE_FIELD = 3;
     private static final int R_UNITS_FIELD = 4;
-    private static final int R_TIMESTAMP_FIELD = 9;
+    private static final int R_STARTED_FIELD = 11;
+    private static final int R_COMPLETED_FIELD = 12;
+    private static final DateTimeFormatter ASTM_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final DateTimeFormatter ASTM_DATE_TIME_MINUTES = DateTimeFormatter.ofPattern("yyyyMMddHHmm");
+    private static final DateTimeFormatter ASTM_DATE_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    /** FHIR dateTime: seconds are required whenever a time is present. */
+    private static final DateTimeFormatter FHIR_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
     /**
      * Parse ASTM message lines using the pinned profile's explicit control
      * recognition mode.
@@ -181,7 +192,7 @@ public class ASTMResultParser {
         if (value == null || value.isEmpty()) return null;
 
         String units = fields.length > R_UNITS_FIELD ? fields[R_UNITS_FIELD].trim() : "";
-        String timestamp = fields.length > R_TIMESTAMP_FIELD ? fields[R_TIMESTAMP_FIELD].trim() : null;
+        String timestamp = testTime(fields);
 
         boolean isNumeric = isNumericValue(value);
         AnalyzerResult result = isNumeric
@@ -218,6 +229,46 @@ public class ASTMResultParser {
             return testIdField.trim();
         }
         return null;
+    }
+
+    /**
+     * The time the test was performed, as an ISO-8601 date or date-time: the first readable of R.13
+     * "date/time test completed" and R.12 "date/time test started". ASTM times carry no offset, so
+     * they are read in the JVM's zone, which follows the container's {@code TZ}.
+     */
+    private static String testTime(String[] resultFields) {
+        for (int index : new int[] {R_COMPLETED_FIELD, R_STARTED_FIELD}) {
+            String raw = field(resultFields, index);
+            String time = raw.isEmpty() ? null : astmTime(raw);
+            if (time != null) {
+                return time;
+            }
+        }
+        return null;
+    }
+
+    /** LIS2-A2 dates are YYYYMMDDHHMMSS, truncated to the precision the instrument knows. */
+    private static String astmTime(String raw) {
+        ZoneId zone = ZoneId.systemDefault();
+        String time;
+        try {
+            time = switch (raw.length()) {
+                case 8 -> LocalDate.parse(raw, ASTM_DATE).toString();
+                case 12 -> LocalDateTime.parse(raw, ASTM_DATE_TIME_MINUTES).atZone(zone).format(FHIR_DATE_TIME);
+                case 14 -> LocalDateTime.parse(raw, ASTM_DATE_TIME).atZone(zone).format(FHIR_DATE_TIME);
+                default -> null;
+            };
+        } catch (DateTimeParseException e) {
+            time = null;
+        }
+        if (time == null) {
+            log.warn("Ignoring unreadable ASTM test time '{}'", raw);
+        }
+        return time;
+    }
+
+    private static String field(String[] fields, int index) {
+        return fields.length > index ? fields[index].trim() : "";
     }
 
     /**
