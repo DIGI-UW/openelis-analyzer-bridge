@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DIGI-UW/analyzer-mock-server
-          ref: 30478c6c7099c27fd7c4f41afaeb97668ea9da9e
+          ref: 6df789111d26a122a440892e478b358c8c4738b4
           path: analyzer-mock-server
 
       - name: Set up JDK 21
@@ -67,7 +67,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DIGI-UW/analyzer-mock-server
-          ref: 30478c6c7099c27fd7c4f41afaeb97668ea9da9e
+          ref: 6df789111d26a122a440892e478b358c8c4738b4
           path: analyzer-mock-server
 
       # Builds the image from the Dockerfile and drives it through the same
