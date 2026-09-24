@@ -64,6 +64,7 @@ public final class AnalyzerConnectionProbe {
     }
     // The analyzer opens this connection, so the Bridge's listener and the analyzer's reachability
     // are separate questions; without an address the analyzer cannot be checked at all.
+    // The analyzer check is reported for information and does not decide the overall status.
     String host = text(values, "host");
     return List.of(
       bridgeSide,
@@ -151,15 +152,29 @@ public final class AnalyzerConnectionProbe {
     return result;
   }
 
+  /**
+   * The worst of the Bridge-side checks. The analyzer check on a connection the analyzer opens is
+   * advisory: a firewalled or NAT'd analyzer that works still fails a reachability test, and many
+   * profile revisions offer no address for it at all.
+   */
   private static String overallStatus(List<ProbeCheck> checks) {
-    List<String> statuses = checks.stream().map(ProbeCheck::status).toList();
-    if (statuses.stream().anyMatch(status -> !List.of("PASSED", "TIMED_OUT", "MISSING_CONFIGURATION").contains(status))) {
-      return "FAILED";
-    }
-    if (statuses.contains("TIMED_OUT")) {
-      return "TIMEOUT";
-    }
-    return statuses.contains("MISSING_CONFIGURATION") ? "BLOCKED" : "SUCCEEDED";
+    int worst = checks
+      .stream()
+      .filter(check -> !"ANALYZER".equals(check.kind()))
+      .mapToInt(check -> switch (check.status()) {
+        case "PASSED" -> 0;
+        case "MISSING_CONFIGURATION" -> 1;
+        case "TIMED_OUT" -> 2;
+        default -> 3;
+      })
+      .max()
+      .orElse(0);
+    return switch (worst) {
+      case 0 -> "SUCCEEDED";
+      case 1 -> "BLOCKED";
+      case 2 -> "TIMEOUT";
+      default -> "FAILED";
+    };
   }
 
   private static String contractStatus(String status) {

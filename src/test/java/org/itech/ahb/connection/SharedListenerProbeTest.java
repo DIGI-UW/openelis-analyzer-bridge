@@ -17,10 +17,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Checking a connection the analyzer opens, against real sockets. The Bridge's listener is one
- * check: a port it already serves through a boot or shared listener is ready, a port held by
- * another process is in use, a free port is ready to be bound. The analyzer is the other: its saved
- * address is either reachable or not, and without one it cannot be checked, which is never a pass.
+ * Checking a connection the analyzer opens, against real sockets. The Bridge's listener decides the
+ * result: a port it already serves through a boot or shared listener is ready, a port held by
+ * another process is in use, a free port is ready to be bound. The analyzer check is advisory: its
+ * saved address is reachable or not, and without one it is skipped as not checkable.
  */
 class SharedListenerProbeTest {
 
@@ -54,6 +54,8 @@ class SharedListenerProbeTest {
     ObjectNode result = probe.execute(request(), serverConnection(port, null), astmProfile());
 
     assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
+    assertThat(result.path("checks")).hasSize(2);
+    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
   }
 
   @Test
@@ -64,6 +66,8 @@ class SharedListenerProbeTest {
     ObjectNode result = probe.execute(request(), serverConnection(port, null), astmProfile());
 
     assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
+    assertThat(result.path("checks")).hasSize(2);
+    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
   }
 
   @Test
@@ -81,17 +85,23 @@ class SharedListenerProbeTest {
     ObjectNode result = probe.execute(request(), serverConnection(availablePort(), null), astmProfile());
 
     assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
+    assertThat(result.path("checks")).hasSize(2);
+    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
   }
 
   @Test
-  void withoutAnAnalyzerAddressTheAnalyzerCannotBeCheckedAndThatIsNotAPass() throws Exception {
+  void withoutAnAnalyzerAddressTheAnalyzerIsSkippedAsNotCheckable() throws Exception {
     ObjectNode result = probe.execute(request(), serverConnection(availablePort(), null), astmProfile());
 
-    assertThat(result.path("status").asText()).isEqualTo("BLOCKED");
+    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
     assertCheck(result.path("checks").get(1), "analyzer", "SKIPPED", "analyzer.address.missing");
     new AnalyzerConnectionContractValidator(objectMapper).validateProbeResult(result);
   }
 
+  /**
+   * Loopback always answers, by ICMP or by refusing TCP port 7, so this proves the wiring from the
+   * saved address to the check, not that a firewalled analyzer answers from a non-root container.
+   */
   @Test
   void aReachableAnalyzerAddressPasses() throws Exception {
     ObjectNode result = probe.execute(request(), serverConnection(availablePort(), "127.0.0.1"), astmProfile());
@@ -101,13 +111,13 @@ class SharedListenerProbeTest {
   }
 
   @Test
-  void anUnreachableAnalyzerAddressFailsWhileTheListenerIsReady() throws Exception {
+  void anUnreachableAnalyzerAddressIsReportedWithoutFailingTheCheck() throws Exception {
     ObjectNode connection = serverConnection(availablePort(), UNROUTABLE);
     connection.withObject("values").put("connectTimeoutMillis", 500);
 
     ObjectNode result = probe.execute(request(), connection, astmProfile());
 
-    assertThat(result.path("status").asText()).isEqualTo("FAILED");
+    assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
     assertCheck(result.path("checks").get(0), "listener", "PASSED", "listener.ready");
     assertCheck(result.path("checks").get(1), "analyzer", "FAILED", "analyzer.unreachable");
     assertThat(result.path("checks").get(1).path("details").path("host").asText()).isEqualTo(UNROUTABLE);

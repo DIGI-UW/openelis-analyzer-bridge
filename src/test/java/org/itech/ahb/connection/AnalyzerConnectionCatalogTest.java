@@ -466,6 +466,43 @@ class AnalyzerConnectionCatalogTest {
     assertThat(entry.getInboundAddress()).isNull();
   }
 
+  /**
+   * A regression pin for what OpenELIS activation relies on: readiness comes from the saved values
+   * alone, so a connection check that fails is recorded and never becomes a readiness blocker.
+   */
+  @Test
+  void aFailedConnectionCheckIsRecordedButNeverBlocksReadiness() throws Exception {
+    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID);
+    try (java.net.ServerSocket foreign = new java.net.ServerSocket(0)) {
+      ObjectNode request = createRequest(profile, "create-gx-probe", "oe-gx-probe");
+      request
+        .withObject("values")
+        .put("transport", "TCP/IP")
+        .put("connectionRole", "SERVER")
+        .put("port", foreign.getLocalPort());
+      String connectionId = catalog.create(request).path("connectionId").asText();
+      ObjectNode probeRequest = objectMapper.createObjectNode();
+      probeRequest.put("schemaVersion", "1.0");
+      probeRequest.put("requestId", "probe-gx");
+      probeRequest.put("connectionId", connectionId);
+      probeRequest.put("expectedConfigRevision", 1);
+      AnalyzerConnectionProbe probe = new AnalyzerConnectionProbe(
+        objectMapper,
+        CLOCK,
+        new org.itech.ahb.connectivity.DefaultConnectionProbeExecutor(),
+        (protocol, port) -> false
+      );
+
+      assertThat(catalog.probe(probeRequest, probe).path("status").asText()).isEqualTo("FAILED");
+
+      ObjectNode stored = catalog.require(connectionId);
+      assertThat(stored.path("latestProbe").path("status").asText()).isEqualTo("FAILED");
+      assertThat(stored.path("readiness").path("ready").asBoolean()).isTrue();
+      assertThat(stored.path("readiness").path("blockers")).isEmpty();
+    }
+  }
+
   private AnalyzerConnectionCatalog catalog(java.util.function.Supplier<UUID> ids) {
     return catalog(profiles, ids);
   }

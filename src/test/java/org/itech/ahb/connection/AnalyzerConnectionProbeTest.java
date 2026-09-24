@@ -132,7 +132,95 @@ class AnalyzerConnectionProbeTest {
     assertThat(result.path("status").asText()).isEqualTo("SUCCEEDED");
     assertThat(result.path("checks").get(0).path("key").asText()).isEqualTo("listener");
     assertThat(result.path("checks").get(0).path("messageKey").asText()).isEqualTo("listener.ready");
+    assertThat(result.path("checks").get(1).path("key").asText()).isEqualTo("analyzer");
     verify(executor).probeRemote("ASTM", "127.0.0.1", 5001, 5_000);
+    verify(executor).probeHost("192.0.2.40", 5_000);
+  }
+
+  @Test
+  void aPortTheBridgeAlreadyServesIsReadyWithoutBindingItAndTheProtocolIsPassedOn() {
+    java.util.List<String> asked = new java.util.ArrayList<>();
+    AnalyzerConnectionProbe servedProbe = new AnalyzerConnectionProbe(
+      objectMapper,
+      Clock.fixed(Instant.parse("2026-08-24T20:00:00Z"), ZoneOffset.UTC),
+      executor,
+      (protocol, port) -> asked.add(protocol + ":" + port)
+    );
+    ObjectNode connection = connection();
+    connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 5001);
+
+    ObjectNode result = servedProbe.execute(request(), connection, profile("HL7"));
+
+    assertThat(result.path("checks").get(0).path("messageKey").asText()).isEqualTo("listener.ready");
+    assertThat(asked).containsExactly("HL7:5001");
+    verify(executor, org.mockito.Mockito.never()).probeListener(5001);
+  }
+
+  @Test
+  void aServerConnectionWithoutAPortIsBlockedWithoutCheckingTheAnalyzer() {
+    ObjectNode connection = connection();
+    connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("host", "192.0.2.40");
+
+    ObjectNode result = probe.execute(request(), connection, profile("ASTM"));
+
+    assertThat(result.path("status").asText()).isEqualTo("BLOCKED");
+    assertThat(result.path("checks")).hasSize(1);
+    verifyNoInteractions(executor);
+  }
+
+  @Test
+  void theAnalyzerCheckIsAdvisoryAndTheListenerDecides() {
+    when(executor.probeListener(5001)).thenReturn(check("LISTENER", "PASSED", "listener.ready", Map.of("port", 5001)));
+    when(executor.probeListener(5002)).thenReturn(check("LISTENER", "FAILED", "listener.port.in.use", Map.of("port", 5002)));
+    when(executor.probeHost("192.0.2.40", 5_000)).thenReturn(
+      check("ANALYZER", "FAILED", "analyzer.unreachable", Map.of("host", "192.0.2.40"))
+    );
+    when(executor.probeHost("192.0.2.41", 5_000)).thenReturn(
+      check("ANALYZER", "PASSED", "analyzer.reachable", Map.of("host", "192.0.2.41"))
+    );
+
+    assertThat(overallFor(5001, "192.0.2.40")).as("listener ready, analyzer unreachable").isEqualTo("SUCCEEDED");
+    assertThat(overallFor(5002, "192.0.2.41")).as("listener in use, analyzer reachable").isEqualTo("FAILED");
+  }
+
+  private String overallFor(int port, String host) {
+    ObjectNode connection = connection();
+    connection
+      .withObject("values")
+      .put("transport", "TCP/IP")
+      .put("connectionRole", "SERVER")
+      .put("port", port)
+      .put("host", host);
+    return probe.execute(request(), connection, profile("ASTM")).path("status").asText();
+  }
+
+  @Test
+  void theConfiguredProbeAsksEachProtocolsOwnListeners() {
+    AstmConnectionListeners astm = mock(AstmConnectionListeners.class);
+    Hl7ConnectionListeners hl7 = mock(Hl7ConnectionListeners.class);
+    when(astm.isListening(12001)).thenReturn(true);
+    when(hl7.isListening(2575)).thenReturn(true);
+    when(executor.probeListener(org.mockito.ArgumentMatchers.anyInt())).thenReturn(
+      check("LISTENER", "FAILED", "listener.port.in.use", Map.of())
+    );
+    AnalyzerConnectionProbe configured = new AnalyzerConnectionConfiguration().analyzerConnectionProbe(
+      objectMapper,
+      Clock.fixed(Instant.parse("2026-08-24T20:00:00Z"), ZoneOffset.UTC),
+      executor,
+      astm,
+      hl7
+    );
+
+    assertThat(listenerKey(configured, "ASTM", 12001)).isEqualTo("listener.ready");
+    assertThat(listenerKey(configured, "HL7", 2575)).isEqualTo("listener.ready");
+    assertThat(listenerKey(configured, "HL7", 12001)).as("an ASTM listener does not serve HL7").isEqualTo("listener.port.in.use");
+    assertThat(listenerKey(configured, "FILE-OVER-TCP", 12001)).isEqualTo("listener.port.in.use");
+  }
+
+  private String listenerKey(AnalyzerConnectionProbe configured, String protocol, int port) {
+    ObjectNode connection = connection();
+    connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", port);
+    return configured.execute(request(), connection, profile(protocol)).path("checks").get(0).path("messageKey").asText();
   }
 
   @Test
