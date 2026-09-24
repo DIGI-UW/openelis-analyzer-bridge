@@ -269,6 +269,37 @@ For serial, FILE and HTTP input the source binding is looked up directly, as
 before. On any transport a sender name that contradicts the resolved connection
 is recorded as a mismatch, but it never overrides the connection.
 
+### Checking a Connection
+
+`POST /api/connections/{connectionId}/probe` checks a saved connection without
+changing it. When the bridge opens the connection (CLIENT role) it connects to
+the analyzer's `host` and `port` and completes an ASTM or MLLP handshake. When
+the analyzer opens it (SERVER role) the result has two checks, and only the
+first decides the overall status:
+
+| Check | Passes when | Fails when |
+|---|---|---|
+| `listener` | The bridge already serves the port (a boot or shared listener), or the port is free to bind | Another process holds the port |
+| `analyzer` (advisory) | The saved `host` answers | The saved `host` does not answer, or its name does not resolve |
+
+Without a saved `host` the analyzer check is `SKIPPED`
+(`analyzer.address.missing`). The analyzer check is advisory because a working
+analyzer can still fail it: reachability uses ICMP where the process may send
+it, otherwise TCP port 7, where a refused connection still proves the host is
+up, and a firewall that drops both (common on analyzer PCs) reads as
+unreachable, as does an analyzer behind NAT or reached from a hosted server.
+Only results arriving prove that an analyzer reaches the bridge. The check never
+blocks activation.
+
+### Test Times
+
+An ASTM result's `effectiveDateTime` is the time the analyzer performed the test:
+the first readable of ASTM R.13 (completed) and R.12 (started). ASTM times carry no
+offset, so they are read in the JVM's zone, which follows the container's `TZ`;
+set `TZ` to the site's zone (for example `TZ=Pacific/Port_Moresby`); the image
+defaults to UTC. Without a readable time, OpenELIS records the import time. HL7
+and file results do not carry the analyzer's test time.
+
 ## Monitoring & Observability
 
 ### Health Checks
