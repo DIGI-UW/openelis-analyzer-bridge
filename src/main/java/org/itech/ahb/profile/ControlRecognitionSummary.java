@@ -11,7 +11,6 @@ public record ControlRecognitionSummary(
   boolean affirmedNoControlResults,
   List<Condition> conditions
 ) {
-
   public ControlRecognitionSummary {
     conditions = conditions == null ? List.of() : List.copyOf(conditions);
   }
@@ -33,20 +32,16 @@ public record ControlRecognitionSummary(
     return new ControlRecognitionSummary(
       null,
       "RULES",
-      "Any listed condition identifies a control result.",
+      recognition.rules().isEmpty()
+        ? "Control-result recognition is not configured."
+        : "Any listed condition identifies a control result.",
       false,
       conditions
     );
   }
 
   public ControlRecognitionSummary withFingerprint(String fingerprint) {
-    return new ControlRecognitionSummary(
-      fingerprint,
-      mode,
-      description,
-      affirmedNoControlResults,
-      conditions
-    );
+    return new ControlRecognitionSummary(fingerprint, mode, description, affirmedNoControlResults, conditions);
   }
 
   private static Condition condition(ControlRecognitionRule rule) {
@@ -93,9 +88,7 @@ public record ControlRecognitionSummary(
           rule.controlType()
         );
       }
-      default -> throw new IllegalArgumentException(
-        "Unsupported control recognition rule type " + rule.ruleType()
-      );
+      default -> throw new IllegalArgumentException("Unsupported control recognition rule type " + rule.ruleType());
     };
   }
 

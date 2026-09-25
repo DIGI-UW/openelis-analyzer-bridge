@@ -78,6 +78,27 @@ class BridgeAnalyzerConnectionRuntimeTest {
   }
 
   @Test
+  void fileAssaySelectionIsSavedExplicitlyAndMustBelongToThePinnedProfile() throws Exception {
+    var registry = new AnalyzerRuntimeRegistry();
+    var runtime = new BridgeAnalyzerConnectionRuntime(registry, mock(FileWatcher.class), null, null);
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      getClass().getResourceAsStream("/analyzer-profiles/fluorocycler-xt.json")
+    );
+    profile.withArray("default_test_mappings").addObject().put("test_code", "SECOND-ASSAY").put("loinc", "94500-6");
+    ObjectNode saved = connection(profile);
+    saved.withObject("values").put("fileTestCode", "SECOND-ASSAY");
+    runtime.restore(saved, profile);
+    assertThat(
+      registry.findAnalyzerEntryByConnectionId(saved.path("connectionId").asText()).orElseThrow().getFileTestCode()
+    ).isEqualTo("SECOND-ASSAY");
+    ObjectNode invalid = saved.deepCopy();
+    invalid.withObject("values").put("fileTestCode", "NOT-IN-PROFILE");
+    assertThatThrownBy(() -> runtime.activate(invalid, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("fileTestCode");
+  }
+
+  @Test
   void activatesAndDeactivatesAFileConnectionFromItsPinnedProfileAndSavedValues() throws Exception {
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     FileWatcher watcher = mock(FileWatcher.class);

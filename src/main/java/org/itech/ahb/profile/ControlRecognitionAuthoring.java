@@ -52,15 +52,13 @@ public final class ControlRecognitionAuthoring {
       );
     }
 
-    List<Condition> conditions = recognition
-      .rules()
-      .stream()
-      .map(rule -> condition(rule, protocol, sources))
-      .toList();
+    List<Condition> conditions = recognition.rules().stream().map(rule -> condition(rule, protocol, sources)).toList();
     return new View(
       "RULES",
       false,
-      "Any listed condition identifies a control result.",
+      recognition.rules().isEmpty()
+        ? "Control-result recognition is not configured."
+        : "Any listed condition identifies a control result.",
       conditions,
       List.copyOf(sources.values())
     );
@@ -169,10 +167,7 @@ public final class ControlRecognitionAuthoring {
         if (source == null) {
           throw new ProfileCatalogException("Select a valid recognition condition source");
         }
-        rule.put(
-          "ruleType",
-          "FIELD_VALUE_EQUALS".equals(input.kind()) ? "FIELD_EQUALS" : "FIELD_CONTAINS"
-        );
+        rule.put("ruleType", "FIELD_VALUE_EQUALS".equals(input.kind()) ? "FIELD_EQUALS" : "FIELD_CONTAINS");
         rule.put("targetField", source.targetField());
         rule.put("operand", value);
       }
@@ -183,11 +178,7 @@ public final class ControlRecognitionAuthoring {
     return rule;
   }
 
-  private Condition condition(
-    ControlRecognitionRule rule,
-    String protocol,
-    Map<String, Source> sources
-  ) {
+  private Condition condition(ControlRecognitionRule rule, String protocol, Map<String, Source> sources) {
     return switch (rule.ruleType()) {
       case "SPECIMEN_ID_PREFIX" -> new Condition(
         rule.key(),
@@ -237,22 +228,26 @@ public final class ControlRecognitionAuthoring {
     Map<String, Source> sources = new LinkedHashMap<>();
     JsonNode rules = profile == null ? null : profile.path("controlResultRecognition").path("rules");
     if (rules != null && rules.isObject()) {
-      rules.elements().forEachRemaining(rule -> {
-        String targetField = nullableText(rule.path("targetField").asText(null));
-        if (targetField != null) {
-          addSource(sources, protocol, targetField);
-        }
-      });
-    }
-    if ("FILE".equals(protocol)) {
-      JsonNode columnMapping = profile.path("column_mapping");
-      if (columnMapping.isObject()) {
-        columnMapping.elements().forEachRemaining(value -> {
-          String targetField = fileTarget(value.asText(null));
+      rules
+        .elements()
+        .forEachRemaining(rule -> {
+          String targetField = nullableText(rule.path("targetField").asText(null));
           if (targetField != null) {
             addSource(sources, protocol, targetField);
           }
         });
+    }
+    if ("FILE".equals(protocol)) {
+      JsonNode columnMapping = profile.path("column_mapping");
+      if (columnMapping.isObject()) {
+        columnMapping
+          .elements()
+          .forEachRemaining(value -> {
+            String targetField = fileTarget(value.asText(null));
+            if (targetField != null) {
+              addSource(sources, protocol, targetField);
+            }
+          });
       }
     }
     return sources;
@@ -260,10 +255,7 @@ public final class ControlRecognitionAuthoring {
 
   private void addSource(Map<String, Source> sources, String protocol, String targetField) {
     String key = sourceKey(protocol, targetField);
-    sources.putIfAbsent(
-      key,
-      new Source(key, ControlRecognitionFieldLabels.label(protocol, targetField), targetField)
-    );
+    sources.putIfAbsent(key, new Source(key, ControlRecognitionFieldLabels.label(protocol, targetField), targetField));
   }
 
   private String sourceKey(String protocol, String targetField) {

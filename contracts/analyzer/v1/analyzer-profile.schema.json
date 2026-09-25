@@ -496,6 +496,7 @@
           "allOf": [{ "$ref": "#/$defs/nonBlank" }],
           "description": "Java NIO filename glob evaluated by the Bridge FILE watcher, for example *.{ods,xlsx,xls}."
         },
+        "fileTestCode": { "$ref": "#/$defs/nonBlank" },
         "hasHeader": { "type": "boolean" },
         "delimiter": { "type": "string", "minLength": 1, "maxLength": 1 },
         "encoding": { "$ref": "#/$defs/nonBlank" },
@@ -560,7 +561,8 @@
         "mode": { "const": "RULES" },
         "rules": {
           "type": "object",
-          "minProperties": 1,
+          "minProperties": 0,
+          "description": "An explicit empty set preserves unconfigured recognition without asserting that controls are never sent.",
           "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]+$" },
           "additionalProperties": { "$ref": "#/$defs/controlRecognitionRule" }
         }

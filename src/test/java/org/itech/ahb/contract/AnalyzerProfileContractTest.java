@@ -180,6 +180,8 @@ class AnalyzerProfileContractTest {
 
     ObjectNode emptyRules = rulesProfile.deepCopy();
     ((ObjectNode) emptyRules.path("controlResultRecognition").path("rules")).removeAll();
+    assertTrue(PROFILE_SCHEMA.validate(emptyRules).isEmpty());
+    ((ObjectNode) emptyRules.path("controlResultRecognition")).remove("rules");
     assertFalse(PROFILE_SCHEMA.validate(emptyRules).isEmpty());
 
     ObjectNode noneProfile = rulesProfile.deepCopy();

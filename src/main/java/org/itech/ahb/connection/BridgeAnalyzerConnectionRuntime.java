@@ -415,7 +415,14 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setMappedTestCodes(mappedCodes);
     entry.setCodeToLoinc(codeToLoinc);
     entry.setScannerSynonyms(scannerSynonyms);
-    entry.setFileTestCode(fileTestCode(entry.getExpectedProtocol(), profile, primaryCodes, entry.getColumnMappings()));
+    entry.setFileTestCode(
+      fileTestCode(
+        entry.getExpectedProtocol(),
+        primaryCodes,
+        entry.getColumnMappings(),
+        nullableText(values, "fileTestCode")
+      )
+    );
     entry.setControlResultRecognition(ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")));
     entry.setRecognitionFingerprint(
       requiredText(profile.path("catalog"), "recognitionFingerprint", "Recognition fingerprint")
@@ -433,12 +440,18 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
 
   private static String fileTestCode(
     String protocol,
-    ObjectNode profile,
     List<String> primaryCodes,
-    Map<String, String> columns
+    Map<String, String> columns,
+    String selectedTestCode
   ) {
     if (!"FILE".equals(protocol)) {
       return null;
+    }
+    if (selectedTestCode != null) {
+      if (!primaryCodes.contains(selectedTestCode)) throw new AnalyzerConnectionException(
+        "fileTestCode must identify a primary test in the pinned profile"
+      );
+      return selectedTestCode;
     }
     if (primaryCodes.size() == 1) {
       return primaryCodes.get(0);
@@ -447,9 +460,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       return null;
     }
     throw new AnalyzerConnectionException(
-      "FILE profile " +
-      profile.path("profileMeta").path("id").asText() +
-      " must declare a row-level testCode column or one primary test mapping"
+      "FILE profile must declare a row-level testCode column, a selected fileTestCode, or one primary test mapping"
     );
   }
 

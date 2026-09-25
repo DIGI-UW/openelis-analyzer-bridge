@@ -25,7 +25,13 @@ recognition rule, connection value, or profile-owned default.
 
 `controlResultRecognition` describes only how Bridge recognizes analyzer
 messages as controls. `RULES` contains OR matchers keyed by stable rule key;
-`NONE` requires an explicit affirmation. It is not operational QC. Profiles and
+an explicit empty `rules: {}` represents recognition that has not been configured.
+It yields `RULES` / `NOT_EVALUATED`, no rule evidence, and no matched control.
+This preserves existing unclassified traffic without asserting that an instrument
+never sends controls. Catalog consumers must display that recognition is not
+configured; they must not describe it as evaluated or as confirmed no-controls.
+Absent or malformed rules remain invalid. `NONE` still requires the explicit
+`affirmedNoControlResults: true` affirmation. This is not operational QC. Profiles and
 connections contain no OpenELIS catalog IDs, control lots, Westgard state,
 release policy, or site lab units. Concrete connection values, including
 credentials and FILE directories, belong only to the durable Bridge connection.
@@ -101,6 +107,17 @@ Each accession is forwarded separately. The request succeeds only after all
 accessions are accepted. HTTP tabular retries use the FILE identity below, hashing
 the UTF-8 bytes of the request text consumed by the parser, so replaying a partially
 accepted request preserves every accession's delivery identity.
+
+### FILE assay selection
+
+`configDefaults.fileTestCode` optionally supplies the assay for rows without a
+mapped test code. A profile may expose the same key as a connection field so a
+saved connection can override its default. The selected code must be a primary
+`default_test_mappings` code in that pinned profile. A nonblank row-level test code
+still takes precedence; selection never rewrites codes supplied by the analyzer.
+Without a selection, the existing single-primary-test fallback applies. Multiple
+primary tests require a row-code column or an explicit selection. The selected
+value is captured with the durable file receipt and survives retries and restart.
 
 ### FILE delivery identity and retries
 
