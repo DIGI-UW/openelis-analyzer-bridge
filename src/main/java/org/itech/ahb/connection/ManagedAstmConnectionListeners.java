@@ -35,10 +35,7 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
   private final Map<Integer, SharedListener> listenersByPort = new HashMap<>();
   private final Map<String, Integer> portByConnection = new HashMap<>();
 
-  public ManagedAstmConnectionListeners(
-    MessageNormalizer normalizer,
-    ASTMInterpreterFactory interpreterFactory
-  ) {
+  public ManagedAstmConnectionListeners(MessageNormalizer normalizer, ASTMInterpreterFactory interpreterFactory) {
     this.normalizer = normalizer;
     this.interpreterFactory = interpreterFactory;
   }
@@ -60,12 +57,7 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
   }
 
   @Override
-  public synchronized void start(
-    String connectionId,
-    String analyzerId,
-    int port,
-    String lowerLayerVersion
-  ) {
+  public synchronized void start(String connectionId, String analyzerId, int port, String lowerLayerVersion) {
     Integer heldPort = portByConnection.get(connectionId);
     if (heldPort != null && heldPort != port) {
       stop(connectionId);
@@ -140,6 +132,18 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
       Mode.FIRST
     );
     listener.servlet = new ASTMServlet(handlers, interpreterFactory, port, version(lowerLayerVersion));
+    listener.servlet.setReceiptFactory(
+      socket ->
+        normalizer.astmReceipt(
+          org.itech.ahb.normalizer.MessageEnvelope.builder()
+            .protocol(org.itech.ahb.model.Protocol.ASTM)
+            .transport(org.itech.ahb.model.Transport.TCP)
+            .sourceId(socket.getInetAddress().getHostAddress())
+            .sourcePort(socket.getPort())
+            .listenerPort(port)
+            .build()
+        )
+    );
     return listener;
   }
 
@@ -173,10 +177,7 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
     try {
       return ASTMVersion.valueOf(lowerLayerVersion);
     } catch (IllegalArgumentException exception) {
-      throw new AnalyzerConnectionException(
-        "Unsupported ASTM lower-layer version " + lowerLayerVersion,
-        exception
-      );
+      throw new AnalyzerConnectionException("Unsupported ASTM lower-layer version " + lowerLayerVersion, exception);
     }
   }
 

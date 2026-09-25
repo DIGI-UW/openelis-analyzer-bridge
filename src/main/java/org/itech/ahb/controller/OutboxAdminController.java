@@ -209,6 +209,25 @@ public class OutboxAdminController {
       .orElseGet(() -> ResponseEntity.notFound().build());
   }
 
+  /** Exact ASTM frames, protected and audited like all retained clinical payloads. */
+  @GetMapping("/{id}/astm-frames")
+  public ResponseEntity<byte[]> astmFrames(@PathVariable String id, HttpServletRequest request) {
+    if (!properties.isPayloadAccessEnabled()) return ResponseEntity.notFound().build();
+    return store
+      .astmFrames(id)
+      .map(bytes -> {
+        log.warn(
+          "OUTBOX_AUDIT action=PAYLOAD_READ id={} part=astm-frames actor={} remote={} bytes={}",
+          id,
+          actor(),
+          request.getRemoteAddr(),
+          bytes.length
+        );
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM).body(bytes);
+      })
+      .orElseGet(() -> ResponseEntity.notFound().build());
+  }
+
   /** Send one held result again, now. */
   @PostMapping("/{id}/retry")
   public ResponseEntity<Map<String, Object>> retry(@PathVariable String id) {
@@ -293,6 +312,9 @@ public class OutboxAdminController {
     OutboxEntry entry = store.get(id).orElse(null);
     if (entry == null) {
       return new RetryOutcome(404, "not_found");
+    }
+    if (entry.failureReason() == FailureReason.INCOMPLETE_TRANSMISSION) {
+      return new RetryOutcome(409, "incomplete_transmission_request_analyzer_retransmission");
     }
     if (entry.state() == OutboxState.DELIVERED) {
       return new RetryOutcome(409, "already_delivered");

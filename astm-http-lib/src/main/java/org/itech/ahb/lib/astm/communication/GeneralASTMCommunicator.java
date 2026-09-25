@@ -149,6 +149,12 @@ public class GeneralASTMCommunicator implements Communicator {
   private final PrintWriter writer;
   private ASTMVersion astmVersion;
   private Boolean receiveEstablished = false;
+  private AstmReceiptObserver receiptObserver = AstmReceiptObserver.NONE;
+  private byte[] previousReceivedFrame;
+
+  public void setReceiptObserver(AstmReceiptObserver observer) {
+    receiptObserver = java.util.Objects.requireNonNull(observer);
+  }
 
   /**
    * Constructor for a GeneralASTMCommunicator, will assume the ASTM version is LIS01-A
@@ -192,7 +198,7 @@ public class GeneralASTMCommunicator implements Communicator {
   public ASTMMessage receiveProtocol(boolean lineWasContentious)
     throws FrameParsingException, ASTMCommunicationException, IOException, InterruptedException {
     log.trace("starting receive protocol for ASTM message");
-    if (astmVersion == ASTMVersion.LIS01_A) {
+    if (astmVersion == ASTMVersion.LIS01_A || astmVersion == ASTMVersion.E1381_95) {
       try {
         receiveEstablished = establishmentReceive();
       } catch (SocketTimeoutException e) {
@@ -213,9 +219,12 @@ public class GeneralASTMCommunicator implements Communicator {
       }
       switch (astmVersion) {
         case E1381_95:
-        //TODO create a real 95 listener?
         case LIS01_A:
-          return receiveInCompliantMode();
+          try {
+            return receiveInCompliantMode();
+          } finally {
+            receiptObserver.interrupted();
+          }
         case NON_COMPLIANT:
         default:
           return receiveInNonCompliantMode();
@@ -421,9 +430,19 @@ public class GeneralASTMCommunicator implements Communicator {
       );
     }
 
-    return decodePayload(
+    if (frames.isEmpty()) {
+      return decodePayload(
+        astmInterpreterFactory.createInterpreterForFrames(frames).interpretFramesToASTMMessage(frames)
+      );
+    }
+    if (frames.get(frames.size() - 1).getType() != FrameType.END) {
+      throw new ASTMCommunicationException("Incomplete ASTM transmission: EOT before final ETX frame");
+    }
+    ASTMMessage message = decodePayload(
       astmInterpreterFactory.createInterpreterForFrames(frames).interpretFramesToASTMMessage(frames)
     );
+    receiptObserver.complete(message.getMessage());
+    return message;
   }
 
   /**
@@ -476,10 +495,7 @@ public class GeneralASTMCommunicator implements Communicator {
     char frameNumberChar = ThreadUtil.readCharWithInterruptCheck(reader);
     log.trace("received: '" + LogUtil.convertForDisplay(frameNumberChar) + "'. Expecting frame number [0-7]");
 
-    if (expectedFrameNumber != Character.getNumericValue(frameNumberChar)) {
-      frameErrors.add(FrameError.WRONG_FRAME_NUMBER);
-      //TODO add case where frame was retransmitted (expected frame number -1 mod 8. must also overwrite last frame)
-    }
+    int receivedFrameNumber = Character.getNumericValue(frameNumberChar);
     char curChar = ThreadUtil.readCharWithInterruptCheck(reader);
 
     int frameSize = 0;
@@ -491,16 +507,23 @@ public class GeneralASTMCommunicator implements Communicator {
       if (RESTRICTED_CHARACTERS.contains(curChar)) {
         frameErrors.add(FrameError.ILLEGAL_CHAR);
         if (!illegalCharLogged) {
-          log.error("illegal character detected at position {}: '{}' (0x{}) — subsequent illegal chars suppressed",
-              frameSize, LogUtil.convertForDisplay(curChar), String.format("%02X", (int) curChar));
+          log.error(
+            "illegal character detected at position {}: '{}' (0x{}) — subsequent illegal chars suppressed",
+            frameSize,
+            LogUtil.convertForDisplay(curChar),
+            String.format("%02X", (int) curChar)
+          );
           illegalCharLogged = true;
         }
       }
       if (maxTextSize < frameSize) {
         if (!sizeExceededLogged) {
           frameErrors.add(FrameError.MAX_SIZE_EXCEEDED);
-          log.error("frame size exceeded max {} at position {} — continuing to read until ETX/ETB (subsequent size errors suppressed)",
-              maxTextSize, frameSize);
+          log.error(
+            "frame size exceeded max {} at position {} — continuing to read until ETX/ETB (subsequent size errors suppressed)",
+            maxTextSize,
+            frameSize
+          );
           sizeExceededLogged = true;
         }
       }
@@ -552,7 +575,16 @@ public class GeneralASTMCommunicator implements Communicator {
       "'] aka [0x0D0x0A]"
     );
 
+    byte[] exactFrame =
+      ("" + STX + frameNumberChar + text + curChar + checksum + endFrameControlCode).getBytes(AstmCharsets.TRANSPORT);
+    boolean duplicate =
+      receivedFrameNumber == (expectedFrameNumber + 7) % 8 && Arrays.equals(previousReceivedFrame, exactFrame);
+    if (receivedFrameNumber != expectedFrameNumber && !duplicate) frameErrors.add(FrameError.WRONG_FRAME_NUMBER);
+    if (frameErrors.isEmpty() && duplicate) return frameErrors;
     if (frameErrors.isEmpty()) {
+      // This callback must finish its durable commit before this method allows the ACK writer to run.
+      receiptObserver.frame(exactFrame);
+      previousReceivedFrame = exactFrame;
       ASTMFrame frame = new DefaultASTMFrame();
       frame.setFrameNumber(Character.getNumericValue(frameNumberChar));
       frame.setType(finalFrame ? FrameType.END : FrameType.INTERMEDIATE);

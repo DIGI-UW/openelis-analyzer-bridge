@@ -170,7 +170,7 @@ class GeneralASTMCommunicatorReceiveTest {
   }
 
   @Test
-  @DisplayName("a transmission the sender aborts before the final frame still yields the received records")
+  @DisplayName("a transmission ending before the final frame must not yield deliverable records")
   void recoversAbortedTransmission() throws Exception {
     try (
       ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
@@ -193,10 +193,10 @@ class GeneralASTMCommunicatorReceiveTest {
       out.write(EOT);
       out.flush();
 
-      String text = received.get(20, TimeUnit.SECONDS).getMessage();
-
-      assertFalse(text.isEmpty(), "buffered records must not be silently discarded");
-      assertTrue(text.startsWith("H|@^\\|GXM-28780012200||"), "was: " + text);
+      org.junit.jupiter.api.Assertions.assertThrows(
+        java.util.concurrent.ExecutionException.class,
+        () -> received.get(20, TimeUnit.SECONDS)
+      );
     }
   }
 

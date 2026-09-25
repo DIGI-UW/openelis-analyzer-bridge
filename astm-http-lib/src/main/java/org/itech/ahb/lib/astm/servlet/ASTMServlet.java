@@ -43,6 +43,15 @@ public class ASTMServlet {
   private final CountDownLatch startupAttempted = new CountDownLatch(1);
   private volatile ServerSocket serverSocket;
   private volatile Throwable startupFailure;
+  private java.util.function.Function<Socket, org.itech.ahb.lib.astm.communication.AstmReceiptObserver> receiptFactory =
+    socket -> org.itech.ahb.lib.astm.communication.AstmReceiptObserver.NONE;
+  private final java.util.Map<Socket, Thread> sessions = new java.util.HashMap<>();
+
+  public void setReceiptFactory(
+    java.util.function.Function<Socket, org.itech.ahb.lib.astm.communication.AstmReceiptObserver> factory
+  ) {
+    receiptFactory = java.util.Objects.requireNonNull(factory);
+  }
 
   /**
    * Constructs a new ASTMServlet with the specified handler service, interpreter factory, listen port, and ASTM version.
@@ -88,11 +97,27 @@ public class ASTMServlet {
           // Waiting for socket connection
           Socket s = serverSocket.accept();
           s.setTcpNoDelay(true); // Disable Nagle — ASTM requires immediate ACK/NAK per frame
-          new ASTMReceiveThread(
-            new GeneralASTMCommunicator(astmInterpreterFactory, s, astmVersion),
-            s,
-            astmHandlerService
-          ).start();
+          synchronized (sessions) {
+            if (!running.get()) {
+              s.close();
+              continue;
+            }
+            GeneralASTMCommunicator communicator = new GeneralASTMCommunicator(astmInterpreterFactory, s, astmVersion);
+            communicator.setReceiptObserver(receiptFactory.apply(s));
+            ASTMReceiveThread receiver = new ASTMReceiveThread(communicator, s, astmHandlerService);
+            Thread worker = Thread.ofPlatform()
+              .unstarted(() -> {
+                try {
+                  receiver.run();
+                } finally {
+                  synchronized (sessions) {
+                    sessions.remove(s);
+                  }
+                }
+              });
+            sessions.put(s, worker);
+            worker.start();
+          }
         } catch (IOException e) {
           if (running.get()) {
             log.error("Error accepting connection on port " + listenPort, e);
@@ -140,6 +165,25 @@ public class ASTMServlet {
     log.info("Stopping ASTM server on port " + listenPort);
     running.set(false);
     closeServerSocket();
+    java.util.List<Thread> workers;
+    synchronized (sessions) {
+      workers = java.util.List.copyOf(sessions.values());
+      for (Socket client : sessions.keySet()) {
+        try {
+          client.close();
+        } catch (IOException e) {
+          log.warn("Cannot close ASTM client", e);
+        }
+      }
+    }
+    for (Thread worker : workers) {
+      try {
+        worker.join(5000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
   }
 
   /**

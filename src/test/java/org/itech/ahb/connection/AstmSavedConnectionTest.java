@@ -90,7 +90,7 @@ class AstmSavedConnectionTest {
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties forwarding = new HTTPForwardServerConfigurationProperties();
     forwarding.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
-    outbox = OutboxTestSupport.create(directory.resolve("outbox"), forwarding, registry).startDispatcher();
+    outbox = OutboxTestSupport.create(directory.resolve("outbox"), forwarding, registry);
     listeners = new ManagedAstmConnectionListeners(
       outbox.normalizer(new AnalyzerIdentifier(registry), registry),
       new DefaultASTMInterpreterFactory()
@@ -110,6 +110,68 @@ class AstmSavedConnectionTest {
         new AnalyzerListenerPorts(inbound, new ASTME138195ListenServerConfigurationProperties(), new MLLPConfig())
       )
     );
+    outbox.startDispatcher();
+  }
+
+  @org.junit.jupiter.api.Test
+  void completeHandoffBeforeRenderingRecoversTheNamedPeerAfterRestart() throws Exception {
+    String wanted = createPeer("wanted", "GX-BENCH");
+    createPeer("unnamed", null);
+    outbox.dispatcher.stop();
+    String payload =
+      "H|@^\\|GXM-04567890||GX-BENCH^GeneXpert^6.2|||||geneexpert||P|1394-97|20260414120000\rP|1\rO|1|RECOVERED-NAMED||^^^MTBRif\rR|1|^MTBRif^^MTB-RIF^Xpert MTB/RIF Ultra^3^MTB-RIF^|NOT DETECTED^||||||20260414120000\rL|1\r";
+    var receipt = new org.itech.ahb.outbox.DurableAstmReceipt(
+      outbox.store,
+      new org.itech.ahb.outbox.ReceivedMessage(
+        "127.0.0.1",
+        50000,
+        org.itech.ahb.model.Protocol.ASTM,
+        org.itech.ahb.model.Transport.TCP,
+        null,
+        null,
+        null,
+        java.time.Instant.now(),
+        inbound.getPort()
+      )
+    );
+    receipt.frame(payload.getBytes(StandardCharsets.ISO_8859_1));
+    receipt.complete(payload);
+    boot();
+    JsonNode bundle = deliveries.poll(5, TimeUnit.SECONDS);
+    assertThat(bundle).isNotNull();
+    JsonNode device = java.util.stream.StreamSupport.stream(bundle.path("entry").spliterator(), false)
+      .map(e -> e.path("resource"))
+      .filter(e -> "Device".equals(e.path("resourceType").asText()))
+      .findFirst()
+      .orElseThrow();
+    assertThat(device.toString()).contains(wanted).doesNotContain("unnamed");
+    assertThat(deliveries.poll(250, TimeUnit.MILLISECONDS)).isNull();
+  }
+
+  private String createPeer(String name, String sender) {
+    ObjectNode request = mapper
+      .createObjectNode()
+      .put("schemaVersion", "1.0")
+      .put("requestId", UUID.randomUUID().toString())
+      .put("clientAnalyzerId", name)
+      .put("displayName", name);
+    request
+      .putObject("profileRef")
+      .put("profileId", "genexpert-astm")
+      .put("revision", 5)
+      .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
+    ObjectNode values = request.putObject("values").put("host", "127.0.0.1");
+    if (sender != null) values.put("senderId", sender);
+    String id = catalog.create(request).path("connectionId").asText();
+    ObjectNode command = mapper
+      .createObjectNode()
+      .put("schemaVersion", "1.0")
+      .put("commandId", UUID.randomUUID().toString())
+      .put("connectionId", id)
+      .put("action", "ACTIVATE")
+      .put("expectedConfigRevision", 1);
+    assertThat(catalog.applyRuntimeCommand(command).path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
+    return id;
   }
 
   @ParameterizedTest

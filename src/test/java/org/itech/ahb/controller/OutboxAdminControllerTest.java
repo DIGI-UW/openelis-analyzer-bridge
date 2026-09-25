@@ -104,6 +104,41 @@ class OutboxAdminControllerTest {
       );
   }
 
+  @Test
+  void incompleteFramesAreVisibleButNeitherSingleNorBulkRetryCanDeliverThem() throws Exception {
+    String id = "astm-session:" + java.util.UUID.randomUUID();
+    byte[] bytes = { 2, 49, 72, 124, 23, 48, 48, 13, 10 };
+    store.receiveAstmFrames(
+      id,
+      new ReceivedMessage("192.0.2.10", 51000, Protocol.ASTM, Transport.TCP, null, null, null, Instant.now(), 1200),
+      bytes
+    );
+    mockMvc.perform(get("/admin/outbox/" + id + "/astm-frames")).andExpect(status().isUnauthorized());
+    mockMvc
+      .perform(get("/admin/outbox/" + id + "/astm-frames").with(httpBasic("testuser", "testpass")))
+      .andExpect(status().isOk())
+      .andExpect(content().bytes(bytes));
+    mockMvc
+      .perform(get("/admin/outbox/" + id).with(httpBasic("testuser", "testpass")))
+      .andExpect(jsonPath("$.failureReason").value("INCOMPLETE_TRANSMISSION"));
+    mockMvc
+      .perform(post("/admin/outbox/" + id + "/retry").with(httpBasic("testuser", "testpass")))
+      .andExpect(status().isConflict());
+    mockMvc
+      .perform(
+        post("/admin/outbox/retry")
+          .with(httpBasic("testuser", "testpass"))
+          .contentType("application/json")
+          .content("{\"ids\":[\"" + id + "\"]}")
+      )
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.retried").value(0));
+    org.junit.jupiter.api.Assertions.assertEquals(
+      FailureReason.INCOMPLETE_TRANSMISSION,
+      store.get(id).orElseThrow().failureReason()
+    );
+  }
+
   @BeforeEach
   void seed() {
     // The context starts the real dispatcher, which would claim these entries and race the

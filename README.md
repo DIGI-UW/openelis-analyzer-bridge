@@ -636,6 +636,33 @@ retrieve exact FILE bytes from `GET /admin/outbox/{id}/raw-file`. Access is audi
 Resetting discovery state does not remove queued deliveries or their deduplication
 identity.
 
+#### Acknowledged ASTM frames and interrupted transmissions
+
+For TCP LIS01-A/E1381-95 and serial ASTM, each valid data frame is committed to
+SQLite with `synchronous=FULL` before Bridge sends its ACK. Identical retransmission
+of the previous frame is acknowledged without duplicating its content. Frame numbers
+wrap through zero. ENQ acknowledgment only establishes the session; it does not
+acknowledge any clinical data.
+
+Until an ETX-ended message is terminated with EOT, its accepted frames appear in the
+ordinary dead-message queue as `INCOMPLETE_TRANSMISSION`. Disconnect, timeout or a
+process crash leaves those bytes there. Request a full retransmission from the analyzer:
+Retry returns 409 for incomplete input, and bulk Retry skips it. Bridge must never turn
+an acknowledged prefix into a clinical result. A missing EOT is incomplete even when
+the last received frame used ETX.
+
+On completion, the assembled message enters the ordinary outbox in the same transaction
+that removes its incomplete receipt. Original frames remain attached to its deliveries.
+`GET /admin/outbox/{id}/astm-frames` downloads the retained wire bytes, with the same
+authentication, payload-access switch and read audit as other clinical payload endpoints.
+Complete query-only sessions are not result deliveries and do not enter the result DMQ.
+Serial HL7 likewise commits its complete received message before emitting `MSA|AA`.
+
+The outbox upgrade to schema version 4 is automatic and additive. Preserve its persistent
+volume. These guarantees require functioning durable storage; if a write fails Bridge
+withholds the positive data acknowledgment. They do not claim receipt of bytes that never
+reached Bridge or protection against destruction of the storage volume.
+
 #### If the outbox database is lost
 
 The outbox is the only copy of a result between receipt and delivery. If it

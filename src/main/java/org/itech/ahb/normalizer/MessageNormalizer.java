@@ -78,6 +78,40 @@ public class MessageNormalizer implements MessageRouter {
         this.metricsService = metricsService;
     }
 
+  /** Protocol listeners use this before ACK; no identity or rendering failure can lose the receipt. */
+  public void persistBeforeAcknowledgement(MessageEnvelope envelope) {
+    outbox.receive(
+      new ReceivedMessage(
+        envelope.getSourceId(),
+        envelope.getSourcePort(),
+        envelope.getProtocol(),
+        envelope.getTransport(),
+        envelope.getProtocolAnalyzerHint(),
+        envelope.getRawMessage(),
+        null,
+        envelope.getReceivedAt(),
+        envelope.getListenerPort()
+      )
+    );
+  }
+
+  public org.itech.ahb.lib.astm.communication.AstmReceiptObserver astmReceipt(MessageEnvelope source) {
+    return new org.itech.ahb.outbox.DurableAstmReceipt(
+      outbox,
+      new ReceivedMessage(
+        source.getSourceId(),
+        source.getSourcePort(),
+        Protocol.ASTM,
+        source.getTransport(),
+        source.getProtocolAnalyzerHint(),
+        null,
+        null,
+        source.getReceivedAt(),
+        source.getListenerPort()
+      )
+    );
+  }
+
     /**
      * MessageRouter.route() implementation — allows MLLP to use this transparently.
      * <p>
@@ -318,7 +352,7 @@ public class MessageNormalizer implements MessageRouter {
      * @param rawMessage the ASTM message payload
      * @return true if the message contains a Q-record but no R-record
      */
-    private boolean isQueryOnlyAstmMessage(String rawMessage) {
+    public static boolean isQueryOnlyAstmMessage(String rawMessage) {
         if (rawMessage == null || rawMessage.isBlank()) return false;
         boolean hasQ = false;
         boolean hasR = false;
