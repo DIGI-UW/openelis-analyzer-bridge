@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import java.util.regex.Pattern;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
+import org.itech.ahb.connection.AnalyzerInboundTransport;
 import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.model.Protocol;
 import org.itech.ahb.model.Transport;
@@ -195,7 +196,7 @@ public class MessageNormalizer implements MessageRouter {
           if (metricsService != null) metricsService.recordRouted(sample, protocol, transport, false);
           return false;
         }
-        if (registry != null && !matchesSavedTransport(envelope, registryEntry)) {
+        if (registry != null && !AnalyzerInboundTransport.matches(envelope.getProtocol(), envelope.getTransport(), registryEntry)) {
           recordIdentity(protocol, transport, registryEntry == null ? "unregistered_source" : "transport_mismatch");
           log.warn(
             "Rejecting protocol/transport inconsistent with saved connection for source '{}'",
@@ -297,20 +298,6 @@ public class MessageNormalizer implements MessageRouter {
         }
 
         return success;
-    }
-
-    private boolean matchesSavedTransport(MessageEnvelope envelope, AnalyzerRuntimeRegistry.AnalyzerEntry entry) {
-      if (entry == null) return false;
-      String savedProtocol = entry.getExpectedProtocol();
-      String actualProtocol = envelope.getProtocol() == Protocol.CSV ? "FILE" : envelope.getProtocol().name();
-      if (!actualProtocol.equals(savedProtocol)) return false;
-      Transport actualTransport = envelope.getTransport();
-      String savedTransport = entry.getInboundTransport();
-      if ("TCP/IP".equals(savedTransport)) {
-        return "HL7".equals(savedProtocol) ? actualTransport == Transport.MLLP : actualTransport == Transport.TCP;
-      }
-      if ("RS-232".equals(savedTransport)) return actualTransport == Transport.SERIAL;
-      return actualTransport.name().equals(savedTransport);
     }
 
     /**

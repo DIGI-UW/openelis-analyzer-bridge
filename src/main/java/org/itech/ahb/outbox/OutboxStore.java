@@ -78,7 +78,7 @@ public interface OutboxStore extends AutoCloseable {
     String responseExcerpt
   );
 
-  /** Make an entry due now, for an operator retry. */
+  /** Make an entry due now and persist its operator retry audit in the same transaction. */
   void requestRetry(String id, String actor, Instant now);
 
   /** Replace the stored bundle, for an operator retry that re-renders against current configuration. */

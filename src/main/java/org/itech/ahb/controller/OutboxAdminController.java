@@ -276,7 +276,6 @@ public class OutboxAdminController {
       return new RetryOutcome(409, "delivery_in_progress");
     }
     store.requestRetry(id, actor(), now);
-    store.recordAttempt(id, OutboxAttempt.Kind.MANUAL, actor(), now, now, "REQUEUED", null, null, null);
     log.warn("OUTBOX_AUDIT action=RETRY id={} actor={}", id, actor());
     return new RetryOutcome(200, null);
   }

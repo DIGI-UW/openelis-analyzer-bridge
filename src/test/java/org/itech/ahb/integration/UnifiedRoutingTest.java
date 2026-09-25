@@ -121,17 +121,17 @@ class UnifiedRoutingTest {
         AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         outbox = OutboxTestSupport.createTemp(httpConfig, registry).startDispatcher();
         HttpForwardingRouter forwardingRouter = outbox.router;
-        registry.register("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM"));
-        registry.register("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7"));
-        registry.register("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV"));
-        registry.register("192.168.1.10", analyzer("HTTP-001", "ASTM"));
-        registry.register("192.168.1.20", analyzer("HTTP-002", "HL7"));
-        registry.register("192.168.1.30", analyzer("HTTP-003", "CSV"));
-        registry.register("192.168.1.40", analyzer("MINDRAY", "ASTM"));
-        registry.register("192.168.1.50", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
-        registry.register("192.168.1.51", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
-        registry.register("192.168.1.60", analyzer("HTTP-004", "ASTM"));
-        registry.register("unknown", analyzer("TEST", "ASTM"));
+        registry.register("/dev/ttyUSB0", analyzer("SERIAL-001", "ASTM", "RS-232"));
+        registry.register("/dev/ttyUSB1", analyzer("SERIAL-HL7-001", "HL7", "RS-232"));
+        registry.register("/dev/ttyUSB2", analyzer("SERIAL-CSV-001", "CSV", "RS-232"));
+        registry.register("192.168.1.10", analyzer("HTTP-001", "ASTM", "HTTP"));
+        registry.register("192.168.1.20", analyzer("HTTP-002", "HL7", "HTTP"));
+        registry.register("192.168.1.30", analyzer("HTTP-003", "CSV", "HTTP"));
+        registry.register("192.168.1.40", analyzer("MINDRAY", "ASTM", "TCP/IP"));
+        registry.register("192.168.1.50", analyzer("ANALYZER-APP-LAB-FAC", "HL7", "MLLP"));
+        registry.register("192.168.1.51", analyzer("ANALYZER-APP-LAB-FAC", "HL7", "MLLP"));
+        registry.register("192.168.1.60", analyzer("HTTP-004", "ASTM", "HTTP"));
+        registry.register("unknown", analyzer("TEST", "ASTM", "TCP/IP"));
         registry.register("/tmp/quantstudio", fileAnalyzer("QUANTSTUDIO-001"));
 
         AnalyzerIdentifier identifier = new AnalyzerIdentifier(registry);
@@ -145,12 +145,13 @@ class UnifiedRoutingTest {
 
         astmAdapter = new ASTMBridgeAdapter(normalizer);
 
-        registry.register("connection:hl7-test", analyzer("ANALYZER-APP-LAB-FAC", "HL7"));
+        registry.register("connection:hl7-test", analyzer("ANALYZER-APP-LAB-FAC", "HL7", "MLLP"));
         mllpApplication = new HapiReceivingApplication(normalizer, "connection:hl7-test");
     }
 
     @AfterEach
     void tearDown() {
+        if (outbox != null) outbox.close();
         if (httpServer != null) {
             httpServer.stop(0);
         }
@@ -361,13 +362,14 @@ class UnifiedRoutingTest {
             boolean hasSourceHeaders
     ) {}
 
-    private AnalyzerRuntimeRegistry.AnalyzerEntry analyzer(String id, String expectedProtocol) {
+    private AnalyzerRuntimeRegistry.AnalyzerEntry analyzer(String id, String expectedProtocol, String transport) {
         AnalyzerRuntimeRegistry.AnalyzerEntry entry = new AnalyzerRuntimeRegistry.AnalyzerEntry();
         entry.setId(id);
         entry.setBridgeConnectionId("bridge-" + id.toLowerCase());
         entry.setProfileId("site." + id.toLowerCase());
         entry.setProfileRevision(1);
         entry.setExpectedProtocol(expectedProtocol);
+        entry.setInboundTransport(transport);
         entry.setControlResultRecognition(ControlResultRecognition.none());
         entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
         if (!"HL7".equals(expectedProtocol)) {
@@ -378,7 +380,7 @@ class UnifiedRoutingTest {
     }
 
     private AnalyzerRuntimeRegistry.AnalyzerEntry fileAnalyzer(String id) {
-        AnalyzerRuntimeRegistry.AnalyzerEntry entry = analyzer(id, "FILE");
+        AnalyzerRuntimeRegistry.AnalyzerEntry entry = analyzer(id, "FILE", "FILE");
         entry.setBridgeConnectionId("bridge-" + id.toLowerCase());
         entry.setProfileId("site." + id.toLowerCase());
         entry.setProfileRevision(1);

@@ -80,6 +80,25 @@ public class NormalizedBundleRenderer {
       );
     }
     AnalyzerRuntimeRegistry.AnalyzerEntry analyzer = registered.get();
+    if (
+      !org.itech.ahb.connection.AnalyzerInboundTransport.matches(
+        envelope.getProtocol(),
+        envelope.getTransport(),
+        analyzer
+      )
+    ) {
+      return new Outcome.Failed(
+        FailureReason.CONNECTION_TRANSPORT_MISMATCH,
+        "Received " +
+        envelope.getProtocol() +
+        "/" +
+        envelope.getTransport() +
+        " does not match saved " +
+        analyzer.getExpectedProtocol() +
+        "/" +
+        analyzer.getInboundTransport()
+      );
+    }
     if (analyzer.getControlResultRecognition() == null) {
       return new Outcome.Failed(
         FailureReason.UNPINNED_PROFILE,

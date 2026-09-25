@@ -184,6 +184,7 @@ class HttpForwardingRouterTest {
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId("analyzer-1");
     entry.setExpectedProtocol("ASTM");
+    entry.setInboundTransport("HTTP");
     registry.register("10.0.0.7", entry);
     pipeline = OutboxTestSupport.create(tmpDir, minimalConfig(), registry);
 
@@ -203,6 +204,7 @@ class HttpForwardingRouterTest {
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId("analyzer-1");
     entry.setExpectedProtocol("ASTM");
+    entry.setInboundTransport("HTTP");
     entry.setControlResultRecognition(ControlResultRecognition.none());
     entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
     registry.register("10.0.0.8", entry);
@@ -331,6 +333,7 @@ class HttpForwardingRouterTest {
     entry.setProfileId("site.mock-hematology");
     entry.setProfileRevision(3);
     entry.setExpectedProtocol("ASTM");
+    entry.setInboundTransport("HTTP");
     entry.setControlResultRecognition(ControlResultRecognition.none());
     entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
     entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
