@@ -167,7 +167,7 @@
             "type": "array",
             "items": { "$ref": "#/$defs/testMapping" }
           },
-          "configDefaults": { "$ref": "#/$defs/socketDefaults" },
+          "configDefaults": { "$ref": "#/$defs/hl7SocketDefaults" },
           "controlResultRecognition": {
             "$ref": "#/$defs/hl7ControlResultRecognition"
           }
@@ -424,6 +424,21 @@
         "flagMappings": { "type": "object" },
         "transforms": { "type": "object" }
       }
+    },
+    "hl7SocketDefaults": {
+      "allOf": [
+        { "$ref": "#/$defs/socketDefaults" },
+        {
+          "properties": {
+            "extractionOverrides": {
+              "type": "object",
+              "properties": {
+                "specimenPosition": { "enum": ["PRECEDING", "FOLLOWING_OBX"] }
+              }
+            }
+          }
+        }
+      ]
     },
     "astmSocketDefaults": {
       "allOf": [

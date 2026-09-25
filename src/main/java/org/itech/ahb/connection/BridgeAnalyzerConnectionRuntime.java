@@ -383,6 +383,10 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setSkipRows(values.path("skipRows").asInt(0));
     if ("ASTM".equals(entry.getExpectedProtocol())) {
       entry.setAstmResultRecordSelection(AstmResultRecordSelection.fromProfile(profile.path("configDefaults")));
+    } else if ("HL7".equals(entry.getExpectedProtocol())) {
+      entry.setHl7SpecimenPosition(
+        org.itech.ahb.profile.Hl7SpecimenPosition.fromProfile(profile.path("configDefaults"))
+      );
     } else if ("FILE".equals(entry.getExpectedProtocol())) {
       if (!"HTTP".equals(entry.getInboundTransport())) {
         entry.setFileDirectory(Path.of(requiredText(values, "directory", "FILE directory")).normalize().toString());

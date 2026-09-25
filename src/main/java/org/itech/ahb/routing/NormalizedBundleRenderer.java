@@ -125,7 +125,11 @@ public class NormalizedBundleRenderer {
     ControlResultRecognition recognition = analyzer.getControlResultRecognition();
     HL7ResultParser.ParsedResults parsed =
       switch (envelope.getProtocol()) {
-        case HL7 -> HL7ResultParser.parse(splitOn(envelope.getRawMessage(), true), recognition);
+        case HL7 -> HL7ResultParser.parse(
+          splitOn(envelope.getRawMessage(), true),
+          recognition,
+          analyzer.getHl7SpecimenPosition()
+        );
         case ASTM -> ASTMResultParser.parse(
           splitOn(envelope.getRawMessage(), false),
           recognition,

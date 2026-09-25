@@ -368,6 +368,148 @@ class Hl7SavedConnectionTest {
     assertClosed(sharedPort);
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = { "HTTP", "MLLP" })
+  void followingSpecimenPolicyStaysPinnedAcrossRestartAndNewPublication(String transport) throws Exception {
+    selectTransport(transport);
+    profile
+      .withObject("configDefaults")
+      .put("dataFlow", "RESULTS_ONLY")
+      .putObject("extractionOverrides")
+      .put("specimenPosition", "FOLLOWING_OBX");
+    profile
+      .withObject("controlResultRecognition")
+      .withObject("rules")
+      .withObject("control-label")
+      .put("targetField", "SPM.11")
+      .put("operand", "Q");
+    publishProfile();
+    listeners.stopAll();
+    boot(true);
+    String id = create("specimen-sender");
+    activate(id);
+    ObjectNode pinned = catalog.require(id).withObject("profileRef").deepCopy();
+    for (int phase = 0; phase < 2; phase++) {
+      if (phase == 1) {
+        var profiles = new AnalyzerProfileCatalog(directory.resolve("profiles"), List.of(), mapper, Clock.systemUTC());
+        var draft = profiles.updateSharedDraft(pinned.path("profileId").asText(), 1, "author");
+        var candidate = draft.profile();
+        candidate.withObject("configDefaults").withObject("extractionOverrides").put("specimenPosition", "PRECEDING");
+        assertThat(profiles.updateDraft(draft.draftId(), candidate, "author").validationIssues()).isEmpty();
+        assertThat(
+          profiles.publishDraft(draft.draftId(), "publisher").profile().path("catalog").path("revision").asInt()
+        ).isEqualTo(2);
+        listeners.stopAll();
+        boot(true);
+        assertThat(catalog.require(id).path("profileRef")).isEqualTo(pinned);
+      }
+      String accession = "SPM-" + phase;
+      String message =
+        "MSH|^~\\&|specimen-sender|LAB|OE|LAB|20260924120000||ORU^R01|SPM-" +
+        phase +
+        "|P|2.5.1\r" +
+        "PID|1||PATIENT\rOBR|1||" +
+        accession +
+        "|PANEL\r" +
+        "OBX|1|NM|T1||1|unit\rNTE|1||synthetic\rSPM|1||||||||||Q\r" +
+        "OBX|2|NM|T2||2|unit\rSPM|2||||||||||P\r";
+      if (transport.equals("HTTP")) {
+        var input = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
+          new org.itech.ahb.controller.AnalyzerInputController(
+            outbox.normalizer(new AnalyzerIdentifier(registry), registry)
+          )
+        ).build();
+        assertThat(
+          input
+            .perform(
+              org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/input")
+                .contentType("application/hl7-v2")
+                .content(message)
+                .with(request -> {
+                  request.setRemoteAddr("127.0.0.1");
+                  return request;
+                })
+            )
+            .andReturn()
+            .getResponse()
+            .getStatus()
+        ).isEqualTo(200);
+      } else {
+        try (Socket socket = new Socket("127.0.0.1", sharedPort)) {
+          socket.setSoTimeout(5000);
+          socket.getOutputStream().write(("\u000b" + message + "\u001c\r").getBytes(StandardCharsets.UTF_8));
+          StringBuilder ack = new StringBuilder();
+          int next;
+          while ((next = socket.getInputStream().read()) != -1 && next != 0x1c) ack.append((char) next);
+          assertThat(ack.toString()).contains("MSA|AA|");
+        }
+      }
+      Delivery delivery = deliveries.poll(5, TimeUnit.SECONDS);
+      assertThat(delivery).isNotNull();
+      Bundle bundle = FhirContext.forR4Cached().newJsonParser().parseResource(Bundle.class, delivery.body());
+      var resources = bundle.getEntry().stream().map(Bundle.BundleEntryComponent::getResource).toList();
+      Device device = resources
+        .stream()
+        .filter(Device.class::isInstance)
+        .map(Device.class::cast)
+        .findFirst()
+        .orElseThrow();
+      String root = "https://openelis-global.org/fhir/StructureDefinition/";
+      assertThat(device.getIdentifier()).anySatisfy(identifier -> {
+        assertThat(identifier.getSystem()).isEqualTo("https://openelis-global.org/fhir/analyzer-connection-id");
+        assertThat(identifier.getValue()).isEqualTo(id);
+      });
+      assertThat(device.getExtensionByUrl(root + "analyzer-profile-id").getValue().primitiveValue()).isEqualTo(
+        pinned.path("profileId").asText()
+      );
+      assertThat(device.getExtensionByUrl(root + "analyzer-profile-revision").getValue().primitiveValue()).isEqualTo(
+        "1"
+      );
+      var specimen = resources
+        .stream()
+        .filter(org.hl7.fhir.r4.model.Specimen.class::isInstance)
+        .map(org.hl7.fhir.r4.model.Specimen.class::cast)
+        .findFirst()
+        .orElseThrow();
+      assertThat(specimen.getIdentifier()).anySatisfy(
+        identifier -> assertThat(identifier.getValue()).isEqualTo(accession)
+      );
+      var observations = resources.stream().filter(Observation.class::isInstance).map(Observation.class::cast).toList();
+      assertThat(observations).hasSize(2);
+      for (int i = 0; i < 2; i++) {
+        var observation = observations.get(i);
+        assertThat(observation.getValueQuantity().getValue().intValueExact()).isEqualTo(i + 1);
+        assertThat(
+          observation.getExtensionByUrl(root + "analyzer-result-classification").getValue().primitiveValue()
+        ).isEqualTo(i == 0 ? "CONTROL" : "PATIENT");
+        var recognition = observation.getExtensionByUrl(root + "analyzer-control-recognition");
+        assertThat(recognition.getExtensionByUrl("recognitionFingerprint").getValue().primitiveValue()).isEqualTo(
+          profile.path("catalog").path("recognitionFingerprint").asText()
+        );
+        var evidence = recognition.getExtensionByUrl("evaluation");
+        assertThat(evidence.getExtensionByUrl("sourceField").getValue().primitiveValue()).isEqualTo("SPM.11");
+        assertThat(evidence.getExtensionByUrl("rawValue").getValue().primitiveValue()).isEqualTo(i == 0 ? "Q" : "P");
+        assertThat(evidence.getExtensionByUrl("matched").getValue().primitiveValue()).isEqualTo(
+          Boolean.toString(i == 0)
+        );
+      }
+    }
+  }
+
+  @Test
+  void publicationRejectsUnknownSpecimenPolicy() {
+    var profiles = new AnalyzerProfileCatalog(directory.resolve("profiles"), List.of(), mapper, Clock.systemUTC());
+    var draft = profiles.updateSharedDraft(profile.path("profileMeta").path("id").asText(), 1, "author");
+    var candidate = draft.profile();
+    candidate.withObject("configDefaults").putObject("extractionOverrides").put("specimenPosition", "GUESS");
+    assertThat(profiles.updateDraft(draft.draftId(), candidate, "author").validationIssues()).anySatisfy(
+      issue -> assertThat(issue).contains("specimenPosition")
+    );
+    assertThatThrownBy(() -> profiles.publishDraft(draft.draftId(), "publisher")).isInstanceOf(
+      org.itech.ahb.profile.ProfileCatalogException.class
+    );
+  }
+
   private void selectTransport(String transport) {
     profile.putArray("transport").add(transport);
     profile.putObject("transport_config").putObject(transport);
