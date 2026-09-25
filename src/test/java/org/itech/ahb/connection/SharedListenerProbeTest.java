@@ -17,7 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Checking a connection the analyzer opens, against real sockets. The Bridge's listener decides the
+ * Checking a connection the analyzer opens, against real sockets and deployment configuration. The Bridge's listener decides the
  * result: a port it already serves through a boot or shared listener is ready, a port held by
  * another process is in use, a free port is ready to be bound. The analyzer check is advisory: its
  * saved address is reachable or not, and without one it is skipped as not checkable.
@@ -32,11 +32,18 @@ class SharedListenerProbeTest {
     mock(MessageNormalizer.class),
     new DefaultASTMInterpreterFactory()
   );
+  private final org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties listenerConfig =
+    new org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties();
   private final AnalyzerConnectionProbe probe = new AnalyzerConnectionProbe(
     objectMapper,
     Clock.systemUTC(),
     new DefaultConnectionProbeExecutor(),
-    (protocol, port) -> "ASTM".equals(protocol) && astmListeners.isListening(port)
+    (protocol, port) -> "ASTM".equals(protocol) && astmListeners.isListening(port),
+    new AnalyzerListenerPorts(
+      listenerConfig,
+      new org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties(),
+      new org.itech.ahb.mllp.MLLPConfig()
+    )
   );
 
   @AfterEach
@@ -136,11 +143,12 @@ class SharedListenerProbeTest {
 
   private ObjectNode astmProfile() {
     ObjectNode profile = objectMapper.createObjectNode();
-    profile.putObject("protocol").put("name", "ASTM");
+    profile.putObject("protocol").put("name", "ASTM").put("lowerLayerVersion", "LIS01_A");
     return profile;
   }
 
   private ObjectNode serverConnection(int port, String host) {
+    listenerConfig.setPort(port);
     ObjectNode connection = objectMapper.createObjectNode();
     connection.put("connectionId", "gx-lab-b");
     ObjectNode profileRef = connection.putObject("profileRef");
@@ -150,7 +158,7 @@ class SharedListenerProbeTest {
     connection.put("configRevision", 1);
     connection.put("configFingerprint", "sha256:" + "3".repeat(64));
     ObjectNode values = connection.putObject("values");
-    values.put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", port);
+    values.put("transport", "TCP/IP").put("connectionRole", "SERVER");
     if (host != null) {
       values.put("host", host);
     }

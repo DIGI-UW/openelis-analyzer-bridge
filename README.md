@@ -175,12 +175,12 @@ profile), HL7 MLLP on 2575. An analyzer that connects before OpenELIS has
 finished configuring it reaches a listening port, and its results are kept in
 the outbox until they can be attributed.
 
-A saved TCP/IP `SERVER` connection declares a `port`. A connection on one of
-the shared ports joins that listener, and any number of connections can share
-it. A connection that declares any other port gets a listener of its own, bound
-on activation and closed when its last connection is deactivated. Activation
-still fails if another process holds that port. HL7 TCP client-mode inbound
-activation is not supported and is rejected.
+A saved TCP/IP `SERVER` connection joins the deployment-configured shared
+listener for its protocol and lower layer. It has no per-analyzer incoming port.
+Historical saved SERVER `port` values do not select listeners or become outbound
+destinations, including when changing the connection role to CLIENT without an
+explicit new destination. Activation fails if the configured listener cannot be
+started. HL7 TCP client-mode inbound activation is not supported and is rejected.
 
 Attribution is not peer authentication: a message is attributed, not
 authorized, by its address and sender name. Use network access controls to
@@ -222,7 +222,7 @@ Analyzer identification uses three distinct concepts:
 - **Source binding**: where a message came from (serial port, file directory,
   HTTP sender, or the shared listener and peer address for ASTM and HL7 over TCP).
 - **Sender name**: how the instrument names itself in the message, component 1
-  of ASTM H.5 or HL7 MSH-3 (with MSH-4 when present). A GeneXpert sends the System
+  of ASTM H.5 or HL7 MSH-3. A GeneXpert sends the System
   Name from its own configuration there.
 - **Bridge connection ID**: the durable identity emitted in every normalized
   result bundle and used by OpenELIS for exact lookup.
@@ -230,7 +230,8 @@ Analyzer identification uses three distinct concepts:
 A message received on a shared listener is resolved among the active
 connections that declare that listener, in this order:
 
-1. **Address.** The one connection whose `host` is the peer address.
+1. **Address.** Use connections matching the peer address when any exist.
+   Otherwise, consider only connections without an address restriction.
 2. **Sender name.** The one connection whose `senderId` matches the sender name,
    ignoring case.
 3. **Profile pattern.** The pinned profile's `identifier_pattern` rules out
@@ -239,7 +240,9 @@ connections that declare that listener, in this order:
 4. **Uniqueness.** One candidate left.
 
 A connection whose `host` is a different literal address, or whose `senderId`
-names a different instrument, is never a candidate. When none or several remain,
+names a different instrument, is never a candidate. A configured sender name
+must match even when there is only one candidate at that address; an absent
+sender name cannot match a connection that requires one. When none or several remain,
 the message is dead-lettered with its complete payload: `UNREGISTERED_SOURCE`,
 or `AMBIGUOUS_SOURCE` naming the connections that could own it. Once the
 configuration is fixed, retrying the dead letter resolves it again.
@@ -272,24 +275,53 @@ is recorded as a mismatch, but it never overrides the connection.
 ### Checking a Connection
 
 `POST /api/connections/{connectionId}/probe` checks a saved connection without
-changing it. When the bridge opens the connection (CLIENT role) it connects to
-the analyzer's `host` and `port` and completes an ASTM or MLLP handshake. When
-the analyzer opens it (SERVER role) the result has two checks, and only the
-first decides the overall status:
+changing it. A SERVER connection checks the configured shared listener. When
+Bridge must initiate a separate connection (CLIENT role, or enabled two-way
+orders), it also probes the actual remote destination with an ASTM or MLLP
+handshake. A healthy inbound listener cannot make a failed outbound probe pass.
 
-| Check | Passes when | Fails when |
-|---|---|---|
-| `listener` | The bridge already serves the port (a boot or shared listener), or the port is free to bind | Another process holds the port |
-| `analyzer` (advisory) | The saved `host` answers | The saved `host` does not answer, or its name does not resolve |
+The destination port is always optional in setup. Resolution order is:
 
-Without a saved `host` the analyzer check is `SKIPPED`
-(`analyzer.address.missing`). The analyzer check is advisory because a working
-analyzer can still fail it: reachability uses ICMP where the process may send
-it, otherwise TCP port 7, where a refused connection still proves the host is
-up, and a firewall that drops both (common on analyzer PCs) reads as
-unreachable, as does an analyzer behind NAT or reached from a hosted server.
-Only results arriving prove that an analyzer reaches the bridge. The check never
-blocks activation.
+1. Explicit `outboundPort` override; historical CLIENT `port` values remain valid
+   remote overrides when the connection has no explicit default-selection mode.
+2. The pinned profile's `transport_config[transport].default_port`. Older CLIENT
+   profiles may also supply a remote `configDefaults.port`.
+3. `bridge.outbound-defaults.astm-port` (12001) or
+   `bridge.outbound-defaults.hl7-port` (2575), configurable deployment fallbacks.
+   These defaults do not establish an instrument's actual listening port.
+
+A profile can declare `outboundPortMode` as an optional SELECT field, with
+`DEFAULT` and `OVERRIDE` choices, and default it to `DEFAULT` in `configDefaults`.
+An optional NUMBER field `outboundPort` can depend on `outboundPortMode=OVERRIDE`.
+Selecting `DEFAULT` ignores a previously saved numeric override, so an editor
+that omits hidden fields can reset the destination without clearing unrelated
+configuration. With no saved override, a blank field uses the fallback chain.
+After saving an override, choose `DEFAULT` to stop using it; clearing the numeric
+field alone is omitted by the current editor and does not clear saved values. Published revisions and
+existing connection pins are not rewritten; changed profile descriptors require
+an explicitly adopted revision. Replies on an established incoming session need
+no destination port.
+
+Remote probe details include the attempted host, port, port source, and failure
+remediation. A refusal or timeout does not establish that the port alone is
+wrong: check the address, port, listening service and network access, then retest.
+The current OpenELIS screen shows the failure status but does not render all
+these returned details; richer display remains an OpenELIS follow-up.
+
+For results-only SERVER connections, the additional `analyzer` reachability
+check is advisory. Without a saved host it is skipped. Reachability uses ICMP
+where permitted, otherwise TCP port 7; a refused connection proves the host is
+up, but a firewall can make a working analyzer appear unreachable. Only a result
+arriving proves the analyzer-to-Bridge path. A probe does not activate the
+connection and does not block activation.
+
+Retried HL7 messages resolve the sender from MSH-3 in the stored raw message,
+including entries whose historical hint combined application and facility.
+The original hint and raw message remain unchanged for audit.
+
+HL7 messages are not rejected by a per-IP spacing timer. Each received message
+uses the durable ingestion path, including messages from multiple instruments
+sharing one address.
 
 ### Test Times
 

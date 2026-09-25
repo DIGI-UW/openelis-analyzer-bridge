@@ -154,17 +154,15 @@ public class AnalyzerRuntimeRegistry {
       .stream()
       .filter(entry -> peer != null && peer.equals(entry.getInboundAddress()))
       .toList();
-    if (byAddress.size() == 1) {
-      return new Resolution.Resolved(byAddress.get(0), "address");
-    }
-
     // A connection whose host is a different literal address is another machine: never a candidate.
     List<AnalyzerEntry> candidates = byAddress.isEmpty()
       ? onListener.stream().filter(entry -> entry.getInboundAddress() == null).toList()
       : byAddress;
 
     String sender = senderName(senderHint);
-    if (sender != null && candidates.size() > 1) {
+    if (sender == null) {
+      candidates = candidates.stream().filter(entry -> entry.getSenderId() == null).toList();
+    } else {
       List<AnalyzerEntry> bySender = candidates
         .stream()
         .filter(entry -> entry.getSenderId() != null && entry.getSenderId().equalsIgnoreCase(sender))
@@ -183,18 +181,23 @@ public class AnalyzerRuntimeRegistry {
       // A type-level pattern (GENEXPERT|CEPHEID) rules out another kind of analyzer; it never picks one.
       candidates = candidates
         .stream()
-        .filter(entry ->
-          entry.getCompiledIdentifierPattern() == null || entry.getCompiledIdentifierPattern().matcher(senderHint).find()
+        .filter(
+          entry ->
+            entry.getCompiledIdentifierPattern() == null ||
+            entry.getCompiledIdentifierPattern().matcher(senderHint).find()
         )
         .toList();
     }
 
     if (candidates.size() == 1) {
-      return new Resolution.Resolved(candidates.get(0), "uniqueness");
+      return new Resolution.Resolved(candidates.get(0), byAddress.size() == 1 ? "address" : "uniqueness");
     }
     if (candidates.isEmpty()) {
       return new Resolution.Unregistered(
-        "No active analyzer connection on port " + listenerPort + " is configured for address " + sourceId +
+        "No active analyzer connection on port " +
+        listenerPort +
+        " is configured for address " +
+        sourceId +
         (sender == null ? "" : " and sender " + sender)
       );
     }
@@ -202,8 +205,12 @@ public class AnalyzerRuntimeRegistry {
     candidates.forEach(entry -> ids.add(entry.getBridgeConnectionId()));
     return new Resolution.Ambiguous(
       ids,
-      "Connections " + String.join(", ", ids) + " on port " + listenerPort +
-      " cannot be told apart for a message from " + sourceId +
+      "Connections " +
+      String.join(", ", ids) +
+      " on port " +
+      listenerPort +
+      " cannot be told apart for a message from " +
+      sourceId +
       "; set a distinct host on each, or set senderId to each instrument's system name"
     );
   }

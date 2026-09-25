@@ -5,16 +5,17 @@ echo "=== E2E Test: Saved HL7 Connection ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/test-support.sh"
-# The saved connection declares the container's MLLP port; the test reaches it through the host port
-# the stack publishes it on, which differ when the acceptance stack is isolated.
-BRIDGE_MLLP_CONNECTION_PORT="${BRIDGE_MLLP_CONNECTION_PORT:-2575}"
+# The deployment owns the shared MLLP port. The saved analyzer has no incoming-port setting.
+# This test reaches the listener through the isolated stack's published host port.
 BRIDGE_MLLP_PORT="${BRIDGE_MLLP_PORT:-${E2E_MLLP_PORT:-2575}}"
 : "${BRIDGE_CONNECTION_ID:?Activate a saved HL7 server connection and set BRIDGE_CONNECTION_ID first}"
 CONNECTION=$(bridge_api "${BRIDGE_API_URL}/connections/${BRIDGE_CONNECTION_ID}")
-echo "${CONNECTION}" | jq -e --argjson port "${BRIDGE_MLLP_CONNECTION_PORT}" '
+echo "${CONNECTION}" | jq -e '
   .actualRuntimeState == "ACTIVE" and
   .activeRuntimeRef.configRevision == .configRevision and
-  any(.fields[]; .key == "port" and .currentValue == $port)
+  all(.fields[]; .key != "port" or
+    (.required == false and .visibleWhen.fieldKey == "connectionRole" and
+     .visibleWhen.value == "CLIENT" and .currentValue == null))
 ' > /dev/null
 PROFILE_ID=$(echo "${CONNECTION}" | jq -er '.profileRef.profileId')
 
@@ -37,7 +38,7 @@ with socket.create_connection(("localhost", port), timeout=10) as conn:
 print(reply.decode("utf-8", "replace"))
 ' "${BRIDGE_MLLP_PORT}" "${HL7_MSG}")
 if [[ "${ACK}" != *"MSA|AA|${MESSAGE_ID}"* ]]; then
-    echo "FAIL: the saved listener did not acknowledge successful delivery"
+    echo "FAIL: the shared listener did not acknowledge durable receipt"
     exit 1
 fi
 

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Clock;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -25,6 +26,8 @@ public final class AnalyzerConnectionProbe {
   private final Clock clock;
   private final ConnectionProbeExecutor executor;
   private final BridgeListeners bridgeListeners;
+  private final AnalyzerListenerPorts listenerPorts;
+  private final AnalyzerOutboundEndpoint outboundEndpoint;
 
   public AnalyzerConnectionProbe(
     ObjectMapper objectMapper,
@@ -32,6 +35,36 @@ public final class AnalyzerConnectionProbe {
     ConnectionProbeExecutor executor,
     BridgeListeners bridgeListeners
   ) {
+    this(objectMapper, clock, executor, bridgeListeners, AnalyzerListenerPorts.defaults());
+  }
+
+  public AnalyzerConnectionProbe(
+    ObjectMapper objectMapper,
+    Clock clock,
+    ConnectionProbeExecutor executor,
+    BridgeListeners bridgeListeners,
+    AnalyzerListenerPorts listenerPorts
+  ) {
+    this(
+      objectMapper,
+      clock,
+      executor,
+      bridgeListeners,
+      listenerPorts,
+      new AnalyzerOutboundEndpoint(new AnalyzerOutboundDefaults())
+    );
+  }
+
+  public AnalyzerConnectionProbe(
+    ObjectMapper objectMapper,
+    Clock clock,
+    ConnectionProbeExecutor executor,
+    BridgeListeners bridgeListeners,
+    AnalyzerListenerPorts listenerPorts,
+    AnalyzerOutboundEndpoint outboundEndpoint
+  ) {
+    this.outboundEndpoint = outboundEndpoint;
+    this.listenerPorts = listenerPorts;
     this.objectMapper = objectMapper;
     this.clock = clock;
     this.executor = executor;
@@ -61,6 +94,9 @@ public final class AnalyzerConnectionProbe {
     ProbeCheck bridgeSide = check(connection, profile, values);
     if (!"LISTENER".equals(bridgeSide.kind()) || "MISSING_CONFIGURATION".equals(bridgeSide.status())) {
       return List.of(bridgeSide);
+    }
+    if (AnalyzerOutboundEndpoint.needed(profile, values)) {
+      return List.of(bridgeSide, remoteCheck(profile, values));
     }
     // The analyzer opens this connection, so the Bridge's listener and the analyzer's reachability
     // are separate questions; without an address the analyzer cannot be checked at all.
@@ -101,6 +137,9 @@ public final class AnalyzerConnectionProbe {
 
     Integer port = port(values.path("port"));
     if ("SERVER".equals(text(values, "connectionRole"))) {
+      if ("ASTM".equals(protocol) || "HL7".equals(protocol)) {
+        port = listenerPorts.forProfile(profile);
+      }
       if (port == null) {
         return missing("LISTENER", "listener.configuration.missing");
       }
@@ -123,10 +162,41 @@ public final class AnalyzerConnectionProbe {
       return executor.probeListener(port);
     }
 
+    return remoteCheck(profile, values);
+  }
+
+  private ProbeCheck remoteCheck(ObjectNode profile, ObjectNode values) {
     String host = text(values, "host");
-    return host == null || port == null
-      ? missing("REMOTE_PROTOCOL", "remote.configuration.missing")
-      : executor.probeRemote(protocol, host, port, timeout(values));
+    if (host == null) return missing("REMOTE_PROTOCOL", "remote.configuration.missing");
+    AnalyzerOutboundEndpoint.ResolvedPort destination;
+    try {
+      destination = outboundEndpoint.resolvePort(profile, values);
+    } catch (AnalyzerConnectionException invalid) {
+      return new ProbeCheck(
+        "REMOTE_PROTOCOL",
+        "MISSING_CONFIGURATION",
+        "remote.configuration.missing",
+        0,
+        Map.of("host", host, "detail", invalid.getMessage())
+      );
+    }
+    ProbeCheck result = executor.probeRemote(
+      profile.path("protocol").path("name").asText(),
+      host,
+      destination.port(),
+      timeout(values)
+    );
+    Map<String, Object> details = new LinkedHashMap<>(result.args());
+    details.put("host", host);
+    details.put("port", destination.port());
+    details.put("portSource", destination.source());
+    if (!"PASSED".equals(result.status())) {
+      details.put(
+        "remediation",
+        "Check the analyzer address, destination port, listening service and network access; then test again."
+      );
+    }
+    return new ProbeCheck(result.kind(), result.status(), result.code(), result.responseTimeMs(), details);
   }
 
   private static boolean currentRuntimeMatchesConfiguration(ObjectNode connection) {
@@ -161,12 +231,13 @@ public final class AnalyzerConnectionProbe {
     int worst = checks
       .stream()
       .filter(check -> !"ANALYZER".equals(check.kind()))
-      .mapToInt(check -> switch (check.status()) {
-        case "PASSED" -> 0;
-        case "MISSING_CONFIGURATION" -> 1;
-        case "TIMED_OUT" -> 2;
-        default -> 3;
-      })
+      .mapToInt(check ->
+        switch (check.status()) {
+          case "PASSED" -> 0;
+          case "MISSING_CONFIGURATION" -> 1;
+          case "TIMED_OUT" -> 2;
+          default -> 3;
+        })
       .max()
       .orElse(0);
     return switch (worst) {

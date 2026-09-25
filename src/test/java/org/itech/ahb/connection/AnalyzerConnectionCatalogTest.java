@@ -13,18 +13,20 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
-import org.itech.ahb.profile.ProfileFingerprintService;
 import org.itech.ahb.profile.ProfileCatalogProperties;
+import org.itech.ahb.profile.ProfileFingerprintService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.core.io.Resource;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 class AnalyzerConnectionCatalogTest {
@@ -48,6 +50,193 @@ class AnalyzerConnectionCatalogTest {
       objectMapper,
       CLOCK
     );
+  }
+
+  /** Guards saved-connection readiness and immutable profile content; socket delivery is tested separately. */
+  @Test
+  void publishedInboundProfileDoesNotRequireAnAnalyzerListenerPort() {
+    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode original = profile.deepCopy();
+    RecordingRuntime runtime = new RecordingRuntime();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, runtime);
+    ObjectNode created = catalog.create(createRequest(profile, "no-incoming-port", "oe-no-port"));
+
+    assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
+    assertThat(field(created, "port").path("validationErrors")).isEmpty();
+    assertThat(field(created, "port").path("visibleWhen").path("fieldKey").asText()).isEqualTo("connectionRole");
+    assertThat(field(created, "port").path("visibleWhen").path("value").asText()).isEqualTo("CLIENT");
+    catalog.applyRuntimeCommand(runtimeCommand(created, "activate-portless", "ACTIVATE"));
+    assertThat(runtime.activations).containsExactly(created.path("connectionId").asText());
+    assertThat(profiles.require("genexpert-astm", 5).profile()).isEqualTo(original);
+    ObjectNode restored = catalog(UUID::randomUUID).require(created.path("connectionId").asText());
+    assertThat(restored.path("readiness").path("ready").asBoolean()).isTrue();
+    assertThat(restored.path("profileRef")).isEqualTo(created.path("profileRef"));
+  }
+
+  @Test
+  void outboundClientPortIsOptionalWhenTheDeploymentCanResolveIt() {
+    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID);
+    ObjectNode request = createRequest(profile, "optional-outbound-port", "oe-client-default");
+    request.withObject("values").put("connectionRole", "CLIENT").put("host", "192.0.2.10");
+
+    ObjectNode created = catalog.create(request);
+
+    assertThat(field(created, "port").path("required").asBoolean()).isFalse();
+    assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
+  }
+
+  @Test
+  void changingServerToClientDoesNotInheritAnOldIncomingPort() {
+    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, runtime);
+    ObjectNode request = createRequest(profile, "old-listener-role-change", "oe-role-change");
+    request.withObject("values").put("connectionRole", "SERVER").put("host", "192.0.2.10").put("port", 1200);
+    ObjectNode created = catalog.create(request);
+    // The unchanged OE2 form initializes from these values before the user edits the role.
+    assertThat(field(created, "port").has("currentValue")).isFalse();
+    ObjectNode update = objectMapper
+      .createObjectNode()
+      .put("schemaVersion", "1.0")
+      .put("requestId", "switch-to-client")
+      .put("connectionId", created.path("connectionId").asText())
+      .put("expectedConfigRevision", 1)
+      .put("displayName", created.path("displayName").asText());
+    update.set("profileRef", created.path("profileRef").deepCopy());
+    update.putObject("values").put("connectionRole", "CLIENT");
+    ObjectNode changed = catalog.update(update);
+    catalog.applyRuntimeCommand(runtimeCommand(changed, "activate-client-default", "ACTIVATE"));
+
+    var entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
+    assertThat(entry.getOutboundPort()).isEqualTo(12001);
+    assertThat(changed.path("profileRef")).isEqualTo(created.path("profileRef"));
+    assertThat(field(changed, "port").has("currentValue")).isFalse();
+    AnalyzerRuntimeRegistry restoredRegistry = new AnalyzerRuntimeRegistry();
+    catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        restoredRegistry,
+        null,
+        mock(AstmConnectionListeners.class),
+        mock(SerialConnectionListeners.class)
+      )
+    );
+    assertThat(
+      restoredRegistry
+        .findAnalyzerEntryByConnectionId(created.path("connectionId").asText())
+        .orElseThrow()
+        .getOutboundPort()
+    ).isEqualTo(12001);
+  }
+
+  /** Exercises real profile publication, persisted configuration and restored runtime; no instrument socket here. */
+  @ParameterizedTest
+  @CsvSource({ "SERVER,6001", "CLIENT,6001", "SERVER,0", "CLIENT,0" })
+  void publishedProfileCanResetOutboundOverrideAndRetainItsPinAcrossRestart(String role, int profilePort) {
+    ObjectNode original = profiles.require("genexpert-astm", 5).profile().deepCopy();
+    var draft = profiles.duplicateDraft("genexpert-astm", 5, "Outbound default fixture", "profile-editor");
+    ObjectNode candidate = draft.profile();
+    candidate.withObject("configDefaults").put("outboundPortMode", "DEFAULT");
+    if (profilePort > 0) candidate.withObject("transport_config").withObject("TCP/IP").put("default_port", profilePort);
+    ArrayNode descriptors = (ArrayNode) candidate.path("connectionFields");
+    ObjectNode mode = descriptors
+      .addObject()
+      .put("key", "outboundPortMode")
+      .put("labelKey", "analyzer.connection.field.port")
+      .put("inputKind", "SELECT")
+      .put("required", false);
+    mode
+      .putArray("choices")
+      .addObject()
+      .put("value", "DEFAULT")
+      .put("labelKey", "analyzer.qualitativeMapping.isDefault");
+    ((ArrayNode) mode.path("choices")).addObject()
+      .put("value", "OVERRIDE")
+      .put("labelKey", "microbiology.whonet.period.custom");
+    ObjectNode port = descriptors
+      .addObject()
+      .put("key", "outboundPort")
+      .put("labelKey", "analyzer.connection.field.port")
+      .put("inputKind", "NUMBER")
+      .put("required", false);
+    port.putArray("choices");
+    port
+      .putObject("visibleWhen")
+      .put("fieldKey", "outboundPortMode")
+      .put("operator", "EQUALS")
+      .put("value", "OVERRIDE");
+    assertThat(profiles.updateDraft(draft.draftId(), candidate, "profile-editor").validationIssues()).isEmpty();
+    ObjectNode published = profiles.publishDraft(draft.draftId(), "profile-publisher").profile();
+
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerConnectionCatalog catalog = catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        registry,
+        null,
+        mock(AstmConnectionListeners.class),
+        mock(SerialConnectionListeners.class)
+      )
+    );
+    ObjectNode request = createRequest(published, "create-reset-port", "oe-reset-port");
+    request.withObject("values").put("connectionRole", role).put("dataFlow", "TWO_WAY").put("host", "192.0.2.10");
+    ObjectNode connection = catalog.create(request);
+    assertThat(currentValue(connection, "outboundPortMode").asText()).isEqualTo("DEFAULT");
+    assertThat(connection.path("readiness").path("ready").asBoolean()).isTrue();
+    catalog.applyRuntimeCommand(runtimeCommand(connection, "activate-default-port", "ACTIVATE"));
+    String id = connection.path("connectionId").asText();
+    int expectedDefault = profilePort > 0 ? profilePort : 12001;
+    assertThat(registry.findAnalyzerEntryByConnectionId(id).orElseThrow().getOutboundPort()).isEqualTo(expectedDefault);
+
+    ObjectNode update = updateRequest(connection, "set-outbound-override");
+    update.putObject("values").put("outboundPortMode", "OVERRIDE").put("outboundPort", 7001);
+    connection = catalog.update(update);
+    catalog.applyRuntimeCommand(runtimeCommand(connection, "activate-override-port", "ACTIVATE"));
+    assertThat(registry.findAnalyzerEntryByConnectionId(id).orElseThrow().getOutboundPort()).isEqualTo(7001);
+
+    update = updateRequest(connection, "reset-outbound-default");
+    // The existing OE2 serializer omits the now-hidden numeric override; other omitted fields remain patches.
+    update.putObject("values").put("outboundPortMode", "DEFAULT");
+    connection = catalog.update(update);
+    catalog.applyRuntimeCommand(runtimeCommand(connection, "activate-reset-port", "ACTIVATE"));
+    assertThat(registry.findAnalyzerEntryByConnectionId(id).orElseThrow().getOutboundPort()).isEqualTo(expectedDefault);
+    AnalyzerRuntimeRegistry restoredRegistry = new AnalyzerRuntimeRegistry();
+    ObjectNode restored = catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        restoredRegistry,
+        null,
+        mock(AstmConnectionListeners.class),
+        mock(SerialConnectionListeners.class)
+      )
+    ).require(id);
+    assertThat(restored.path("profileRef")).isEqualTo(connection.path("profileRef"));
+    assertThat(restored.path("profileRef").path("revision").asInt()).isEqualTo(1);
+    assertThat(currentValue(restored, "outboundPortMode").asText()).isEqualTo("DEFAULT");
+    assertThat(currentValue(restored, "host").asText()).isEqualTo("192.0.2.10");
+    assertThat(restoredRegistry.findAnalyzerEntryByConnectionId(id).orElseThrow().getOutboundPort()).isEqualTo(
+      expectedDefault
+    );
+    assertThat(profiles.require("genexpert-astm", 5).profile()).isEqualTo(original);
+  }
+
+  private ObjectNode updateRequest(ObjectNode connection, String requestId) {
+    ObjectNode request = objectMapper
+      .createObjectNode()
+      .put("schemaVersion", "1.0")
+      .put("requestId", requestId)
+      .put("connectionId", connection.path("connectionId").asText())
+      .put("expectedConfigRevision", connection.path("configRevision").asInt())
+      .put("displayName", connection.path("displayName").asText());
+    request.set("profileRef", connection.path("profileRef").deepCopy());
+    return request;
   }
 
   @Test
@@ -123,9 +312,7 @@ class AnalyzerConnectionCatalogTest {
   @Test
   void updateDoesNotCreateANewRevisionWhenTheEffectiveConfigurationIsUnchanged() {
     ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
-    AnalyzerConnectionCatalog catalog = catalog(() ->
-      UUID.fromString("00000000-0000-0000-0000-000000000097")
-    );
+    AnalyzerConnectionCatalog catalog = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000097"));
     ObjectNode create = createRequest(profile, "create-genexpert-noop", "oe-97");
     create.withObject("values").put("port", 5000);
     ObjectNode created = catalog.create(create);
@@ -142,18 +329,15 @@ class AnalyzerConnectionCatalogTest {
     ObjectNode unchanged = catalog.update(update);
 
     assertThat(unchanged.path("configRevision").asInt()).isEqualTo(1);
-    assertThat(unchanged.path("configFingerprint").asText())
-      .isEqualTo(created.path("configFingerprint").asText());
+    assertThat(unchanged.path("configFingerprint").asText()).isEqualTo(created.path("configFingerprint").asText());
   }
 
   @Test
   void updateChangesOnlySuppliedValuesAndRetainsTheDurableBridgeConfiguration() {
     ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
-    AnalyzerConnectionCatalog catalog = catalog(() ->
-      UUID.fromString("00000000-0000-0000-0000-000000000098")
-    );
+    AnalyzerConnectionCatalog catalog = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000098"));
     ObjectNode create = createRequest(profile, "create-genexpert-patch", "oe-98");
-    create.withObject("values").put("host", "192.0.2.10").put("port", 5000);
+    create.withObject("values").put("connectionRole", "CLIENT").put("host", "192.0.2.10").put("port", 5000);
     ObjectNode created = catalog.create(create);
 
     ObjectNode update = objectMapper.createObjectNode();
@@ -185,38 +369,39 @@ class AnalyzerConnectionCatalogTest {
   @Test
   void fileProfileDeclaresRequiredDirectoryAndProfileDefaults() {
     ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
-    ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000077"))
-      .create(createRequest(profile, "create-fluoro-empty", "oe-77"));
+    ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000077")).create(
+      createRequest(profile, "create-fluoro-empty", "oe-77")
+    );
 
     assertThat(field(created, "directory").path("inputKind").asText()).isEqualTo("FILE_PATH");
     assertThat(field(created, "directory").path("required").asBoolean()).isTrue();
-    assertThat(field(created, "directory").path("validationErrors").get(0).asText())
-      .isEqualTo("analyzer.connection.validation.required");
-    assertThat(field(created, "filePattern").path("currentValue").asText())
-      .isEqualTo("*.{ods,ODS,xlsx,XLSX,xls,XLS}");
+    assertThat(field(created, "directory").path("validationErrors").get(0).asText()).isEqualTo(
+      "analyzer.connection.validation.required"
+    );
+    assertThat(field(created, "filePattern").path("currentValue").asText()).isEqualTo("*.{ods,ODS,xlsx,XLSX,xls,XLS}");
     assertThat(created.path("readiness").path("ready").asBoolean()).isFalse();
-    assertThat(created.path("readiness").path("blockers").get(0).path("fieldKeys").get(0).asText())
-      .isEqualTo("directory");
+    assertThat(created.path("readiness").path("blockers").get(0).path("fieldKeys").get(0).asText()).isEqualTo(
+      "directory"
+    );
   }
 
   @Test
   void priorityAstmProfilePreservesBothTransportsAndRendersItsDeclaredFields() {
     ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
-    ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000088"))
-      .create(createRequest(profile, "create-genexpert-empty", "oe-88"));
+    ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000088")).create(
+      createRequest(profile, "create-genexpert-empty", "oe-88")
+    );
 
     assertThat(textValues(profile.path("transport"))).containsExactly("RS-232", "TCP/IP");
     assertThat(fieldKeys(created)).containsExactly("transport", "connectionRole", "host", "port", "serialPort");
     assertThat(currentValue(created, "transport").asText()).isEqualTo("TCP/IP");
     assertThat(currentValue(created, "connectionRole").asText()).isEqualTo("SERVER");
     assertThat(field(created, "host").path("validationErrors")).isEmpty();
-    assertThat(field(created, "port").path("required").asBoolean()).isTrue();
-    assertThat(field(created, "port").path("validationErrors").get(0).asText())
-      .isEqualTo("analyzer.connection.validation.required");
+    assertThat(field(created, "port").path("required").asBoolean()).isFalse();
+    assertThat(field(created, "port").path("validationErrors")).isEmpty();
     assertThat(field(created, "serialPort").path("validationErrors")).isEmpty();
-    assertThat(created.path("readiness").path("ready").asBoolean()).isFalse();
-    assertThat(created.path("readiness").path("blockers").get(0).path("fieldKeys"))
-      .containsExactly(objectMapper.getNodeFactory().textNode("port"));
+    assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
+    assertThat(created.path("readiness").path("blockers")).isEmpty();
   }
 
   @Test
@@ -229,8 +414,7 @@ class AnalyzerConnectionCatalogTest {
       .put("connectionRole", "CLIENT")
       .put("serialPort", "/dev/ttyUSB0");
 
-    ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000089"))
-      .create(request);
+    ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000089")).create(request);
 
     assertThat(field(created, "host").path("validationErrors")).isEmpty();
     assertThat(field(created, "port").path("validationErrors")).isEmpty();
@@ -259,8 +443,7 @@ class AnalyzerConnectionCatalogTest {
       () -> UUID.fromString("00000000-0000-0000-0000-000000000066")
     ).create(request);
 
-    assertThat(field(created, "listenerPort").path("labelKey").asText())
-      .isEqualTo("synthetic.connection.listenerPort");
+    assertThat(field(created, "listenerPort").path("labelKey").asText()).isEqualTo("synthetic.connection.listenerPort");
     assertThat(field(created, "listenerPort").path("inputKind").asText()).isEqualTo("NUMBER");
     assertThat(field(created, "listenerPort").path("currentValue").asInt()).isEqualTo(6100);
   }
@@ -355,7 +538,7 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
-  void restartReopensTheExactAstmListenerFromTheSavedConnectionAndPinnedProfile() {
+  void restartRejoinsTheDeploymentAstmListenerWithTheSavedConnectionAndPinnedProfile() {
     ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
     AstmConnectionListeners firstListeners = mock(AstmConnectionListeners.class);
     BridgeAnalyzerConnectionRuntime firstRuntime = new BridgeAnalyzerConnectionRuntime(
@@ -382,14 +565,10 @@ class AnalyzerConnectionCatalogTest {
     );
     AnalyzerConnectionCatalog reopened = catalog(UUID::randomUUID, restartedRuntime);
 
-    assertThat(reopened.require(created.path("connectionId").asText()).path("actualRuntimeState").asText())
-      .isEqualTo("ACTIVE");
-    verify(restartedListeners).start(
-      created.path("connectionId").asText(),
-      "oe-56",
-      9_102,
-      "LIS01_A"
+    assertThat(reopened.require(created.path("connectionId").asText()).path("actualRuntimeState").asText()).isEqualTo(
+      "ACTIVE"
     );
+    verify(restartedListeners).start(created.path("connectionId").asText(), "oe-56", 12_001, "LIS01_A");
   }
 
   @Test
@@ -462,7 +641,7 @@ class AnalyzerConnectionCatalogTest {
 
     var entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
     assertThat(entry.getProfileRevision()).isEqualTo(4);
-    assertThat(entry.getListenerPort()).isEqualTo(9_600);
+    assertThat(entry.getListenerPort()).isEqualTo(12_001);
     assertThat(entry.getInboundAddress()).isNull();
   }
 
@@ -487,11 +666,18 @@ class AnalyzerConnectionCatalogTest {
       probeRequest.put("requestId", "probe-gx");
       probeRequest.put("connectionId", connectionId);
       probeRequest.put("expectedConfigRevision", 1);
+      var listenerConfig = new org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties();
+      listenerConfig.setPort(foreign.getLocalPort());
       AnalyzerConnectionProbe probe = new AnalyzerConnectionProbe(
         objectMapper,
         CLOCK,
         new org.itech.ahb.connectivity.DefaultConnectionProbeExecutor(),
-        (protocol, port) -> false
+        (protocol, port) -> false,
+        new AnalyzerListenerPorts(
+          listenerConfig,
+          new org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties(),
+          new org.itech.ahb.mllp.MLLPConfig()
+        )
       );
 
       assertThat(catalog.probe(probeRequest, probe).path("status").asText()).isEqualTo("FAILED");
@@ -520,10 +706,7 @@ class AnalyzerConnectionCatalogTest {
     );
   }
 
-  private AnalyzerConnectionCatalog catalog(
-    java.util.function.Supplier<UUID> ids,
-    AnalyzerConnectionRuntime runtime
-  ) {
+  private AnalyzerConnectionCatalog catalog(java.util.function.Supplier<UUID> ids, AnalyzerConnectionRuntime runtime) {
     return new AnalyzerConnectionCatalog(
       temporaryDirectory.resolve("connections"),
       profiles,

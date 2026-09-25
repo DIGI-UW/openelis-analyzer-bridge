@@ -410,6 +410,7 @@
       "required": ["connectionRole", "aggregationMode"],
       "properties": {
         "dataFlow": { "enum": ["RESULTS_ONLY", "TWO_WAY"] },
+        "outboundPortMode": { "enum": ["DEFAULT", "OVERRIDE"] },
         "connectionRole": { "enum": ["SERVER", "CLIENT"] },
         "transport": { "enum": ["RS-232", "TCP/IP", "MLLP", "HTTP"] },
         "port": {

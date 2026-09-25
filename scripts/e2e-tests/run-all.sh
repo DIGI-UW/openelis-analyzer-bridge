@@ -102,8 +102,9 @@ GENEXPERT_CONNECTION_ID="$(create_connection \
     "genexpert-astm" \
     "oe-e2e-genexpert" \
     "GeneXpert acceptance connection" \
-    '{"transport":"TCP/IP","connectionRole":"SERVER","port":12001}')"
+    '{"transport":"TCP/IP","connectionRole":"SERVER"}' 5)"
 export GENEXPERT_CONNECTION_ID
+# Revision 5 defaults to results-only; this test does not enable a separate outbound destination.
 # Before activation the boot listener already holds 12001: the bridge's side must check as ready.
 # With no analyzer address saved, the advisory analyzer check is skipped and does not fail the result.
 probe="$(probe_connection "${GENEXPERT_CONNECTION_ID}")"
@@ -132,7 +133,7 @@ HL7_CONNECTION_ID="$(create_connection \
     "${HL7_PROFILE_ID}" \
     "oe-e2e-hl7" \
     "HL7 acceptance connection" \
-    '{"transport":"TCP/IP","connectionRole":"SERVER","port":2575}')"
+    '{"transport":"TCP/IP","connectionRole":"SERVER"}')"
 activate_connection "${HL7_CONNECTION_ID}"
 
 echo "--- Running ASTM TCP test ---"
