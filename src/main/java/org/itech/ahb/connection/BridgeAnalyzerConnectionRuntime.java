@@ -223,11 +223,12 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     ObjectNode values
   ) {
     if ("HTTP".equals(nullableText(values, "transport"))) {
-      if (
-        !"FILE".equals(protocol) ||
-        !("CSV".equals(nullableText(values, "fileFormat")) || "TSV".equals(nullableText(values, "fileFormat")))
-      ) {
-        throw new AnalyzerConnectionException("HTTP input requires a tabular CSV or TSV profile");
+      boolean socketProtocol = "ASTM".equals(protocol) || "HL7".equals(protocol);
+      boolean tabularProtocol =
+        "FILE".equals(protocol) &&
+        ("CSV".equals(nullableText(values, "fileFormat")) || "TSV".equals(nullableText(values, "fileFormat")));
+      if (!socketProtocol && !tabularProtocol) {
+        throw new AnalyzerConnectionException("HTTP input requires an ASTM, HL7, CSV or TSV profile");
       }
       // The shared HTTP controller receives traffic; this connection owns its sender binding.
       return;

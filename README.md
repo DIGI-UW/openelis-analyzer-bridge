@@ -21,7 +21,7 @@ Bridge and OpenELIS responsibilities are explicitly separated:
 ## Architecture
 
 **Current OGC-1054 delivery boundary:** saved connections support priority ASTM
-and FILE, profile-driven HTTP CSV/TSV input, and inbound HL7/MLLP server listeners.
+and FILE, profile-driven HTTP ASTM/HL7/CSV/TSV input, and inbound HL7/MLLP server listeners.
 HL7 listeners use saved connection identity and the pinned profile's recognition
 rules, and recover the last successfully activated configuration after restart.
 Enabling the HL7 runtime alone creates no listener or authorized connection.
@@ -423,6 +423,8 @@ choose a different analyzer. Configure trusted proxies to append the actual peer
 address and overwrite forwarded port and real-IP headers. Do not enable generic
 servlet/container forwarded-header rewriting: keep
 `server.forward-headers-strategy=none` so Bridge can inspect the real socket peer.
+
+HTTP `/input` accepts ASTM, HL7 and profile-configured CSV/TSV messages through active saved connections. It uses the shared HTTP endpoint; no per-analyzer listening port or watched directory is required. The source peer identifies the connection. An automatic connection test cannot prove that an incoming HTTP sender works; verification requires actual result delivery. The existing test response explains this limitation.
 
 For HTTP connections, `host` must be a numeric IPv4 or IPv6 address, not a
 hostname, port-qualified address, network range, or scoped/interface address.

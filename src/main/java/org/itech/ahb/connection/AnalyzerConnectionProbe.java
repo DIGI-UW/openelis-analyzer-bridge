@@ -110,7 +110,7 @@ public final class AnalyzerConnectionProbe {
 
   private ProbeCheck check(ObjectNode connection, ObjectNode profile, ObjectNode values) {
     String protocol = profile.path("protocol").path("name").asText();
-    if ("FILE".equals(protocol) && "HTTP".equals(text(values, "transport"))) {
+    if ("HTTP".equals(text(values, "transport"))) {
       // An inbound sender is not an endpoint Bridge can actively probe.
       return new ProbeCheck("HTTP_INPUT", "UNSUPPORTED", "http.input.verify.with.delivery", 0, Map.of());
     }
