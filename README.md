@@ -201,6 +201,21 @@ activated values and pinned profiles, even when a newer saved edit has not been
 activated. These values remain internal to Bridge; OpenELIS receives the active
 reference, not a second configuration copy.
 
+### Serial restart and reconnect
+
+Explicit activation requires the configured serial device to open successfully.
+A previously activated connection restored at startup retains its assignment when
+the device is absent, and reconnects using its pinned profile's interval and retry
+limit. Other connections continue to restore. Disconnect events, failed reads and
+closed-device checks use the same reconnect path. Deactivation cancels reconnect.
+
+The saved `ACTIVE` state describes applied connection configuration; it does not
+mean the cable is currently connected. `/actuator/health/serial` reports each
+configured device's `open`, `pendingReconnect` and `reconnectAttempts`, and is DOWN
+while any device is unavailable. Exhausted reconnect remains visible; correcting
+the device and restarting or deactivating/reactivating retries the assignment.
+Invalid serial settings still fail rather than being treated as temporary absence.
+
 ### FILE shutdown and recovery
 
 Stopping the FILE service closes admissions for uploads and watcher work before

@@ -125,12 +125,12 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     }
 
     try {
-      activateMaterialization(replacement);
+      activateMaterialization(replacement, !refuseIndistinguishable);
       activeConnections.put(connectionId, replacement);
     } catch (RuntimeException exception) {
       if (previous != null) {
         try {
-          activateMaterialization(previous);
+          activateMaterialization(previous, true);
           activeConnections.put(connectionId, previous);
         } catch (RuntimeException rollbackFailure) {
           exception.addSuppressed(rollbackFailure);
@@ -177,7 +177,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     );
   }
 
-  private void activateMaterialization(ActiveMaterialization materialization) {
+  private void activateMaterialization(ActiveMaterialization materialization, boolean restoring) {
     ObjectNode connection = materialization.connection();
     ObjectNode profile = materialization.profile();
     String connectionId = requiredText(connection, "connectionId", "Connection ID");
@@ -186,7 +186,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     ObjectNode values = requiredObject(connection, "values");
     registry.register(materialization.registryKey(), materialization.entry());
     try {
-      activateTransport(protocol, connectionId, materialization.registryKey(), analyzerId, profile, values);
+      activateTransport(protocol, connectionId, materialization.registryKey(), analyzerId, profile, values, restoring);
     } catch (RuntimeException exception) {
       registry.unregister(materialization.registryKey(), analyzerId);
       throw exception;
@@ -220,7 +220,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     String sourceBindingId,
     String analyzerId,
     ObjectNode profile,
-    ObjectNode values
+    ObjectNode values,
+    boolean restoring
   ) {
     if ("HTTP".equals(nullableText(values, "transport"))) {
       boolean socketProtocol = "ASTM".equals(protocol) || "HL7".equals(protocol);
@@ -278,13 +279,13 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       if (serialListeners == null) {
         throw new AnalyzerConnectionException("Serial runtime is unavailable in this Bridge deployment");
       }
-      serialListeners.start(
-        connectionId,
-        sourceBindingId,
-        analyzerId,
-        requiredText(values, "serialPort", "Serial port"),
-        SerialConnectionSettings.fromProfile(profile)
-      );
+      String path = requiredText(values, "serialPort", "Serial port");
+      SerialConnectionSettings settings = SerialConnectionSettings.fromProfile(profile);
+      if (restoring) {
+        serialListeners.restore(connectionId, sourceBindingId, analyzerId, path, settings);
+      } else {
+        serialListeners.start(connectionId, sourceBindingId, analyzerId, path, settings);
+      }
       return;
     }
 
