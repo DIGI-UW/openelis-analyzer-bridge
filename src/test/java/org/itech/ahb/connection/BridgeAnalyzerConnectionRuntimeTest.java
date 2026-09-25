@@ -587,6 +587,25 @@ class BridgeAnalyzerConnectionRuntimeTest {
     return connection;
   }
 
+  @Test
+  void mllpAliasDoesNotEnableAnUnsupportedAstmTransport() throws Exception {
+    var registry = new AnalyzerRuntimeRegistry();
+    var astm = mock(AstmConnectionListeners.class);
+    var hl7 = mock(Hl7ConnectionListeners.class);
+    var runtime = new BridgeAnalyzerConnectionRuntime(registry, null, astm, null, hl7);
+    ObjectNode profile = (ObjectNode) objectMapper.readTree(
+      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json")
+    );
+    ObjectNode saved = baseConnection(profile, "Unsupported ASTM transport");
+    saved.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
+    saved.withObject("values").put("transport", "MLLP");
+    assertThatThrownBy(() -> runtime.activate(saved, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("not implemented");
+    assertThat(registry.getRegisteredAnalyzers()).isEmpty();
+    verifyNoInteractions(astm, hl7);
+  }
+
   private ObjectNode baseConnection(ObjectNode profile, String displayName) {
     ObjectNode connection = objectMapper.createObjectNode();
     connection.put("connectionId", "00000000-0000-0000-0000-000000000042");

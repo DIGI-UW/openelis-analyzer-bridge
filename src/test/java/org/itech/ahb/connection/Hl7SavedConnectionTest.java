@@ -21,24 +21,29 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Device;
 import org.hl7.fhir.r4.model.Observation;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
+import org.itech.ahb.controller.OutboundOrderController;
 import org.itech.ahb.mllp.MLLPConfig;
+import org.itech.ahb.mllp.OutboundMllpClient;
 import org.itech.ahb.normalizer.AnalyzerIdentifier;
 import org.itech.ahb.normalizer.MessageNormalizer;
+import org.itech.ahb.order.OutboundAstmClient;
 import org.itech.ahb.outbox.OutboxTestSupport;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
-import org.itech.ahb.profile.ProfileFingerprintService;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.core.io.ByteArrayResource;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Real saved catalog -> owned MLLP socket -> normalizer -> HTTP delivery. */
 class Hl7SavedConnectionTest {
@@ -113,9 +118,7 @@ class Hl7SavedConnectionTest {
       .put("inputKind", "TEXT")
       .put("required", false)
       .putArray("choices");
-    ProfileFingerprintService fingerprints = new ProfileFingerprintService();
-    profile.withObject("catalog").put("recognitionFingerprint", fingerprints.recognitionFingerprint(recognition));
-    profile.withObject("catalog").put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
+    publishProfile();
     boot(true);
   }
 
@@ -129,10 +132,38 @@ class Hl7SavedConnectionTest {
     }
   }
 
-  @Test
-  void samePeerConnectionsKeepTheirIdentityOnOneSharedListenerAcrossRestartAndDeactivation() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = { "TCP/IP", "MLLP" })
+  void samePeerConnectionsKeepTheirIdentityOnOneSharedListenerAcrossRestartAndDeactivation(String transport)
+    throws Exception {
+    selectTransport(transport);
+    profile.withObject("configDefaults").put("dataFlow", "RESULTS_ONLY");
+    publishProfile();
+    boot(true);
     String first = create("oe-first");
     activate(first);
+    var probe = new AnalyzerConnectionProbe(
+      mapper,
+      Clock.systemUTC(),
+      new org.itech.ahb.connectivity.DefaultConnectionProbeExecutor(),
+      (protocol, port) -> false,
+      new AnalyzerListenerPorts(
+        new org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties(),
+        new org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties(),
+        listenerConfig
+      )
+    );
+    var probeResult = catalog.probe(
+      mapper
+        .createObjectNode()
+        .put("schemaVersion", "1.0")
+        .put("requestId", UUID.randomUUID().toString())
+        .put("connectionId", first)
+        .put("expectedConfigRevision", 1),
+      probe
+    );
+    assertThat(probeResult.path("status").asText()).isEqualTo("SUCCEEDED");
+    assertThat(probeResult.path("checks").get(0).path("details").path("port").asInt()).isEqualTo(sharedPort);
     String second = create("oe-second");
     ObjectNode activation = command(second, "ACTIVATE");
     assertThat(catalog.applyRuntimeCommand(activation).path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
@@ -279,11 +310,149 @@ class Hl7SavedConnectionTest {
     assertClosed(sharedPort);
   }
 
+  /** Real saved publication and outbound wire traffic. This does not claim durable outbound-order queuing. */
+  @ParameterizedTest
+  @ValueSource(strings = { "TCP/IP", "MLLP" })
+  void clientDispatchesOrdersWithoutAnInboundListenerBeforeAndAfterRestart(String transport) throws Exception {
+    try (ServerSocket peer = new ServerSocket(0)) {
+      peer.setSoTimeout(5000);
+      selectTransport(transport);
+      profile.withObject("configDefaults").put("connectionRole", "CLIENT").put("dataFlow", "TWO_WAY");
+      profile.withObject("transport_config").withObject(transport).put("default_port", peer.getLocalPort());
+      publishProfile();
+      boot(true);
+      String id = create("oe-outbound");
+      activate(id);
+      assertClosed(sharedPort);
+      assertThat(listeners.runningConnections()).isEmpty();
+      assertOrder(peer, id, "BEFORE-RESTART", "AA", true);
+      boot(true);
+      assertClosed(sharedPort);
+      assertThat(listeners.runningConnections()).isEmpty();
+      assertOrder(peer, id, "AFTER-RESTART", "AA", true);
+      assertOrder(peer, id, "ANALYZER-REJECTED", "AE", false);
+      catalog.applyRuntimeCommand(command(id, "DEACTIVATE"));
+      var request = orderRequest(id, "AFTER-DEACTIVATE");
+      assertThat(orderController().sendOrder(request).getStatusCode().value()).isEqualTo(422);
+      assertThat(registry.findAnalyzerEntryByConnectionId(id)).isEmpty();
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+    {
+      "TCP/IP, RESULTS_ONLY",
+      "MLLP, RESULTS_ONLY",
+      "TCP/IP, NO_ORDERS",
+      "MLLP, NO_ORDERS",
+      "TCP/IP, NO_LIS",
+      "MLLP, NO_LIS"
+    }
+  )
+  void unsupportedClientCannotBecomeActiveWithoutAnExecutableTransport(String transport, String restriction)
+    throws Exception {
+    selectTransport(transport);
+    profile.withObject("configDefaults").put("connectionRole", "CLIENT").put("dataFlow", "TWO_WAY");
+    if ("RESULTS_ONLY".equals(restriction)) profile.withObject("configDefaults").put("dataFlow", "RESULTS_ONLY");
+    if ("NO_ORDERS".equals(restriction)) profile.withObject("capabilities").put("outboundOrders", false);
+    if ("NO_LIS".equals(restriction)) profile.withObject("communication").put("supports_lis_initiated", false);
+    publishProfile();
+    boot(true);
+    String id = create("oe-unsupported-client");
+    assertThatThrownBy(() -> activate(id))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("outbound orders");
+    assertThat(catalog.require(id).path("actualRuntimeState").asText()).isEqualTo("INACTIVE");
+    assertThat(registry.findAnalyzerEntryByConnectionId(id)).isEmpty();
+    assertThat(listeners.runningConnections()).isEmpty();
+    assertClosed(sharedPort);
+  }
+
+  private void selectTransport(String transport) {
+    profile.putArray("transport").add(transport);
+    profile.putObject("transport_config").putObject(transport);
+    profile.withObject("configDefaults").put("transport", transport);
+    profile
+      .withArray("connectionFields")
+      .forEach(field -> {
+        if ("transport".equals(field.path("key").asText())) {
+          ((ObjectNode) field).putArray("choices")
+            .addObject()
+            .put("value", transport)
+            .put("labelKey", "analyzer.connection.field.transport");
+        }
+      });
+  }
+
+  private void publishProfile() {
+    var profiles = new AnalyzerProfileCatalog(directory.resolve("profiles"), List.of(), mapper, Clock.systemUTC());
+    var draft = profiles.createDraft("Synthetic HL7 " + UUID.randomUUID(), "test-author");
+    profile
+      .withObject("profileMeta")
+      .put("id", draft.profile().path("profileMeta").path("id").asText())
+      .put("displayName", draft.profile().path("profileMeta").path("displayName").asText());
+    profile.remove("catalog");
+    assertThat(profiles.updateDraft(draft.draftId(), profile, "test-author").validationIssues()).isEmpty();
+    profile = profiles.publishDraft(draft.draftId(), "test-publisher").profile();
+  }
+
+  private OutboundOrderController orderController() {
+    return new OutboundOrderController(registry, new OutboundMllpClient(), new OutboundAstmClient());
+  }
+
+  private OutboundOrderController.OrderRequest orderRequest(String id, String accession) {
+    var request = new OutboundOrderController.OrderRequest();
+    request.connectionId = id;
+    request.order = new OutboundOrderController.ClinicalOrder();
+    request.order.accessionNumber = accession;
+    request.order.patientId = "PATIENT-ORDER";
+    request.order.loincCodes = List.of("85362-2");
+    return request;
+  }
+
+  private void assertOrder(ServerSocket peer, String id, String accession, String ackCode, boolean success)
+    throws Exception {
+    CompletableFuture<String> wire = CompletableFuture.supplyAsync(() -> {
+      try (Socket socket = peer.accept()) {
+        socket.setSoTimeout(5000);
+        var in = socket.getInputStream();
+        if (in.read() != 0x0b) throw new AssertionError("Missing MLLP start marker");
+        var body = new java.io.ByteArrayOutputStream();
+        int value;
+        while ((value = in.read()) != -1 && value != 0x1c) body.write(value);
+        if (value != 0x1c || in.read() != 0x0d) throw new AssertionError("Missing MLLP terminator");
+        String message = body.toString(StandardCharsets.UTF_8);
+        String controlId = message.split("\\r", -1)[0].split("\\|", -1)[9];
+        String ack =
+          "MSH|^~\\&|ANALYZER|LAB|OE|LAB|20260924120000||ACK|ACK-1|P|2.3.1\rMSA|" + ackCode + "|" + controlId + "\r";
+        socket.getOutputStream().write(("\u000b" + ack + "\u001c\r").getBytes(StandardCharsets.UTF_8));
+        return message;
+      } catch (Exception error) {
+        throw new java.util.concurrent.CompletionException(error);
+      }
+    });
+    var response = orderController().sendOrder(orderRequest(id, accession));
+    assertThat(response.getBody().get("dispatched")).isEqualTo(success);
+    assertThat(response.getStatusCode().value()).isEqualTo(success ? 200 : 502);
+    String message = wire.get(6, TimeUnit.SECONDS);
+    var segments = java.util.Arrays.stream(message.split("\\r", -1)).map(line -> line.split("\\|", -1)).toList();
+    assertThat(segments).anySatisfy(fields -> {
+      assertThat(fields[0]).isEqualTo("PID");
+      assertThat(fields[3]).isEqualTo("PATIENT-ORDER^^^HOSP");
+    });
+    assertThat(segments).anySatisfy(fields -> {
+      assertThat(fields[0]).isEqualTo("OBR");
+      assertThat(fields[2]).isEqualTo(accession);
+      assertThat(fields[3]).isEqualTo(accession);
+      assertThat(fields[4]).isEqualTo("^^^MTB-RIF^MTB-RIF");
+    });
+  }
+
   private void boot(boolean enabled) throws Exception {
     if (outbox != null) outbox.close();
     AnalyzerProfileCatalog profiles = new AnalyzerProfileCatalog(
       directory.resolve("profiles"),
-      List.of(new ByteArrayResource(mapper.writeValueAsBytes(profile))),
+      List.of(),
       mapper,
       Clock.systemUTC()
     );
@@ -326,7 +495,7 @@ class Hl7SavedConnectionTest {
       .put("displayName", analyzerId);
     request
       .putObject("profileRef")
-      .put("profileId", "saved-hl7-fixture")
+      .put("profileId", profile.path("profileMeta").path("id").asText())
       .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     request.putObject("values").put("host", "127.0.0.1").put("senderId", analyzerId);
@@ -406,7 +575,7 @@ class Hl7SavedConnectionTest {
       });
     String root = "https://openelis-global.org/fhir/StructureDefinition/";
     assertThat(device.getExtensionByUrl(root + "analyzer-profile-id").getValue().primitiveValue()).isEqualTo(
-      "saved-hl7-fixture"
+      profile.path("profileMeta").path("id").asText()
     );
     assertThat(device.getExtensionByUrl(root + "analyzer-profile-revision").getValue().primitiveValue()).isEqualTo("1");
     var observations = bundle

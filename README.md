@@ -24,8 +24,12 @@ Bridge and OpenELIS responsibilities are explicitly separated:
 and FILE, profile-driven HTTP ASTM/HL7/CSV/TSV input, and inbound HL7/MLLP server listeners.
 HL7 listeners use saved connection identity and the pinned profile's recognition
 rules, and recover the last successfully activated configuration after restart.
-Enabling the HL7 runtime alone creates no listener or authorized connection.
-HL7 TCP client-mode inbound activation remains unsupported and is rejected.
+Enabling the HL7 runtime binds the shared deployment listener; it does not
+create a saved analyzer identity.
+HL7 `TCP/IP` and `MLLP` saved transports use the same MLLP wire protocol.
+A CLIENT connection opens outbound order sessions without creating a
+connection-owned inbound listener. Persistent client-side result reception is
+not implemented; CLIENT activation requires enabled outbound orders.
 
 ```
 Analyzer(s)                                    OpenELIS
@@ -180,7 +184,10 @@ listener for its protocol and lower layer. It has no per-analyzer incoming port.
 Historical saved SERVER `port` values do not select listeners or become outbound
 destinations, including when changing the connection role to CLIENT without an
 explicit new destination. Activation fails if the configured listener cannot be
-started. HL7 TCP client-mode inbound activation is not supported and is rejected.
+started. HL7 also accepts the `MLLP` transport label. Saved HL7 CLIENT
+connections support outbound order sessions when the profile permits LIS-initiated
+orders and the saved data flow allows them; activation otherwise fails. They do
+not create an inbound listener or a persistent result-receive session.
 
 Attribution is not peer authentication: a message is attributed, not
 authorized, by its address and sender name. Use network access controls to

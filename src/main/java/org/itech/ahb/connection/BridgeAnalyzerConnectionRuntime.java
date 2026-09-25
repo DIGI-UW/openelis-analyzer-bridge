@@ -259,9 +259,15 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       return;
     }
 
-    if ("HL7".equals(protocol) && "TCP/IP".equals(nullableText(values, "transport"))) {
-      if (!"SERVER".equals(nullableText(values, "connectionRole"))) {
-        throw new AnalyzerConnectionException("Inbound HL7 TCP requires a saved SERVER connection");
+    if ("HL7".equals(protocol) && isTcpTransport(protocol, values)) {
+      // CLIENT opens a fresh outbound MLLP session per order; it owns no incoming listener.
+      if ("CLIENT".equals(nullableText(values, "connectionRole"))) {
+        if (!AnalyzerOutboundEndpoint.ordersEnabled(profile, values)) {
+          throw new AnalyzerConnectionException(
+            "HL7 CLIENT requires enabled outbound orders; persistent client-side result reception is not implemented"
+          );
+        }
+        return;
       }
       if (hl7Listeners == null) throw new AnalyzerConnectionException("HL7 listener runtime is unavailable");
       hl7Listeners.start(connectionId, listenerPorts.forProfile(profile));
@@ -306,9 +312,18 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       "SERVER".equals(nullableText(values, "connectionRole"))
     ) {
       astmListeners.stop(connectionId);
-    } else if ("HL7".equals(protocol) && "TCP/IP".equals(nullableText(values, "transport"))) {
+    } else if (
+      "HL7".equals(protocol) &&
+      isTcpTransport(protocol, values) &&
+      "SERVER".equals(nullableText(values, "connectionRole"))
+    ) {
       if (hl7Listeners != null) hl7Listeners.stop(connectionId);
     }
+  }
+
+  private static boolean isTcpTransport(String protocol, ObjectNode values) {
+    String transport = nullableText(values, "transport");
+    return "TCP/IP".equals(transport) || ("HL7".equals(protocol) && "MLLP".equals(transport));
   }
 
   private static String registryKey(String protocol, String connectionId, ObjectNode values) {
@@ -335,11 +350,11 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       }
       entry.setInboundSourceId(sourceAddress);
     } else if (
-      "TCP/IP".equals(entry.getInboundTransport()) && "CLIENT".equals(nullableText(values, "connectionRole"))
+      isTcpTransport(entry.getExpectedProtocol(), values) && "CLIENT".equals(nullableText(values, "connectionRole"))
     ) {
       entry.setInboundSourceId(requiredText(values, "host", "Analyzer host"));
     } else if (
-      "TCP/IP".equals(entry.getInboundTransport()) &&
+      isTcpTransport(entry.getExpectedProtocol(), values) &&
       "SERVER".equals(nullableText(values, "connectionRole")) &&
       ("ASTM".equals(entry.getExpectedProtocol()) || "HL7".equals(entry.getExpectedProtocol()))
     ) {
