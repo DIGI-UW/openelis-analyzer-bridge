@@ -322,6 +322,11 @@ up, but a firewall can make a working analyzer appear unreachable. Only a result
 arriving proves the analyzer-to-Bridge path. A probe does not activate the
 connection and does not block activation.
 
+Retained-message replay enforces the same saved protocol and transport as first
+receipt. A mismatched message remains held until compatible connection
+configuration is activated. When a raw receipt becomes per-accession deliveries,
+its retry actor/time and recorded retry history are retained on those deliveries.
+
 Retried HL7 messages resolve the sender from MSH-3 in the stored raw message,
 including entries whose historical hint combined application and facility.
 The original hint and raw message remain unchanged for audit.

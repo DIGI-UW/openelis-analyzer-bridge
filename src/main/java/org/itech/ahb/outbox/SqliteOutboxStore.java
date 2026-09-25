@@ -156,6 +156,7 @@ public class SqliteOutboxStore implements OutboxStore {
       }
       throw new IllegalStateException("no received entry " + receiptId + " to attach deliveries to");
     }
+    List<OutboxAttempt> receiptHistory = attempts(receiptId);
     String now = ts(Instant.now());
     inTransaction(() -> {
       for (RenderedDelivery delivery : deliveries) {
@@ -163,8 +164,8 @@ public class SqliteOutboxStore implements OutboxStore {
           PreparedStatement insert = conn.prepareStatement(
             "INSERT INTO outbox (id, state, raw_hash, fhir_json, fhir_hash, connection_id, analyzer_id, source_id, " +
             "source_port, protocol, transport, protocol_hint, profile_id, profile_revision, accession, target_uri, " +
-            "received_at, rendered_at, updated_at, listener_port) " +
-            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+            "received_at, rendered_at, updated_at, listener_port, retry_requested_by, retry_requested_at) " +
+            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
           )
         ) {
           insert.setString(1, delivery.deliveryId());
@@ -186,6 +187,8 @@ public class SqliteOutboxStore implements OutboxStore {
           insert.setString(17, now);
           insert.setString(18, now);
           setNullableInt(insert, 19, receipt.listenerPort());
+          insert.setString(20, receipt.retryRequestedBy());
+          insert.setString(21, ts(receipt.retryRequestedAt()));
           if (insert.executeUpdate() == 0) {
             // Same content, same accession, same connection: the analyzer retransmitted, or the
             // bridge restarted between rendering and deleting the receipt. Keeping the first row is
@@ -196,6 +199,21 @@ public class SqliteOutboxStore implements OutboxStore {
               delivery.accession()
             );
           }
+        }
+        // Receipt deletion cascades to its events. Carry them to each resulting delivery
+        // in this transaction, including a deduplicated delivery that already exists.
+        for (OutboxAttempt event : receiptHistory) {
+          insertAttempt(
+            delivery.deliveryId(),
+            event.kind(),
+            event.actor(),
+            event.startedAt(),
+            event.finishedAt(),
+            event.outcome(),
+            event.httpStatus(),
+            event.error(),
+            event.responseExcerpt()
+          );
         }
       }
       try (PreparedStatement del = conn.prepareStatement("DELETE FROM outbox WHERE id = ? AND state = 'RECEIVED'")) {
@@ -408,15 +426,26 @@ public class SqliteOutboxStore implements OutboxStore {
     // A message that was never rendered (its source was unregistered or ambiguous, say) goes back to
     // RECEIVED, so the dispatcher renders it against the corrected configuration instead of finding
     // no payload to send and dead-lettering it again.
-    update("UPDATE outbox SET state = CASE WHEN fhir_json IS NULL THEN 'RECEIVED' ELSE 'PENDING' END, " +
-      "next_attempt_at = NULL, lease_until = NULL, lease_owner = NULL, " +
-      "failure_reason = NULL, dmq_at = NULL, retry_requested_by = ?, retry_requested_at = ?, updated_at = ? " +
-      "WHERE id = ? AND state != 'DELIVERED'", st -> {
+    inTransaction(() -> {
+      try (
+        PreparedStatement st = conn.prepareStatement(
+          "UPDATE outbox SET state = CASE WHEN fhir_json IS NULL THEN 'RECEIVED' ELSE 'PENDING' END, " +
+          "next_attempt_at = NULL, lease_until = NULL, lease_owner = NULL, " +
+          "failure_reason = NULL, dmq_at = NULL, retry_requested_by = ?, retry_requested_at = ?, updated_at = ? " +
+          "WHERE id = ? AND state != 'DELIVERED'"
+        )
+      ) {
         st.setString(1, actor);
         st.setString(2, nowTs);
         st.setString(3, nowTs);
         st.setString(4, id);
-      });
+        if (st.executeUpdate() != 0) {
+          // The dispatcher must never see requeued work without the corresponding operator audit.
+          insertAttempt(id, OutboxAttempt.Kind.MANUAL, actor, now, now, "REQUEUED", null, null, null);
+        }
+      }
+      return null;
+    });
   }
 
   @Override

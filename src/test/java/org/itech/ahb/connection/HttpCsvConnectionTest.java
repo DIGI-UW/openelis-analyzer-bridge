@@ -423,12 +423,81 @@ class HttpCsvConnectionTest {
     String mismatch = socketMessage(opposite, "WRONG-PROTOCOL");
     assertThat(postSocket(opposite, mismatch, "192.0.2.25", null)).isNotEqualTo(200);
     assertRetainedFailure(mismatch, FailureReason.CONNECTION_TRANSPORT_MISMATCH);
+    var mismatchedReceipt = outbox.store
+      .list(OutboxQuery.inState(OutboxState.DMQ, 10))
+      .stream()
+      .filter(entry -> outbox.store.rawPayload(entry.id()).orElse("").equals(mismatch))
+      .findFirst()
+      .orElseThrow();
+    reopen();
+    outbox.store.requestRetry(mismatchedReceipt.id(), "operator", Instant.now());
+    outbox.dispatcher.dispatchDue();
+    assertRetainedFailure(mismatch, FailureReason.CONNECTION_TRANSPORT_MISMATCH);
+    assertThat(received).isEmpty(); // Operator retry cannot bypass the saved protocol/transport contract.
+
     activate("oe-http-duplicate", "192.0.2.25");
     String duplicate = socketMessage(protocol, "AMBIGUOUS-PEER");
     assertThat(postSocket(protocol, duplicate, "192.0.2.25", null)).isNotEqualTo(200);
     // Direct HTTP lookup currently reports a non-unique source as unregistered.
     assertRetainedFailure(duplicate, FailureReason.UNREGISTERED_SOURCE);
     outbox.dispatcher.dispatchDue();
+    assertThat(received).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = { "ASTM", "HL7" })
+  void retainedMismatchOnlyDeliversAfterASavedCompatibleConnectionIsActivated(String actualProtocol) throws Exception {
+    String wrongProtocol = actualProtocol.equals("ASTM") ? "HL7" : "ASTM";
+    publishHttpProfile(wrongProtocol);
+    ObjectNode wrong = activate("oe-wrong-protocol", "192.0.2.25");
+    String raw = socketMessage(actualProtocol, "CORRECTED-CONNECTION");
+    assertThat(postSocket(actualProtocol, raw, "192.0.2.25", null)).isNotEqualTo(200);
+    var receipt = outbox.store.list(OutboxQuery.inState(OutboxState.DMQ, 10)).get(0);
+    reopen();
+    outbox.store.requestRetry(receipt.id(), "operator-before-correction", Instant.now());
+    outbox.dispatcher.dispatchDue();
+    assertRetainedFailure(raw, FailureReason.CONNECTION_TRANSPORT_MISMATCH);
+    assertThat(received).isEmpty();
+    connections.applyRuntimeCommand(command(wrong, "DEACTIVATE"));
+    publishHttpProfile(actualProtocol);
+    ObjectNode corrected = activate("oe-corrected-protocol", "192.0.2.25");
+    Instant requested = Instant.now();
+    outbox.store.requestRetry(receipt.id(), "operator-after-correction", requested);
+    outbox.dispatcher.dispatchDue();
+    assertThat(received).hasSize(1);
+    assertSocketBundle(received.get(0), corrected, "CORRECTED-CONNECTION");
+    var delivered = outbox.store.list(OutboxQuery.inState(OutboxState.DELIVERED, 10)).get(0);
+    assertThat(delivered.connectionId()).isEqualTo(corrected.path("connectionId").asText());
+    assertThat(delivered.retryRequestedBy()).isEqualTo("operator-after-correction");
+    assertThat(delivered.retryRequestedAt()).isEqualTo(requested);
+    assertThat(outbox.store.rawPayload(delivered.id())).contains(raw);
+    assertThat(postSocket(actualProtocol, raw, "192.0.2.25", null)).isEqualTo(200);
+    outbox.dispatcher.dispatchDue();
+    assertThat(received).hasSize(1);
+  }
+
+  @Test
+  void sameProtocolOnWrongTransportStaysHeldAfterOperatorRetry() throws Exception {
+    publishHttpProfile("HL7");
+    activate("oe-http-only", "192.0.2.25");
+    String raw = socketMessage("HL7", "WRONG-TRANSPORT");
+    var envelope = org.itech.ahb.normalizer.MessageEnvelope.builder()
+      .protocol(org.itech.ahb.model.Protocol.HL7)
+      .transport(org.itech.ahb.model.Transport.MLLP)
+      .sourceId("192.0.2.25")
+      .sourcePort(19000)
+      .rawMessage(raw)
+      .receivedAt(Instant.now())
+      .build();
+    assertThat(
+      outbox.normalizer(new org.itech.ahb.normalizer.AnalyzerIdentifier(registry), registry).process(envelope)
+    ).isFalse();
+    assertRetainedFailure(raw, FailureReason.CONNECTION_TRANSPORT_MISMATCH);
+    var held = outbox.store.list(OutboxQuery.inState(OutboxState.DMQ, 10)).get(0);
+    reopen();
+    outbox.store.requestRetry(held.id(), "operator", Instant.now());
+    outbox.dispatcher.dispatchDue();
+    assertRetainedFailure(raw, FailureReason.CONNECTION_TRANSPORT_MISMATCH);
     assertThat(received).isEmpty();
   }
 

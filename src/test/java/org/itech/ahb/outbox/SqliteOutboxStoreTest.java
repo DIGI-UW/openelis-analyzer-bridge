@@ -398,6 +398,85 @@ class SqliteOutboxStoreTest {
     }
 
     @Test
+    @DisplayName("keeps the operator retry actor and time on every rendered delivery across restart")
+    void unrenderedRetryAuditSurvivesRenderingAndRestart() {
+      Receipt receipt = store.receive(astm(RAW_ASTM));
+      store.markDeadLettered(receipt.id(), FailureReason.UNREGISTERED_SOURCE, "not configured yet");
+      var security = org.springframework.security.core.context.SecurityContextHolder.getContext();
+      security.setAuthentication(
+        new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+          "site-operator",
+          "unused",
+          List.of()
+        )
+      );
+      try {
+        var admin = new org.itech.ahb.controller.OutboxAdminController(
+          store,
+          org.mockito.Mockito.mock(OutboxDispatcher.class),
+          new OutboxProperties()
+        );
+        assertEquals(200, admin.retry(receipt.id()).getStatusCode().value());
+      } finally {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+      }
+      var originalAudit = store.attempts(receipt.id()).get(0);
+      Instant requested = store.get(receipt.id()).orElseThrow().retryRequestedAt();
+      store.close();
+      store = new SqliteOutboxStore(dbPath);
+      store.markRendered(
+        receipt.id(),
+        List.of(delivery("astm-v1:audit-a", "ACC-1"), delivery("astm-v1:audit-b", "ACC-2"))
+      );
+      assertTrue(store.get(receipt.id()).isEmpty());
+      store.close();
+      store = new SqliteOutboxStore(dbPath);
+      for (String id : List.of("astm-v1:audit-a", "astm-v1:audit-b")) {
+        OutboxEntry result = store.get(id).orElseThrow();
+        assertEquals("site-operator", result.retryRequestedBy());
+        assertEquals(requested, result.retryRequestedAt());
+        assertEquals(OutboxState.PENDING, result.state());
+        assertEquals(RAW_ASTM, store.rawPayload(id).orElseThrow());
+        var history = store.attempts(id);
+        assertEquals(1, history.size(), "manual retry history must survive receipt deletion");
+        var audit = history.get(0);
+        assertEquals(OutboxAttempt.Kind.MANUAL, audit.kind());
+        assertEquals("site-operator", audit.actor());
+        assertEquals(originalAudit.startedAt(), audit.startedAt());
+        assertEquals(originalAudit.finishedAt(), audit.finishedAt());
+        assertEquals("REQUEUED", audit.outcome());
+        assertEquals(originalAudit.attemptNo(), audit.attemptNo());
+      }
+    }
+
+    @Test
+    @DisplayName("never exposes retry work when its operator audit cannot be committed")
+    void retryStateAndAuditCommitTogether() throws Exception {
+      Receipt receipt = store.receive(astm(RAW_ASTM));
+      store.markDeadLettered(receipt.id(), FailureReason.UNREGISTERED_SOURCE, "not configured yet");
+      try (
+        var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+        var statement = connection.createStatement()
+      ) {
+        statement.execute(
+          "CREATE TRIGGER reject_retry_audit BEFORE INSERT ON outbox_attempt " +
+          "BEGIN SELECT RAISE(ABORT, 'simulated audit storage failure'); END"
+        );
+      }
+      assertThrows(IllegalStateException.class, () -> store.requestRetry(receipt.id(), "site-operator", Instant.now()));
+      store.close();
+      store = new SqliteOutboxStore(dbPath);
+      OutboxEntry held = store.get(receipt.id()).orElseThrow();
+      assertEquals(OutboxState.DMQ, held.state());
+      assertEquals(FailureReason.UNREGISTERED_SOURCE, held.failureReason());
+      assertNull(held.retryRequestedBy());
+      assertNull(held.retryRequestedAt());
+      assertTrue(store.attempts(receipt.id()).isEmpty());
+      assertTrue(store.claimNextDue(Instant.now(), Duration.ofMinutes(2), "worker").isEmpty());
+      assertEquals(RAW_ASTM, store.rawPayload(receipt.id()).orElseThrow());
+    }
+
+    @Test
     @DisplayName("will not resurrect a delivered entry")
     void refusesToRetryDeliveredEntry() {
       receiveAndRender(RAW_ASTM, "astm-v1:a", "ACC-1");
