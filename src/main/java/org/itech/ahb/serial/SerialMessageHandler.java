@@ -40,6 +40,23 @@ public class SerialMessageHandler {
         this.normalizer = normalizer;
     }
 
+  /** The listener cannot acknowledge serial input before these callbacks have committed it. */
+  public SerialFrameBuffer frameBuffer(String sourceBindingId, String analyzerId, Protocol protocol) {
+    java.util.function.Function<String, MessageEnvelope> envelope = message ->
+      MessageEnvelope.builder()
+        .protocol(protocol)
+        .transport(Transport.SERIAL)
+        .sourceId(sourceBindingId)
+        .protocolAnalyzerHint(analyzerId)
+        .rawMessage(message)
+        .build();
+    return new SerialFrameBuffer(
+      protocol,
+      () -> normalizer.astmReceipt(envelope.apply(null)),
+      message -> normalizer.persistBeforeAcknowledgement(envelope.apply(message))
+    );
+  }
+
     /**
      * Handles a complete message received from a serial port.
      * <p>

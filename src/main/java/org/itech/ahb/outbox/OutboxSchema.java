@@ -12,7 +12,28 @@ final class OutboxSchema {
   private OutboxSchema() {}
 
   static List<SqliteSupport.Migration> migrations() {
-    return List.of(v1(), v2(), v3());
+    return List.of(v1(), v2(), v3(), v4());
+  }
+
+  private static SqliteSupport.Migration v4() {
+    return new SqliteSupport.Migration() {
+      public int version() {
+        return 4;
+      }
+
+      public String name() {
+        return "retain-acknowledged-astm-frames";
+      }
+
+      public void apply(Connection connection) throws SQLException {
+        try (Statement st = connection.createStatement()) {
+          st.execute(
+            "CREATE TABLE astm_wire_receipt (session_id TEXT NOT NULL, outbox_id TEXT NOT NULL REFERENCES outbox(id) ON DELETE CASCADE, frames BLOB NOT NULL, PRIMARY KEY(session_id,outbox_id))"
+          );
+          st.execute("CREATE INDEX idx_astm_wire_outbox ON astm_wire_receipt(outbox_id)");
+        }
+      }
+    };
   }
 
   /** Preserve the existing text table and references; add explicit lossless binary encoding and per-receipt context. */

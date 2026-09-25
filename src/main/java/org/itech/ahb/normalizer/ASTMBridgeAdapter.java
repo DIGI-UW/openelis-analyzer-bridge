@@ -162,7 +162,7 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      * saved Bridge connection remains routing authority; this value may
      * corroborate that connection and is retained in normalized audit context.
      */
-    private String extractSenderFromHRecord(String rawMessage) {
+    public static String extractSenderFromHRecord(String rawMessage) {
         if (rawMessage == null) return null;
         for (String line : rawMessage.split("\r")) {
             if (line.startsWith("H|")) {

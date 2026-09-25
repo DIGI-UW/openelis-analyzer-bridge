@@ -21,6 +21,15 @@ public interface OutboxStore extends AutoCloseable {
    */
   Receipt receive(ReceivedMessage message);
 
+  /** Commit acknowledged ASTM frames to a held, non-deliverable receipt. */
+  void receiveAstmFrames(String sessionId, ReceivedMessage source, byte[] frames);
+
+  /** Atomically replace an incomplete receipt with the normal deduplicated message and retain wire evidence. */
+  void completeAstmSession(String sessionId, ReceivedMessage message, boolean queryOnly);
+
+  /** Original acknowledged ASTM frames. Payload-access authorization and auditing apply. */
+  Optional<byte[]> astmFrames(String receiptId);
+
   /** Capture a file and its interpretation together; a changed interpretation of identical bytes is a conflict. */
   Receipt receiveFile(ReceivedFile file);
 
@@ -32,7 +41,6 @@ public interface OutboxStore extends AutoCloseable {
 
   /** Storage representation of rawPayload: UTF8 text or BASE64 for lossless binary files. */
   Optional<String> rawEncoding(String id);
-
 
   /**
    * Replace a RECEIVED row with one PENDING row per rendered delivery, in a single transaction, so a

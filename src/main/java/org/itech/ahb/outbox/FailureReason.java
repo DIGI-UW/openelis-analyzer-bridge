@@ -2,6 +2,8 @@ package org.itech.ahb.outbox;
 
 /** Why an entry is in the dead-message queue. Shown to operators and used to scope bulk retries. */
 public enum FailureReason {
+  /** Incomplete ASTM wire transmission. Retained frames are diagnostic only; ask the analyzer to retransmit. */
+  INCOMPLETE_TRANSMISSION,
   /** The source is not a saved, active analyzer connection. Register it, then retry. */
   UNREGISTERED_SOURCE,
   /**

@@ -83,10 +83,122 @@ public class SqliteOutboxStore implements OutboxStore {
     log.info("Delivery outbox opened at {} (WAL, synchronous=FULL, schema v{})", this.dbPath, version);
   }
 
+  /** Partial transmissions live in the ordinary DMQ but are never eligible for delivery retries. */
+  @Override
+  public synchronized void receiveAstmFrames(String sessionId, ReceivedMessage source, byte[] frames) {
+    String previousHash = get(sessionId).map(OutboxEntry::rawHash).orElse(null);
+    String hash = DeliveryIdentity.contentHash(frames);
+    String now = ts(Instant.now());
+    inTransaction(() -> {
+      try (
+        PreparedStatement st = conn.prepareStatement(
+          "INSERT INTO outbox_raw (raw_hash,raw_text,raw_charset,byte_length,created_at,raw_encoding) VALUES (?,?,?,?,?,'BASE64') ON CONFLICT(raw_hash) DO NOTHING"
+        )
+      ) {
+        st.setString(1, hash);
+        st.setString(2, java.util.Base64.getEncoder().encodeToString(frames));
+        st.setString(3, "ISO-8859-1");
+        st.setInt(4, frames.length);
+        st.setString(5, now);
+        st.executeUpdate();
+      }
+      try (
+        PreparedStatement st = conn.prepareStatement(
+          "INSERT INTO outbox (id,state,raw_hash,source_id,source_port,protocol,transport,protocol_hint,received_at,updated_at,listener_port,failure_reason,dmq_at,last_error) VALUES (?,'DMQ',?,?,?,'ASTM',?,?,?,?,?,'INCOMPLETE_TRANSMISSION',?,?) ON CONFLICT(id) DO UPDATE SET raw_hash=excluded.raw_hash,updated_at=excluded.updated_at"
+        )
+      ) {
+        st.setString(1, sessionId);
+        st.setString(2, hash);
+        st.setString(3, source.sourceId());
+        setNullableInt(st, 4, source.sourcePort());
+        st.setString(5, source.transport().name());
+        st.setString(6, source.protocolHint());
+        st.setString(7, ts(source.receivedAt()));
+        st.setString(8, now);
+        setNullableInt(st, 9, source.listenerPort());
+        st.setString(10, now);
+        st.setString(
+          11,
+          "Awaiting complete ASTM transmission (final ETX frame and EOT). If interrupted, request analyzer retransmission; partial data cannot be retried as results."
+        );
+        st.executeUpdate();
+      }
+      try (
+        PreparedStatement st = conn.prepareStatement(
+          "INSERT INTO astm_wire_receipt(session_id,outbox_id,frames) VALUES (?,?,?) ON CONFLICT(session_id,outbox_id) DO UPDATE SET frames=excluded.frames"
+        )
+      ) {
+        st.setString(1, sessionId);
+        st.setString(2, sessionId);
+        st.setBytes(3, frames);
+        st.executeUpdate();
+      }
+      if (previousHash != null && !previousHash.equals(hash)) {
+        try (
+          PreparedStatement st = conn.prepareStatement(
+            "DELETE FROM outbox_raw WHERE raw_hash=? AND NOT EXISTS (SELECT 1 FROM outbox WHERE raw_hash=?)"
+          )
+        ) {
+          st.setString(1, previousHash);
+          st.setString(2, previousHash);
+          st.executeUpdate();
+        }
+      }
+      return null;
+    });
+  }
+
+  @Override
+  public synchronized void completeAstmSession(String sessionId, ReceivedMessage message, boolean queryOnly) {
+    inTransaction(() -> {
+      if (!queryOnly) {
+        Receipt receipt = receiveWithinTransaction(message);
+        try (
+          PreparedStatement st = conn.prepareStatement("UPDATE astm_wire_receipt SET outbox_id=? WHERE session_id=?")
+        ) {
+          st.setString(1, receipt.id());
+          st.setString(2, sessionId);
+          st.executeUpdate();
+        }
+      }
+      // For queries there is no result to deliver. Their temporary frame receipt is removed only
+      // after a complete message is known. Results keep original wire evidence under the canonical receipt.
+      try (
+        PreparedStatement st = conn.prepareStatement(
+          "DELETE FROM outbox WHERE id=? AND failure_reason='INCOMPLETE_TRANSMISSION'"
+        )
+      ) {
+        st.setString(1, sessionId);
+        st.executeUpdate();
+      }
+      return null;
+    });
+  }
+
+  @Override
+  public synchronized Optional<byte[]> astmFrames(String receiptId) {
+    try (
+      PreparedStatement st = conn.prepareStatement(
+        "SELECT frames FROM astm_wire_receipt WHERE outbox_id=? ORDER BY session_id LIMIT 1"
+      )
+    ) {
+      st.setString(1, receiptId);
+      try (ResultSet rs = st.executeQuery()) {
+        return rs.next() ? Optional.of(rs.getBytes(1)) : Optional.empty();
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException("Cannot read ASTM wire receipt", e);
+    }
+  }
+
   // ---------------------------------------------------------------- receive
 
   @Override
   public synchronized Receipt receive(ReceivedMessage message) {
+    return inTransaction(() -> receiveWithinTransaction(message));
+  }
+
+  private Receipt receiveWithinTransaction(ReceivedMessage message) throws SQLException {
     if (message.rawText() == null || message.rawText().isEmpty()) {
       throw new IllegalArgumentException("cannot persist an empty message");
     }
@@ -94,47 +206,46 @@ public class SqliteOutboxStore implements OutboxStore {
     String id = RECEIPT_PREFIX + ":" + DeliveryIdentity.contentHash(message.sourceId() + "\u0000" + rawHash);
     Instant receivedAt = message.receivedAt() == null ? Instant.now() : message.receivedAt();
     String now = ts(Instant.now());
-    return inTransaction(() -> {
-      try (
-        PreparedStatement raw = conn.prepareStatement(
-          "INSERT INTO outbox_raw (raw_hash, raw_text, raw_charset, byte_length, created_at) " +
-          "VALUES (?, ?, ?, ?, ?) ON CONFLICT(raw_hash) DO NOTHING"
-        )
-      ) {
-        raw.setString(1, rawHash);
-        raw.setString(2, message.rawText());
-        raw.setString(3, message.rawCharset() == null ? StandardCharsets.UTF_8.name() : message.rawCharset());
-        raw.setInt(4, message.rawText().getBytes(StandardCharsets.UTF_8).length);
-        raw.setString(5, now);
-        raw.executeUpdate();
-      }
-      int inserted;
-      try (
-        PreparedStatement entry = conn.prepareStatement(
-          "INSERT INTO outbox (id, state, raw_hash, source_id, source_port, protocol, transport, protocol_hint, " +
-          "received_at, lease_until, lease_owner, updated_at, listener_port) " +
-          "VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
-        )
-      ) {
-        entry.setString(1, id);
-        entry.setString(2, rawHash);
-        entry.setString(3, message.sourceId());
-        setNullableInt(entry, 4, message.sourcePort());
-        entry.setString(5, message.protocol() == null ? Protocol.UNKNOWN.name() : message.protocol().name());
-        entry.setString(6, message.transport() == null ? "UNKNOWN" : message.transport().name());
-        entry.setString(7, message.protocolHint());
-        entry.setString(8, ts(receivedAt));
-        // Leased to the thread that received it. Rendering happens next, on this thread, and the
-        // dispatcher must not claim the row and render it concurrently. If this process dies before
-        // rendering, the lease expires and the dispatcher recovers the message instead.
-        entry.setString(9, ts(Instant.now().plus(RENDER_LEASE)));
-        entry.setString(10, RECEIVE_OWNER);
-        entry.setString(11, now);
-        setNullableInt(entry, 12, message.listenerPort());
-        inserted = entry.executeUpdate();
-      }
-      return new Receipt(id, rawHash, inserted == 0);
-    });
+
+    try (
+      PreparedStatement raw = conn.prepareStatement(
+        "INSERT INTO outbox_raw (raw_hash, raw_text, raw_charset, byte_length, created_at) " +
+        "VALUES (?, ?, ?, ?, ?) ON CONFLICT(raw_hash) DO NOTHING"
+      )
+    ) {
+      raw.setString(1, rawHash);
+      raw.setString(2, message.rawText());
+      raw.setString(3, message.rawCharset() == null ? StandardCharsets.UTF_8.name() : message.rawCharset());
+      raw.setInt(4, message.rawText().getBytes(StandardCharsets.UTF_8).length);
+      raw.setString(5, now);
+      raw.executeUpdate();
+    }
+    int inserted;
+    try (
+      PreparedStatement entry = conn.prepareStatement(
+        "INSERT INTO outbox (id, state, raw_hash, source_id, source_port, protocol, transport, protocol_hint, " +
+        "received_at, lease_until, lease_owner, updated_at, listener_port) " +
+        "VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+      )
+    ) {
+      entry.setString(1, id);
+      entry.setString(2, rawHash);
+      entry.setString(3, message.sourceId());
+      setNullableInt(entry, 4, message.sourcePort());
+      entry.setString(5, message.protocol() == null ? Protocol.UNKNOWN.name() : message.protocol().name());
+      entry.setString(6, message.transport() == null ? "UNKNOWN" : message.transport().name());
+      entry.setString(7, message.protocolHint());
+      entry.setString(8, ts(receivedAt));
+      // Leased to the thread that received it. Rendering happens next, on this thread, and the
+      // dispatcher must not claim the row and render it concurrently. If this process dies before
+      // rendering, the lease expires and the dispatcher recovers the message instead.
+      entry.setString(9, ts(Instant.now().plus(RENDER_LEASE)));
+      entry.setString(10, RECEIVE_OWNER);
+      entry.setString(11, now);
+      setNullableInt(entry, 12, message.listenerPort());
+      inserted = entry.executeUpdate();
+    }
+    return new Receipt(id, rawHash, inserted == 0);
   }
 
   @Override
@@ -273,6 +384,15 @@ public class SqliteOutboxStore implements OutboxStore {
               delivery.accession()
             );
           }
+        }
+        try (
+          PreparedStatement wire = conn.prepareStatement(
+            "INSERT INTO astm_wire_receipt(session_id,outbox_id,frames) SELECT session_id,?,frames FROM astm_wire_receipt WHERE outbox_id=? ON CONFLICT(session_id,outbox_id) DO NOTHING"
+          )
+        ) {
+          wire.setString(1, delivery.deliveryId());
+          wire.setString(2, receiptId);
+          wire.executeUpdate();
         }
         // Receipt deletion cascades to its events. Carry them to each resulting delivery
         // in this transaction, including a deduplicated delivery that already exists.
@@ -496,6 +616,9 @@ public class SqliteOutboxStore implements OutboxStore {
 
   @Override
   public synchronized void requestRetry(String id, String actor, Instant now) {
+    if (get(id).map(entry -> entry.failureReason() == FailureReason.INCOMPLETE_TRANSMISSION).orElse(false)) {
+      throw new IllegalStateException("Incomplete ASTM transmission requires analyzer retransmission");
+    }
     String nowTs = ts(now);
     // A message that was never rendered (its source was unregistered or ambiguous, say) goes back to
     // RECEIVED, so the dispatcher renders it against the corrected configuration instead of finding

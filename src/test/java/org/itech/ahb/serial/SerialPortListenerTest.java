@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 class SerialPortListenerTest {
 
-  private final SerialMessageHandler handler = mock(SerialMessageHandler.class);
+  private final SerialMessageHandler handler = new SerialMessageHandler(mock(org.itech.ahb.normalizer.MessageNormalizer.class));
   private SerialPortListener listeners;
 
   @AfterEach

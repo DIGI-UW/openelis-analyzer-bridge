@@ -240,6 +240,21 @@ class SerialSavedRecoveryTest {
       byte[] bytes = frame.toByteArray();
       assertEquals(bytes.length, port.writeBytes(bytes, bytes.length));
       ack(port);
+      var held = outbox.store.list(
+        new org.itech.ahb.outbox.OutboxQuery(
+          org.itech.ahb.outbox.OutboxState.DMQ,
+          null,
+          org.itech.ahb.outbox.FailureReason.INCOMPLETE_TRANSMISSION,
+          false,
+          100,
+          0
+        )
+      );
+      assertEquals(1, held.size());
+      org.junit.jupiter.api.Assertions.assertArrayEquals(
+        bytes,
+        outbox.store.astmFrames(held.getFirst().id()).orElseThrow()
+      );
       assertEquals(1, port.writeBytes(new byte[] { 4 }, 1));
     } finally {
       port.closePort();

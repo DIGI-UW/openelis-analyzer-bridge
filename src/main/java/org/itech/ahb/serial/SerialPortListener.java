@@ -213,7 +213,11 @@ public final class SerialPortListener implements SerialConnectionListeners {
     }
 
     managed.port = port;
-    managed.frameBuffer = new SerialFrameBuffer(protocol(settings.protocol()));
+    managed.frameBuffer = messageHandler.frameBuffer(
+      managed.sourceBindingId,
+      managed.analyzerId,
+      protocol(settings.protocol())
+    );
     boolean installed = port.addDataListener(
       new SerialPortDataListener() {
         @Override
@@ -340,6 +344,7 @@ public final class SerialPortListener implements SerialConnectionListeners {
       return;
     }
     try {
+      if (managed.frameBuffer != null) managed.frameBuffer.reset();
       managed.port.removeDataListener();
       managed.port.closePort();
     } finally {
