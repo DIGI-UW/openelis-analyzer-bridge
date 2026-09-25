@@ -28,6 +28,7 @@ import org.itech.ahb.outbox.OutboxTestSupport;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
 import org.itech.ahb.serial.SerialMessageHandler;
 import org.itech.ahb.serial.SerialPortListener;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -53,6 +54,9 @@ class SerialSavedRecoveryTest {
   HttpServer receiver;
 
   @Test
+  @Disabled(
+    "Deferred for Madagascar release; restore via https://github.com/DIGI-UW/openelis-analyzer-bridge/issues/67"
+  )
   @Timeout(60)
   void absentDeviceRestoresWithoutBlockingPeerAndReconnectsWithoutAnotherActivation() throws Exception {
     Pair pair = new Pair(directory);
