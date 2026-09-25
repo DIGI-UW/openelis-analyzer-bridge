@@ -46,7 +46,7 @@ connection() {
 
 values() {
     jq --null-input --compact-output --arg host "${1:-}" --arg sender "${2:-}" '
-        {transport: "TCP/IP", connectionRole: "SERVER", port: 12001}
+        {transport: "TCP/IP", connectionRole: "SERVER"}
         + (if $host == "" then {} else {host: $host} end)
         + (if $sender == "" then {} else {senderId: $sender} end)'
 }
@@ -109,20 +109,20 @@ deactivate_connection "${by_sender_a}"
 deactivate_connection "${by_sender_b}"
 echo "   held as UNREGISTERED_SOURCE with its payload."
 
-echo "4. Two connections behind one address, and a result that names neither, is held as ambiguous..."
+echo "4. One unnamed and one named connection behind one address keep distinct ownership..."
 connection shared-address-a "$(values "${MOCK_A}")"; shared_a="${CONNECTION_ID}"
 connection shared-address-b "$(values "${MOCK_A}" "GX-LAB-B")"; shared_b="${CONNECTION_ID}"
 activate_connection "${shared_a}"
 activate_connection "${shared_b}"
-# A blank System Name: the analyzer sent no name that could separate the two.
+# A blank System Name cannot belong to the connection that requires GX-LAB-B.
+# Only the connection without a sender constraint is eligible.
 send "${BRIDGE_A}" "${MOCK_A}" " " "$(accession 6)"
-ambiguous="$(wait_for_dead_letter AMBIGUOUS_SOURCE "${shared_a}" "${shared_b}")"
-assert_held_payload "${ambiguous}" "$(accession 6)"
+assert_normalized_capture "${shared_a}" "${PROFILE}" "MTB-RIF" "TCP"
 send "${BRIDGE_A}" "${MOCK_A}" "GX-LAB-B" "$(accession 7)"
 assert_normalized_capture "${shared_b}" "${PROFILE}" "MTB-RIF" "TCP"
 deactivate_connection "${shared_a}"
 deactivate_connection "${shared_b}"
-echo "   held as AMBIGUOUS_SOURCE naming both; the named instrument still reached its connection."
+echo "   unnamed traffic reached the unconstrained connection; named traffic reached its own connection."
 
 echo "5. A second connection no message could be told apart from is refused at activation..."
 connection twin-a "$(values)"; twin_a="${CONNECTION_ID}"
