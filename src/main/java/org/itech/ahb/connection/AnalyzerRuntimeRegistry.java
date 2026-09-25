@@ -480,6 +480,10 @@ public class AnalyzerRuntimeRegistry {
     /** Profile-owned selection of ASTM R records that carry reportable results. */
     private AstmResultRecordSelection astmResultRecordSelection;
 
+    /** Specimen group layout materialized only from the pinned HL7 profile. */
+    private org.itech.ahb.profile.Hl7SpecimenPosition hl7SpecimenPosition =
+      org.itech.ahb.profile.Hl7SpecimenPosition.PRECEDING;
+
     /**
      * Analyzer test_code → LOINC mapping materialized from the pinned profile's
      * {@code default_test_mappings}. This is the bridge's authority for translation:

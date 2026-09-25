@@ -10,6 +10,7 @@ import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.profile.ControlRecognitionRule;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.ControlResultRecognitionEvaluator;
+import org.itech.ahb.profile.Hl7SpecimenPosition;
 
 /**
  * Extracts lab results from HL7 v2 ORU^R01 messages.
@@ -45,6 +46,16 @@ public class HL7ResultParser {
    * @return parsed results with accession, or null if no results found
    */
   public static ParsedResults parse(List<String> segmentLines, ControlResultRecognition recognition) {
+    return parse(segmentLines, recognition, Hl7SpecimenPosition.PRECEDING);
+  }
+
+  /** FOLLOWING_OBX binds only the following SPM to an observation; other evidence is captured at OBX. */
+  public static ParsedResults parse(
+    List<String> segmentLines,
+    ControlResultRecognition recognition,
+    Hl7SpecimenPosition specimenPosition
+  ) {
+    java.util.Objects.requireNonNull(specimenPosition, "specimenPosition");
     if (segmentLines == null || segmentLines.isEmpty()) {
       return null;
     }
@@ -53,15 +64,26 @@ public class HL7ResultParser {
     Map<String, String> fieldValues = new HashMap<>();
     List<AnalyzerResult> results = new ArrayList<>();
     Delimiters delimiters = new Delimiters('|', '^', '~', '&');
+    PendingObservation pending = null;
 
     for (String line : segmentLines) {
       if (line == null || line.length() < 4) continue;
       String segment = line.substring(0, 3);
+      if (pending != null && List.of("OBX", "OBR", "ORC", "PID", "MSH").contains(segment)) {
+        results.add(recognize(pending.result(), pending.specimenId(), pending.fields(), recognition));
+        pending = null;
+      }
+      if (specimenPosition == Hl7SpecimenPosition.FOLLOWING_OBX && "OBX".equals(segment)) {
+        fieldValues.keySet().removeIf(key -> key.startsWith("SPM."));
+      }
       if ("MSH".equals(segment) && line.length() >= 8) {
         delimiters = new Delimiters(line.charAt(3), line.charAt(4), line.charAt(5), line.charAt(7));
       }
       if (line.charAt(3) != delimiters.field()) continue;
       extractRecognitionFields(line, segment, delimiters, fieldValues);
+      if (pending != null && "SPM".equals(segment)) {
+        extractRecognitionFields(line, segment, delimiters, pending.fields());
+      }
 
       if ("OBR".equals(segment)) {
         accession = parseAccessionFromOBR(line, delimiters);
@@ -71,26 +93,40 @@ public class HL7ResultParser {
         AnalyzerResult result = parseObxSegment(line, delimiters);
         if (result != null) {
           String specimenId = actualAccession(accession, fieldValues, delimiters);
-          ControlResultRecognitionEvaluator.Assessment assessment = ControlResultRecognitionEvaluator.evaluate(
-            recognition,
-            specimenId,
-            fieldValues
-          );
-          result = result.withControlRecognition(assessment);
-          if (assessment.matchedRule().isPresent()) {
-            ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
-            result = result.withControl(true).withControlLevel(rule.controlLevel()).withControlType(rule.controlType());
+          if (specimenPosition == Hl7SpecimenPosition.FOLLOWING_OBX) {
+            pending = new PendingObservation(result, specimenId, new HashMap<>(fieldValues));
+          } else {
+            results.add(recognize(result, specimenId, fieldValues, recognition));
           }
-          results.add(result);
         }
       }
     }
 
+    if (pending != null) {
+      results.add(recognize(pending.result(), pending.specimenId(), pending.fields(), recognition));
+    }
     accession = actualAccession(accession, fieldValues, delimiters);
     // Recognition already used instrument evidence, never this display-only fallback.
     if (accession == null) accession = "HL7-UNKNOWN";
 
     return results.isEmpty() ? null : new ParsedResults(accession, results);
+  }
+
+  private record PendingObservation(AnalyzerResult result, String specimenId, Map<String, String> fields) {}
+
+  private static AnalyzerResult recognize(
+    AnalyzerResult result,
+    String specimenId,
+    Map<String, String> fields,
+    ControlResultRecognition recognition
+  ) {
+    var assessment = ControlResultRecognitionEvaluator.evaluate(recognition, specimenId, fields);
+    result = result.withControlRecognition(assessment);
+    if (assessment.matchedRule().isPresent()) {
+      ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
+      result = result.withControl(true).withControlLevel(rule.controlLevel()).withControlType(rule.controlType());
+    }
+    return result;
   }
 
   private static String actualAccession(String accession, Map<String, String> fields, Delimiters delimiters) {
@@ -103,7 +139,7 @@ public class HL7ResultParser {
 
   /**
    * Replace the segment's prior fields, including absent trailing components.
-   * Recognition runs at each OBX, so later observations/orders cannot rewrite
+   * Recognition captures each OBX, so later observations/orders cannot rewrite
    * earlier results. Whole fields retain raw repetitions; component references
    * select the first repetition, as the profile path has no repetition index.
    */
