@@ -210,11 +210,27 @@ for remaining claims, including uploads running on request threads. A timeout or
 interruption reports incomplete shutdown; it does not release those claims or
 report successful cancellation. Do not treat this failure as a completed drain.
 
-Pending retry timers are cancelled without clearing their persisted state or
-deadlines. On process restart, restored connections rediscover source files and
-resume according to that state. A stopped watcher instance cannot be restarted
-or accept new registrations; recovery creates a new service instance. Preserve
-both the source directories and the configured state database across restarts.
+Both watched files and manual uploads commit their exact original bytes, pinned
+profile identity, parser settings and selected assay to the common outbox before
+reporting receipt. Parsing and OpenELIS delivery run from that retained receipt.
+After receipt, deletion or renaming of the source file does not prevent recovery.
+Partial delivery retries only outstanding accessions; an unacknowledged delivery
+keeps its identifier and payload. Exhausted delivery stays in the common dead
+message queue for operator retry. Preserve the outbox volume across restarts.
+
+The separate FILE state database tracks discovery: `PROCESSED` means durably
+queued, not accepted by OpenELIS. Its retry timers cover failures before durable
+capture. Preserve source files and discovery state for files not yet received.
+An upload never overwrites an existing same-name source file; its optional source
+copy may be skipped after the uploaded bytes have been queued. An explicit
+upload uses the selected active connection independently of its discovery glob.
+
+On upgrade, old unresolved `RETRYING` discovery rows are held as
+`FAILED_NEEDS_HANDLING`. Older releases did not retain original bytes or manual
+assay choices, so operators must re-upload the original with its verified assay.
+Existing paths, attempt counts and errors are retained. Missing historical bytes
+or selections cannot be reconstructed. New receipts recover automatically from
+the outbox. A stopped watcher cannot be restarted; recovery creates a new instance.
 
 ### Analyzer Identification
 
@@ -594,9 +610,16 @@ who made it, and a deployment can switch that endpoint off with
 
 An operator retry re-sends the stored bundle as-is. A message that was never
 rendered (unregistered or ambiguous source, for example) has no bundle yet, so a
-retry renders it against the current configuration first. Retries triggered by
-the dispatcher never re-render, so the identity OpenELIS deduplicates on cannot
-change between attempts.
+retry resolves its source against the current configuration first. FILE receipts
+instead retain their original parser context and selected assay; they never
+reinterpret a source path or a changed live profile. Once rendered, retries send
+the stored bundle, preserving the identity OpenELIS deduplicates on.
+
+The payload endpoint identifies raw storage with `X-Bridge-Payload-Encoding`
+(`UTF8` or `BASE64`). With payload access enabled, authenticated operators can
+retrieve exact FILE bytes from `GET /admin/outbox/{id}/raw-file`. Access is audited.
+Resetting discovery state does not remove queued deliveries or their deduplication
+identity.
 
 #### If the outbox database is lost
 

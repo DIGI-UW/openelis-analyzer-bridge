@@ -177,11 +177,36 @@ public class OutboxAdminController {
           payload.length()
         );
         return ResponseEntity.ok()
+          .header("X-Bridge-Payload-Encoding", fhir ? "UTF8" : store.rawEncoding(id).orElse("UTF8"))
           .contentType(fhir ? MediaType.valueOf("application/fhir+json") : MediaType.TEXT_PLAIN)
           .body(payload);
       }).orElseGet(
         () -> ResponseEntity.status(404).body("No " + (fhir ? "rendered" : "received") + " payload for " + id)
       );
+  }
+
+  /** Audited lossless download of a retained FILE receipt; the same payload-access switch applies. */
+  @GetMapping("/{id}/raw-file")
+  public ResponseEntity<byte[]> rawFile(@PathVariable String id, HttpServletRequest request) {
+    if (!properties.isPayloadAccessEnabled() || store.fileContext(id).isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+    return store
+      .rawBytes(id)
+      .map(bytes -> {
+        log.warn(
+          "OUTBOX_AUDIT action=PAYLOAD_READ id={} part=raw-file actor={} remote={} bytes={}",
+          id,
+          actor(),
+          request.getRemoteAddr(),
+          bytes.length
+        );
+        return ResponseEntity.ok()
+          .contentType(MediaType.APPLICATION_OCTET_STREAM)
+          .header("Content-Disposition", "attachment; filename=analyzer-input.bin")
+          .body(bytes);
+      })
+      .orElseGet(() -> ResponseEntity.notFound().build());
   }
 
   /** Send one held result again, now. */

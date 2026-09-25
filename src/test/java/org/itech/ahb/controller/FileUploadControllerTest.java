@@ -50,7 +50,7 @@ import org.springframework.mock.web.MockMultipartFile;
  * <p><b>Gap analysis:</b> before these tests landed, {@code
  * FileUploadController} had zero controller-level test coverage. The bug
  * Copilot flagged (pre-marking a row as {@code PROCESSED} before writing the
- * file, so that a {@code processFile} failure leaves the row permanently
+ * file, so that a {@code receiveBytes} failure leaves the row permanently
  * PROCESSED and FileWatcher skips the file forever) was invisible because no
  * test ever exercised the failure paths. This class fills that gap.
  */
@@ -76,6 +76,8 @@ class FileUploadControllerTest {
     void setUp() throws Exception {
         registry = org.mockito.Mockito.mock(AnalyzerRuntimeRegistry.class);
         fileMessageHandler = org.mockito.Mockito.mock(FileMessageHandler.class);
+        when(fileMessageHandler.receiveBytes(any(), anyString(), any(), any(byte[].class)))
+                .thenReturn(org.itech.ahb.normalizer.MessageEnvelope.builder().outboxReceiptId("retained-receipt").build());
         scanner = org.mockito.Mockito.mock(FileNameSelfDeclarationScanner.class);
         fileWatcher = org.mockito.Mockito.mock(FileWatcher.class);
         stateStore = org.mockito.Mockito.mock(FileStateStore.class);
@@ -117,8 +119,8 @@ class FileUploadControllerTest {
         assertEquals("saved directory evidence", java.nio.file.Files.readString(tempDir.resolve(FILENAME)));
         assertFalse(java.nio.file.Files.exists(tempDir.resolve("registration-only#connection-42")));
         assertEquals(tempDir.toString(), controller.listFileAnalyzers().getBody().get(0).get("watchDirectory"));
-        verify(fileMessageHandler).processFile(eq(tempDir.resolve(FILENAME)), eq(ANALYZER_ID),
-                eq(TEST_CODE), any(FileMessageHandler.ProgressCallback.class));
+        verify(fileMessageHandler).receiveBytes(eq(tempDir.resolve(FILENAME)), eq(ANALYZER_ID),
+                eq(TEST_CODE), any(byte[].class));
     }
 
     @Nested
@@ -126,12 +128,12 @@ class FileUploadControllerTest {
     class HappyPath {
 
         @Test
-        @DisplayName("Pre-registers RETRYING + lease, then calls processFile, then marks PROCESSED")
+        @DisplayName("Pre-registers RETRYING + lease, then calls receiveBytes, then marks PROCESSED")
         void successfulUpload_transitionsRetryingThenProcessed() throws Exception {
             MockMultipartFile file = multipart("accession,result\nA1,5.0\n");
             MockHttpServletResponse response = new MockHttpServletResponse();
 
-            // processFile returns normally (no exception)
+            // receiveBytes returns normally (no exception)
 
             controller.uploadFile(ANALYZER_ID, TEST_CODE, file, response);
 
@@ -147,9 +149,9 @@ class FileUploadControllerTest {
             assertTrue(leaseCap.getValue().isBefore(Instant.now().plusSeconds(3600)),
                     "lease must be bounded (< 1h) to avoid indefinite ownership");
 
-            // 2. processFile with the admin's declared test code
-            order.verify(fileMessageHandler).processFile(any(Path.class), eq(ANALYZER_ID),
-                    eq(TEST_CODE), any(FileMessageHandler.ProgressCallback.class));
+            // 2. receiveBytes with the admin's declared test code
+            order.verify(fileMessageHandler).receiveBytes(any(Path.class), eq(ANALYZER_ID),
+                    eq(TEST_CODE), any(byte[].class));
 
             // 3. markProcessed — clears the lease and promotes to PROCESSED
             order.verify(stateStore).markProcessed(eq(ANALYZER_ID), anyString(), any(Path.class));
@@ -160,31 +162,31 @@ class FileUploadControllerTest {
         }
 
         @Test
-        @DisplayName("Null testCode is passed through to processFile (per-row test labels path)")
+        @DisplayName("Null testCode is passed through to receiveBytes (per-row test labels path)")
         void nullTestCode_passesThroughToProcessFile() throws Exception {
             MockMultipartFile file = multipart("x");
             MockHttpServletResponse response = new MockHttpServletResponse();
 
             controller.uploadFile(ANALYZER_ID, null, file, response);
 
-            verify(fileMessageHandler).processFile(any(Path.class), eq(ANALYZER_ID),
-                    eq(null), any(FileMessageHandler.ProgressCallback.class));
+            verify(fileMessageHandler).receiveBytes(any(Path.class), eq(ANALYZER_ID),
+                    eq(null), any(byte[].class));
         }
     }
 
     @Nested
-    @DisplayName("processFile failure — hand off to FileWatcher retry loop, do not mark PROCESSED")
+    @DisplayName("receipt failure — reject without creating a watched file")
     class ProcessFileFailure {
 
         @Test
-        @DisplayName("FileProcessingException clears the lease so FileWatcher picks up the file")
+        @DisplayName("Failed receipt is rejected before a watched file exists")
         void fileProcessingException_clearsLeaseAndDoesNotMarkProcessed() throws Exception {
             MockMultipartFile file = multipart("x");
             MockHttpServletResponse response = new MockHttpServletResponse();
 
             doThrow(new FileProcessingException("parse error: missing header row"))
-                    .when(fileMessageHandler).processFile(any(Path.class), anyString(),
-                            any(), any(FileMessageHandler.ProgressCallback.class));
+                    .when(fileMessageHandler).receiveBytes(any(Path.class), anyString(),
+                            any(), any(byte[].class));
 
             controller.uploadFile(ANALYZER_ID, TEST_CODE, file, response);
 
@@ -196,35 +198,27 @@ class FileUploadControllerTest {
             // skips the file forever, silent data loss.
             verify(stateStore, never()).markProcessed(anyString(), anyString(), any(Path.class));
 
-            // Lease cleared (null) so FileWatcher's next polling cycle picks
-            // up the file via its existing retry infrastructure.
-            ArgumentCaptor<Instant> leaseCap = ArgumentCaptor.forClass(Instant.class);
-            verify(stateStore, org.mockito.Mockito.atLeastOnce())
-                    .setNextAttemptAt(eq(ANALYZER_ID), anyString(), leaseCap.capture());
-            // Last value passed must be null (the failure-path clear)
-            assertEquals(null, leaseCap.getAllValues().get(leaseCap.getAllValues().size() - 1),
-                    "last setNextAttemptAt must be null — failure must clear the lease to release "
-                            + "the file back to FileWatcher");
+            assertEquals(500, response.getStatus());
+            assertFalse(java.nio.file.Files.exists(tempDir.resolve(FILENAME)),
+                    "failed receipt must not create a watched file that loses the selected assay");
         }
 
         @Test
-        @DisplayName("IOException from processFile also clears the lease")
+        @DisplayName("Storage failure refuses upload and leaves no watched copy")
         void ioException_clearsLeaseAndDoesNotMarkProcessed() throws Exception {
             MockMultipartFile file = multipart("x");
             MockHttpServletResponse response = new MockHttpServletResponse();
 
             doThrow(new IOException("disk full mid-process"))
-                    .when(fileMessageHandler).processFile(any(Path.class), anyString(),
-                            any(), any(FileMessageHandler.ProgressCallback.class));
+                    .when(fileMessageHandler).receiveBytes(any(Path.class), anyString(),
+                            any(), any(byte[].class));
 
             controller.uploadFile(ANALYZER_ID, TEST_CODE, file, response);
 
             verify(stateStore, never()).markProcessed(anyString(), anyString(), any(Path.class));
 
-            ArgumentCaptor<Instant> leaseCap = ArgumentCaptor.forClass(Instant.class);
-            verify(stateStore, org.mockito.Mockito.atLeastOnce())
-                    .setNextAttemptAt(eq(ANALYZER_ID), anyString(), leaseCap.capture());
-            assertEquals(null, leaseCap.getAllValues().get(leaseCap.getAllValues().size() - 1));
+            assertEquals(500, response.getStatus());
+            assertFalse(java.nio.file.Files.exists(tempDir.resolve(FILENAME)));
         }
     }
 
@@ -233,7 +227,7 @@ class FileUploadControllerTest {
     class PreMarkFailure {
 
         @Test
-        @DisplayName("upsertRetrying throws → 500, file not written, processFile not called")
+        @DisplayName("upsertRetrying throws → 500, file not written, receiveBytes not called")
         void preMarkThrows_refusesUpload() throws Exception {
             MockMultipartFile file = multipart("x");
             MockHttpServletResponse response = new MockHttpServletResponse();
@@ -249,9 +243,9 @@ class FileUploadControllerTest {
             assertEquals(500, response.getStatus(),
                     "pre-mark failure must write HTTP 500 to the response");
 
-            // processFile must NOT have been called (file not claimed → don't process)
-            verify(fileMessageHandler, never()).processFile(any(Path.class), anyString(),
-                    any(), any(FileMessageHandler.ProgressCallback.class));
+            // receiveBytes must NOT have been called (file not claimed → don't process)
+            verify(fileMessageHandler, never()).receiveBytes(any(Path.class), anyString(),
+                    any(), any(byte[].class));
 
             // And we never reached markProcessed
             verify(stateStore, never()).markProcessed(anyString(), anyString(), any(Path.class));
@@ -269,7 +263,7 @@ class FileUploadControllerTest {
             // If someone reverts to markProcessed-as-pre-mark, this test fails
             // loudly: happy-path would then show markProcessed called TWICE
             // (once as pre-mark, once as post-success), and the pre-mark call
-            // would happen before processFile instead of after.
+            // would happen before receiveBytes instead of after.
             MockMultipartFile file = multipart("x");
             MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -277,11 +271,11 @@ class FileUploadControllerTest {
 
             InOrder order = inOrder(stateStore, fileMessageHandler);
             order.verify(stateStore).upsertRetrying(anyString(), anyString(), any(Path.class));
-            order.verify(fileMessageHandler).processFile(any(Path.class), anyString(),
-                    any(), any(FileMessageHandler.ProgressCallback.class));
+            order.verify(fileMessageHandler).receiveBytes(any(Path.class), anyString(),
+                    any(), any(byte[].class));
             order.verify(stateStore).markProcessed(anyString(), anyString(), any(Path.class));
 
-            // Exactly one markProcessed call, and it happened AFTER processFile.
+            // Exactly one markProcessed call, and it happened AFTER receiveBytes.
             verify(stateStore, org.mockito.Mockito.times(1))
                     .markProcessed(anyString(), anyString(), any(Path.class));
         }

@@ -21,6 +21,19 @@ public interface OutboxStore extends AutoCloseable {
    */
   Receipt receive(ReceivedMessage message);
 
+  /** Capture a file and its interpretation together; a changed interpretation of identical bytes is a conflict. */
+  Receipt receiveFile(ReceivedFile file);
+
+  /** Receipt-time FILE parser context. Contains clinical metadata; callers must audit access. */
+  Optional<String> fileContext(String id);
+
+  /** Exact received bytes. Binary FILE input is never decoded as text. Callers must audit access. */
+  Optional<byte[]> rawBytes(String id);
+
+  /** Storage representation of rawPayload: UTF8 text or BASE64 for lossless binary files. */
+  Optional<String> rawEncoding(String id);
+
+
   /**
    * Replace a RECEIVED row with one PENDING row per rendered delivery, in a single transaction, so a
    * crash mid-render leaves either the recoverable original or the complete deliverables.

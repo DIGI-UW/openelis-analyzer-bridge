@@ -12,7 +12,31 @@ final class OutboxSchema {
   private OutboxSchema() {}
 
   static List<SqliteSupport.Migration> migrations() {
-    return List.of(v1(), v2());
+    return List.of(v1(), v2(), v3());
+  }
+
+  /** Preserve the existing text table and references; add explicit lossless binary encoding and per-receipt context. */
+  private static SqliteSupport.Migration v3() {
+    return new SqliteSupport.Migration() {
+      @Override
+      public int version() {
+        return 3;
+      }
+
+      @Override
+      public String name() {
+        return "retain-file-bytes-and-context";
+      }
+
+      @Override
+      public void apply(Connection connection) throws SQLException {
+        try (Statement st = connection.createStatement()) {
+          st.execute("ALTER TABLE outbox_raw ADD COLUMN raw_encoding TEXT NOT NULL DEFAULT 'UTF8'");
+          st.execute("ALTER TABLE outbox ADD COLUMN file_context TEXT");
+          st.execute("ALTER TABLE outbox ADD COLUMN file_interpretation_hash TEXT");
+        }
+      }
+    };
   }
 
   /** 3.2.0: the shared listener a message arrived on, needed to resolve its connection again on retry. */

@@ -159,7 +159,8 @@ class OutboundOrderControllerTest {
       connection
         .putObject("profileRef")
         .put("profileId", profile.path("profileMeta").path("id").asText())
-        .put("revision", profile.path("catalog").path("revision").asInt());
+        .put("revision", profile.path("catalog").path("revision").asInt())
+        .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
       connection.putObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
       connection.withObject("values").put("connectionRole", "CLIENT").put("host", "192.0.2.10").put("port", port);
       runtime.activate(connection, profile);
@@ -187,7 +188,8 @@ class OutboundOrderControllerTest {
       .put("connectionId", "results-only")
       .put("clientAnalyzerId", "oe-results-only")
       .put("displayName", "Results only");
-    connection.putObject("profileRef").put("profileId", "genexpert-astm").put("revision", 5);
+    connection.putObject("profileRef").put("profileId", "genexpert-astm").put("revision", 5)
+      .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     connection.putObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     connection.withObject("values").put("connectionRole", role).put("host", "192.0.2.10").put("port", 9101);
     new BridgeAnalyzerConnectionRuntime(
@@ -220,7 +222,8 @@ class OutboundOrderControllerTest {
     connection
       .putObject("profileRef")
       .put("profileId", profile.path("profileMeta").path("id").asText())
-      .put("revision", 1);
+      .put("revision", 1)
+      .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     connection.putObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     connection.withObject("values").put("connectionRole", "CLIENT").put("host", "192.0.2.10").put("port", 9101);
     new BridgeAnalyzerConnectionRuntime(

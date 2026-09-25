@@ -46,7 +46,7 @@ class BridgeFileResetTransportTest {
 
   @ParameterizedTest(name = "reset drains real HTTP delivery, uploaded={0}")
   @ValueSource(booleans = { true, false })
-  void resetDrainsDeliveryBeforeCleanupAndKeepsTheConnectionUsable(boolean uploaded) throws Exception {
+  void resetKeepsRetainedBytesWhileDeliveryContinuesAndTheConnectionRemainsUsable(boolean uploaded) throws Exception {
     Path watched = Files.createDirectory(directory.resolve("watched"));
     Path file = watched.resolve("result.csv");
     byte[] csv = "Sample,Test,Result\nPATIENT-1,T1,2\n".getBytes(StandardCharsets.UTF_8);
@@ -79,10 +79,12 @@ class BridgeFileResetTransportTest {
     entry.setBridgeConnectionId("connection-1");
     entry.setProfileId("site.reset-test");
     entry.setProfileRevision(1);
+    entry.setProfileFingerprint("sha256:" + "1".repeat(64));
     entry.setExpectedProtocol("FILE");
     entry.setFileDirectory(watched.toString());
     entry.setFilePattern("*.csv");
     entry.setMappedTestCodes(Set.of("T1"));
+    entry.setFileTestCode("T1");
     entry.setColumnMappings(Map.of("Sample", "sampleId", "Test", "testCode", "Result", "result"));
     entry.setDelimiter(",");
     entry.setControlResultRecognition(ControlResultRecognition.none());
@@ -92,7 +94,12 @@ class BridgeFileResetTransportTest {
     HTTPForwardServerConfigurationProperties http = new HTTPForwardServerConfigurationProperties();
     http.setUri(URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/analyzer"));
     http.setReadTimeoutSeconds(10);
-    FileMessageHandler handler = new FileMessageHandler(registry, http);
+    var outbox = org.itech.ahb.outbox.OutboxTestSupport.create(
+      directory.resolve("outbox"),
+      http,
+      registry
+    ).startDispatcher();
+    FileMessageHandler handler = outbox.fileHandler(registry);
     FileConfig config = new FileConfig();
     config.setEnabled(true);
     config.setPollIntervalMs(50);
@@ -122,31 +129,18 @@ class BridgeFileResetTransportTest {
         return null;
       });
       assertTrue(received.await(5, TimeUnit.SECONDS), "no real HTTP delivery reached the receiver");
-      var reset = executor.submit(() -> {
-        resetting.countDown();
-        return admin.reset("owner");
-      });
-      assertTrue(resetting.await(5, TimeUnit.SECONDS));
-      assertThrows(
-        TimeoutException.class,
-        () -> reset.get(200, TimeUnit.MILLISECONDS),
-        "reset must not finish while the receiver still holds the delivery"
+      initial.get(5, TimeUnit.SECONDS);
+      var reset = executor.submit(() -> admin.reset("owner"));
+      var resetBeforeReceiverAck = reset.get(5, TimeUnit.SECONDS);
+      assertEquals(200, resetBeforeReceiverAck.getStatusCode().value());
+      assertFalse(Files.exists(file));
+      var retained = outbox.store.list(org.itech.ahb.outbox.OutboxQuery.all(10));
+      assertEquals(1, retained.size());
+      assertArrayEquals(
+        csv,
+        outbox.store.rawBytes(retained.get(0).id()).orElseThrow(),
+        "reset must not remove bytes still awaiting receiver acknowledgment"
       );
-      assertTrue(Files.exists(file));
-      assertTrue(store.get("owner", hash).isPresent());
-      var refused = executor.submit(() -> {
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        uploads.uploadFile("owner", "T1", multipart("other.csv", csv), response);
-        return response;
-      });
-      assertEquals(
-        409,
-        refused.get(2, TimeUnit.SECONDS).getStatus(),
-        "new uploads must be rejected without waiting on a registry lock held by reset"
-      );
-      assertFalse(Files.exists(watched.resolve("other.csv")));
-      assertEquals(1, deliveries.get());
-
       acknowledge.countDown();
       initial.get(5, TimeUnit.SECONDS);
       var result = reset.get(5, TimeUnit.SECONDS);
@@ -159,7 +153,12 @@ class BridgeFileResetTransportTest {
       MockHttpServletResponse after = new MockHttpServletResponse();
       uploads.uploadFile("owner", "T1", multipart("after-reset.csv", csv), after);
       assertTrue(after.getContentAsString().contains("banner success"));
-      assertEquals(2, deliveries.get(), "reset must resume the saved connection");
+      org.awaitility.Awaitility.await()
+        .atMost(java.time.Duration.ofSeconds(5))
+        .untilAsserted(
+          () -> assertEquals(1, outbox.store.countsByState().get(org.itech.ahb.outbox.OutboxState.DELIVERED))
+        );
+      assertEquals(1, deliveries.get(), "re-upload after reset must reuse the retained delivery identity");
       assertNull(serverError.get());
     } finally {
       acknowledge.countDown();
@@ -167,6 +166,7 @@ class BridgeFileResetTransportTest {
       assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
       watcher.stop();
       store.close();
+      outbox.close();
       server.stop(0);
     }
   }

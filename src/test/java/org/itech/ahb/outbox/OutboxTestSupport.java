@@ -33,6 +33,15 @@ public final class OutboxTestSupport implements AutoCloseable {
     this.router = router;
   }
 
+  public org.itech.ahb.file.FileMessageHandler fileHandler(AnalyzerRuntimeRegistry registry) {
+    return new org.itech.ahb.file.FileMessageHandler(
+      registry,
+      store,
+      dispatcher,
+      new com.fasterxml.jackson.databind.ObjectMapper()
+    );
+  }
+
   /** Same pipeline, on a throwaway directory, for tests that do not already have a temp dir. */
   public static OutboxTestSupport createTemp(
     HTTPForwardServerConfigurationProperties httpConfig,

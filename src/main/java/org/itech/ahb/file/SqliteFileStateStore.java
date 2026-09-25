@@ -116,6 +116,19 @@ public class SqliteFileStateStore implements FileStateStore {
         this.conn = SqliteSupport.openOrRecover(this.dbPath, STORE_NAME, SqliteSupport.Synchronous.NORMAL,
                 CORRUPTION_CONSEQUENCE).connection();
         initializeSchema();
+        SqliteSupport.migrate(conn, STORE_NAME, List.of(new SqliteSupport.Migration() {
+            @Override public int version() { return 1; }
+            @Override public String name() { return "hold-pre-outbox-file-retries"; }
+            @Override public void apply(Connection connection) throws SQLException {
+                // Old FILE retries did not retain a manual assay selection. Automatically parsing
+                // them with today's defaults could change the meaning of an already received file.
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("UPDATE file_state SET status = 'FAILED_NEEDS_HANDLING', next_attempt_at = NULL, "
+                            + "last_error = 'Upgrade: original FILE bytes and selected assay were not retained. Re-upload the original file with its verified assay. Prior error: ' "
+                            + "|| COALESCE(last_error, '') WHERE status = 'RETRYING'");
+                }
+            }
+        }));
         log.info("FileStateStore opened at {} (WAL mode)", this.dbPath);
     }
 

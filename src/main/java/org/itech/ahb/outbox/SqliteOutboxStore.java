@@ -137,6 +137,74 @@ public class SqliteOutboxStore implements OutboxStore {
     });
   }
 
+  @Override
+  public synchronized Receipt receiveFile(ReceivedFile file) {
+    byte[] content = file.content();
+    String rawHash = DeliveryIdentity.contentHash(content);
+    String id = "recv-file-v1:" + DeliveryIdentity.contentHash(file.connectionId() + "\u0000" + rawHash);
+    String now = ts(Instant.now());
+    return inTransaction(() -> {
+      // A renamed/reuploaded file reuses the original work, including delivered accessions. Never
+      // silently claim success for the same bytes interpreted with a different selected assay/pin.
+      try (
+        PreparedStatement existing = conn.prepareStatement(
+          "SELECT id, file_interpretation_hash FROM outbox WHERE raw_hash = ? AND connection_id = ? AND transport = 'FILE'"
+        )
+      ) {
+        existing.setString(1, rawHash);
+        existing.setString(2, file.connectionId());
+        try (ResultSet rs = existing.executeQuery()) {
+          if (rs.next()) {
+            if (!file.interpretationHash().equals(rs.getString(2))) {
+              throw new IllegalArgumentException(
+                "Identical file bytes are already retained with a different interpretation; review the original receipt"
+              );
+            }
+            return new Receipt(rs.getString(1), rawHash, true);
+          }
+        }
+      }
+      try (
+        PreparedStatement raw = conn.prepareStatement(
+          "INSERT INTO outbox_raw (raw_hash, raw_text, raw_charset, byte_length, created_at, raw_encoding) " +
+          "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(raw_hash) DO NOTHING"
+        )
+      ) {
+        // Share identical bytes with existing text transports without changing their replay input.
+        String text = new String(content, StandardCharsets.UTF_8);
+        boolean utf8 = java.util.Arrays.equals(content, text.getBytes(StandardCharsets.UTF_8));
+        raw.setString(1, rawHash);
+        raw.setString(2, utf8 ? text : java.util.Base64.getEncoder().encodeToString(content));
+        raw.setString(3, utf8 ? "UTF-8" : "BINARY");
+        raw.setInt(4, content.length);
+        raw.setString(5, now);
+        raw.setString(6, utf8 ? "UTF8" : "BASE64");
+        raw.executeUpdate();
+      }
+      try (
+        PreparedStatement entry = conn.prepareStatement(
+          "INSERT INTO outbox (id, state, raw_hash, source_id, protocol, transport, connection_id, analyzer_id, " +
+          "profile_id, profile_revision, received_at, updated_at, file_context, file_interpretation_hash) " +
+          "VALUES (?, 'RECEIVED', ?, ?, 'CSV', 'FILE', ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+      ) {
+        entry.setString(1, id);
+        entry.setString(2, rawHash);
+        entry.setString(3, file.sourcePath());
+        entry.setString(4, file.connectionId());
+        entry.setString(5, file.analyzerId());
+        entry.setString(6, file.profileId());
+        entry.setInt(7, file.profileRevision());
+        entry.setString(8, now);
+        entry.setString(9, now);
+        entry.setString(10, file.contextJson());
+        entry.setString(11, file.interpretationHash());
+        entry.executeUpdate();
+      }
+      return new Receipt(id, rawHash, false);
+    });
+  }
+
   // ---------------------------------------------------------------- render
 
   @Override
@@ -157,6 +225,10 @@ public class SqliteOutboxStore implements OutboxStore {
       throw new IllegalStateException("no received entry " + receiptId + " to attach deliveries to");
     }
     List<OutboxAttempt> receiptHistory = attempts(receiptId);
+    String fileContext = fileContext(receiptId).orElse(null);
+    String interpretation = textColumn(receiptId, "SELECT file_interpretation_hash FROM outbox WHERE id = ?").orElse(
+      null
+    );
     String now = ts(Instant.now());
     inTransaction(() -> {
       for (RenderedDelivery delivery : deliveries) {
@@ -164,8 +236,8 @@ public class SqliteOutboxStore implements OutboxStore {
           PreparedStatement insert = conn.prepareStatement(
             "INSERT INTO outbox (id, state, raw_hash, fhir_json, fhir_hash, connection_id, analyzer_id, source_id, " +
             "source_port, protocol, transport, protocol_hint, profile_id, profile_revision, accession, target_uri, " +
-            "received_at, rendered_at, updated_at, listener_port, retry_requested_by, retry_requested_at) " +
-            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+            "received_at, rendered_at, updated_at, listener_port, retry_requested_by, retry_requested_at, file_context, file_interpretation_hash) " +
+            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
           )
         ) {
           insert.setString(1, delivery.deliveryId());
@@ -189,6 +261,8 @@ public class SqliteOutboxStore implements OutboxStore {
           setNullableInt(insert, 19, receipt.listenerPort());
           insert.setString(20, receipt.retryRequestedBy());
           insert.setString(21, ts(receipt.retryRequestedAt()));
+          insert.setString(22, fileContext);
+          insert.setString(23, interpretation);
           if (insert.executeUpdate() == 0) {
             // Same content, same accession, same connection: the analyzer retransmitted, or the
             // bridge restarted between rendering and deleting the receipt. Keeping the first row is
@@ -619,6 +693,40 @@ public class SqliteOutboxStore implements OutboxStore {
       }
     } catch (SQLException e) {
       throw new IllegalStateException("Failed to read the received payload for " + id, e);
+    }
+  }
+
+  @Override
+  public synchronized Optional<String> rawEncoding(String id) {
+    return textColumn(
+      id,
+      "SELECT r.raw_encoding FROM outbox o JOIN outbox_raw r ON r.raw_hash = o.raw_hash WHERE o.id = ?"
+    );
+  }
+
+  @Override
+  public synchronized Optional<byte[]> rawBytes(String id) {
+    return rawPayload(id).map(
+      raw ->
+        "BASE64".equals(rawEncoding(id).orElseThrow())
+          ? java.util.Base64.getDecoder().decode(raw)
+          : raw.getBytes(StandardCharsets.UTF_8)
+    );
+  }
+
+  @Override
+  public synchronized Optional<String> fileContext(String id) {
+    return textColumn(id, "SELECT file_context FROM outbox WHERE id = ?");
+  }
+
+  private Optional<String> textColumn(String id, String sql) {
+    try (PreparedStatement st = conn.prepareStatement(sql)) {
+      st.setString(1, id);
+      try (ResultSet rs = st.executeQuery()) {
+        return rs.next() ? Optional.ofNullable(rs.getString(1)) : Optional.empty();
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException("Failed to read retained context for " + id, e);
     }
   }
 

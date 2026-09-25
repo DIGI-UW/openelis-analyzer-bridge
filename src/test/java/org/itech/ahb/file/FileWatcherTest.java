@@ -187,11 +187,11 @@ class FileWatcherTest {
         fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
-        when(mockMessageHandler.processFile(any(), any())).thenReturn(null);
+        when(mockMessageHandler.receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class))).thenReturn(null);
 
         ReflectionTestUtils.invokeMethod(fileWatcher, "processFileWithRetry", testFile);
 
-        verify(mockMessageHandler, times(1)).processFile(any(), any());
+        verify(mockMessageHandler, times(1)).receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class));
         // CORE INVARIANT: the file remains in the watched directory
         assertTrue(Files.exists(testFile),
                 "File must remain in the watched directory after successful processing — bridge is read-only");
@@ -210,14 +210,14 @@ class FileWatcherTest {
         fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
-        when(mockMessageHandler.processFile(any(), any())).thenReturn(null);
+        when(mockMessageHandler.receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class))).thenReturn(null);
 
         ReflectionTestUtils.invokeMethod(fileWatcher, "processFileWithRetry", testFile);
         ReflectionTestUtils.invokeMethod(fileWatcher, "processFileWithRetry", testFile);
         ReflectionTestUtils.invokeMethod(fileWatcher, "processFileWithRetry", testFile);
 
         // processFile called exactly ONCE despite three observations
-        verify(mockMessageHandler, times(1)).processFile(any(), any());
+        verify(mockMessageHandler, times(1)).receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class));
         assertTrue(Files.exists(testFile));
     }
 
@@ -228,7 +228,7 @@ class FileWatcherTest {
         fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
-        when(mockMessageHandler.processFile(any(), any())).thenReturn(null);
+        when(mockMessageHandler.receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class))).thenReturn(null);
 
         // First observation — hash A
         ReflectionTestUtils.invokeMethod(fileWatcher, "processFileWithRetry", testFile);
@@ -240,7 +240,7 @@ class FileWatcherTest {
         String hashB = (String) ReflectionTestUtils.invokeMethod(fileWatcher, "calculateFileHash", testFile);
 
         assertNotEquals(hashA, hashB);
-        verify(mockMessageHandler, times(2)).processFile(any(), any());
+        verify(mockMessageHandler, times(2)).receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class));
         // Both rows exist in the state store
         assertTrue(stateStore.get("QUANTSTUDIO", hashA).isPresent());
         assertTrue(stateStore.get("QUANTSTUDIO", hashB).isPresent());
@@ -258,7 +258,7 @@ class FileWatcherTest {
         fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
-        when(mockMessageHandler.processFile(any(), any()))
+        when(mockMessageHandler.receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class)))
                 .thenThrow(new FileMessageHandler.FileProcessingException("Attempt 1 failed"))
                 .thenThrow(new FileMessageHandler.FileProcessingException("Attempt 2 failed"))
                 .thenReturn(null);
@@ -267,7 +267,7 @@ class FileWatcherTest {
         // Retries are scheduled on stabilityChecker; wait for them
         TimeUnit.MILLISECONDS.sleep(800);
 
-        verify(mockMessageHandler, times(3)).processFile(any(), any());
+        verify(mockMessageHandler, times(3)).receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class));
         // CORE INVARIANT
         assertTrue(Files.exists(testFile), "file must remain in watched dir after eventual success");
 
@@ -284,14 +284,14 @@ class FileWatcherTest {
         fileWatcher.addWatchDirectory(testFile.getParent(), "*.csv", "QUANTSTUDIO");
         Files.writeString(testFile, CSV_CONTENT);
 
-        when(mockMessageHandler.processFile(any(), any()))
+        when(mockMessageHandler.receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class)))
                 .thenThrow(new FileMessageHandler.FileProcessingException("Processing failed"));
 
         ReflectionTestUtils.invokeMethod(fileWatcher, "processFileWithRetry", testFile);
         // Retry at 100ms + 200ms backoff — wait long enough for all 3 attempts
         TimeUnit.MILLISECONDS.sleep(1000);
 
-        verify(mockMessageHandler, times(3)).processFile(any(), any());
+        verify(mockMessageHandler, times(3)).receiveBytes(any(), any(), org.mockito.ArgumentMatchers.isNull(), any(byte[].class));
         // CORE INVARIANT: file stays in place even after exhausted retries
         assertTrue(Files.exists(testFile),
                 "file must remain in watched dir even after FAILED_NEEDS_HANDLING");
