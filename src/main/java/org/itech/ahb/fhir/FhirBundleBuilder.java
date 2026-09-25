@@ -138,7 +138,8 @@ public class FhirBundleBuilder {
     );
     if (
       assessment.mode() != context.controlRecognition().mode() ||
-      assessment.outcome() == org.itech.ahb.profile.ControlResultRecognitionEvaluator.Outcome.NOT_EVALUATED
+      (assessment.outcome() == org.itech.ahb.profile.ControlResultRecognitionEvaluator.Outcome.NOT_EVALUATED) !=
+        context.controlRecognition().rules().isEmpty()
     ) {
       throw new IllegalStateException("Parser recognition evidence does not match the pinned profile mode");
     }
@@ -260,7 +261,12 @@ public class FhirBundleBuilder {
         } catch (RuntimeException e) {
           // An unreadable time from an analyzer or file must not stop the result being delivered.
           // Debug, not warn: a file import can carry a free-text date column on every row.
-          log.debug("Result {} has an unreadable test time '{}': {}", result.testCode(), result.timestamp(), e.getMessage());
+          log.debug(
+            "Result {} has an unreadable test time '{}': {}",
+            result.testCode(),
+            result.timestamp(),
+            e.getMessage()
+          );
         }
       }
 

@@ -13,6 +13,21 @@ class ControlResultRecognitionTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
+  void explicitEmptyRulesPreserveUnconfiguredRecognitionWithoutNoControlsAffirmation() throws Exception {
+    var recognition = ControlResultRecognition.fromProfile(objectMapper.readTree("{\"mode\":\"RULES\",\"rules\":{}}"));
+    var assessment = ControlResultRecognitionEvaluator.evaluate(recognition, "QC-1", Map.of("SPM.11", "Q"));
+    assertThat(recognition.mode()).isEqualTo(ControlResultRecognition.Mode.RULES);
+    assertThat(assessment.outcome()).isEqualTo(ControlResultRecognitionEvaluator.Outcome.NOT_EVALUATED);
+    assertThat(assessment.evaluations()).isEmpty();
+    assertThat(assessment.matchedRule()).isEmpty();
+    assertThat(recognition.summary().affirmedNoControlResults()).isFalse();
+    assertThat(recognition.summary().description()).contains("not configured");
+    assertThatThrownBy(
+      () -> ControlResultRecognition.fromProfile(objectMapper.readTree("{\"mode\":\"RULES\"}"))
+    ).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void explicitNoneNeverRecognizesAControl() {
     ControlResultRecognition recognition = ControlResultRecognition.none();
 
@@ -22,35 +37,28 @@ class ControlResultRecognitionTest {
       Map.of("O.12", "Q", "QC_TASK", "CONTROL")
     );
 
-    assertThat(assessment.outcome())
-      .isEqualTo(ControlResultRecognitionEvaluator.Outcome.NOT_EVALUATED);
+    assertThat(assessment.outcome()).isEqualTo(ControlResultRecognitionEvaluator.Outcome.NOT_EVALUATED);
     assertThat(assessment.evaluations()).isEmpty();
     assertThat(assessment.matchedRule()).isEmpty();
   }
 
   @Test
   void missingRecognitionIsRejectedInsteadOfBehavingAsNone() {
-    assertThatThrownBy(() ->
-      ControlResultRecognitionEvaluator.evaluate(null, "QC-2026", Map.of())
-    )
+    assertThatThrownBy(() -> ControlResultRecognitionEvaluator.evaluate(null, "QC-2026", Map.of()))
       .isInstanceOf(NullPointerException.class)
       .hasMessage("recognition is required");
   }
 
   @Test
   void unsupportedMatchersCannotEnterTheRuntimeModel() {
-    assertThatThrownBy(() ->
-      new ControlRecognitionRule("unknown", "VENDOR_GUESS", null, "Q", null, null)
-    )
+    assertThatThrownBy(() -> new ControlRecognitionRule("unknown", "VENDOR_GUESS", null, "Q", null, null))
       .isInstanceOf(IllegalArgumentException.class)
       .hasMessage("Unsupported control recognition rule type VENDOR_GUESS");
   }
 
   @Test
   void fieldMatchersRequireTheirProtocolField() {
-    assertThatThrownBy(() ->
-      new ControlRecognitionRule("missing-field", "FIELD_EQUALS", null, "Q", null, null)
-    )
+    assertThatThrownBy(() -> new ControlRecognitionRule("missing-field", "FIELD_EQUALS", null, "Q", null, null))
       .isInstanceOf(IllegalArgumentException.class)
       .hasMessage("targetField is required for FIELD_EQUALS");
   }
@@ -73,18 +81,11 @@ class ControlResultRecognitionTest {
       "NORMAL",
       "ASSAY_CONTROL"
     );
-    ControlResultRecognition recognition = ControlResultRecognition.rules(
-      List.of(fieldRule, prefixRule)
-    );
+    ControlResultRecognition recognition = ControlResultRecognition.rules(List.of(fieldRule, prefixRule));
 
-    var assessment = ControlResultRecognitionEvaluator.evaluate(
-      recognition,
-      "QC-2026-001",
-      Map.of("O.12", "Q")
-    );
+    var assessment = ControlResultRecognitionEvaluator.evaluate(recognition, "QC-2026-001", Map.of("O.12", "Q"));
 
-    assertThat(assessment.outcome())
-      .isEqualTo(ControlResultRecognitionEvaluator.Outcome.MATCH);
+    assertThat(assessment.outcome()).isEqualTo(ControlResultRecognitionEvaluator.Outcome.MATCH);
     assertThat(assessment.matchedRule()).contains(prefixRule);
     assertThat(assessment.evaluations()).hasSize(2);
     assertThat(assessment.evaluations().get(0))
@@ -124,11 +125,13 @@ class ControlResultRecognitionTest {
     );
 
     assertThat(recognition.mode()).isEqualTo(ControlResultRecognition.Mode.RULES);
-    assertThat(recognition.rules()).singleElement().satisfies(rule -> {
-      assertThat(rule.key()).isEqualTo("normal-control");
-      assertThat(rule.controlLevel()).isEqualTo("NORMAL");
-      assertThat(rule.controlType()).isEqualTo("ASSAY_CONTROL");
-    });
+    assertThat(recognition.rules())
+      .singleElement()
+      .satisfies(rule -> {
+        assertThat(rule.key()).isEqualTo("normal-control");
+        assertThat(rule.controlLevel()).isEqualTo("NORMAL");
+        assertThat(rule.controlType()).isEqualTo("ASSAY_CONTROL");
+      });
   }
 
   @Test
@@ -150,22 +153,8 @@ class ControlResultRecognitionTest {
   void rulesExposeStableHumanReadableConditionsWithoutRawPatterns() {
     ControlResultRecognition recognition = ControlResultRecognition.rules(
       List.of(
-        new ControlRecognitionRule(
-          "control-prefix",
-          "SPECIMEN_ID_PREFIX",
-          null,
-          "QC-",
-          "NORMAL",
-          "ASSAY_CONTROL"
-        ),
-        new ControlRecognitionRule(
-          "control-pattern",
-          "SPECIMEN_ID_PATTERN",
-          null,
-          "^C(?:NEG|POS)-.*$",
-          null,
-          null
-        )
+        new ControlRecognitionRule("control-prefix", "SPECIMEN_ID_PREFIX", null, "QC-", "NORMAL", "ASSAY_CONTROL"),
+        new ControlRecognitionRule("control-pattern", "SPECIMEN_ID_PATTERN", null, "^C(?:NEG|POS)-.*$", null, null)
       )
     );
 
@@ -226,8 +215,7 @@ class ControlResultRecognitionTest {
 
     assertThat(summary.mode()).isEqualTo("NONE");
     assertThat(summary.affirmedNoControlResults()).isTrue();
-    assertThat(summary.description())
-      .isEqualTo("This analyzer interface transports no control results.");
+    assertThat(summary.description()).isEqualTo("This analyzer interface transports no control results.");
     assertThat(summary.conditions()).isEmpty();
   }
 }

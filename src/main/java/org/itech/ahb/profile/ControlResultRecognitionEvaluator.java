@@ -25,13 +25,8 @@ public final class ControlResultRecognitionEvaluator {
     Map<String, String> fieldValues
   ) {
     Objects.requireNonNull(recognition, "recognition is required");
-    if (recognition.mode() == ControlResultRecognition.Mode.NONE) {
-      return new Assessment(
-        recognition.mode(),
-        Outcome.NOT_EVALUATED,
-        List.of(),
-        null
-      );
+    if (recognition.mode() == ControlResultRecognition.Mode.NONE || recognition.rules().isEmpty()) {
+      return new Assessment(recognition.mode(), Outcome.NOT_EVALUATED, List.of(), null);
     }
     List<RuleEvaluation> evaluations = new ArrayList<>();
     ControlRecognitionRule matchedRule = null;
@@ -62,33 +57,21 @@ public final class ControlResultRecognitionEvaluator {
     return switch (rule.ruleType()) {
       case "FIELD_EQUALS", "FIELD_CONTAINS" -> rule.targetField();
       case "SPECIMEN_ID_PREFIX", "SPECIMEN_ID_PATTERN" -> "specimenId";
-      default -> throw new IllegalStateException(
-        "Unsupported control recognition rule type " + rule.ruleType()
-      );
+      default -> throw new IllegalStateException("Unsupported control recognition rule type " + rule.ruleType());
     };
   }
 
-  private static String sourceValue(
-    ControlRecognitionRule rule,
-    String specimenId,
-    Map<String, String> fieldValues
-  ) {
-    String value = switch (rule.ruleType()) {
-      case "FIELD_EQUALS", "FIELD_CONTAINS" ->
-        fieldValues == null ? null : fieldValues.get(rule.targetField());
-      case "SPECIMEN_ID_PREFIX", "SPECIMEN_ID_PATTERN" -> specimenId;
-      default -> throw new IllegalStateException(
-        "Unsupported control recognition rule type " + rule.ruleType()
-      );
-    };
+  private static String sourceValue(ControlRecognitionRule rule, String specimenId, Map<String, String> fieldValues) {
+    String value =
+      switch (rule.ruleType()) {
+        case "FIELD_EQUALS", "FIELD_CONTAINS" -> fieldValues == null ? null : fieldValues.get(rule.targetField());
+        case "SPECIMEN_ID_PREFIX", "SPECIMEN_ID_PATTERN" -> specimenId;
+        default -> throw new IllegalStateException("Unsupported control recognition rule type " + rule.ruleType());
+      };
     return value == null ? "" : value;
   }
 
-  private static boolean matches(
-    ControlRecognitionRule rule,
-    String specimenId,
-    Map<String, String> fieldValues
-  ) {
+  private static boolean matches(ControlRecognitionRule rule, String specimenId, Map<String, String> fieldValues) {
     return switch (rule.ruleType()) {
       case "FIELD_EQUALS" -> {
         String value = fieldValues == null ? null : fieldValues.get(rule.targetField());
@@ -96,20 +79,12 @@ public final class ControlResultRecognitionEvaluator {
       }
       case "FIELD_CONTAINS" -> {
         String value = fieldValues == null ? null : fieldValues.get(rule.targetField());
-        yield value != null &&
-        value
-          .toUpperCase(Locale.ROOT)
-          .contains(rule.operand().toUpperCase(Locale.ROOT));
+        yield value != null && value.toUpperCase(Locale.ROOT).contains(rule.operand().toUpperCase(Locale.ROOT));
       }
-      case "SPECIMEN_ID_PREFIX" ->
-        specimenId != null &&
-        specimenId
-          .toUpperCase(Locale.ROOT)
-          .startsWith(rule.operand().toUpperCase(Locale.ROOT));
+      case "SPECIMEN_ID_PREFIX" -> specimenId != null &&
+      specimenId.toUpperCase(Locale.ROOT).startsWith(rule.operand().toUpperCase(Locale.ROOT));
       case "SPECIMEN_ID_PATTERN" -> matchesPattern(rule, specimenId);
-      default -> throw new IllegalStateException(
-        "Unsupported control recognition rule type " + rule.ruleType()
-      );
+      default -> throw new IllegalStateException("Unsupported control recognition rule type " + rule.ruleType());
     };
   }
 
@@ -124,11 +99,7 @@ public final class ControlResultRecognitionEvaluator {
       );
       return pattern.matcher(specimenId).matches();
     } catch (PatternSyntaxException exception) {
-      log.warn(
-        "Invalid control recognition regex for rule '{}': {}",
-        rule.key(),
-        exception.getMessage()
-      );
+      log.warn("Invalid control recognition regex for rule '{}': {}", rule.key(), exception.getMessage());
       return false;
     }
   }
@@ -139,12 +110,7 @@ public final class ControlResultRecognitionEvaluator {
     NOT_EVALUATED
   }
 
-  public record RuleEvaluation(
-    ControlRecognitionRule rule,
-    String sourceField,
-    String rawValue,
-    boolean matched
-  ) {
+  public record RuleEvaluation(ControlRecognitionRule rule, String sourceField, String rawValue, boolean matched) {
     public RuleEvaluation {
       Objects.requireNonNull(rule, "rule is required");
       Objects.requireNonNull(sourceField, "source field is required");

@@ -7,7 +7,6 @@ import java.util.Objects;
 
 /** Runtime form of one pinned profile revision's control-result recognition. */
 public record ControlResultRecognition(Mode mode, List<ControlRecognitionRule> rules) {
-
   public enum Mode {
     RULES,
     NONE
@@ -15,10 +14,7 @@ public record ControlResultRecognition(Mode mode, List<ControlRecognitionRule> r
 
   public ControlResultRecognition {
     Objects.requireNonNull(mode, "mode is required");
-    rules = rules == null ? List.of() : List.copyOf(rules);
-    if (mode == Mode.RULES && rules.isEmpty()) {
-      throw new IllegalArgumentException("RULES recognition requires at least one rule");
-    }
+    rules = List.copyOf(Objects.requireNonNull(rules, "rules must be explicit"));
     if (mode == Mode.NONE && !rules.isEmpty()) {
       throw new IllegalArgumentException("NONE recognition cannot contain rules");
     }
@@ -40,32 +36,34 @@ public record ControlResultRecognition(Mode mode, List<ControlRecognitionRule> r
     String mode = requiredText(recognition, "mode");
     if ("NONE".equals(mode)) {
       if (!recognition.path("affirmedNoControlResults").asBoolean(false)) {
-        throw new IllegalArgumentException(
-          "NONE recognition requires affirmedNoControlResults=true"
-        );
+        throw new IllegalArgumentException("NONE recognition requires affirmedNoControlResults=true");
       }
       return none();
     }
     if (!"RULES".equals(mode)) {
-      throw new IllegalArgumentException(
-        "Unsupported profile control recognition mode " + mode
-      );
+      throw new IllegalArgumentException("Unsupported profile control recognition mode " + mode);
     }
 
+    if (!recognition.path("rules").isObject()) {
+      throw new IllegalArgumentException("RULES recognition requires an explicit rules object");
+    }
     List<ControlRecognitionRule> rules = new ArrayList<>();
-    recognition.path("rules").fields().forEachRemaining(entry -> {
-      JsonNode rule = entry.getValue();
-      rules.add(
-        new ControlRecognitionRule(
-          entry.getKey(),
-          requiredText(rule, "ruleType"),
-          nullableText(rule, "targetField"),
-          requiredText(rule, "operand"),
-          nullableText(rule, "controlLevel"),
-          nullableText(rule, "controlType")
-        )
-      );
-    });
+    recognition
+      .path("rules")
+      .fields()
+      .forEachRemaining(entry -> {
+        JsonNode rule = entry.getValue();
+        rules.add(
+          new ControlRecognitionRule(
+            entry.getKey(),
+            requiredText(rule, "ruleType"),
+            nullableText(rule, "targetField"),
+            requiredText(rule, "operand"),
+            nullableText(rule, "controlLevel"),
+            nullableText(rule, "controlType")
+          )
+        );
+      });
     return rules(rules);
   }
 

@@ -17,16 +17,26 @@ class AnalyzerProfileValidatorTest {
   private final AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
 
   @Test
+  void explicitEmptyRulesAreValidButAbsentRulesAndUnconfirmedNoneAreNot() throws Exception {
+    ObjectNode profile = fileProfile();
+    profile.putObject("controlResultRecognition").put("mode", "RULES").putObject("rules");
+    assertThat(validator.validationIssues(profile)).isEmpty();
+    profile.withObject("controlResultRecognition").remove("rules");
+    assertThat(validator.validationIssues(profile)).isNotEmpty();
+    profile.putObject("controlResultRecognition").put("mode", "NONE");
+    assertThat(validator.validationIssues(profile)).isNotEmpty();
+  }
+
+  @Test
   void rejectsRegexShapedTextThatCannotMatchDeclaredFilesAsAGlob() throws Exception {
     ObjectNode profile = fileProfile();
     ((ObjectNode) profile.path("configDefaults")).put("filePattern", "(?i).*\\.(ods|xlsx|xls)$");
 
-    assertThat(validator.validationIssues(profile))
-      .contains(
-        "$.configDefaults.filePattern does not match supported extension .ods",
-        "$.configDefaults.filePattern does not match supported extension .xlsx",
-        "$.configDefaults.filePattern does not match supported extension .xls"
-      );
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.configDefaults.filePattern does not match supported extension .ods",
+      "$.configDefaults.filePattern does not match supported extension .xlsx",
+      "$.configDefaults.filePattern does not match supported extension .xls"
+    );
   }
 
   @Test
@@ -34,8 +44,9 @@ class AnalyzerProfileValidatorTest {
     ObjectNode profile = fileProfile();
     ((ObjectNode) profile.path("configDefaults")).put("filePattern", "*.[");
 
-    assertThat(validator.validationIssues(profile))
-      .contains("$.configDefaults.filePattern must be a Java NIO filename glob");
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.configDefaults.filePattern must be a Java NIO filename glob"
+    );
   }
 
   @Test
@@ -43,51 +54,42 @@ class AnalyzerProfileValidatorTest {
     ObjectNode profile = fileProfile();
     ((ObjectNode) profile.path("configDefaults")).put("filePattern", "*.xlsx");
 
-    assertThat(validator.validationIssues(profile))
-      .contains(
-        "$.configDefaults.filePattern does not match supported extension .ods",
-        "$.configDefaults.filePattern does not match supported extension .xls"
-      );
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.configDefaults.filePattern does not match supported extension .ods",
+      "$.configDefaults.filePattern does not match supported extension .xls"
+    );
   }
 
   @Test
   void rejectsDuplicatePrimaryAndAliasAnalyzerIdentities() throws Exception {
     ObjectNode duplicatePrimary = fileProfile();
-    ObjectNode copiedMapping = duplicatePrimary
-      .withArray("default_test_mappings")
-      .path(0)
-      .deepCopy();
+    ObjectNode copiedMapping = duplicatePrimary.withArray("default_test_mappings").path(0).deepCopy();
     copiedMapping.put("loinc", "94500-6");
     duplicatePrimary.withArray("default_test_mappings").add(copiedMapping);
 
-    assertThat(validator.validationIssues(duplicatePrimary))
-      .contains("$.default_test_mappings contains duplicate analyzer identity VIH-1");
+    assertThat(validator.validationIssues(duplicatePrimary)).contains(
+      "$.default_test_mappings contains duplicate analyzer identity VIH-1"
+    );
 
     ObjectNode duplicateAlias = fileProfile();
-    ArrayNode aliases = duplicateAlias
-      .withArray("default_test_mappings")
-      .path(0)
-      .withArray("aliases");
+    ArrayNode aliases = duplicateAlias.withArray("default_test_mappings").path(0).withArray("aliases");
     aliases.add("VIH-1");
 
-    assertThat(validator.validationIssues(duplicateAlias))
-      .contains("$.default_test_mappings contains duplicate analyzer identity VIH-1");
+    assertThat(validator.validationIssues(duplicateAlias)).contains(
+      "$.default_test_mappings contains duplicate analyzer identity VIH-1"
+    );
   }
 
   @Test
   void rejectsMalformedSpecimenIdRecognitionPatterns() throws Exception {
     ObjectNode profile = fileProfile();
-    ObjectNode rule = profile
-      .withObject("controlResultRecognition")
-      .withObject("rules")
-      .putObject("malformed-pattern");
+    ObjectNode rule = profile.withObject("controlResultRecognition").withObject("rules").putObject("malformed-pattern");
     rule.put("ruleType", "SPECIMEN_ID_PATTERN");
     rule.put("operand", "^(QC-[)$");
 
-    assertThat(validator.validationIssues(profile))
-      .contains(
-        "$.controlResultRecognition.rules.malformed-pattern.operand must be a valid Java regular expression"
-      );
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.controlResultRecognition.rules.malformed-pattern.operand must be a valid Java regular expression"
+    );
   }
 
   @Test
@@ -95,8 +97,9 @@ class AnalyzerProfileValidatorTest {
     ObjectNode profile = fileProfile();
     profile.withArray("result_value_order").removeAll().add("ctValue");
 
-    assertThat(validator.validationIssues(profile))
-      .contains("$.result_value_order selects ctValue but $.column_mapping has no matching source column");
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.result_value_order selects ctValue but $.column_mapping has no matching source column"
+    );
   }
 
   @Test
@@ -110,13 +113,9 @@ class AnalyzerProfileValidatorTest {
   @Test
   void requiresAnExplicitAstmResultRecordSelection() throws Exception {
     ObjectNode profile = astmProfile();
-    profile
-      .withObject("configDefaults")
-      .withObject("extractionOverrides")
-      .remove("resultRecordSelection");
+    profile.withObject("configDefaults").withObject("extractionOverrides").remove("resultRecordSelection");
 
-    assertThat(validator.validationIssues(profile))
-      .anyMatch(issue -> issue.contains("resultRecordSelection"));
+    assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("resultRecordSelection"));
   }
 
   @Test
@@ -128,8 +127,7 @@ class AnalyzerProfileValidatorTest {
       .withObject("resultRecordSelection")
       .put("targetField", "R.0.5");
 
-    assertThat(validator.validationIssues(profile))
-      .anyMatch(issue -> issue.contains("targetField"));
+    assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("targetField"));
   }
 
   @Test
@@ -137,8 +135,7 @@ class AnalyzerProfileValidatorTest {
     ObjectNode profile = astmProfile();
     profile.withObject("transport_config").withObject("RS-232").remove("data_bits");
 
-    assertThat(validator.validationIssues(profile))
-      .anyMatch(issue -> issue.contains("data_bits"));
+    assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("data_bits"));
   }
 
   @Test
@@ -147,8 +144,7 @@ class AnalyzerProfileValidatorTest {
     ArrayNode fields = (ArrayNode) profile.path("connectionFields");
     fields.add(fields.get(0).deepCopy());
 
-    assertThat(validator.validationIssues(profile))
-      .contains("$.connectionFields keys must be unique: directory");
+    assertThat(validator.validationIssues(profile)).contains("$.connectionFields keys must be unique: directory");
   }
 
   @Test
@@ -159,8 +155,9 @@ class AnalyzerProfileValidatorTest {
     condition.put("operator", "EQUALS");
     condition.put("value", "FILE");
 
-    assertThat(validator.validationIssues(profile))
-      .contains("$.connectionFields[directory].visibleWhen references undeclared field inventedTransport");
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.connectionFields[directory].visibleWhen references undeclared field inventedTransport"
+    );
   }
 
   @Test
@@ -168,19 +165,16 @@ class AnalyzerProfileValidatorTest {
     ObjectNode profile = fileProfile();
     ObjectNode directory = (ObjectNode) profile.path("connectionFields").get(0);
     ObjectNode filePattern = (ObjectNode) profile.path("connectionFields").get(1);
-    directory
-      .putObject("visibleWhen")
-      .put("fieldKey", "filePattern")
-      .put("operator", "EQUALS")
-      .put("value", "*.csv");
+    directory.putObject("visibleWhen").put("fieldKey", "filePattern").put("operator", "EQUALS").put("value", "*.csv");
     filePattern
       .putObject("visibleWhen")
       .put("fieldKey", "directory")
       .put("operator", "EQUALS")
       .put("value", "/data/instruments");
 
-    assertThat(validator.validationIssues(profile))
-      .contains("$.connectionFields.visibleWhen must not contain dependency cycles");
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.connectionFields.visibleWhen must not contain dependency cycles"
+    );
   }
 
   @Test
@@ -188,8 +182,9 @@ class AnalyzerProfileValidatorTest {
     ObjectNode profile = fileProfile();
     ((ObjectNode) profile.path("connectionFields").get(1)).put("inputKind", "SECRET");
 
-    assertThat(validator.validationIssues(profile))
-      .contains("$.configDefaults.filePattern must not supply a SECRET default");
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.configDefaults.filePattern must not supply a SECRET default"
+    );
   }
 
   private ObjectNode fileProfile() throws Exception {
