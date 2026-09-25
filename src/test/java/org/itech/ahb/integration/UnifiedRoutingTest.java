@@ -139,7 +139,7 @@ class UnifiedRoutingTest {
 
         serialHandler = new SerialMessageHandler(normalizer);
 
-        fileHandler = new FileMessageHandler(registry, httpConfig);
+        fileHandler = outbox.fileHandler(registry);
 
         httpController = new AnalyzerInputController(normalizer);
 
@@ -368,6 +368,7 @@ class UnifiedRoutingTest {
         entry.setBridgeConnectionId("bridge-" + id.toLowerCase());
         entry.setProfileId("site." + id.toLowerCase());
         entry.setProfileRevision(1);
+        entry.setProfileFingerprint("sha256:" + "1".repeat(64));
         entry.setExpectedProtocol(expectedProtocol);
         entry.setInboundTransport(transport);
         entry.setControlResultRecognition(ControlResultRecognition.none());
@@ -384,6 +385,7 @@ class UnifiedRoutingTest {
         entry.setBridgeConnectionId("bridge-" + id.toLowerCase());
         entry.setProfileId("site." + id.toLowerCase());
         entry.setProfileRevision(1);
+        entry.setProfileFingerprint("sha256:" + "1".repeat(64));
         entry.setControlResultRecognition(ControlResultRecognition.none());
         entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
         entry.setTabularResultValueSelection(TabularResultValueSelection.resultOnly());

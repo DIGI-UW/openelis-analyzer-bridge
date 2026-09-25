@@ -36,7 +36,8 @@ public interface FileStateStore {
     Optional<FileProcessingState> get(String analyzerId, String contentHash);
 
     /**
-     * Mark a file as successfully processed (FHIR POST succeeded).
+     * Mark discovery complete after bytes and parsing context are durably accepted by the outbox.
+     * This state does not mean OpenELIS has accepted the result.
      * Idempotent: re-invoking for the same key updates {@code lastSeen}
      * and {@code lastPath} but leaves {@code firstSeen} and {@code attempts}
      * unchanged.

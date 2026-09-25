@@ -74,6 +74,36 @@ class OutboxAdminControllerTest {
   private String deliveredId;
   private String raw;
 
+  @Test
+  void binaryFilePayloadRequiresAuthenticationAndDownloadsExactBytes() throws Exception {
+    byte[] bytes = { 0, (byte) 255, 13, 10, 1 };
+    var receipt = store.receiveFile(
+      new org.itech.ahb.outbox.ReceivedFile(
+        bytes,
+        "/binary.xlsx",
+        "file-" + java.util.UUID.randomUUID(),
+        "oe-file",
+        "profile",
+        1,
+        "{\"version\":1}",
+        "parse"
+      )
+    );
+    mockMvc.perform(get("/admin/outbox/" + receipt.id() + "/raw-file")).andExpect(status().isUnauthorized());
+    mockMvc
+      .perform(get("/admin/outbox/" + receipt.id() + "/raw-file").with(httpBasic("testuser", "testpass")))
+      .andExpect(status().isOk())
+      .andExpect(content().bytes(bytes));
+    mockMvc
+      .perform(get("/admin/outbox/" + receipt.id() + "/payload").with(httpBasic("testuser", "testpass")))
+      .andExpect(status().isOk())
+      .andExpect(content().string(java.util.Base64.getEncoder().encodeToString(bytes)))
+      .andExpect(
+        org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+          .string("X-Bridge-Payload-Encoding", "BASE64")
+      );
+  }
+
   @BeforeEach
   void seed() {
     // The context starts the real dispatcher, which would claim these entries and race the

@@ -346,6 +346,9 @@ public class AnalyzerRuntimeRegistry {
     /** Exact pinned profile revision materialized from the saved connection. */
     private int profileRevision;
 
+    /** Immutable profile fingerprint for receipt-time recovery. */
+    private String profileFingerprint;
+
     /**
      * Human-readable analyzer name (e.g., "Mindray BC-5380")
      */

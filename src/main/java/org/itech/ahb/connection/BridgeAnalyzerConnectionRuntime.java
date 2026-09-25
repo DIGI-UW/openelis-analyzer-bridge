@@ -339,6 +339,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setBridgeConnectionId(requiredText(connection, "connectionId", "Connection ID"));
     entry.setProfileId(requiredText(connection.path("profileRef"), "profileId", "Profile ID"));
     entry.setProfileRevision(requiredRevision(connection.path("profileRef"), "revision", "Profile revision"));
+    entry.setProfileFingerprint(requiredText(connection.path("profileRef"), "fingerprint", "Profile fingerprint"));
     entry.setName(requiredText(connection, "displayName", "Connection name"));
     entry.setExpectedProtocol(requiredText(profile.path("protocol"), "name", "Profile protocol"));
     entry.setInboundTransport(nullableText(values, "transport"));

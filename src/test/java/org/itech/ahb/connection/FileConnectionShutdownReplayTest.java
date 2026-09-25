@@ -59,9 +59,10 @@ class FileConnectionShutdownReplayTest {
   private AnalyzerConnectionCatalog connections;
   private AnalyzerRuntimeRegistry registry;
   private FileUploadController uploads;
+  private org.itech.ahb.outbox.OutboxTestSupport outbox;
 
   @Test
-  void shutdownDrainsPartialUploadAndRestoredConnectionReplaysTheSameIdentities() throws Exception {
+  void acceptedUploadSurvivesSourceDeletionAndRestartWithoutRepeatingDeliveredAccessions() throws Exception {
     Path watched = Files.createDirectory(directory.resolve("watched"));
     byte[] csv =
       ("Sample ID;TargetName;Calc. Conc.;Type\n" +
@@ -128,39 +129,40 @@ class FileConnectionShutdownReplayTest {
           .put("expectedConfigRevision", 1)
       );
       assertEquals("ACTIVE", ack.path("actualRuntimeState").asText());
-      var upload = executor.submit(() -> {
-        var response = new MockHttpServletResponse();
-        uploads.uploadFile("oe-file", "VIH-1", multipart("result.csv", csv), response);
-        return response;
-      });
+      var response = new MockHttpServletResponse();
+      uploads.uploadFile("oe-file", "VIH-1", multipart("result.csv", csv), response);
+      assertEquals(200, response.getStatus());
+      assertTrue(response.getContentAsString().contains("received and queued"));
       assertTrue(receivedSecond.await(5, TimeUnit.SECONDS), "partial delivery never reached the HTTP receiver");
-      var shutdown = executor.submit(watcher::stop);
-      await().atMost(Duration.ofSeconds(2)).until(() -> !watcher.isRunning());
-      assertThrows(TimeoutException.class, () -> shutdown.get(200, TimeUnit.MILLISECONDS));
-      var refused = new MockHttpServletResponse();
-      uploads.uploadFile("oe-file", "VIH-1", multipart("new.csv", csv), refused);
-      assertEquals(409, refused.getStatus());
-      assertFalse(Files.exists(watched.resolve("new.csv")));
-      assertEquals("RETRYING", store.get("oe-file", hash).orElseThrow().status().name());
+      watcher.stop();
+      assertEquals("PROCESSED", store.get("oe-file", hash).orElseThrow().status().name());
+      Files.delete(watched.resolve("result.csv"));
+      var shutdown = executor.submit(outbox::close);
+      assertThrows(
+        TimeoutException.class,
+        () -> shutdown.get(200, TimeUnit.MILLISECONDS),
+        "dispatcher drains its in-flight delivery before closing durable state"
+      );
       releaseSecond.countDown();
-      assertTrue(upload.get(5, TimeUnit.SECONDS).getContentAsString().contains("Processing failed"));
       shutdown.get(5, TimeUnit.SECONDS);
       assertEquals(2, deliveries.size());
-      assertEquals("RETRYING", store.get("oe-file", hash).orElseThrow().status().name());
-      assertNull(store.get("oe-file", hash).orElseThrow().nextAttemptAt());
       store.close();
 
-      // New objects load the saved active connection and SQLite state; do not
-      // explicitly activate or manually register the recovered connection.
       reopen();
       await()
         .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> assertEquals("PROCESSED", store.get("oe-file", hash).orElseThrow().status().name()));
+        .untilAsserted(
+          () -> assertEquals(2, outbox.store.countsByState().get(org.itech.ahb.outbox.OutboxState.DELIVERED))
+        );
       watcher.stop();
-      assertEquals(4, deliveries.size(), "recovery must replay the two accessions exactly once");
-      assertEquals(deliveries.get(0).path("identifier"), deliveries.get(2).path("identifier"));
-      assertEquals(deliveries.get(1).path("identifier"), deliveries.get(3).path("identifier"));
+      assertEquals(3, deliveries.size(), "only the undelivered accession repeats");
+      assertEquals(deliveries.get(1), deliveries.get(2), "exact delivery payload and identity survive restart");
       assertNotEquals(deliveries.get(0).path("identifier"), deliveries.get(1).path("identifier"));
+      for (var delivered : outbox.store.list(
+        org.itech.ahb.outbox.OutboxQuery.inState(org.itech.ahb.outbox.OutboxState.DELIVERED, 10)
+      )) {
+        assertArrayEquals(csv, outbox.store.rawBytes(delivered.id()).orElseThrow());
+      }
       var restored = registry.getRegisteredAnalyzers().values().stream().findFirst().orElseThrow();
       assertEquals(connection.path("connectionId").asText(), restored.getBridgeConnectionId());
       assertEquals("test.file-shutdown", restored.getProfileId());
@@ -169,7 +171,7 @@ class FileConnectionShutdownReplayTest {
         json.readTree(Path.of("contracts/analyzer/v1/normalized-fhir-bundle.schema.json").toFile())
       );
       deliveries.forEach(bundle -> assertTrue(schema.validate(bundle).isEmpty()));
-      assertArrayEquals(csv, Files.readAllBytes(watched.resolve("result.csv")));
+      assertFalse(Files.exists(watched.resolve("result.csv")));
       assertNull(receiverFailure.get());
     } finally {
       releaseSecond.countDown();
@@ -177,6 +179,7 @@ class FileConnectionShutdownReplayTest {
       assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
       if (watcher != null) watcher.stop();
       if (store != null) store.close();
+      if (outbox != null) outbox.close();
       receiver.stop(0);
     }
   }
@@ -193,7 +196,13 @@ class FileConnectionShutdownReplayTest {
     var http = new HTTPForwardServerConfigurationProperties();
     http.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
     http.setReadTimeoutSeconds(10);
-    var handler = new FileMessageHandler(registry, http);
+    if (outbox != null) outbox.close();
+    outbox = org.itech.ahb.outbox.OutboxTestSupport.create(
+      directory.resolve("outbox"),
+      http,
+      registry
+    ).startDispatcher();
+    var handler = outbox.fileHandler(registry);
     var config = new FileConfig();
     config.setPollIntervalMs(50);
     config.setFileStabilityTimeoutMs(50);

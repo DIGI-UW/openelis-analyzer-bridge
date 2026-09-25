@@ -33,13 +33,13 @@ import java.util.stream.Stream;
  * </p>
  * <p>
  * Detection flow: polling discovers new/changed files → stability checker waits
- * for file to stop changing → processor forwards to OpenELIS via HTTP → results
- * are recorded in {@link FileStateStore} as metadata. <b>The bridge never deletes
+ * for file to stop changing → processor captures immutable bytes and parser context in the delivery outbox → discovery
+ * completion is recorded in {@link FileStateStore} as metadata. The outbox owns delivery/retry/DMQ. <b>The bridge never deletes
  * or moves files from the watched directory.</b> Operators clean up their own
  * source directories; the bridge's job is strictly to observe and record.
  * </p>
  * <p>
- * State store transitions: new observation → RETRYING → PROCESSED (success) or
+ * State store transitions: new observation → RETRYING → PROCESSED (durably queued) or
  * FAILED_NEEDS_HANDLING (max retries exhausted). The latter is a terminal state
  * with no further automatic retries — the file remains in place for human
  * inspection and a future notifier hook reads from the state store.
@@ -105,7 +105,14 @@ public class FileWatcher {
                 return null;
             }
             String owner = determineAnalyzerId(filePath);
-            if (owner == null || (expectedAnalyzerId != null && !expectedAnalyzerId.equals(owner))) {
+            if (expectedAnalyzerId != null) {
+                // Explicit uploads select an active connection; its discovery glob is not an upload restriction.
+                Path parent = filePath.toAbsolutePath().normalize().getParent();
+                var registrations = registrationsByDirectory.getOrDefault(parent, List.of());
+                owner = registrations.stream().anyMatch(reg -> expectedAnalyzerId.equals(reg.analyzerId()))
+                        ? expectedAnalyzerId : null;
+            }
+            if (owner == null) {
                 return null;
             }
             return processingFiles.add(canonicalPath) ? new FileProcessingLease(canonicalPath) : null;
@@ -775,7 +782,8 @@ public class FileWatcher {
                 return;
             }
 
-            fileHash = calculateFileHash(filePath);
+            byte[] capturedBytes = Files.readAllBytes(filePath);
+            fileHash = FileDeliveryIdentity.contentHash(capturedBytes);
             MDC.put("analyzerId", analyzerId);
             MDC.put("contentHash", fileHash);
             MDC.put("path", filePath.toString());
@@ -811,10 +819,10 @@ public class FileWatcher {
             stateStore.upsertRetrying(analyzerId, fileHash, filePath);
 
             log.info("Processing file: {} for analyzer: {}", filePath.getFileName(), analyzerId);
-            messageHandler.processFile(filePath, analyzerId);
+            messageHandler.receiveBytes(filePath, analyzerId, null, capturedBytes);
 
             stateStore.markProcessed(analyzerId, fileHash, filePath);
-            log.info("Successfully processed file: {}", filePath.getFileName());
+            log.info("Durably queued file: {}", filePath.getFileName());
 
         } catch (Exception e) {
             if (analyzerId != null && fileHash != null) {

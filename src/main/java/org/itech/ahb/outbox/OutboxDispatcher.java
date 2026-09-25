@@ -333,7 +333,32 @@ public class OutboxDispatcher {
    * asking the analyzer to send it again.
    */
   private void renderRecovered(OutboxEntry entry) {
-    Optional<String> raw = store.rawPayload(entry.id());
+    if (entry.transport() == org.itech.ahb.model.Transport.FILE) {
+      var bytes = store.rawBytes(entry.id());
+      var context = store.fileContext(entry.id());
+      if (bytes.isEmpty() || context.isEmpty()) {
+        store.markDeadLettered(
+          entry.id(),
+          FailureReason.RENDER_ERROR,
+          "FILE receipt lacks retained bytes or parser context"
+        );
+        return;
+      }
+      var rendered = org.itech.ahb.file.FileResultRenderer.render(
+        bytes.get(),
+        context.get(),
+        client.targetUri().toString()
+      );
+      if (rendered instanceof NormalizedBundleRenderer.Outcome.Failed failure) {
+        store.markDeadLettered(entry.id(), failure.reason(), failure.message());
+      } else {
+        store.markRendered(entry.id(), ((NormalizedBundleRenderer.Outcome.Rendered) rendered).deliveries());
+      }
+      return;
+    }
+    Optional<String> raw = store
+      .rawBytes(entry.id())
+      .map(bytes -> new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
     if (raw.isEmpty()) {
       store.markDeadLettered(entry.id(), FailureReason.RENDER_ERROR, "Received entry has no stored payload to render");
       return;

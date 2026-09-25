@@ -54,10 +54,10 @@ class FileUploadConcurrencyTest {
       doAnswer(invocation -> {
         processing.countDown();
         assertTrue(release.await(5, TimeUnit.SECONDS), "upload was not released");
-        return null;
+        return org.itech.ahb.normalizer.MessageEnvelope.builder().outboxReceiptId("receipt").build();
       })
         .when(handler)
-        .processFile(any(), eq(ANALYZER), eq("RESULT"), any());
+        .receiveBytes(any(), eq(ANALYZER), eq("RESULT"), any());
       var upload = executor.submit(
         () -> controller.uploadFile(ANALYZER, "RESULT", multipart("original"), new MockHttpServletResponse())
       );
@@ -110,7 +110,7 @@ class FileUploadConcurrencyTest {
     try {
       doThrow(new FileMessageHandler.FileProcessingException("receiver unavailable"))
         .when(handler)
-        .processFile(file, ANALYZER);
+        .receiveBytes(eq(file), eq(ANALYZER), isNull(), any(byte[].class));
       ReflectionTestUtils.invokeMethod(watcher, "processFileWithRetry", file);
       hash = ReflectionTestUtils.invokeMethod(watcher, "calculateFileHash", file);
       var before = store.get(ANALYZER, hash).orElseThrow();
@@ -129,7 +129,7 @@ class FileUploadConcurrencyTest {
 
       assertTrue(scheduler.isTerminated());
       assertEquals(deadline, store.get(ANALYZER, hash).orElseThrow().nextAttemptAt());
-      verify(handler, times(1)).processFile(file, ANALYZER);
+      verify(handler, times(1)).receiveBytes(eq(file), eq(ANALYZER), isNull(), any(byte[].class));
     } finally {
       executor.shutdownNow();
       assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
@@ -162,19 +162,22 @@ class FileUploadConcurrencyTest {
         doAnswer(invocation -> {
           processing.countDown();
           assertTrue(release.await(5, TimeUnit.SECONDS), "upload processing was not released");
-          return null;
+          return org.itech.ahb.normalizer.MessageEnvelope.builder().outboxReceiptId("receipt").build();
         })
           .when(handler)
-          .processFile(eq(file), eq(ANALYZER), eq("RESULT"), any());
+          .receiveBytes(eq(file), eq(ANALYZER), eq("RESULT"), any());
         MockHttpServletResponse response = new MockHttpServletResponse();
         var upload = executor.submit(() -> controller.uploadFile(ANALYZER, "RESULT", multipart("original"), response));
         assertTrue(processing.await(5, TimeUnit.SECONDS), "upload never reached processing");
-        String hash = ReflectionTestUtils.invokeMethod(watcher, "calculateFileHash", file);
+        String hash = org.itech.ahb.file.FileDeliveryIdentity.contentHash(
+          "original".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        assertFalse(Files.exists(file));
         store.setNextAttemptAt(ANALYZER, hash, Instant.EPOCH);
 
         ReflectionTestUtils.invokeMethod(watcher, "processFileWithRetry", file);
 
-        verify(handler, never()).processFile(file, ANALYZER);
+        verify(handler, never()).receiveBytes(eq(file), eq(ANALYZER), isNull(), any(byte[].class));
         assertEquals("RETRYING", store.get(ANALYZER, hash).orElseThrow().status().name());
         release.countDown();
         upload.get(5, TimeUnit.SECONDS);
@@ -207,10 +210,10 @@ class FileUploadConcurrencyTest {
         doAnswer(invocation -> {
           processing.countDown();
           assertTrue(release.await(5, TimeUnit.SECONDS), "watcher processing was not released");
-          return null;
+          return org.itech.ahb.normalizer.MessageEnvelope.builder().outboxReceiptId("receipt").build();
         })
           .when(handler)
-          .processFile(file, ANALYZER);
+          .receiveBytes(eq(file), eq(ANALYZER), isNull(), any(byte[].class));
         var work = executor.submit(() -> ReflectionTestUtils.invokeMethod(watcher, "processFileWithRetry", file));
         assertTrue(processing.await(5, TimeUnit.SECONDS), "watcher never reached processing");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -219,7 +222,7 @@ class FileUploadConcurrencyTest {
 
         assertEquals(409, response.getStatus());
         assertEquals("original", Files.readString(file));
-        verify(handler, never()).processFile(any(), anyString(), anyString(), any());
+        verify(handler, never()).receiveBytes(any(), anyString(), anyString(), any());
         release.countDown();
         work.get(5, TimeUnit.SECONDS);
       } finally {
@@ -241,42 +244,31 @@ class FileUploadConcurrencyTest {
   }
 
   @Test
-  void failedUploadBecomesRetryableAndStaysRetryableAfterStoreReopen() throws Exception {
+  void rejectedReceiptNeverLeavesAFileForTheWatcherToReinterpret() throws Exception {
     Path database = directory.resolve("state.db");
     Path file = directory.resolve("result.csv");
     SqliteFileStateStore store = new SqliteFileStateStore(database);
-    FileMessageHandler handler = mock(FileMessageHandler.class);
-    FileWatcher watcher = watcher(handler, store);
-    String hash;
     try {
-      doThrow(new FileMessageHandler.FileProcessingException("receiver unavailable"))
-        .when(handler)
-        .processFile(eq(file), eq(ANALYZER), eq("RESULT"), any());
-      MockHttpServletResponse response = new MockHttpServletResponse();
-
-      controller(watcher, handler).uploadFile(ANALYZER, "RESULT", multipart("original"), response);
-
-      assertTrue(response.getContentAsString().contains("Processing failed"));
-      hash = ReflectionTestUtils.invokeMethod(watcher, "calculateFileHash", file);
-      var failed = store.get(ANALYZER, hash).orElseThrow();
-      assertEquals("RETRYING", failed.status().name());
-      assertNull(failed.nextAttemptAt(), "failure must clear the upload delay for watcher retry");
-      assertEquals("original", Files.readString(file));
+      FileMessageHandler handler = mock(FileMessageHandler.class);
+      FileWatcher watcher = watcher(handler, store);
+      try {
+        doThrow(new FileMessageHandler.FileProcessingException("outbox storage unavailable"))
+          .when(handler)
+          .receiveBytes(eq(file), eq(ANALYZER), eq("RESULT"), any());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        controller(watcher, handler).uploadFile(ANALYZER, "RESULT", multipart("original"), response);
+        assertEquals(500, response.getStatus());
+        assertFalse(Files.exists(file));
+      } finally {
+        watcher.stop();
+      }
     } finally {
-      watcher.stop();
       store.close();
     }
-
     SqliteFileStateStore reopened = new SqliteFileStateStore(database);
-    FileMessageHandler retryHandler = mock(FileMessageHandler.class);
-    FileWatcher resumed = watcher(retryHandler, reopened);
     try {
-      assertNull(reopened.get(ANALYZER, hash).orElseThrow().nextAttemptAt());
-      ReflectionTestUtils.invokeMethod(resumed, "processFileWithRetry", file);
-      verify(retryHandler).processFile(file, ANALYZER);
-      assertEquals("PROCESSED", reopened.get(ANALYZER, hash).orElseThrow().status().name());
+      assertFalse(Files.exists(file), "restart must not expose an unacknowledged upload to profile-default parsing");
     } finally {
-      resumed.stop();
       reopened.close();
     }
   }
@@ -295,10 +287,10 @@ class FileUploadConcurrencyTest {
       doAnswer(invocation -> {
         processing.countDown();
         assertTrue(release.await(5, TimeUnit.SECONDS), "upload was not released");
-        return null;
+        return org.itech.ahb.normalizer.MessageEnvelope.builder().outboxReceiptId("receipt").build();
       })
         .when(handler)
-        .processFile(any(), eq(ANALYZER), eq("RESULT"), any());
+        .receiveBytes(any(), eq(ANALYZER), eq("RESULT"), any());
       var upload = executor.submit(
         () -> controller.uploadFile(ANALYZER, "RESULT", multipart("original"), new MockHttpServletResponse())
       );
@@ -344,7 +336,7 @@ class FileUploadConcurrencyTest {
     try {
       doThrow(new FileMessageHandler.FileProcessingException("receiver unavailable"))
         .when(handler)
-        .processFile(file, ANALYZER);
+        .receiveBytes(eq(file), eq(ANALYZER), isNull(), any(byte[].class));
       doAnswer(invocation -> {
         updatingState.countDown();
         assertTrue(release.await(5, TimeUnit.SECONDS), "retry-state write was not released");

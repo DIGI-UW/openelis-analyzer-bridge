@@ -30,6 +30,19 @@ class FileWatcherWorkGateTest {
   }
 
   @Test
+  void manualUploadSelectsAnActiveConnectionIndependentlyOfTheDiscoveryPattern() throws Exception {
+    Path selected = directory.resolve("manual-export.xlsx");
+    assertNull(watcher.tryClaimFile(selected, null), "watcher discovery remains restricted to its configured glob");
+    try (var receipt = watcher.tryClaimFile(selected, "owner")) {
+      assertNotNull(receipt);
+      assertNull(watcher.tryClaimFile(selected, "owner"), "physical file exclusion still applies");
+    }
+    assertNull(watcher.tryClaimFile(selected, "different-analyzer"));
+    watcher.removeWatchRegistration(directory, "owner");
+    assertNull(watcher.tryClaimFile(selected, "owner"), "inactive connections cannot admit uploads");
+  }
+
+  @Test
   void stoppedWatcherNeverAdmitsNewWorkEvenAfterADirectoryPauseCloses() throws Exception {
     try (var pause = watcher.pauseDirectory(directory)) {
       watcher.stop();

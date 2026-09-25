@@ -31,9 +31,8 @@ public class FileConfig {
 
     /**
      * Path to the SQLite database that holds per-file processing state
-     * (see {@link FileStateStore}). This database is the ONLY place the
-     * bridge persists information about file-processing outcomes. Watched
-     * directories remain read-only from the bridge's point of view.
+     * (see {@link FileStateStore}). This tracks discovery and capture attempts;
+     * the common outbox retains original bytes and delivery outcomes.
      * <p>
      * Default uses the JVM temp directory so tests and local runs work
      * without a pre-configured volume. Production deployments should
@@ -60,12 +59,10 @@ public class FileConfig {
     private long fileStabilityTimeoutMs = 3000;
 
     /**
-     * How many times a file is retried before it is parked for an operator.
+     * How many times durable file capture is retried before it is parked for an operator.
      * <p>
-     * Sized for an overnight OpenELIS outage rather than a brief blip, matching the delivery
-     * outbox. At three attempts a DNS failure lasting seconds was enough to park a whole run of
-     * file results, which is the failure this deployment already lived through on the socket
-     * transports.
+     * These attempts cover failures before the outbox accepts the file. OpenELIS delivery
+     * retries use bridge.outbox.retry settings after durable capture.
      * </p>
      */
     private int maxRetryAttempts = 150;

@@ -38,9 +38,8 @@ import org.springframework.web.util.HtmlUtils;
 /**
  * Admin file-upload endpoint. Validates the admin's declared test code
  * against the analyzer's mapping set and the scanner's self-declaration
- * scan, writes the file to the analyzer's import directory, and invokes
- * {@link FileMessageHandler#processFile(Path, String, String)} directly
- * so FileWatcher doesn't have to re-discover it. Inherits HTTP Basic auth
+ * scan, and durably queues the original bytes and selected assay before
+ * creating an optional source copy. Queue acceptance is not OpenELIS delivery. Inherits HTTP Basic auth
  * from the existing {@code /admin/**} security rule.
  */
 @RestController
@@ -99,11 +98,10 @@ public class FileUploadController {
 
     /**
      * Multipart upload entry point. Validates analyzer id, test code, file
-     * shape, and scanner agreement; writes the file to the analyzer's
-     * watch directory; invokes {@link FileMessageHandler#processFile}
-     * with the admin's declared test code; returns an HTML banner.
+     * shape, and scanner agreement; commits bytes and the declared test code
+     * to the result queue; returns an HTML receipt banner.
      *
-     * <p>Failure modes all return a 4xx with an {@code .banner.error}
+     * <p>Validation failures return a 4xx; persistence failures return a 5xx with an {@code .banner.error}
      * HTML response that the static form displays inline. Callers that
      * want structured JSON errors should use the {@code /analyzers}
      * endpoints instead.
@@ -203,122 +201,50 @@ public class FileUploadController {
     private void processUpload(String analyzerId, String testCode, AnalyzerEntry entry,
             String originalFilename, Path targetDir, Path targetFile, byte[] fileBytes,
             String contentHash, jakarta.servlet.http.HttpServletResponse response) {
-        // Record RETRYING before writing. The shared file claim protects the
-        // entire operation, including failure handling and final state writes.
-        // The bounded retry delay lets a restarted process recover an upload
-        // interrupted by a crash; it does not grant ownership to a live worker.
-        //
-        // Previously this marked PROCESSED immediately. That was a silent
-        // data-loss bug: a processFile failure left the row stuck PROCESSED,
-        // and FileWatcher skipped the file forever even though it was never
-        // actually processed.
+        org.itech.ahb.normalizer.MessageEnvelope receipt;
         try {
             fileWatcher.getStateStore().upsertRetrying(analyzerId, contentHash, targetFile);
             fileWatcher.getStateStore().setNextAttemptAt(analyzerId, contentHash,
                     Instant.now().plusSeconds(UPLOAD_LEASE_SECONDS));
-        } catch (RuntimeException e) {
-            // If we can't register ownership, refuse the upload — proceeding
-            // would risk a FileWatcher race against a state we don't control.
-            log.error("FileUploadController: pre-register state store failed — refusing upload to avoid "
-                    + "FileWatcher race. analyzerId={} file={} error={}",
-                    analyzerId, originalFilename, e.getMessage(), e);
-            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Could not register upload in state store: " + e.getMessage());
+            // Persist bytes and the explicit assay before creating a watched file. A crash must not
+            // let a watcher reinterpret an unrecorded manual selection using a profile default.
+            receipt = fileMessageHandler.receiveBytes(targetFile, analyzerId, testCode, fileBytes);
+        } catch (IOException | FileProcessingException | RuntimeException e) {
+            log.warn("File upload was not accepted for analyzer {}: {}", analyzerId, e.getMessage());
+            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR, "File was not accepted: " + e.getMessage());
             return;
         }
 
+        // The source copy is convenient for operators; recovery now uses the already committed outbox bytes.
+        boolean sourceCopyWritten = true;
         try {
-            if (!Files.exists(targetDir)) {
-                Files.createDirectories(targetDir);
-            }
-            Files.write(targetFile, fileBytes,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
+            Files.createDirectories(targetDir);
+            Files.write(targetFile, fileBytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         } catch (IOException e) {
-            log.warn("FileUploadController: failed to write {} to {}: {}",
-                    originalFilename, targetDir, e.getMessage());
-            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Failed to write upload to " + targetDir + ": " + e.getMessage());
-            return;
+            sourceCopyWritten = false;
+            log.warn("File is retained in the result queue but source copy could not be written: {}", targetFile);
         }
-
-        // Stream progress to the browser via chunked HTML response so the
-        // user sees "Processing accession N of M" instead of a frozen screen.
-        // Each flush() pushes a new <p> line to the browser immediately.
-        response.setContentType("text/html; charset=UTF-8");
-        response.setStatus(200);
-        java.io.PrintWriter writer;
-        try {
-            writer = response.getWriter();
-        } catch (IOException e) {
-            writeErrorHtml(response, HttpStatus.INTERNAL_SERVER_ERROR, "Response writer failed");
-            return;
-        }
-        writer.write("<!DOCTYPE html><html><head><title>Uploading…</title>"
-                + "<style>"
-                + "body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; }"
-                + "h1 { font-size: 1.3rem; }"
-                + ".progress { color: #525252; font-size: 0.85rem; margin: 2px 0; }"
-                + ".banner { padding: 12px 16px; border-radius: 4px; margin: 16px 0; }"
-                + ".banner.success { background: #defbe6; border-left: 4px solid #24a148; }"
-                + ".banner.error { background: #fff1f1; border-left: 4px solid #da1e28; }"
-                + "code { background: #e8e8e8; padding: 2px 6px; border-radius: 3px; font-size: 0.85em; }"
-                + "</style></head><body>"
-                + "<h1>Processing " + htmlEscape(originalFilename) + "…</h1>");
-        writer.flush();
-
-        try {
-            fileMessageHandler.processFile(targetFile, analyzerId, testCode,
-                    (current, total, accession) -> {
-                        writer.write("<p class=\"progress\">Accession " + current + " of " + total
-                                + ": <code>" + htmlEscape(accession) + "</code></p>");
-                        writer.flush();
-                    });
-        } catch (FileProcessingException | IOException e) {
-            log.warn("FileUploadController: processFile failed for {}: {}",
-                    targetFile, e.getMessage());
-            // Hand off to FileWatcher's retry loop: clearing the lease
-            // (next_attempt_at = null) makes the row eligible for re-processing
-            // on the next polling cycle via the existing incrementAttempts →
-            // backoff → FAILED_NEEDS_HANDLING machinery. Do NOT markProcessed —
-            // that would permanently skip the file.
-            try {
-                fileWatcher.getStateStore().setNextAttemptAt(analyzerId, contentHash, null);
-            } catch (RuntimeException stateErr) {
-                log.warn("FileUploadController: failed to clear upload lease after processFile error "
-                        + "(FileWatcher will still retry once the lease expires naturally): {}",
-                        stateErr.getMessage());
-            }
-            writer.write("<div class=\"banner error\">Processing failed: "
-                    + htmlEscape(e.getMessage()) + "</div></body></html>");
-            writer.flush();
-            return;
-        }
-
-        // Success: transition from RETRYING+lease to PROCESSED. This also
-        // clears next_attempt_at (via markProcessed's SQL) so any subsequent
-        // re-drop of the same file content is treated as an idempotent
-        // already-processed observation by FileWatcher.
         try {
             fileWatcher.getStateStore().markProcessed(analyzerId, contentHash, targetFile);
         } catch (RuntimeException e) {
-            // Upload succeeded functionally; state-store discrepancy will
-            // self-heal on the next FileWatcher scan via touchLastSeen.
-            log.warn("FileUploadController: failed to mark state as PROCESSED after successful upload "
-                    + "(will self-heal on next FileWatcher scan): {}", e.getMessage());
+            log.warn("File is retained in the result queue; watcher discovery state update failed: {}", e.getMessage());
         }
-
-        String analyzerName = entry.getName() != null ? entry.getName() : analyzerId;
-        writer.write("<div class=\"banner success\">File <code>" + htmlEscape(originalFilename)
-                + "</code> uploaded to <code>" + htmlEscape(targetFile.toString())
-                + "</code> for analyzer <strong>" + htmlEscape(analyzerName)
-                + "</strong>"
-                + (testCode != null ? " with test code <strong>" + htmlEscape(testCode) + "</strong>" : "")
-                + ".</div>"
-                + "<p><a href=\"/admin/upload/index.html\">Upload another file</a></p>"
-                + "</body></html>");
-        writer.flush();
+        response.setContentType("text/html; charset=UTF-8");
+        response.setStatus(200);
+        try {
+            var writer = response.getWriter();
+            writer.write("<!DOCTYPE html><html><head><title>File received</title></head><body>"
+                    + "<div class=\"banner success\">File <code>" + htmlEscape(originalFilename)
+                    + "</code> received and queued for delivery for <strong>"
+                    + htmlEscape(entry.getName() != null ? entry.getName() : analyzerId) + "</strong>.</div>"
+                    + "<p>Receipt: <code>" + htmlEscape(receipt.getOutboxReceiptId())
+                    + "</code>. Check the result queue for delivery status.</p>"
+                    + (sourceCopyWritten ? "" : "<p>The source copy could not be written; the received bytes are safely retained in the queue.</p>")
+                    + "<p><a href=\"/admin/upload/index.html\">Upload another file</a></p></body></html>");
+            writer.flush();
+        } catch (IOException e) {
+            log.warn("Could not return FILE receipt {}; the upload remains queued", receipt.getOutboxReceiptId());
+        }
     }
 
     /**
