@@ -36,6 +36,22 @@ connections contain no OpenELIS catalog IDs, control lots, Westgard state,
 release policy, or site lab units. Concrete connection values, including
 credentials and FILE directories, belong only to the durable Bridge connection.
 
+### Specimen context for clinical defaults
+
+A test mapping may supply `specimen_type_hint`: an assay-supported specimen name
+used by OE2 when resolving the default local test. It is optional and nonblank.
+OE2 matches it against actual active specimen associations alongside LOINC, not
+against a test-name suffix. It does not create a specimen, constrain message
+transport, change an existing clinical binding, or replace user customization.
+Missing or ambiguous local matches remain available for normal mapping review.
+Profiles without the hint retain the existing resolution behavior.
+
+GeneXpert revision 6 adds `Plasma` for the HIV-VL default. The assay's
+[Cepheid instructions, 301-3068 Rev. N](https://infomine.cepheid.com/sites/default/files/2023-08/Xpert%20HIV-1%20Viral%20Load%20ENGLISH%20IFU%20301-3068%2C%20Rev.%20N.pdf)
+describe quantitative HIV-1 RNA testing in EDTA or ACD plasma. Revisions 1–5
+remain unchanged; configured connections do not move to revision 6 implicitly.
+This change does not settle other assays' specimen or result-value semantics.
+
 ### HL7 recognition field paths
 
 HL7 field rules use `SEG.field`, `SEG.field.component`, or
@@ -156,3 +172,41 @@ milestone may add optional fields compatibly; removing a field or changing its
 required meaning requires a new major contract directory. There is no parallel
 thin-profile schema, compatibility reader/writer, or bulk full-state
 registration contract in the target path.
+
+### Categorical answer hints
+
+A test mapping may supply optional `result_value_hints`, an object whose keys
+are exact declared raw `values` and whose values are equivalent clinical answer
+labels. A consumer first tries the raw label; when no local answer matches, it
+may try the explicit hint. Case and whitespace normalization are permitted;
+multiple matches stay unresolved. A hint neither changes the instrument value
+nor a saved site binding, and does not create a local clinical answer. Bridge
+retains and fingerprints the field with the profile; ingestion retains the raw
+value. Profiles without hints retain their existing behavior.
+
+GeneXpert revision 7 supplies COVID POSITIVE and NEGATIVE hints for RNA detected
+and not detected, with `Respiratory Swab` context to distinguish the existing
+respiratory clinical test from other specimen-specific tests. The [Xpert Xpress SARS-CoV-2 instructions, 302-3562 Rev G,
+section 16](https://www.cepheid.com/Package%20Insert%20Files/Xpress-SARS-CoV-2/Xpert%20Xpress%20SARS-CoV-2%20Assay%20ENGLISH%20Package%20Insert%20302-3562%20Rev.%20G.pdf)
+distinguish detection outcomes from INVALID, ERROR and NO RESULT. This revision
+does not equate ERROR with Invalid or guess a translation for INDETERMINATE.
+The curated host-code vocabulary still needs actual instrument qualification;
+manufacturer display labels are not proof of captured ASTM bytes. Revisions 1–6
+remain unchanged. Full producer/consumer/runtime qualification is required
+before a consuming release updates its pin.
+
+### FluoroCycler HIV default specimen
+
+FluoroCycler revision 4 adds a Plasma default binding hint to its existing
+`VIH-1` concentration row. Revision 3 remains unchanged. Parsing, units, control
+recognition and directory configuration are unchanged; this does not convert
+units or reinterpret the raw `Valid` interpretation as a concentration.
+
+[Biocentric GENERIC HIV Charge Virale](https://www.biocentric.com/copy-of-generic-hiv-charge-virale-en)
+describes plasma and copies/mL. The
+[current Bruker version 2.0 assay](https://www.bruker.com/en/products-and-solutions/molecular-diagnostics/assays/hiv-hepatitis/generic-hiv-1-viral-load.html)
+also uses plasma but reports IU/mL. The existing copies/mL profile is not a
+qualified IU/mL assay profile; installations must select a profile matching
+their assay/export. The specimen hint supplies a local binding default, not
+specimen evidence from the message. Synthetic workbook compatibility is not
+physical instrument or assay qualification.

@@ -374,6 +374,7 @@
           "items": { "$ref": "#/$defs/nonBlank" }
         },
         "test_name_hint": { "$ref": "#/$defs/nonBlank" },
+        "specimen_type_hint": { "$ref": "#/$defs/nonBlank" },
         "loinc": { "type": "string", "pattern": "^[0-9]{1,8}-[0-9]$" },
         "unit": { "type": "string" },
         "result_type": {
@@ -384,6 +385,12 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/nonBlank" }
+        },
+        "result_value_hints": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/nonBlank" },
+          "additionalProperties": { "$ref": "#/$defs/nonBlank" }
         },
         "normalized_coding": { "$ref": "#/$defs/coding" }
       },
