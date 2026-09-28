@@ -194,3 +194,19 @@ The curated host-code vocabulary still needs actual instrument qualification;
 manufacturer display labels are not proof of captured ASTM bytes. Revisions 1–6
 remain unchanged. Full producer/consumer/runtime qualification is required
 before a consuming release updates its pin.
+
+### FluoroCycler HIV default specimen
+
+FluoroCycler revision 4 adds a Plasma default binding hint to its existing
+`VIH-1` concentration row. Revision 3 remains unchanged. Parsing, units, control
+recognition and directory configuration are unchanged; this does not convert
+units or reinterpret the raw `Valid` interpretation as a concentration.
+
+[Biocentric GENERIC HIV Charge Virale](https://www.biocentric.com/copy-of-generic-hiv-charge-virale-en)
+describes plasma and copies/mL. The
+[current Bruker version 2.0 assay](https://www.bruker.com/en/products-and-solutions/molecular-diagnostics/assays/hiv-hepatitis/generic-hiv-1-viral-load.html)
+also uses plasma but reports IU/mL. The existing copies/mL profile is not a
+qualified IU/mL assay profile; installations must select a profile matching
+their assay/export. The specimen hint supplies a local binding default, not
+specimen evidence from the message. Synthetic workbook compatibility is not
+physical instrument or assay qualification.

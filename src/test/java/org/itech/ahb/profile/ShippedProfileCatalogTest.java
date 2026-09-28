@@ -152,6 +152,19 @@ class ShippedProfileCatalogTest {
       assertThat(mapping.path("result_value_hints").has("ERROR")).isFalse();
     });
 
+    assertThat(
+      catalog.require("fluorocycler-xt", 3).profile().path("catalog").path("revisionFingerprint").asText()
+    ).isEqualTo("sha256:566234eb28f34c491c5bc9cdccdace50a303d622c67c0d06f5b1b8076bee8525");
+    ObjectNode fluoro = catalog.requireLatest("fluorocycler-xt").profile();
+    assertThat(fluoro.path("catalog").path("revision").asInt()).isEqualTo(4);
+    assertThat(fluoro.path("default_test_mappings"))
+      .singleElement()
+      .satisfies(mapping -> {
+        assertThat(mapping.path("test_code").asText()).isEqualTo("VIH-1");
+        assertThat(mapping.path("specimen_type_hint").asText()).isEqualTo("Plasma");
+        assertThat(mapping.path("unit").asText()).isEqualTo("copies/mL");
+      });
+
     REVISION_ONE_FINGERPRINTS.forEach((profileId, fingerprint) -> {
       ObjectNode revisionOne = catalog.require(profileId, 1).profile();
       assertThat(revisionOne.path("catalog").path("revisionFingerprint").asText()).isEqualTo(fingerprint);
