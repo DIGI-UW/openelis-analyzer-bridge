@@ -337,6 +337,23 @@ openelis_start() {
     return 1
 }
 
+# A host-side response does not prove the forwarding JVM can reach a recreated
+# destination yet. Wait on that same JVM before exercising one operator retry.
+wait_for_forwarding_health() {
+    local health
+    for _ in $(seq 1 30); do
+        health="$(curl --silent --show-error --max-time 5 \
+            "http://localhost:${E2E_BRIDGE_PORT}/actuator/health" || true)"
+        if jq --exit-status '.components.httpforward.status == "UP"' \
+            <<<"${health}" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "Bridge still cannot reach the restored OpenELIS capture: ${health}" >&2
+    return 1
+}
+
 bridge_restart() {
     docker compose -f "${COMPOSE_FILE}" restart openelis-analyzer-bridge >/dev/null 2>&1
     for _ in $(seq 1 60); do

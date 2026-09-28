@@ -76,6 +76,7 @@ echo "  dead-lettered with its complete payload: ${#raw} bytes received, ${#fhir
 
 echo "Bringing OpenELIS back and retrying as an operator would..."
 openelis_start
+wait_for_forwarding_health
 outbox_retry "${id}"
 wait_for_outbox_state "${id}" "DELIVERED" 60
 
