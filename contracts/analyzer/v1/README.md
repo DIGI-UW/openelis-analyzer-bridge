@@ -185,8 +185,9 @@ retains and fingerprints the field with the profile; ingestion retains the raw
 value. Profiles without hints retain their existing behavior.
 
 GeneXpert revision 7 supplies COVID POSITIVE and NEGATIVE hints for RNA detected
-and not detected. The [Xpert Xpress SARS-CoV-2 instructions, 302-3562 Rev G,
-section 14](https://www.cepheid.com/Package%20Insert%20Files/Xpress-SARS-CoV-2/Xpert%20Xpress%20SARS-CoV-2%20Assay%20ENGLISH%20Package%20Insert%20302-3562%20Rev.%20G.pdf)
+and not detected, with `Respiratory Swab` context to distinguish the existing
+respiratory clinical test from other specimen-specific tests. The [Xpert Xpress SARS-CoV-2 instructions, 302-3562 Rev G,
+section 16](https://www.cepheid.com/Package%20Insert%20Files/Xpress-SARS-CoV-2/Xpert%20Xpress%20SARS-CoV-2%20Assay%20ENGLISH%20Package%20Insert%20302-3562%20Rev.%20G.pdf)
 distinguish detection outcomes from INVALID, ERROR and NO RESULT. This revision
 does not equate ERROR with Invalid or guess a translation for INDETERMINATE.
 The curated host-code vocabulary still needs actual instrument qualification;

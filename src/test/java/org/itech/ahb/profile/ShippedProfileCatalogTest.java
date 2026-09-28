@@ -146,6 +146,7 @@ class ShippedProfileCatalogTest {
     ).isEqualTo("sha256:72e4d3ca7ebe5715c750a19579e038178709722294ee78686bf0f751f9253001");
     assertThat(catalog.requireLatest("genexpert-astm").profile().path("default_test_mappings")).anySatisfy(mapping -> {
       assertThat(mapping.path("test_code").asText()).isEqualTo("COVID19");
+      assertThat(mapping.path("specimen_type_hint").asText()).isEqualTo("Respiratory Swab");
       assertThat(mapping.path("result_value_hints").path("POSITIVE").asText()).isEqualTo("SARS-CoV-2 RNA DETECTED");
       assertThat(mapping.path("result_value_hints").path("NEGATIVE").asText()).isEqualTo("SARS-COV-2 RNA NOT DETECTED");
       assertThat(mapping.path("result_value_hints").has("ERROR")).isFalse();

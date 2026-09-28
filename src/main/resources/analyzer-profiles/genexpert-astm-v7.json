@@ -84,7 +84,8 @@
       "result_value_hints": {
         "POSITIVE": "SARS-CoV-2 RNA DETECTED",
         "NEGATIVE": "SARS-COV-2 RNA NOT DETECTED"
-      }
+      },
+      "specimen_type_hint": "Respiratory Swab"
     }
   ],
   "configDefaults": {
@@ -223,6 +224,6 @@
     "status": "ACTIVE",
     "publishedAt": "2026-09-28T00:00:00Z",
     "publishedBy": "distribution",
-    "revisionFingerprint": "sha256:f23907fe843b35b9cabfa08c8530944dc33e599479906657b4fff9eb7689cdd3"
+    "revisionFingerprint": "sha256:55c93b9f8327a26ccf7e04db1e1e08e8ce0c9214a2594351625247c22100bc84"
   }
 }
