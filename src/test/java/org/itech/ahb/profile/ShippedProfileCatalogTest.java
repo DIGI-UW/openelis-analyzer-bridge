@@ -59,9 +59,7 @@ class ShippedProfileCatalogTest {
           String profileId = profile.path("profileMeta").path("id").asText();
           String actualRecognitionFingerprint = profile.path("catalog").path("recognitionFingerprint").asText();
           String actualRevisionFingerprint = profile.path("catalog").path("revisionFingerprint").asText();
-          String recognitionFingerprint = fingerprints.recognitionFingerprint(
-            profile.path("controlResultRecognition")
-          );
+          String recognitionFingerprint = fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"));
           ((ObjectNode) profile.path("catalog")).put("recognitionFingerprint", recognitionFingerprint);
           String revisionFingerprint = fingerprints.revisionFingerprint(profile);
 
@@ -89,70 +87,69 @@ class ShippedProfileCatalogTest {
     assertThat(catalog.latest())
       .extracting(revision -> revision.profile().path("profileMeta").path("id").asText())
       .containsExactly("fluorocycler-xt", "genexpert-astm", "quantstudio");
-    assertThat(catalog.latest())
-      .allSatisfy(revision -> {
-        ObjectNode profile = revision.profile();
-        assertThat(profile.path("catalog").path("source").asText()).isEqualTo("SHIPPED");
-        assertThat(profile.path("catalog").path("revision").asInt()).isPositive();
-        assertThat(profile.path("configDefaults").has("qcRules")).isFalse();
-        assertThat(profile.path("configDefaults").path("dataFlow").asText()).isEqualTo("RESULTS_ONLY");
+    assertThat(catalog.latest()).allSatisfy(revision -> {
+      ObjectNode profile = revision.profile();
+      assertThat(profile.path("catalog").path("source").asText()).isEqualTo("SHIPPED");
+      assertThat(profile.path("catalog").path("revision").asInt()).isPositive();
+      assertThat(profile.path("configDefaults").has("qcRules")).isFalse();
+      assertThat(profile.path("configDefaults").path("dataFlow").asText()).isEqualTo("RESULTS_ONLY");
 
-        var dataFlowField = StreamSupport.stream(profile.path("connectionFields").spliterator(), false)
-          .filter(field -> "dataFlow".equals(field.path("key").asText()))
-          .findFirst();
-        assertThat(dataFlowField).isPresent();
-        var choices = StreamSupport.stream(dataFlowField.orElseThrow().path("choices").spliterator(), false)
-          .map(choice -> choice.path("value").asText())
-          .toList();
-        assertThat(choices).contains("RESULTS_ONLY");
-        if (profile.path("capabilities").path("outboundOrders").asBoolean()) {
-          assertThat(choices).contains("TWO_WAY");
-        } else {
-          assertThat(choices).doesNotContain("TWO_WAY");
-        }
+      var dataFlowField = StreamSupport.stream(profile.path("connectionFields").spliterator(), false)
+        .filter(field -> "dataFlow".equals(field.path("key").asText()))
+        .findFirst();
+      assertThat(dataFlowField).isPresent();
+      var choices = StreamSupport.stream(dataFlowField.orElseThrow().path("choices").spliterator(), false)
+        .map(choice -> choice.path("value").asText())
+        .toList();
+      assertThat(choices).contains("RESULTS_ONLY");
+      if (profile.path("capabilities").path("outboundOrders").asBoolean()) {
+        assertThat(choices).contains("TWO_WAY");
+      } else {
+        assertThat(choices).doesNotContain("TWO_WAY");
+      }
 
-        switch (profile.path("profileMeta").path("id").asText()) {
-          case "fluorocycler-xt" ->
-            assertThat(profile.path("result_value_order")).extracting(JsonNode::asText).containsExactly(
-              "result",
-              "interpretation"
-            );
-          case "genexpert-astm" -> {
-            JsonNode selection = profile
-              .path("configDefaults")
-              .path("extractionOverrides")
-              .path("resultRecordSelection");
-            assertThat(selection.path("mode").asText()).isEqualTo("FIELD_NON_BLANK");
-            assertThat(selection.path("targetField").asText()).isEqualTo("R.3.5");
-          }
-          case "quantstudio" ->
-            assertThat(profile.path("result_value_order")).extracting(JsonNode::asText).containsExactly(
-              "result",
-              "ctValue"
-            );
-          default -> throw new AssertionError("Unexpected priority profile");
+      switch (profile.path("profileMeta").path("id").asText()) {
+        case "fluorocycler-xt" -> assertThat(profile.path("result_value_order"))
+          .extracting(JsonNode::asText)
+          .containsExactly("result", "interpretation");
+        case "genexpert-astm" -> {
+          JsonNode selection = profile.path("configDefaults").path("extractionOverrides").path("resultRecordSelection");
+          assertThat(selection.path("mode").asText()).isEqualTo("FIELD_NON_BLANK");
+          assertThat(selection.path("targetField").asText()).isEqualTo("R.3.5");
         }
-      });
+        case "quantstudio" -> assertThat(profile.path("result_value_order"))
+          .extracting(JsonNode::asText)
+          .containsExactly("result", "ctValue");
+        default -> throw new AssertionError("Unexpected priority profile");
+      }
+    });
 
     // Connections pin a revision by fingerprint: a published revision can never change, only be
     // followed by a new one. Revision 5 added host for SERVER connections and senderId.
-    GENEXPERT_PUBLISHED_FINGERPRINTS.forEach((revision, fingerprint) ->
-      assertThat(catalog.require("genexpert-astm", revision).profile().path("catalog").path("revisionFingerprint").asText())
-        .as("genexpert-astm revision %d", revision)
-        .isEqualTo(fingerprint)
+    GENEXPERT_PUBLISHED_FINGERPRINTS.forEach(
+      (revision, fingerprint) ->
+        assertThat(
+          catalog.require("genexpert-astm", revision).profile().path("catalog").path("revisionFingerprint").asText()
+        )
+          .as("genexpert-astm revision %d", revision)
+          .isEqualTo(fingerprint)
     );
-    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(5);
+    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(6);
+
+    assertThat(catalog.requireLatest("genexpert-astm").profile().path("default_test_mappings")).anySatisfy(mapping -> {
+      assertThat(mapping.path("test_code").asText()).isEqualTo("HIV-VL");
+      assertThat(mapping.path("specimen_type_hint").asText()).isEqualTo("Plasma");
+    });
 
     REVISION_ONE_FINGERPRINTS.forEach((profileId, fingerprint) -> {
       ObjectNode revisionOne = catalog.require(profileId, 1).profile();
       assertThat(revisionOne.path("catalog").path("revisionFingerprint").asText()).isEqualTo(fingerprint);
       assertThat(revisionOne.path("configDefaults").has("dataFlow")).isFalse();
       assertThat(
-        StreamSupport
-          .stream(revisionOne.path("connectionFields").spliterator(), false)
-          .noneMatch(field -> "dataFlow".equals(field.path("key").asText()))
-      )
-        .isTrue();
+        StreamSupport.stream(revisionOne.path("connectionFields").spliterator(), false).noneMatch(
+          field -> "dataFlow".equals(field.path("key").asText())
+        )
+      ).isTrue();
     });
   }
 }

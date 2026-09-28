@@ -374,6 +374,7 @@
           "items": { "$ref": "#/$defs/nonBlank" }
         },
         "test_name_hint": { "$ref": "#/$defs/nonBlank" },
+        "specimen_type_hint": { "$ref": "#/$defs/nonBlank" },
         "loinc": { "type": "string", "pattern": "^[0-9]{1,8}-[0-9]$" },
         "unit": { "type": "string" },
         "result_type": {

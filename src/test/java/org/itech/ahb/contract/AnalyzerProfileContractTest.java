@@ -44,6 +44,21 @@ class AnalyzerProfileContractTest {
   }
 
   @Test
+  @DisplayName("complete ASTM and FILE profiles can supply an optional specimen hint")
+  void specimenHintIsOptionalAndNonblank() throws IOException {
+    for (String fixtureName : PROFILE_FIXTURES) {
+      ObjectNode profile = fixture(fixtureName).deepCopy();
+      ObjectNode mapping = (ObjectNode) profile.path("default_test_mappings").get(0);
+      mapping.put("specimen_type_hint", "Plasma");
+      assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), fixtureName);
+      mapping.put("specimen_type_hint", "");
+      assertFalse(PROFILE_SCHEMA.validate(profile).isEmpty(), fixtureName);
+      mapping.remove("specimen_type_hint");
+      assertTrue(PROFILE_SCHEMA.validate(profile).isEmpty(), fixtureName);
+    }
+  }
+
+  @Test
   @DisplayName("every profile retains runtime communication and analyzer-instance defaults")
   void profilesRetainBothResponsibilities() throws IOException {
     for (String fixtureName : PROFILE_FIXTURES) {

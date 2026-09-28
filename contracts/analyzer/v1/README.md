@@ -36,6 +36,22 @@ connections contain no OpenELIS catalog IDs, control lots, Westgard state,
 release policy, or site lab units. Concrete connection values, including
 credentials and FILE directories, belong only to the durable Bridge connection.
 
+### Specimen context for clinical defaults
+
+A test mapping may supply `specimen_type_hint`: an assay-supported specimen name
+used by OE2 when resolving the default local test. It is optional and nonblank.
+OE2 matches it against actual active specimen associations alongside LOINC, not
+against a test-name suffix. It does not create a specimen, constrain message
+transport, change an existing clinical binding, or replace user customization.
+Missing or ambiguous local matches remain available for normal mapping review.
+Profiles without the hint retain the existing resolution behavior.
+
+GeneXpert revision 6 adds `Plasma` for the HIV-VL default. The assay's
+[Cepheid instructions, 301-3068 Rev. N](https://infomine.cepheid.com/sites/default/files/2023-08/Xpert%20HIV-1%20Viral%20Load%20ENGLISH%20IFU%20301-3068%2C%20Rev.%20N.pdf)
+describe quantitative HIV-1 RNA testing in EDTA or ACD plasma. Revisions 1–5
+remain unchanged; configured connections do not move to revision 6 implicitly.
+This change does not settle other assays' specimen or result-value semantics.
+
 ### HL7 recognition field paths
 
 HL7 field rules use `SEG.field`, `SEG.field.component`, or
