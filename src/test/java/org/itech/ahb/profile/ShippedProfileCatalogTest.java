@@ -134,11 +134,21 @@ class ShippedProfileCatalogTest {
           .as("genexpert-astm revision %d", revision)
           .isEqualTo(fingerprint)
     );
-    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(6);
+    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(7);
 
     assertThat(catalog.requireLatest("genexpert-astm").profile().path("default_test_mappings")).anySatisfy(mapping -> {
       assertThat(mapping.path("test_code").asText()).isEqualTo("HIV-VL");
       assertThat(mapping.path("specimen_type_hint").asText()).isEqualTo("Plasma");
+    });
+
+    assertThat(
+      catalog.require("genexpert-astm", 6).profile().path("catalog").path("revisionFingerprint").asText()
+    ).isEqualTo("sha256:72e4d3ca7ebe5715c750a19579e038178709722294ee78686bf0f751f9253001");
+    assertThat(catalog.requireLatest("genexpert-astm").profile().path("default_test_mappings")).anySatisfy(mapping -> {
+      assertThat(mapping.path("test_code").asText()).isEqualTo("COVID19");
+      assertThat(mapping.path("result_value_hints").path("POSITIVE").asText()).isEqualTo("SARS-CoV-2 RNA DETECTED");
+      assertThat(mapping.path("result_value_hints").path("NEGATIVE").asText()).isEqualTo("SARS-COV-2 RNA NOT DETECTED");
+      assertThat(mapping.path("result_value_hints").has("ERROR")).isFalse();
     });
 
     REVISION_ONE_FINGERPRINTS.forEach((profileId, fingerprint) -> {

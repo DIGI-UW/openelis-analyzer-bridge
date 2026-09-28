@@ -172,3 +172,24 @@ milestone may add optional fields compatibly; removing a field or changing its
 required meaning requires a new major contract directory. There is no parallel
 thin-profile schema, compatibility reader/writer, or bulk full-state
 registration contract in the target path.
+
+### Categorical answer hints
+
+A test mapping may supply optional `result_value_hints`, an object whose keys
+are exact declared raw `values` and whose values are equivalent clinical answer
+labels. A consumer first tries the raw label; when no local answer matches, it
+may try the explicit hint. Case and whitespace normalization are permitted;
+multiple matches stay unresolved. A hint neither changes the instrument value
+nor a saved site binding, and does not create a local clinical answer. Bridge
+retains and fingerprints the field with the profile; ingestion retains the raw
+value. Profiles without hints retain their existing behavior.
+
+GeneXpert revision 7 supplies COVID POSITIVE and NEGATIVE hints for RNA detected
+and not detected. The [Xpert Xpress SARS-CoV-2 instructions, 302-3562 Rev G,
+section 14](https://www.cepheid.com/Package%20Insert%20Files/Xpress-SARS-CoV-2/Xpert%20Xpress%20SARS-CoV-2%20Assay%20ENGLISH%20Package%20Insert%20302-3562%20Rev.%20G.pdf)
+distinguish detection outcomes from INVALID, ERROR and NO RESULT. This revision
+does not equate ERROR with Invalid or guess a translation for INDETERMINATE.
+The curated host-code vocabulary still needs actual instrument qualification;
+manufacturer display labels are not proof of captured ASTM bytes. Revisions 1–6
+remain unchanged. Full producer/consumer/runtime qualification is required
+before a consuming release updates its pin.

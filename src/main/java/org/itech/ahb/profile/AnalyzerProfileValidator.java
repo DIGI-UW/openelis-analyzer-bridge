@@ -49,11 +49,9 @@ final class AnalyzerProfileValidator {
   }
 
   List<String> validationIssues(JsonNode profile) {
-    List<String> failures = new ArrayList<>(schema
-      .validate(profile)
-      .stream()
-      .map(ValidationMessage::getMessage)
-      .toList());
+    List<String> failures = new ArrayList<>(
+      schema.validate(profile).stream().map(ValidationMessage::getMessage).toList()
+    );
     if (failures.isEmpty()) {
       validateConnectionFields(profile, failures);
       validateFilePattern(profile, failures);
@@ -75,10 +73,7 @@ final class AnalyzerProfileValidator {
         duplicateKeys.add(key);
       }
       fieldsByKey.putIfAbsent(key, field);
-      if (
-        "SECRET".equals(field.path("inputKind").asText()) &&
-        profile.path("configDefaults").has(key)
-      ) {
+      if ("SECRET".equals(field.path("inputKind").asText()) && profile.path("configDefaults").has(key)) {
         failures.add("$.configDefaults." + key + " must not supply a SECRET default");
       }
     }
@@ -124,9 +119,7 @@ final class AnalyzerProfileValidator {
     }
     JsonNode field = fieldsByKey.get(key);
     JsonNode condition = field == null ? null : field.path("visibleWhen");
-    String dependency = condition != null && condition.isObject()
-      ? condition.path("fieldKey").asText()
-      : null;
+    String dependency = condition != null && condition.isObject() ? condition.path("fieldKey").asText() : null;
     if (
       dependency != null &&
       fieldsByKey.containsKey(dependency) &&
@@ -145,20 +138,16 @@ final class AnalyzerProfileValidator {
     }
     TabularResultValueSelection selection = TabularResultValueSelection.fromProfile(profile);
     Set<String> mappedSemanticFields = new HashSet<>();
-    profile
-      .path("column_mapping")
-      .elements()
-      .forEachRemaining(value -> mappedSemanticFields.add(value.asText()));
-    selection.semanticFields().forEach(field -> {
-      if (!mappedSemanticFields.contains(field)) {
-        failures.add(
-          "$.result_value_order selects " +
-          field +
-          " but $.column_mapping has no matching source column"
-        );
-      }
-    });
+    profile.path("column_mapping").elements().forEachRemaining(value -> mappedSemanticFields.add(value.asText()));
+    selection
+      .semanticFields()
+      .forEach(field -> {
+        if (!mappedSemanticFields.contains(field)) {
+          failures.add("$.result_value_order selects " + field + " but $.column_mapping has no matching source column");
+        }
+      });
   }
+
   private void validateFilePattern(JsonNode profile, List<String> failures) {
     if (!"FILE".equals(profile.path("protocol").path("name").asText())) {
       return;
@@ -185,6 +174,16 @@ final class AnalyzerProfileValidator {
     Set<String> identities = new HashSet<>();
     for (JsonNode mapping : profile.path("default_test_mappings")) {
       validateMappingIdentity(mapping.path("test_code").asText(), identities, failures);
+      Set<String> values = new HashSet<>();
+      mapping.path("values").forEach(value -> values.add(value.asText()));
+      mapping
+        .path("result_value_hints")
+        .fieldNames()
+        .forEachRemaining(raw -> {
+          if (!values.contains(raw)) {
+            failures.add("$.default_test_mappings.result_value_hints must name a declared raw value: " + raw);
+          }
+        });
       for (JsonNode alias : mapping.path("aliases")) {
         validateMappingIdentity(alias.asText(), identities, failures);
       }
@@ -205,9 +204,7 @@ final class AnalyzerProfileValidator {
           Pattern.compile(rule.path("operand").asText());
         } catch (PatternSyntaxException exception) {
           failures.add(
-            "$.controlResultRecognition.rules." +
-            entry.getKey() +
-            ".operand must be a valid Java regular expression"
+            "$.controlResultRecognition.rules." + entry.getKey() + ".operand must be a valid Java regular expression"
           );
         }
       });

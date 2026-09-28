@@ -386,6 +386,12 @@
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/nonBlank" }
         },
+        "result_value_hints": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/nonBlank" },
+          "additionalProperties": { "$ref": "#/$defs/nonBlank" }
+        },
         "normalized_coding": { "$ref": "#/$defs/coding" }
       },
       "allOf": [

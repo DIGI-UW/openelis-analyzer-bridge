@@ -63,6 +63,27 @@ class AnalyzerProfileCatalogTest {
   }
 
   @Test
+  void valueHintsUseDeclaredRawValuesAndRemainOptional() throws Exception {
+    AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
+    for (String fixture : List.of("analyzer-profile-astm.json", "analyzer-profile-file.json")) {
+      ObjectNode profile = publishedFixture(fixture);
+      ObjectNode mapping = (ObjectNode) profile.path("default_test_mappings").get(0);
+      mapping.put("result_type", "qualitative");
+      mapping.putArray("values").add("RAW POSITIVE");
+      ObjectNode hints = mapping.putObject("result_value_hints");
+      hints.put("RAW POSITIVE", "Target detected");
+      assertThat(validator.validationIssues(profile)).isEmpty();
+      hints.put("RAW POSITIVE", "");
+      assertThat(validator.validationIssues(profile)).isNotEmpty();
+      hints.removeAll();
+      hints.put("UNDECLARED", "Target detected");
+      assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("declared raw value"));
+      mapping.remove("result_value_hints");
+      assertThat(validator.validationIssues(profile)).isEmpty();
+    }
+  }
+
+  @Test
   void createRemainsAnEditableDurableDraftUntilExplicitPublish() throws Exception {
     var draft = catalog.createDraft("Site Fluoro Profile", "profile-creator");
     String profileId = draft.profile().path("profileMeta").path("id").asText();
