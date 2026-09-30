@@ -3,7 +3,7 @@
 # The Madagascar incident, reproduced and then survived.
 #
 # OpenELIS is unreachable, an analyzer sends a result anyway, the bridge
-# is restarted mid-outage, and OpenELIS comes back. The result must arrive, once,
+# is recreated mid-outage, and OpenELIS comes back. The result must arrive, once,
 # with its content intact, without the analyzer sending anything again.
 #
 # Before the delivery outbox this sequence lost the result within three seconds
@@ -75,13 +75,19 @@ jq --exit-status --arg id "${id}" '.identifier.value == $id' <<<"${fhir}" >/dev/
 }
 echo "  complete message held: ${#raw} bytes received, ${#fhir} bytes rendered"
 
-echo "Restarting the bridge while the result is still undelivered..."
-bridge_restart
-[ "$(outbox_state "${id}")" != "" ] || {
-    echo "The outbox entry did not survive the restart" >&2
-    exit 1
-}
-echo "  entry survived the restart as $(outbox_state "${id}")"
+echo "Recreating the bridge while the result is still undelivered..."
+bridge_recreate
+# A missing entry answers with a 404 body whose state reads "null", so check for the states it
+# can legitimately be in while OpenELIS is still away.
+survived="$(outbox_state "${id}" 2>/dev/null || true)"
+case "${survived}" in
+    PENDING | RETRYING) ;;
+    *)
+        echo "The outbox entry did not survive the bridge being recreated (state: ${survived:-none})" >&2
+        exit 1
+        ;;
+esac
+echo "  entry survived the bridge being recreated as ${survived}"
 
 echo "Bringing OpenELIS back..."
 # Recreated, so its request journal starts empty: anything counted below arrived
@@ -101,4 +107,4 @@ count="$(wiremock_deliveries_for_id "${id}")"
     exit 1
 }
 
-echo "Result survived a DNS outage and a bridge restart, and arrived once."
+echo "Result survived a DNS outage and the bridge being recreated, and arrived once."

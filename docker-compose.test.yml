@@ -23,8 +23,8 @@ services:
     volumes:
       - ./configuration.test.yml:/app/configuration.yml:ro
       - analyzer-input:/mnt/analyzer-import
-      # A named volume, not tmpfs: the outbox has to survive `docker restart`, which is the whole
-      # point of the restart-recovery scenario.
+      # A named volume, not tmpfs: the outbox has to survive the container being recreated, which
+      # is the whole point of the recovery scenario.
       - bridge-state:/data/openelis-analyzer-bridge
     networks:
       astm-test-net:

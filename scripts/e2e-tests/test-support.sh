@@ -240,7 +240,7 @@ assert_normalized_capture() {
 #
 # The bridge holds every received result until OpenELIS accepts it. These helpers
 # let a scenario watch that happen: find the entry for an accession, wait for it
-# to reach a state, read the payload it is holding, and stop or restart the
+# to reach a state, read the payload it is holding, and stop or recreate the
 # services the delivery depends on.
 
 OUTBOX_URL="${OUTBOX_URL:-http://localhost:${E2E_BRIDGE_PORT}/admin/outbox}"
@@ -354,8 +354,10 @@ wait_for_forwarding_health() {
     return 1
 }
 
-bridge_restart() {
-    docker compose -f "${COMPOSE_FILE}" restart openelis-analyzer-bridge >/dev/null 2>&1
+# Recreated, not restarted: `docker restart` keeps the container's own filesystem, so it
+# cannot tell state on the volume from state in /tmp. An image upgrade recreates it.
+bridge_recreate() {
+    docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate openelis-analyzer-bridge >/dev/null 2>&1
     for _ in $(seq 1 60); do
         if curl --silent --fail "http://localhost:${E2E_BRIDGE_PORT}/actuator/health/readiness" >/dev/null 2>&1 \
             || outbox_api "/stats" >/dev/null 2>&1; then
@@ -363,7 +365,7 @@ bridge_restart() {
         fi
         sleep 1
     done
-    echo "Bridge did not come back after a restart" >&2
+    echo "Bridge did not come back after being recreated" >&2
     return 1
 }
 
