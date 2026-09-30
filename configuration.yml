@@ -1,27 +1,26 @@
 # ============================================================================
-# ASTM-HTTP Bridge Configuration
+# OpenELIS Analyzer Bridge configuration
 # ============================================================================
 # This file configures the bridge for bi-directional analyzer communication.
 #
 # CONFIGURATION FORMATS:
 #
 # 1. Bridge runtime settings (bridge.*)
-#    Used by: security, profile catalog, durable connections, and FILE runtime.
-#    Properties: bridge.file.*, bridge.profile-catalog.*, bridge.connection-catalog.*,
-#    bridge.security.*
+#    Used by: security, profile catalog, durable connections, the delivery
+#    outbox and FILE runtime.
+#    Properties: bridge.file.*, bridge.outbox.*, bridge.profile-catalog.*,
+#    bridge.connection-catalog.*, bridge.security.*
 #
 # 2. OpenELIS forwarding settings (org.itech.ahb.forward-http-server.*)
-#    Used by: HttpForwardingRouter, FILE FHIR forwarding, registry bootstrap,
-#    and forward-server health checks.
+#    Used by: result delivery and the forward-server health check.
 #    This is the single bridge → OE forwarding configuration path.
 # ============================================================================
 
-# Bridge Configuration (NEW FORMAT - v2.0+)
 bridge:
   http:
     # Comma-separated proxy IPs; empty means forwarded identity headers are ignored.
     trusted-proxies: ${BRIDGE_HTTP_TRUSTED_PROXIES:}
-  # Security configuration for the /input HTTP endpoint (M7.1)
+  # HTTP Basic authentication for /input, /admin and the management APIs.
   # Protects against unauthorized data injection via the HTTP transport.
   # Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
   #
@@ -106,9 +105,6 @@ org:
       # ASTM LIS1-A Server - Listens for ASTM messages from analyzers
       listen-astm-server:
         port: 12001
-        # Timeouts per CLSI LIS1-A specification
-        establishment-timeout-seconds: 15
-        receive-timeout-seconds: 30
 
         # ASTM E1381-95 Server - Listens for legacy ASTM messages
         e1381-95:
@@ -119,22 +115,11 @@ org:
         host-name: localhost
         port: 5000
 
-      # HL7 MLLP: when enabled, the shared listener on this port is bound at boot, and HL7 server
-      # connections that declare it join it. A connection on another port gets its own listener.
+      # HL7 MLLP: when enabled, the shared listener on this port is bound at boot, and every
+      # saved HL7 server connection joins it.
       mllp:
         enabled: false
         port: 2575
-        # Rate limiting: per source IP, prevents flooding
-        # rateLimit:
-        #   messagesPerSecond: 10
-
-      # Serial port listener (RS-232/RS-485)
-      serial:
-        enabled: false  # Set to true to enable serial transport
-        # ports:
-        #   - path: /dev/ttyUSB0
-        #     baudRate: 9600
-        #     protocol: ASTM
 
 # Server configuration
 server:
@@ -148,9 +133,10 @@ logging:
     org.itech: DEBUG
 
 # Actuator endpoints for health monitoring and metrics
-# NOTE: Health and info endpoints are publicly accessible. Other actuator endpoints
-# are also public by default but can be network-restricted in production.
-# The /input and /api/profiles endpoints require HTTP Basic auth (see bridge.security above).
+# NOTE: /actuator/health, /actuator/info, /actuator/prometheus and /actuator/metrics are
+# public. Other actuator endpoints, including per-component health such as
+# /actuator/health/mllp, require HTTP Basic auth, as do /input, /admin, /api/profiles and
+# /api/connections (see bridge.security above).
 management:
   endpoints:
     web:

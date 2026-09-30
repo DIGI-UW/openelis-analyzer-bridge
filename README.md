@@ -20,8 +20,8 @@ Bridge and OpenELIS responsibilities are explicitly separated:
 
 ## Architecture
 
-**Current OGC-1054 delivery boundary:** saved connections support priority ASTM
-and FILE, profile-driven HTTP ASTM/HL7/CSV/TSV input, and inbound HL7/MLLP server listeners.
+Saved connections support ASTM, FILE and serial analyzers, profile-driven HTTP
+ASTM/HL7/CSV/TSV input, and inbound HL7/MLLP server listeners.
 HL7 listeners use saved connection identity and the pinned profile's recognition
 rules, and recover the last successfully activated configuration after restart.
 Enabling the HL7 runtime binds the shared deployment listener; it does not
@@ -64,9 +64,12 @@ OpenELIS ──HTTP POST──> [Bridge] ──TCP──> Analyzer (ASTM host qu
 git clone https://github.com/DIGI-UW/openelis-analyzer-bridge.git
 cd openelis-analyzer-bridge
 
-docker compose up -d --build
+docker compose up -d
 docker logs --follow openelis-analyzer-bridge
 ```
+
+`docker-compose.yml` runs the published `itechuw/openelis-analyzer-bridge:latest`
+image; it does not build from this checkout.
 
 ### Building from Source
 
@@ -90,15 +93,14 @@ java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configu
 | 12000 | 12001 | Shared ASTM LIS1-A listener, bound at boot |
 | 12010 | 12011 | Shared ASTM E1381-95 listener, bound at boot |
 | 2575 | 2575 | Shared HL7 MLLP listener, bound at boot when `org.itech.ahb.mllp.enabled` |
-| Saved port | Saved port | Only for a connection that declares a port of its own (publish it too) |
 
 ### Volume Mounts
 
 | Host Path | Container Path | Purpose |
 |-----------|---------------|---------|
 | `./configuration.yml` | `/app/configuration.yml` | Runtime configuration |
+| Named volume `bridge-data` | `/data/openelis-analyzer-bridge` | Durable state: delivery outbox, FILE state, saved connections and profile revisions. Keep it across upgrades |
 | `/path/to/import` | `/mnt/analyzer-import` | File watcher input (optional) |
-| `/path/to/archive` | `/mnt/analyzer-archive` | Processed files (optional) |
 
 ### Serial Devices
 
@@ -118,7 +120,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | Property | Description | Default |
 |----------|-------------|---------|
 | **OpenELIS Forwarding** | | |
-| `org.itech.ahb.forward-http-server.uri` | OpenELIS analyzer endpoint base URI | Required |
+| `org.itech.ahb.forward-http-server.uri` | OpenELIS analyzer endpoint base URI; results are posted to `{uri}/fhir`. Set it for every deployment | `https://localhost:8443` |
 | `org.itech.ahb.forward-http-server.username` | Basic auth username | Optional |
 | `org.itech.ahb.forward-http-server.password` | Basic auth password | Optional |
 | `org.itech.ahb.forward-http-server.insecure-tls` | Disable TLS verification for forwarding and health checks | false |
@@ -147,7 +149,6 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **MLLP (HL7)** | | |
 | `org.itech.ahb.mllp.enabled` | Run HL7 MLLP: bind the shared listener at boot and allow HL7 server connections | false |
 | `org.itech.ahb.mllp.port` | Shared MLLP listener port | 2575 |
-| **Serial** | | |
 | **File Watcher** | | |
 | `bridge.file.enabled` | Enable FILE connection runtime | true |
 | `bridge.file.stateStorePath` | Durable file-processing state database | `/data/openelis-analyzer-bridge/state.db` in the Docker image; JVM temporary directory otherwise |
@@ -163,7 +164,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.connection-catalog.directory` | Durable analyzer connection store | `/data/openelis-analyzer-bridge/connections` |
 | **Connectivity** | | |
 | `bridge.connectivity.advertised-host` | Reserved; currently unused by connection activation and receiver probes | Optional; setting it has no runtime effect |
-| **Security (M7.1)** | | |
+| **Security** | | |
 | `bridge.security.enabled` | Enable HTTP Basic auth on `/input` and management APIs | true |
 | `bridge.security.username` | HTTP Basic username | bridge |
 | `bridge.security.password` | HTTP Basic password: plaintext or `{bcrypt}...` (use env var in prod) | changeme |
@@ -193,9 +194,10 @@ Attribution is not peer authentication: a message is attributed, not
 authorized, by its address and sender name. Use network access controls to
 restrict who can reach the analyzer ports.
 
-Deactivating an HL7 connection that owns its listener closes admissions and
-waits up to 30 seconds for active delivery before removing routing authority.
-Failed drains report failure and keep ownership. On restart, the durable
+Deactivating an HL7 connection removes its routing. A shared listener bound at
+boot keeps running. A listener that was not bound at boot stops when its last
+connection leaves: it closes admissions and waits up to 30 seconds for active
+delivery, and a failed drain reports failure and keeps ownership. On restart, the durable
 connection catalog restores active connections from their last successfully
 activated values and pinned profiles, even when a newer saved edit has not been
 activated. These values remain internal to Bridge; OpenELIS receives the active
@@ -380,15 +382,18 @@ and file results do not carry the analyzer's test time.
 ### Health Checks
 
 ```bash
-# Overall health
-curl http://localhost:8442/actuator/health
+# Overall health (public)
+curl -k https://localhost:8442/actuator/health
 
-# Individual transport health
-curl http://localhost:8442/actuator/health/httpforward   # OpenELIS connectivity
-curl http://localhost:8442/actuator/health/mllp          # MLLP listener status
-curl http://localhost:8442/actuator/health/serial         # Serial port status
-curl http://localhost:8442/actuator/health/filewatcher    # File watcher status
+# Individual transport health (authenticated)
+curl -k -u bridge:changeme https://localhost:8442/actuator/health/httpforward   # OpenELIS connectivity
+curl -k -u bridge:changeme https://localhost:8442/actuator/health/mllp          # MLLP listener status
+curl -k -u bridge:changeme https://localhost:8442/actuator/health/serial        # Serial port status
+curl -k -u bridge:changeme https://localhost:8442/actuator/health/filewatcher   # File watcher status
 ```
+
+The server always uses TLS on 8443; `-k` accepts the self-signed development
+certificate.
 
 Health indicators are individually enabled/disabled via configuration:
 
@@ -412,8 +417,9 @@ Prometheus-format metrics are exposed at `/actuator/prometheus`.
 | Metric | Type | Tags | Description |
 |--------|------|------|-------------|
 | `bridge_messages_received_total` | Counter | protocol, transport | Messages received from analyzers |
-| `bridge_messages_routed_total` | Counter | protocol, transport, result | Messages forwarded to OpenELIS |
-| `bridge_messages_routing_duration_seconds` | Timer | protocol, transport | End-to-end routing latency |
+| `bridge_messages_routed_total` | Counter | protocol, transport, result | Messages durably accounted for: queued for delivery or held as dead letters (`success`), or not persisted (`failure`). This is not delivery to OpenELIS; see the outbox for that |
+| `bridge_messages_routing_duration_seconds` | Timer | protocol, transport | Time from receipt until the message is queued |
+| `bridge_identity_mismatch_total` | Counter | protocol, transport, mode | Cross-checks of the connection source against the in-message sender: corroboration, mismatch, or rejection of an unregistered source |
 
 **Example PromQL queries:**
 
@@ -436,6 +442,7 @@ livenessProbe:
   httpGet:
     path: /actuator/health
     port: 8443
+    scheme: HTTPS
   initialDelaySeconds: 120
   periodSeconds: 30
 
@@ -443,6 +450,7 @@ readinessProbe:
   httpGet:
     path: /actuator/health
     port: 8443
+    scheme: HTTPS
   initialDelaySeconds: 30
   periodSeconds: 10
 ```
@@ -490,18 +498,18 @@ bridge:
 
 ```bash
 # Authenticated request to /input
-curl -u bridge:changeme -X POST http://localhost:8442/input \
+curl -k -u bridge:changeme -X POST https://localhost:8442/input \
   -H "Content-Type: application/hl7-v2" \
   -d "MSH|^~\&|ANALYZER|LAB|..."
 
 # Unauthenticated returns 401
-curl -X POST http://localhost:8442/input -d "test"
+curl -k -X POST https://localhost:8442/input -d "test"
 # → 401 Unauthorized
 ```
 
 ### Production Setup
 
-**Required:** Set the password via environment variable. The default `changeme` causes startup failure when `spring.profiles.active` is not `dev` or `test`.
+**Required:** Set the password via environment variable. The default `changeme` causes startup failure when `spring.profiles.active` is not `dev` or `test`. `BRIDGE_AUTH_PASSWORD` is read through the `${BRIDGE_AUTH_PASSWORD:changeme}` placeholder in the sample `configuration.yml`; with a configuration file that lacks it, set `BRIDGE_SECURITY_PASSWORD` instead, which binds `bridge.security.password` directly.
 
 ```bash
 export BRIDGE_AUTH_PASSWORD=your-secure-password
@@ -675,10 +683,14 @@ recover those results by itself.
 ### OpenELIS -> Analyzer (query/config)
 
 ```bash
-curl -X POST "http://bridge:8443/?forwardAddress=192.168.1.10&forwardPort=5000" \
+curl -k -X POST "https://bridge:8443/?forwardAddress=192.168.1.10&forwardPort=5000" \
   -H "Content-Type: text/plain" \
   -d "H|\^&|||"
 ```
+
+`POST /api/orders` dispatches a LOINC-coded order through an active saved
+connection; the Bridge translates it to the analyzer's test codes and protocol.
+`POST /api/query` runs an ASTM host query against an analyzer.
 
 ## Testing
 
@@ -690,7 +702,7 @@ just the source tree:
 ANALYZER_MOCK_DIR=/path/to/analyzer-mock-server ./scripts/e2e-tests/run-all.sh
 ```
 
-It covers OpenELIS unreachable with a bridge restart mid-outage, an answer lost
+It covers OpenELIS unreachable with the bridge container recreated mid-outage, an answer lost
 after OpenELIS accepted the result, and a result recovered from the dead-message
 queue by an operator retry. It runs in CI as the `Docker acceptance` job.
 
@@ -717,7 +729,8 @@ mvn verify
 
 These scripts require saved, active test connections; enabling a transport alone
 does not register an analyzer. For the HL7 script, first activate an HL7 server
-connection, then set `BRIDGE_CONNECTION_ID` and its `BRIDGE_MLLP_PORT`. Set
+connection, then set `BRIDGE_CONNECTION_ID`, and `BRIDGE_MLLP_PORT` if the shared
+MLLP listener is not published on 2575. Set
 `BRIDGE_PASSWORD` (and optionally `BRIDGE_USER`) when API authentication is
 enabled. Its forwarding destination must be the isolated test WireMock service.
 The script verifies both the protocol acknowledgement and saved connection identity.
@@ -743,21 +756,29 @@ stories are tested separately through the browser.
 ```
 openelis-analyzer-bridge/
 ├── src/main/java/org/itech/ahb/
-│   ├── controller/          # HTTP endpoints (/input, query forwarding)
 │   ├── config/              # Configuration classes
-│   ├── file/                # File watcher transport
-│   ├── health/              # Health indicators (HTTP, MLLP, Serial, File)
+│   ├── connection/          # Saved connections, activation and shared listeners
+│   ├── connectivity/        # Connection probes
+│   ├── controller/          # HTTP endpoints (/input, admin, outbox, orders, queries)
+│   ├── fhir/                # Result parsers and normalized FHIR bundle building
+│   ├── file/                # File watcher transport and FILE state store
+│   ├── health/              # Health indicators (HTTP, MLLP, Serial, File, outbox)
 │   ├── metrics/             # Prometheus metrics service
 │   ├── mllp/                # MLLP transport (HL7 v2.x)
 │   ├── model/               # Protocol/Transport enums
-│   ├── normalizer/          # Message normalization + routing
-│   ├── routing/             # HTTP forwarding router
+│   ├── normalizer/          # Message normalization and analyzer identification
+│   ├── order/               # Outbound order building and ASTM dispatch
+│   ├── outbox/              # Durable delivery outbox and dispatcher
+│   ├── profile/             # Analyzer profile catalog and validation
+│   ├── routing/             # Rendering and queueing for delivery
 │   ├── serial/              # Serial port transport
+│   ├── store/               # SQLite support
 │   └── util/                # Utilities
 ├── astm-http-lib/           # ASTM protocol library
-├── configuration.yml        # Runtime configuration
-├── docker-compose.yml       # Production deployment
-└── scripts/e2e-tests/       # Optional virtual-serial runner
+├── contracts/analyzer/v1/   # Profile, connection and normalized-result schemas
+├── configuration.yml        # Sample runtime configuration
+├── docker-compose.yml       # Runs the published image
+└── scripts/e2e-tests/       # Docker acceptance suite
 ```
 
 ## Contracts
@@ -767,19 +788,9 @@ openelis-analyzer-bridge/
 - `contracts/analyzer/v1/fixtures/`: canonical ASTM, HL7, and FILE examples
 - `src/main/resources/analyzer-profiles/`: shipped analyzer type profiles
 
-### Checkpoint fixtures and the final repository pair
+The acceptance suite runs against the analyzer-mock revision pinned in
+`.github/workflows/test.yml`.
 
-The analyzer-mock revision in `.github/workflows/test.yml` is the exact fixture
-version used to validate this Bridge checkpoint. Earlier checkpoints may pin an
-earlier compatible fixture revision; that is not a claim about the final stack's
-deployment dependencies. Do not move every checkpoint to the newest mock revision
-without checking that its profile and result contracts are supported there.
+## License
 
-For final-stack validation, use the mock revision pinned by the top Bridge
-checkpoint and verify that the OpenELIS follow-up pins that same mock revision
-and the exact final Bridge commit. Report checkpoint test evidence separately
-from checks on that final repository pair.
-
-## License / Contributing
-
-TBD (add project license and contribution guidelines).
+Mozilla Public License 2.0; see [LICENSE.md](LICENSE.md).
