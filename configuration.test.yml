@@ -18,7 +18,6 @@ bridge:
   # production backoff. maxAttempts is overridable per scenario: the dead-message-queue test needs
   # the budget to run out, the others need it not to.
   outbox:
-    dbPath: /data/openelis-analyzer-bridge/outbox.db
     pollInterval: 500ms
     lease: 30s
     retry:
@@ -30,7 +29,6 @@ bridge:
 
   file:
     enabled: true
-    stateStorePath: /tmp/openelis-analyzer-bridge/file-state.db
     pollIntervalMs: 2000
     fileStabilityTimeoutMs: 2000
     maxRetryAttempts: 2

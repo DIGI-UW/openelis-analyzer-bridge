@@ -128,7 +128,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `org.itech.ahb.forward-http-server.max-attempts` | Deprecated. Retry scheduling moved to `bridge.outbox.retry.*` when delivery became durable; this property is still bound but unused | 3 |
 | `org.itech.ahb.forward-http-server.backoff-ms` | Deprecated, as above | 1000 |
 | **Delivery Outbox** | | |
-| `bridge.outbox.db-path` | Durable store holding received results until OpenELIS accepts them. This is the only copy of a result between receipt and delivery, so it must be on a persistent volume | JVM temporary directory |
+| `bridge.outbox.db-path` | Durable store holding received results until OpenELIS accepts them. This is the only copy of a result between receipt and delivery, so it must be on a persistent volume; the bridge logs a warning at startup when it is in the temporary directory | `/data/openelis-analyzer-bridge/outbox.db` in the Docker image; JVM temporary directory otherwise |
 | `bridge.outbox.poll-interval` | Dispatcher idle wait. The receive path wakes it directly, so this is a safety net rather than the normal path to delivery | 1s |
 | `bridge.outbox.lease` | How long a claimed delivery stays leased. Must exceed connect plus read timeout | 120s |
 | `bridge.outbox.retry.max-attempts` | Attempts before a delivery is dead-lettered. Sized for an overnight OpenELIS outage | 150 |
@@ -150,7 +150,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Serial** | | |
 | **File Watcher** | | |
 | `bridge.file.enabled` | Enable FILE connection runtime | true |
-| `bridge.file.stateStorePath` | Durable file-processing state database | JVM temporary directory |
+| `bridge.file.stateStorePath` | Durable file-processing state database | `/data/openelis-analyzer-bridge/state.db` in the Docker image; JVM temporary directory otherwise |
 | `bridge.file.pollIntervalMs` | Poll interval | 5000 |
 | `bridge.file.fileStabilityTimeoutMs` | Stable-file wait | 3000 |
 | `bridge.file.maxRetryAttempts` | Processing attempts before a file is parked for an operator | 150 |

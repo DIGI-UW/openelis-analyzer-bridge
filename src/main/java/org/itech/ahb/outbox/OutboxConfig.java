@@ -1,5 +1,6 @@
 package org.itech.ahb.outbox;
 
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -19,7 +20,20 @@ public class OutboxConfig {
 
   @Bean(destroyMethod = "close")
   public OutboxStore outboxStore(OutboxProperties properties) {
-    log.info("Initializing delivery outbox at {}", properties.getDbPath());
-    return new SqliteOutboxStore(Paths.get(properties.getDbPath()));
+    Path dbPath = Paths.get(properties.getDbPath());
+    log.info("Initializing delivery outbox at {}", dbPath);
+    if (isInTemporaryDirectory(dbPath)) {
+      log.warn(
+        "The delivery outbox is in the temporary directory ({}). Results OpenELIS has not accepted yet are lost when " +
+        "it is cleared or the container is recreated. Set bridge.outbox.db-path to a persistent volume.",
+        dbPath
+      );
+    }
+    return new SqliteOutboxStore(dbPath);
+  }
+
+  static boolean isInTemporaryDirectory(Path dbPath) {
+    Path temporary = Paths.get(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
+    return dbPath.toAbsolutePath().normalize().startsWith(temporary);
   }
 }
