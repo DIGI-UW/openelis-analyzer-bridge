@@ -1,8 +1,9 @@
 # Analyzer Contract v1
 
-This directory is the executable BR-E0 boundary for OGC-1054. It evolves the
-established `analyzer-defaults` profile system into one strict contract without
-implementing profile lifecycle or runtime cutover.
+This directory is the versioned contract between the Bridge and OpenELIS:
+analyzer profiles and the profile catalog, saved connections, connection probes,
+runtime commands, and the normalized result bundle. `AnalyzerContractArtifactsTest`
+checks the schemas and fixtures against the code.
 
 ## Profile contract
 
@@ -155,23 +156,24 @@ a separate OpenELIS operation, not a fresh FILE delivery or a receipt reset.
 
 ## Versioned artifacts
 
-| Artifact                                 | Direction          | Runtime owner |
-| ---------------------------------------- | ------------------ | ------------- |
-| `analyzer-profile.schema.json`           | Bridge -> OpenELIS | BR-M1         |
-| `connection-create.schema.json`          | OpenELIS -> Bridge | BR-M3         |
-| `connection-update.schema.json`          | OpenELIS -> Bridge | BR-M3         |
-| `analyzer-connection.schema.json`        | Bridge -> OpenELIS | BR-M3         |
-| `connection-probe-request.schema.json`   | OpenELIS -> Bridge | BR-M3         |
-| `connection-probe-result.schema.json`    | Bridge -> OpenELIS | BR-M3         |
-| `connection-runtime-command.schema.json` | OpenELIS -> Bridge | BR-M3         |
-| `connection-runtime-ack.schema.json`     | Bridge -> OpenELIS | BR-M3         |
-| `normalized-fhir-bundle.schema.json`     | Bridge -> OpenELIS | BR-M4         |
+| Artifact                                 | Direction          |
+| ---------------------------------------- | ------------------ |
+| `analyzer-profile.schema.json`           | Bridge -> OpenELIS |
+| `profile-catalog-entry.schema.json`      | Bridge -> OpenELIS |
+| `profile-catalog-response.schema.json`   | Bridge -> OpenELIS |
+| `connection-create.schema.json`          | OpenELIS -> Bridge |
+| `connection-update.schema.json`          | OpenELIS -> Bridge |
+| `analyzer-connection.schema.json`        | Bridge -> OpenELIS |
+| `connection-probe-request.schema.json`   | OpenELIS -> Bridge |
+| `connection-probe-result.schema.json`    | Bridge -> OpenELIS |
+| `connection-runtime-command.schema.json` | OpenELIS -> Bridge |
+| `connection-runtime-ack.schema.json`     | Bridge -> OpenELIS |
+| `normalized-fhir-bundle.schema.json`     | Bridge -> OpenELIS |
 
-Files under `fixtures/` are canonical producer/consumer inputs. A later
-milestone may add optional fields compatibly; removing a field or changing its
-required meaning requires a new major contract directory. There is no parallel
-thin-profile schema, compatibility reader/writer, or bulk full-state
-registration contract in the target path.
+Files under `fixtures/` are canonical producer/consumer inputs. Optional fields
+may be added compatibly; removing a field or changing its required meaning
+requires a new major contract directory. There is no parallel thin-profile
+schema, compatibility reader/writer, or bulk full-state registration contract.
 
 ### Categorical answer hints
 

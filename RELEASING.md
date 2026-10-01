@@ -27,8 +27,11 @@ both `itechuw/openelis-analyzer-bridge` and the legacy `itechuw/astm-http-bridge
 name. Anything tracking `:latest` therefore moves the moment the release is
 published, so publish deliberately.
 
+The same workflow also runs on a push to `master` and on manual dispatch.
+
 `:develop` is separate: `docker-build-dev.yml` republishes it on every push to
-`develop`, which is what the Madagascar distro and the UAT servers float on.
+`develop`. Deployments should pin a released version, as the Madagascar distro
+does by digest.
 
 ## Precedent
 

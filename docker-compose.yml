@@ -10,10 +10,10 @@ services:
     image: itechuw/openelis-analyzer-bridge:latest
     pull_policy: always
     ports:
-      - "8442:8443"     # HTTP API endpoint (HTTPS when TLS is configured)
-      - "12000:12001"   # ASTM LIS1-A listener
-      - "12010:12011"   # ASTM E1381-95 listener
-      - "2575:2575"     # Example saved HL7 server port; publish each connection's port
+      - "8442:8443"     # HTTPS API endpoint
+      - "12000:12001"   # Shared ASTM LIS1-A listener
+      - "12010:12011"   # Shared ASTM E1381-95 listener
+      - "2575:2575"     # Shared HL7 MLLP listener (when org.itech.ahb.mllp.enabled)
     volumes:
       - ./configuration.yml:/app/configuration.yml
       - bridge-data:/data/openelis-analyzer-bridge
