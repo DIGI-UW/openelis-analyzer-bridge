@@ -343,6 +343,7 @@ wait_for_forwarding_health() {
     local health
     for _ in $(seq 1 30); do
         health="$(curl --silent --show-error --max-time 5 \
+            --user "${BRIDGE_USER}:${BRIDGE_PASSWORD}" \
             "http://localhost:${E2E_BRIDGE_PORT}/actuator/health" || true)"
         if jq --exit-status '.components.httpforward.status == "UP"' \
             <<<"${health}" >/dev/null 2>&1; then
@@ -359,7 +360,7 @@ wait_for_forwarding_health() {
 bridge_recreate() {
     docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate openelis-analyzer-bridge >/dev/null 2>&1
     for _ in $(seq 1 60); do
-        if curl --silent --fail "http://localhost:${E2E_BRIDGE_PORT}/actuator/health/readiness" >/dev/null 2>&1 \
+        if curl --silent --fail "http://localhost:${E2E_BRIDGE_PORT}/actuator/health" >/dev/null 2>&1 \
             || outbox_api "/stats" >/dev/null 2>&1; then
             return 0
         fi

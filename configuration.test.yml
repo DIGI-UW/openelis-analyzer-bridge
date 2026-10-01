@@ -55,10 +55,6 @@ org:
         e1381-95:
           port: 12011
 
-      forward-astm-server:
-        host-name: localhost
-        port: 5000
-
       mllp:
         enabled: true
 
@@ -77,7 +73,7 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   health:
     mllp:
       enabled: false

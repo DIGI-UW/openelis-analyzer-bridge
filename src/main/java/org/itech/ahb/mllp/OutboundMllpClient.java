@@ -18,14 +18,13 @@ import org.springframework.stereotype.Component;
  * markers ({@code VT … FS CR}), writes it, reads back the framed ACK, and
  * inspects the MSA-1 acknowledgement code (AA/AE/AR) to classify the result.
  * Mirrors the raw-socket style of the
- * existing inbound {@link HapiMLLPListener} and outbound ASTM logic in
- * {@code AnalyzerQueryController} rather than pulling in HAPI's
+ * existing inbound {@link HapiMLLPListener} and the outbound
+ * {@link org.itech.ahb.order.OutboundAstmClient} rather than pulling in HAPI's
  * {@code ca.uhn.hl7v2.app.Connection} which would require parsing every
  * payload into a typed {@code Message} before sending.
  *
  * <p>Connection-refused, timeout, and connection-closed failures are retried up
- * to three times with a 10 second back-off — matching the existing forward-side
- * retry shape in {@code DefaultForwardingHTTPToASTMHandler}. Deterministic
+ * to three times with a 10 second back-off. Deterministic
  * application rejects (MSA|AE / MSA|AR) are NOT retried: the analyzer already
  * received and rejected the message, so resending would only be rejected again.
  * A separate ticket tracks adding durable persistence (mirror of OGC-500).

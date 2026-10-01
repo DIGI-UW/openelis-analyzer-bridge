@@ -5,6 +5,10 @@ server:
     keyStoreType: ${server.ssl.keyStoreType}
     key-store: ${server.ssl.keyStorePath}
     key-store-password: ${server.ssl.keyStorePassword}
+management:
+  endpoint:
+    health:
+      show-details: when-authorized
 logging:
   level:
     root: INFO

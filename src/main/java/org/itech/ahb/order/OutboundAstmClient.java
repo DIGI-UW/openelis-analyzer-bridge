@@ -12,10 +12,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Sends an ASTM LIS2-A2 order to an analyzer over TCP: ENQ → framed records →
- * EOT, per CLSI LIS1-A. Mirrors the framing in {@code AnalyzerQueryController}
- * (STX + frame# + content + ETX + checksum + CR + LF), but for the LIS-initiated
- * order direction (no response expected; the analyzer pushes results back on its
- * own inbound channel).
+ * EOT, per CLSI LIS1-A. Each frame is STX + frame# + content + ETX + checksum +
+ * CR + LF. This is the LIS-initiated order direction (no response expected; the
+ * analyzer pushes results back on its own inbound channel).
  */
 @Component
 @Slf4j

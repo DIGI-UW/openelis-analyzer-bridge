@@ -1,6 +1,5 @@
 package org.itech.ahb.security;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -23,12 +22,11 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * Integration tests for bridge security configuration (M7.1).
  * <p>
- * Verifies that the /input endpoint requires HTTP Basic authentication
- * while actuator health/info endpoints remain publicly accessible.
+ * Verifies that the /input endpoint and the management APIs require HTTP Basic
+ * authentication while the actuator health status remains publicly accessible.
  * </p>
  */
 @SpringBootTest(properties = {
-    "bridge.security.enabled=true",
     "bridge.security.username=testuser",
     "bridge.security.password=testpass",
     "org.itech.ahb.mllp.enabled=false",
@@ -146,31 +144,24 @@ class SecurityConfigTest {
         }
 
         @Test
-        @DisplayName("Info endpoint does not require authentication")
-        void infoEndpointNoAuthRequired() throws Exception {
-            // Info may return 404 (no info contributors) or 200, but never 401/403
-            int status = mockMvc.perform(get("/actuator/info"))
-                    .andReturn().getResponse().getStatus();
-            assertTrue(status != 401 && status != 403,
-                    "Info endpoint should not require auth, but got " + status);
+        @DisplayName("Info endpoint requires authentication")
+        void infoEndpointRequiresAuth() throws Exception {
+            mockMvc.perform(get("/actuator/info"))
+                    .andExpect(status().isUnauthorized());
         }
 
         @Test
-        @DisplayName("Prometheus scrape endpoint is publicly accessible for monitoring")
-        void prometheusEndpointNoAuthRequired() throws Exception {
-            int status = mockMvc.perform(get("/actuator/prometheus"))
-                    .andReturn().getResponse().getStatus();
-            assertTrue(status != 401 && status != 403,
-                    "Prometheus endpoint should not require auth, but got " + status);
+        @DisplayName("Prometheus scrape endpoint requires authentication")
+        void prometheusEndpointRequiresAuth() throws Exception {
+            mockMvc.perform(get("/actuator/prometheus"))
+                    .andExpect(status().isUnauthorized());
         }
 
         @Test
-        @DisplayName("Metrics endpoint is publicly accessible for monitoring")
-        void metricsEndpointNoAuthRequired() throws Exception {
-            int status = mockMvc.perform(get("/actuator/metrics"))
-                    .andReturn().getResponse().getStatus();
-            assertTrue(status != 401 && status != 403,
-                    "Metrics endpoint should not require auth, but got " + status);
+        @DisplayName("Metrics endpoint requires authentication")
+        void metricsEndpointRequiresAuth() throws Exception {
+            mockMvc.perform(get("/actuator/metrics"))
+                    .andExpect(status().isUnauthorized());
         }
 
         @Test

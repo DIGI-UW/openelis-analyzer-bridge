@@ -24,7 +24,6 @@ import org.springframework.test.web.servlet.MockMvc;
  * Verifies {@code bridge.security.password} in delegating-encoded form works for HTTP Basic.
  */
 @SpringBootTest(properties = {
-    "bridge.security.enabled=true",
     "bridge.security.username=testuser",
     "org.itech.ahb.mllp.enabled=false",
     "bridge.file.enabled=false",

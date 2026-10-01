@@ -29,7 +29,6 @@ bridge:
   # In production, set BRIDGE_AUTH_PASSWORD env var. Default 'changeme' fails startup
   # unless spring.profiles.active includes dev or test.
   security:
-    enabled: true                               # Set to false to disable auth (not recommended)
     username: bridge                            # HTTP Basic username
     password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via env var in production
 
@@ -110,11 +109,6 @@ org:
         e1381-95:
           port: 12011
 
-      # Forward ASTM Server - Default target for sending messages TO analyzers
-      forward-astm-server:
-        host-name: localhost
-        port: 5000
-
       # HL7 MLLP: when enabled, the shared listener on this port is bound at boot, and every
       # saved HL7 server connection joins it.
       mllp:
@@ -133,10 +127,10 @@ logging:
     org.itech: DEBUG
 
 # Actuator endpoints for health monitoring and metrics
-# NOTE: /actuator/health, /actuator/info, /actuator/prometheus and /actuator/metrics are
-# public. Other actuator endpoints, including per-component health such as
-# /actuator/health/mllp, require HTTP Basic auth, as do /input, /admin, /api/profiles and
-# /api/connections (see bridge.security above).
+# NOTE: GET /actuator/health is the only public endpoint, and it shows anonymous callers
+# only the overall status. Every other endpoint, including /actuator/info,
+# /actuator/prometheus, /actuator/metrics and per-component health such as
+# /actuator/health/mllp, requires HTTP Basic auth (see bridge.security above).
 management:
   endpoints:
     web:
@@ -144,7 +138,7 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: never  # Set to 'always' for debugging; restrict network access in production
+      show-details: when-authorized  # Components and details for authenticated callers only
   health:
     # Health indicators for each transport (disable if transport not in use)
     mllp:
