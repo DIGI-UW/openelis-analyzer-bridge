@@ -1,12 +1,14 @@
 package org.itech.ahb.config;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.servlet.DispatcherType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -23,7 +25,9 @@ import java.util.Arrays;
 /**
  * Spring Security configuration for the analyzer bridge.
  * <p>
- * Protects the {@code /input} HTTP endpoint with HTTP Basic authentication.
+ * Every HTTP endpoint requires HTTP Basic authentication except
+ * {@code GET /actuator/health}, which shows anonymous callers only the overall
+ * status. An endpoint added later is protected without any change here.
  * Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are unaffected since they
  * don't go through the servlet filter chain.
  * </p>
@@ -82,32 +86,20 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        log.info("Configuring bridge security for ingestion and management APIs");
+        log.info("Configuring bridge security: every HTTP endpoint except GET /actuator/health requires authentication");
 
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Actuator: health, info, prometheus, metrics are public for monitoring
-                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                .requestMatchers("/actuator/prometheus", "/actuator/metrics/**").permitAll()
-                // All other actuator endpoints require authentication
-                .requestMatchers("/actuator/**").authenticated()
-                // The /input endpoint requires authentication
-                .requestMatchers("/input/**").authenticated()
-                // Admin endpoints (file-state inspection, future diagnostics)
-                // require authentication — they expose internal paths and
-                // error messages that must not be publicly readable.
-                .requestMatchers("/admin/**").authenticated()
-                // Analyzer profile reads and lifecycle writes are an internal
-                // OpenELIS-to-Bridge management API.
-                .requestMatchers("/api/profiles", "/api/profiles/**").authenticated()
-                // Durable analyzer connections and their probes are also
-                // OpenELIS-to-Bridge management operations.
-                .requestMatchers("/api/connections", "/api/connections/**").authenticated()
-                // All other endpoints (ASTM query forwarding, etc.) are permitted
-                .anyRequest().permitAll()
+                // Container and OpenELIS healthchecks read only the overall status.
+                .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                // The container's error dispatch renders the body of a response whose
+                // status is already decided, such as a 401; a direct GET /error is a
+                // REQUEST dispatch and still needs credentials.
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                .anyRequest().authenticated()
             )
             .httpBasic(Customizer.withDefaults());
 

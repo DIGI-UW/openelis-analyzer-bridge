@@ -42,11 +42,11 @@ HTTP /input  ─┘   │ Saved connection lookup │
                    │ Metrics + health checks │
                    └─────────────────────────┘
                      │
-                     ├─ /actuator/health      (per-transport status)
-                     ├─ /actuator/prometheus   (Prometheus metrics)
-                     └─ /actuator/metrics      (Micrometer metrics)
+                     ├─ /actuator/health      (status; per-transport detail with auth)
+                     ├─ /actuator/prometheus   (Prometheus metrics, auth)
+                     └─ /actuator/metrics      (Micrometer metrics, auth)
 
-OpenELIS ──HTTP POST──> [Bridge] ──TCP──> Analyzer (ASTM host query / outbound)
+OpenELIS ──HTTP POST /api/orders──> [Bridge] ──TCP/MLLP──> Analyzer (outbound orders)
 ```
 
 ### Protocol vs Transport
@@ -165,7 +165,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Connectivity** | | |
 | `bridge.connectivity.advertised-host` | Reserved; currently unused by connection activation and receiver probes | Optional; setting it has no runtime effect |
 | **Security** | | |
-| `bridge.security.enabled` | Enable HTTP Basic auth on `/input` and management APIs | true |
+| `bridge.security.enabled` | HTTP Basic auth on every endpoint except `GET /actuator/health`; `false` disables it (not recommended) | true |
 | `bridge.security.username` | HTTP Basic username | bridge |
 | `bridge.security.password` | HTTP Basic password: plaintext or `{bcrypt}...` (use env var in prod) | changeme |
 | **Server** | | |
@@ -382,8 +382,11 @@ and file results do not carry the analyzer's test time.
 ### Health Checks
 
 ```bash
-# Overall health (public)
+# Overall status only (public)
 curl -k https://localhost:8442/actuator/health
+
+# Every component with its details (authenticated)
+curl -k -u bridge:changeme https://localhost:8442/actuator/health
 
 # Individual transport health (authenticated)
 curl -k -u bridge:changeme https://localhost:8442/actuator/health/httpforward   # OpenELIS connectivity
@@ -394,6 +397,10 @@ curl -k -u bridge:changeme https://localhost:8442/actuator/health/filewatcher   
 
 The server always uses TLS on 8443; `-k` accepts the self-signed development
 certificate.
+
+Anonymous callers get only `{"status":"UP"}` (or `DOWN`). Components and their
+details, which include connection IDs, outbox counts and serial device paths, are
+shown to authenticated callers only (`show-details: when-authorized`).
 
 Health indicators are individually enabled/disabled via configuration:
 
@@ -412,7 +419,22 @@ management:
 
 ### Prometheus Metrics
 
-Prometheus-format metrics are exposed at `/actuator/prometheus`.
+When `prometheus` is in `management.endpoints.web.exposure.include` (the sample
+`configuration.yml` includes it), Prometheus-format metrics are served at
+`/actuator/prometheus`. Like every endpoint except the health status, it requires
+HTTP Basic, so the scrape job needs `basic_auth`:
+
+```yaml
+scrape_configs:
+  - job_name: openelis-analyzer-bridge
+    scheme: https
+    metrics_path: /actuator/prometheus
+    basic_auth:
+      username: bridge
+      password_file: /etc/prometheus/bridge-password
+    static_configs:
+      - targets: ["openelis-analyzer-bridge:8443"]
+```
 
 | Metric | Type | Tags | Description |
 |--------|------|------|-------------|
@@ -457,9 +479,12 @@ readinessProbe:
 
 ## Security
 
-The `/input` HTTP endpoint and the `/api/profiles` and `/api/connections`
-management APIs are protected with HTTP Basic authentication. Non-HTTP
-transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
+Every HTTP endpoint requires HTTP Basic authentication except
+`GET /actuator/health`, which shows anonymous callers only the overall status.
+That covers `/input`, `/api/*`, `/admin/*`, every other actuator endpoint, and any
+endpoint added later: the security configuration lists the one public endpoint,
+not the protected ones. Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are
+unaffected.
 
 Active connections have distinct runtime registrations even when they share an
 analyzer host. A host-only inbound lookup is accepted only when it identifies one
@@ -680,17 +705,19 @@ ERROR. That renamed file is incident evidence: preserve it, and reconcile
 against OpenELIS before trusting that nothing was lost. The bridge cannot
 recover those results by itself.
 
-### OpenELIS -> Analyzer (query/config)
-
-```bash
-curl -k -X POST "https://bridge:8443/?forwardAddress=192.168.1.10&forwardPort=5000" \
-  -H "Content-Type: text/plain" \
-  -d "H|\^&|||"
-```
+### OpenELIS -> Analyzer (orders)
 
 `POST /api/orders` dispatches a LOINC-coded order through an active saved
-connection; the Bridge translates it to the analyzer's test codes and protocol.
-`POST /api/query` runs an ASTM host query against an analyzer.
+connection that supports outbound orders; the Bridge translates each LOINC code
+to the analyzer's test code and sends an HL7 ORM or ASTM order to the
+connection's outbound endpoint.
+
+```bash
+curl -k -u bridge:changeme -X POST https://localhost:8442/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"connectionId":"<saved connection id>",
+       "order":{"accessionNumber":"ACC-1","patientId":"P-1","loincCodes":["94500-6"]}}'
+```
 
 ## Testing
 

@@ -31,9 +31,8 @@ import java.util.Optional;
  * that replaced those directories. Plan mellow-honking-cascade Phase 1.7.
  * </p>
  * <p>
- * This controller is protected by the bridge's existing Spring Security config
- * — the same credentials that allow access to {@code /api/query},
- * {@code /api/register}, etc. apply here.
+ * Like every endpoint except {@code GET /actuator/health}, this controller
+ * requires the bridge's HTTP Basic credentials.
  * </p>
  */
 @RestController

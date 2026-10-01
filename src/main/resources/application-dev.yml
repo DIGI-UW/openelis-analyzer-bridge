@@ -8,7 +8,7 @@ server:
 management:
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
 
 # File watcher — faster polling for dev/CI (files are written atomically).
 # Production keeps FileConfig.java defaults (5000ms poll, 3000ms stability).

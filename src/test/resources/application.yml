@@ -7,9 +7,6 @@ org:
         enabled: false
       forward-http-server:
         uri: http://localhost:8080/test
-      forward-astm-server:
-        host-name: localhost
-        port: 5000
 
 server:
   port: 0  # Random port for tests
