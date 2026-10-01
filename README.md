@@ -165,7 +165,6 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Connectivity** | | |
 | `bridge.connectivity.advertised-host` | Reserved; currently unused by connection activation and receiver probes | Optional; setting it has no runtime effect |
 | **Security** | | |
-| `bridge.security.enabled` | HTTP Basic auth on every endpoint except `GET /actuator/health`; `false` disables it (not recommended) | true |
 | `bridge.security.username` | HTTP Basic username | bridge |
 | `bridge.security.password` | HTTP Basic password: plaintext or `{bcrypt}...` (use env var in prod) | changeme |
 | **Server** | | |
@@ -483,8 +482,9 @@ Every HTTP endpoint requires HTTP Basic authentication except
 `GET /actuator/health`, which shows anonymous callers only the overall status.
 That covers `/input`, `/api/*`, `/admin/*`, every other actuator endpoint, and any
 endpoint added later: the security configuration lists the one public endpoint,
-not the protected ones. Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are
-unaffected.
+not the protected ones. Authentication cannot be switched off:
+`bridge.security.enabled=false` stops the Bridge at startup. Non-HTTP transports
+(ASTM/TCP, MLLP, Serial, File) are unaffected.
 
 Active connections have distinct runtime registrations even when they share an
 analyzer host. A host-only inbound lookup is accepted only when it identifies one
@@ -514,7 +514,6 @@ hostname support for outbound TCP connections.
 ```yaml
 bridge:
   security:
-    enabled: true                               # false to disable (not recommended)
     username: bridge
     password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via environment variable
 ```
@@ -549,16 +548,6 @@ environment:
 ```
 
 Pre-encoded passwords are supported using Spring’s delegating form: set `bridge.security.password={bcrypt}$2a$10$...` (or another `{id}...` scheme) and the bridge stores that value as-is. Plaintext values are BCrypt-encoded once at startup—do not double-encode.
-
-### Disabling Security
-
-For development only:
-
-```yaml
-bridge:
-  security:
-    enabled: false
-```
 
 ## Result Delivery
 

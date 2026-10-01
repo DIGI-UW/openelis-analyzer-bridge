@@ -27,7 +27,6 @@ import org.springframework.test.web.servlet.MockMvc;
  * </p>
  */
 @SpringBootTest(properties = {
-    "bridge.security.enabled=true",
     "bridge.security.username=testuser",
     "bridge.security.password=testpass",
     "org.itech.ahb.mllp.enabled=false",

@@ -4,7 +4,6 @@ import jakarta.annotation.PostConstruct;
 import jakarta.servlet.DispatcherType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -32,8 +31,8 @@ import java.util.Arrays;
  * don't go through the servlet filter chain.
  * </p>
  * <p>
- * Enabled by default via {@code bridge.security.enabled=true}. Set to {@code false}
- * to disable authentication (not recommended for production).
+ * Authentication cannot be switched off: startup fails if
+ * {@code bridge.security.enabled=false}.
  * </p>
  * <p>
  * <strong>Password semantics:</strong> The {@code bridge.security.password} property
@@ -48,11 +47,13 @@ import java.util.Arrays;
  */
 @Configuration
 @EnableWebSecurity
-@ConditionalOnProperty(name = "bridge.security.enabled", havingValue = "true", matchIfMissing = true)
 @Slf4j
 public class SecurityConfig {
 
     private static final String DEFAULT_PASSWORD = "changeme";
+
+    @Value("${bridge.security.enabled:true}")
+    private boolean securityEnabled;
 
     @Value("${bridge.security.username:bridge}")
     private String username;
@@ -67,7 +68,12 @@ public class SecurityConfig {
     }
 
     @PostConstruct
-    void failFastOnDefaultPasswordInProduction() {
+    void failFastOnUnsafeSettings() {
+        if (!securityEnabled) {
+            throw new IllegalStateException(
+                    "bridge.security.enabled=false is no longer supported: every HTTP endpoint except "
+                            + "GET /actuator/health requires HTTP Basic. Remove the setting.");
+        }
         if (!DEFAULT_PASSWORD.equals(password)) {
             return;
         }

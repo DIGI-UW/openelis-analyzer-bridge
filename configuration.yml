@@ -29,7 +29,6 @@ bridge:
   # In production, set BRIDGE_AUTH_PASSWORD env var. Default 'changeme' fails startup
   # unless spring.profiles.active includes dev or test.
   security:
-    enabled: true                               # Basic auth on every endpoint except GET /actuator/health
     username: bridge                            # HTTP Basic username
     password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via env var in production
 
