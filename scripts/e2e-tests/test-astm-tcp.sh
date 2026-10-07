@@ -24,11 +24,13 @@ echo "GeneXpert ASTM result reached the normalized OpenELIS contract."
 expected_time="2022-11-15T08:40:08+10:00"
 body="$(wait_for_normalized_capture "${connection_id}" | jq --raw-output '.request.body')"
 if ! jq --exit-status --arg expected "${expected_time}" \
-    '[.entry[].resource | select(.resourceType == "Observation") | .effectiveDateTime]
+    '[.entry[].resource | select(.resourceType == "Observation") | .effectiveDateTime | select(. != null)]
         | length > 0 and all(. == $expected)' <<<"${body}" >/dev/null; then
-    echo "FAIL: expected every GeneXpert observation to carry the instrument's completion time ${expected_time}" >&2
+    echo "FAIL: expected every timed GeneXpert observation to carry the instrument's completion time ${expected_time}" >&2
     echo "      Times near now mean the receipt time replaced the instrument's (R.13 of Cepheid's message)." >&2
     jq '[.entry[].resource | select(.resourceType == "Observation") | {code: .code.coding[0].code, effectiveDateTime}]' <<<"${body}" >&2
     exit 1
 fi
+# Cepheid times the test's own records (R.12, R.13); its analyte and control records carry no
+# time, and none is invented for them.
 echo "GeneXpert result carries the instrument's completion time (${expected_time})."
