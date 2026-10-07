@@ -182,7 +182,7 @@ class BridgeAdminControllerTest {
     register(registry, "first", watchDirectory, "*.csv");
     watcher.addWatchDirectory(watchDirectory, "*.csv", "first");
     FileStateStore store = mock(FileStateStore.class);
-    try (var activeWork = watcher.tryClaimFile(pending, "first")) {
+    try (var activeWork = watcher.tryClaimFile(pending)) {
       org.junit.jupiter.api.Assertions.assertNotNull(activeWork);
       try {
         Thread.currentThread().interrupt();
@@ -195,7 +195,7 @@ class BridgeAdminControllerTest {
       assertEquals("data", Files.readString(pending));
       verifyNoInteractions(store);
     }
-    try (var resumed = watcher.tryClaimFile(pending, "first")) {
+    try (var resumed = watcher.tryClaimFile(pending)) {
       org.junit.jupiter.api.Assertions.assertNotNull(resumed, "failed reset must release its admission pause");
     }
   }

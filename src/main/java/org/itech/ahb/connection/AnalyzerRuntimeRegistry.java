@@ -464,16 +464,6 @@ public class AnalyzerRuntimeRegistry {
      */
     private String fileTestCode;
 
-    /**
-     * Vocabulary translation for {@code FileNameSelfDeclarationScanner}:
-     * maps OE test code → free-text synonyms the lab's files use
-     * (e.g. {@code "VIH-1" → ["HIV-1", "GENERIC_HIV_CV"]}).
-     */
-    private Map<String, List<String>> scannerSynonyms = Collections.emptyMap();
-
-    /** OE test codes this analyzer is allowed to emit (whitelist, not a default). */
-    private Set<String> mappedTestCodes = Collections.emptySet();
-
     /** Complete control-result recognition from the pinned Bridge profile. */
     private ControlResultRecognition controlResultRecognition;
 

@@ -123,7 +123,6 @@ class EndpointAuthorizationTest {
       "GET, /no-such-path",
       "POST, /?forwardAddress=127.0.0.1&forwardPort=9",
       "POST, /api/query",
-      "GET, /admin/upload/index.html",
       "GET, /actuator/health/httpforward"
     }
   )

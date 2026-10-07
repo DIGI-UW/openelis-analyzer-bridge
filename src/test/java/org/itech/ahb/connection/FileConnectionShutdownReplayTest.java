@@ -27,8 +27,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
-import org.itech.ahb.controller.FileUploadController;
-import org.itech.ahb.fhir.FileNameSelfDeclarationScanner;
 import org.itech.ahb.file.FileConfig;
 import org.itech.ahb.file.FileMessageHandler;
 import org.itech.ahb.file.FileWatcher;
@@ -38,10 +36,8 @@ import org.itech.ahb.profile.ProfileFingerprintService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.mock.web.MockMultipartFile;
 
-/** Real FILE/upload/HTTP transport with disk-backed connection and processing-state recovery. */
+/** Real FILE/HTTP transport with disk-backed connection and processing-state recovery. */
 class FileConnectionShutdownReplayTest {
 
   @TempDir
@@ -58,11 +54,10 @@ class FileConnectionShutdownReplayTest {
   private SqliteFileStateStore store;
   private AnalyzerConnectionCatalog connections;
   private AnalyzerRuntimeRegistry registry;
-  private FileUploadController uploads;
   private org.itech.ahb.outbox.OutboxTestSupport outbox;
 
   @Test
-  void acceptedUploadSurvivesSourceDeletionAndRestartWithoutRepeatingDeliveredAccessions() throws Exception {
+  void acceptedFileSurvivesSourceDeletionAndRestartWithoutRepeatingDeliveredAccessions() throws Exception {
     Path watched = Files.createDirectory(directory.resolve("watched"));
     byte[] csv =
       ("Sample ID;TargetName;Calc. Conc.;Type\n" +
@@ -129,13 +124,13 @@ class FileConnectionShutdownReplayTest {
           .put("expectedConfigRevision", 1)
       );
       assertEquals("ACTIVE", ack.path("actualRuntimeState").asText());
-      var response = new MockHttpServletResponse();
-      uploads.uploadFile("oe-file", "VIH-1", multipart("result.csv", csv), response);
-      assertEquals(200, response.getStatus());
-      assertTrue(response.getContentAsString().contains("received and queued"));
+      Path staged = Files.write(directory.resolve("result.csv.partial"), csv);
+      Files.move(staged, watched.resolve("result.csv"), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
       assertTrue(receivedSecond.await(5, TimeUnit.SECONDS), "partial delivery never reached the HTTP receiver");
+      await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertEquals("PROCESSED", store.get("oe-file", hash).orElseThrow().status().name()));
       watcher.stop();
-      assertEquals("PROCESSED", store.get("oe-file", hash).orElseThrow().status().name());
       Files.delete(watched.resolve("result.csv"));
       var shutdown = executor.submit(outbox::close);
       assertThrows(
@@ -222,10 +217,6 @@ class FileConnectionShutdownReplayTest {
       UUID::randomUUID,
       runtime
     );
-    uploads = new FileUploadController(registry, handler, mock(FileNameSelfDeclarationScanner.class), watcher);
   }
 
-  private MockMultipartFile multipart(String filename, byte[] content) {
-    return new MockMultipartFile("file", filename, "text/csv", content);
-  }
 }

@@ -219,16 +219,15 @@ Invalid serial settings still fail rather than being treated as temporary absenc
 
 ### FILE shutdown and recovery
 
-Stopping the FILE service closes admissions for uploads and watcher work before
-stopping its polling and processing executors. Already-started operations retain
-ownership through their final state write. Shutdown then waits up to 30 seconds
-for remaining claims, including uploads running on request threads. A timeout or
+Stopping the FILE service closes admissions for watcher work before stopping its
+polling and processing executors. Already-started operations retain ownership
+through their final state write. Shutdown then waits up to 30 seconds for
+remaining claims. A timeout or
 interruption reports incomplete shutdown; it does not release those claims or
 report successful cancellation. Do not treat this failure as a completed drain.
 
-Both watched files and manual uploads commit their exact original bytes, pinned
-profile identity, parser settings and selected assay to the common outbox before
-reporting receipt. Parsing and OpenELIS delivery run from that retained receipt.
+Watched files commit their exact original bytes, pinned profile identity and
+parser settings to the common outbox before reporting receipt. Parsing and OpenELIS delivery run from that retained receipt.
 After receipt, deletion or renaming of the source file does not prevent recovery.
 Partial delivery retries only outstanding accessions; an unacknowledged delivery
 keeps its identifier and payload. Exhausted delivery stays in the common dead
@@ -237,13 +236,10 @@ message queue for operator retry. Preserve the outbox volume across restarts.
 The separate FILE state database tracks discovery: `PROCESSED` means durably
 queued, not accepted by OpenELIS. Its retry timers cover failures before durable
 capture. Preserve source files and discovery state for files not yet received.
-An upload never overwrites an existing same-name source file; its optional source
-copy may be skipped after the uploaded bytes have been queued. An explicit
-upload uses the selected active connection independently of its discovery glob.
 
 On upgrade, old unresolved `RETRYING` discovery rows are held as
-`FAILED_NEEDS_HANDLING`. Older releases did not retain original bytes or manual
-assay choices, so operators must re-upload the original with its verified assay.
+`FAILED_NEEDS_HANDLING`. Older releases did not retain original bytes, so operators
+must place the original file in the watched directory again.
 Existing paths, attempt counts and errors are retained. Missing historical bytes
 or selections cannot be reconstructed. New receipts recover automatically from
 the outbox. A stopped watcher cannot be restarted; recovery creates a new instance.

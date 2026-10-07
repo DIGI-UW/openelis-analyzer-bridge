@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>Sits behind the existing {@code /admin/**} security rule (HTTP Basic
  * with bridge admin credentials) and exposes per-analyzer state-reset so
  * demo / harness suites can re-run a QC scenario without stale CSV files
- * accumulating in the watch directory and racing with new uploads on the
+ * accumulating in the watch directory and racing with new files on the
  * SQLite {@code (analyzer_id, content_hash)} row.
  */
 @RestController
@@ -65,7 +65,7 @@ public class BridgeAdminController {
    * Reset bridge-side state for a single analyzer:
    * <ol>
    *   <li>Verify that every target directory is exclusive to this analyzer</li>
-   *   <li>Pause new FILE work and drain existing upload and watcher processing</li>
+   *   <li>Pause new FILE work and drain existing watcher processing</li>
    *   <li>Delete regular files matching its saved file patterns, without following links</li>
    *   <li>Clear file tracking only after the file cleanup succeeds</li>
    * </ol>

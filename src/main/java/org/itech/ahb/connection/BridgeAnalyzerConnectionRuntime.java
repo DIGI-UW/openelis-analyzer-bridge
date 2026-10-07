@@ -397,10 +397,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       entry.setTabularResultValueSelection(TabularResultValueSelection.fromProfile(profile));
     }
 
-    Set<String> mappedCodes = new LinkedHashSet<>();
     List<String> primaryCodes = new ArrayList<>();
     Map<String, String> codeToLoinc = new LinkedHashMap<>();
-    Map<String, List<String>> scannerSynonyms = new LinkedHashMap<>();
     for (JsonNode mapping : profile.path("default_test_mappings")) {
       String code = requiredText(mapping, "test_code", "Profile test code");
       String loinc = requiredText(mapping, "loinc", "Profile test LOINC");
@@ -409,12 +407,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       aliases.add(code);
       mapping.path("aliases").forEach(alias -> aliases.add(alias.asText()));
       aliases.forEach(alias -> codeToLoinc.put(alias, loinc));
-      mappedCodes.addAll(aliases);
-      scannerSynonyms.put(code, List.copyOf(aliases));
     }
-    entry.setMappedTestCodes(mappedCodes);
     entry.setCodeToLoinc(codeToLoinc);
-    entry.setScannerSynonyms(scannerSynonyms);
     entry.setFileTestCode(
       fileTestCode(
         entry.getExpectedProtocol(),
