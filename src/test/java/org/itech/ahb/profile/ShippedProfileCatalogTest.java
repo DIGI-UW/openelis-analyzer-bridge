@@ -28,7 +28,13 @@ class ShippedProfileCatalogTest {
     4,
     "sha256:26f400271c3ecd14dd5ddf0e7b47a36995db7e740e6abf006aebb003b7815ba0",
     5,
-    "sha256:3ea1cb123338481ee499a90168583d58369b8d3a6b7520b368324aa5bb8bc314"
+    "sha256:3ea1cb123338481ee499a90168583d58369b8d3a6b7520b368324aa5bb8bc314",
+    6,
+    "sha256:72e4d3ca7ebe5715c750a19579e038178709722294ee78686bf0f751f9253001",
+    7,
+    "sha256:55c93b9f8327a26ccf7e04db1e1e08e8ce0c9214a2594351625247c22100bc84",
+    8,
+    "sha256:47d8857b028c36ac65959e33100f9db7afe23fac3841bd96543174e6b845f2be"
   );
 
   private static final Map<String, String> REVISION_ONE_FINGERPRINTS = Map.of(
@@ -113,9 +119,16 @@ class ShippedProfileCatalogTest {
           .extracting(JsonNode::asText)
           .containsExactly("result", "interpretation");
         case "genexpert-astm" -> {
-          JsonNode selection = profile.path("configDefaults").path("extractionOverrides").path("resultRecordSelection");
-          assertThat(selection.path("mode").asText()).isEqualTo("FIELD_NON_BLANK");
-          assertThat(selection.path("targetField").asText()).isEqualTo("R.3.5");
+          JsonNode extraction = profile.path("configDefaults").path("extractionOverrides");
+          JsonNode selection = extraction.path("resultRecordSelection");
+          if ("2.0".equals(profile.path("schemaVersion").asText())) {
+            // Every record is a result; the profile's result parts say what each one is.
+            assertThat(selection.path("mode").asText()).isEqualTo("ALL");
+            assertThat(extraction.path("resultParts").isObject()).isTrue();
+          } else {
+            assertThat(selection.path("mode").asText()).isEqualTo("FIELD_NON_BLANK");
+            assertThat(selection.path("targetField").asText()).isEqualTo("R.3.5");
+          }
         }
         case "quantstudio" -> assertThat(profile.path("result_value_order"))
           .extracting(JsonNode::asText)
@@ -134,9 +147,9 @@ class ShippedProfileCatalogTest {
           .as("genexpert-astm revision %d", revision)
           .isEqualTo(fingerprint)
     );
-    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(7);
+    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(8);
 
-    assertThat(catalog.requireLatest("genexpert-astm").profile().path("default_test_mappings")).anySatisfy(mapping -> {
+    assertThat(catalog.require("genexpert-astm", 7).profile().path("default_test_mappings")).anySatisfy(mapping -> {
       assertThat(mapping.path("test_code").asText()).isEqualTo("HIV-VL");
       assertThat(mapping.path("specimen_type_hint").asText()).isEqualTo("Plasma");
     });
@@ -144,7 +157,7 @@ class ShippedProfileCatalogTest {
     assertThat(
       catalog.require("genexpert-astm", 6).profile().path("catalog").path("revisionFingerprint").asText()
     ).isEqualTo("sha256:72e4d3ca7ebe5715c750a19579e038178709722294ee78686bf0f751f9253001");
-    assertThat(catalog.requireLatest("genexpert-astm").profile().path("default_test_mappings")).anySatisfy(mapping -> {
+    assertThat(catalog.require("genexpert-astm", 7).profile().path("default_test_mappings")).anySatisfy(mapping -> {
       assertThat(mapping.path("test_code").asText()).isEqualTo("COVID19");
       assertThat(mapping.path("specimen_type_hint").asText()).isEqualTo("Respiratory Swab");
       assertThat(mapping.path("result_value_hints").path("POSITIVE").asText()).isEqualTo("SARS-CoV-2 RNA DETECTED");
