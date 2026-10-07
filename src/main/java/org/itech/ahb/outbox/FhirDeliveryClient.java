@@ -88,13 +88,17 @@ public class FhirDeliveryClient {
         client = httpClient;
       }
       // The request timeout ends at the response headers; waiting on the whole exchange also bounds
-      // the time spent reading the body.
+      // the time spent reading the body. The wait covers connecting too, so an unreachable OpenELIS
+      // is reported by its own connect failure rather than as a slow answer.
       CompletableFuture<HttpResponse<String>> exchange = client.sendAsync(
         builder.build(),
         info -> limitedBody(maxResponseBytes)
       );
       try {
-        HttpResponse<String> response = exchange.get(readTimeoutSeconds, TimeUnit.SECONDS);
+        HttpResponse<String> response = exchange.get(
+          (long) httpConfig.getConnectTimeoutSeconds() + readTimeoutSeconds,
+          TimeUnit.SECONDS
+        );
         return DeliveryOutcome.responded(response.statusCode(), response.body());
       } catch (TimeoutException e) {
         exchange.cancel(true);

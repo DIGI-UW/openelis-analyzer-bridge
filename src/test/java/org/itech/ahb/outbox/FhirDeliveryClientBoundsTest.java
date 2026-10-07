@@ -103,4 +103,25 @@ class FhirDeliveryClientBoundsTest {
     assertEquals(200, outcome.httpStatus());
     assertEquals("{\"receiptId\":\"rcpt-1\"}", outcome.body());
   }
+
+  @Test
+  @DisplayName("an OpenELIS that cannot be reached is recorded as a connection failure, not a slow answer")
+  void anUnreachableOpenElisIsAConnectionFailure() {
+    HTTPForwardServerConfigurationProperties config = new HTTPForwardServerConfigurationProperties();
+    // TEST-NET-1 is never routed, so the connection attempt waits out its own timeout.
+    config.setUri(URI.create("http://192.0.2.1:9/analyzer"));
+    config.setConnectTimeoutSeconds(2);
+    config.setReadTimeoutSeconds(1);
+
+    DeliveryOutcome outcome = assertTimeoutPreemptively(
+      Duration.ofSeconds(8),
+      () -> new FhirDeliveryClient(config).deliver("{}")
+    );
+
+    assertFalse(outcome.reachedOpenElis());
+    assertTrue(
+      outcome.describeFailure().matches(".*(UnknownHostException|ConnectException|HttpConnectTimeoutException).*"),
+      outcome.describeFailure()
+    );
+  }
 }
