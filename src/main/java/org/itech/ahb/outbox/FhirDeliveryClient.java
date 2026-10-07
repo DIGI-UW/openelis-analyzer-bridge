@@ -40,8 +40,21 @@ public class FhirDeliveryClient {
   private final HttpClient httpClient;
   private final int readTimeoutSeconds;
   private final int maxResponseBytes;
+  private final org.itech.ahb.pairing.OpenElisClients openElis;
+  private HttpClient pairedClient;
+  private javax.net.ssl.SSLContext pairedContext;
 
   public FhirDeliveryClient(HTTPForwardServerConfigurationProperties httpConfig) {
+    this(httpConfig, null);
+  }
+
+  /** Delivers with the paired TLS identity once the Bridge is paired, and as configured before. */
+  @org.springframework.beans.factory.annotation.Autowired
+  public FhirDeliveryClient(
+    HTTPForwardServerConfigurationProperties httpConfig,
+    org.itech.ahb.pairing.OpenElisClients openElis
+  ) {
+    this.openElis = openElis;
     this.httpConfig = httpConfig;
     this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
     this.maxResponseBytes = httpConfig.getMaxResponseBytes();
@@ -66,12 +79,17 @@ public class FhirDeliveryClient {
         .header("Content-Type", "application/fhir+json")
         .timeout(Duration.ofSeconds(readTimeoutSeconds))
         .POST(HttpRequest.BodyPublishers.ofString(fhirJson));
-      if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
+      HttpClient client = pairedClient();
+      // Once paired, OpenELIS authenticates the Bridge by its certificate; no password is sent.
+      if (client == null && httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
         addBasicAuth(builder, httpConfig.getUsername(), httpConfig.getPassword());
+      }
+      if (client == null) {
+        client = httpClient;
       }
       // The request timeout ends at the response headers; waiting on the whole exchange also bounds
       // the time spent reading the body.
-      CompletableFuture<HttpResponse<String>> exchange = httpClient.sendAsync(
+      CompletableFuture<HttpResponse<String>> exchange = client.sendAsync(
         builder.build(),
         info -> limitedBody(maxResponseBytes)
       );
@@ -92,6 +110,21 @@ public class FhirDeliveryClient {
     } catch (Exception e) {
       return DeliveryOutcome.failed(e);
     }
+  }
+
+  private synchronized HttpClient pairedClient() {
+    javax.net.ssl.SSLContext context = openElis == null ? null : openElis.sslContext().orElse(null);
+    if (context == null) {
+      return null;
+    }
+    if (context != pairedContext) {
+      pairedClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(httpConfig.getConnectTimeoutSeconds()))
+        .sslContext(context)
+        .build();
+      pairedContext = context;
+    }
+    return pairedClient;
   }
 
   /** Collects a response body as UTF-8 text, failing once it grows past {@code limit} bytes. */

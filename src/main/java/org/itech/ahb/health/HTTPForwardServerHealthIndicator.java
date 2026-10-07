@@ -43,15 +43,26 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
   private final int connectTimeoutSeconds;
   private final int readTimeoutSeconds;
   private final HttpClient httpClient;
+  private final org.itech.ahb.pairing.OpenElisClients openElis;
+  private HttpClient pairedClient;
+  private javax.net.ssl.SSLContext pairedContext;
+
+  public HTTPForwardServerHealthIndicator(HTTPForwardServerConfigurationProperties properties) {
+    this(properties, null);
+  }
 
   /**
    * Constructor for HTTPForwardServerHealthIndicator.
    *
    * @param properties the HTTP forward server configuration properties
+   * @param openElis TLS for the paired OpenELIS, used once the Bridge is paired
    */
+  @org.springframework.beans.factory.annotation.Autowired
   public HTTPForwardServerHealthIndicator(
-    HTTPForwardServerConfigurationProperties properties
+    HTTPForwardServerConfigurationProperties properties,
+    org.itech.ahb.pairing.OpenElisClients openElis
   ) {
+    this.openElis = openElis;
     this.properties = properties;
     this.connectTimeoutSeconds = properties.getConnectTimeoutSeconds();
     this.readTimeoutSeconds = properties.getReadTimeoutSeconds();
@@ -99,7 +110,8 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
       .method(properties.getHealthMethod().toString(), HttpRequest.BodyPublishers.ofString(properties.getHealthBody()))
       .uri(properties.getHealthUri())
       .timeout(Duration.ofSeconds(readTimeoutSeconds));
-    if (!(properties.getUsername() == null || properties.getUsername().equals(""))) {
+    HttpClient client = pairedClient();
+    if (client == null && !(properties.getUsername() == null || properties.getUsername().equals(""))) {
       log.debug(
         "using username '" +
         properties.getUsername() +
@@ -112,7 +124,10 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
 
     try {
       log.debug("testing forward http server at " + properties.getHealthUri().toString());
-      HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+      HttpResponse<String> response = (client == null ? httpClient : client).send(
+        request,
+        HttpResponse.BodyHandlers.ofString()
+      );
       if (response.statusCode() == 200) {
         log.debug("testing forward http server at " + properties.getHealthUri().toString() + " success");
         return Health.up().build();
@@ -122,6 +137,21 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
     }
     log.debug("testing forward http server at " + properties.getHealthUri().toString() + " failure");
     return Health.down().build();
+  }
+
+  private synchronized HttpClient pairedClient() {
+    javax.net.ssl.SSLContext context = openElis == null ? null : openElis.sslContext().orElse(null);
+    if (context == null) {
+      return null;
+    }
+    if (context != pairedContext) {
+      pairedClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+        .sslContext(context)
+        .build();
+      pairedContext = context;
+    }
+    return pairedClient;
   }
 
   private void addBasicAuth(Builder requestBuilder, String username, char[] password) {
