@@ -133,7 +133,8 @@ public class NormalizedBundleRenderer {
         case ASTM -> ASTMResultParser.parse(
           splitOn(envelope.getRawMessage(), false),
           recognition,
-          analyzer.getAstmResultRecordSelection()
+          analyzer.getAstmResultRecordSelection(),
+          analyzer.getResultReading()
         );
         default -> null;
       };
@@ -225,8 +226,7 @@ public class NormalizedBundleRenderer {
     );
     try {
       String fhirJson = FhirBundleBuilder.buildNormalizedBundle(
-        parsed.accessionNumber(),
-        parsed.results(),
+        translated(parsed, analyzer.getResultReading()),
         analyzerContext,
         analyzer::getLoincForCode,
         messageId
@@ -252,6 +252,27 @@ public class NormalizedBundleRenderer {
         "Could not render the OpenELIS contract: " + e.getMessage()
       );
     }
+  }
+
+  /** The results under the profile's own codes, where the saved connection sets other codes for the instrument. */
+  private static HL7ResultParser.ParsedResults translated(
+    HL7ResultParser.ParsedResults parsed,
+    org.itech.ahb.profile.ResultReading reading
+  ) {
+    if (reading == null || reading.profileCodeByInstrumentCode().isEmpty()) {
+      return parsed;
+    }
+    List<FhirBundleBuilder.AnalyzerResult> results = parsed
+      .results()
+      .stream()
+      .map(result -> result.withTestCode(reading.profileCode(result.testCode())))
+      .toList();
+    return new HL7ResultParser.ParsedResults(
+      parsed.accessionNumber(),
+      results,
+      parsed.patient(),
+      parsed.specimenDescriptor()
+    );
   }
 
   /** Split a raw message into non-blank lines, normalizing line endings for HL7. */

@@ -47,7 +47,7 @@ public final class BaselineProfileFixtures {
       .put("patientId", "P.5")
       .put("patientName", "P.6")
       .put("specimenDescriptor", "O.16");
-    profile.withObject("configDefaults").putObject("numberFormat").put("decimalSeparator", ".");
+    profile.withObject("configDefaults").put("numberFormat", ".");
     profile.set("default_test_mappings", objectMapper.readTree(TESTS));
     return profile;
   }

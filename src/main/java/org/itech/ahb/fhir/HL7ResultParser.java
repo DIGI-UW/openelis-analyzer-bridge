@@ -268,5 +268,18 @@ public class HL7ResultParser {
     return null;
   }
 
-  public record ParsedResults(String accessionNumber, List<AnalyzerResult> results) {}
+  /**
+   * @param patient the patient the instrument reported, when its profile says where to read one
+   * @param specimenDescriptor the instrument's own description of the specimen, as sent
+   */
+  public record ParsedResults(
+    String accessionNumber,
+    List<AnalyzerResult> results,
+    InstrumentPatient patient,
+    String specimenDescriptor
+  ) {
+    public ParsedResults(String accessionNumber, List<AnalyzerResult> results) {
+      this(accessionNumber, results, null, null);
+    }
+  }
 }

@@ -182,9 +182,9 @@ class BaselineProfileContractTest {
   @Test
   void theNumberFormatIsADecimalSeparator() throws Exception {
     ObjectNode profile = baseline();
-    profile.withObject("configDefaults").putObject("numberFormat").put("decimalSeparator", ";");
+    profile.withObject("configDefaults").put("numberFormat", ";");
 
-    assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("decimalSeparator"));
+    assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("numberFormat"));
   }
 
   private ObjectNode baseline() throws Exception {

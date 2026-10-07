@@ -78,6 +78,59 @@ class BridgeAnalyzerConnectionRuntimeTest {
   }
 
   @Test
+  void aSavedCodeOverrideIsTheCodeTheInstrumentIsOrderedAndTranslatedBy() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = org.itech.ahb.profile.BaselineProfileFixtures.genexpertHivViralLoad(objectMapper);
+    ObjectNode connection = baseConnection(profile, "Renamed codes");
+    connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    connection.withObject("values").remove("port");
+    connection.withObject("values").putObject("codeOverrides").put("HIVVL", "HIVU");
+
+    runtime.activate(connection, profile);
+
+    AnalyzerEntry entry = registry
+      .findAnalyzerEntryByConnectionId(connection.path("connectionId").asText())
+      .orElseThrow();
+    assertThat(entry.getCodeForLoinc("20447-9")).isEqualTo("HIVU");
+    assertThat(entry.getLoincForCode("HIVU")).isEqualTo("20447-9");
+    assertThat(entry.getLoincForCode("HIVVL")).isNull();
+    assertThat(entry.getCodeForLoinc("89372-7")).isEqualTo("RIF");
+    assertThat(entry.getResultReading().profileCode("HIVU")).isEqualTo("HIVVL");
+  }
+
+  @Test
+  void aCodeOverrideMustNameACodeThePinnedProfileDeclaresAndStayUnique() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = org.itech.ahb.profile.BaselineProfileFixtures.genexpertHivViralLoad(objectMapper);
+    ObjectNode undeclared = baseConnection(profile, "Unknown code");
+    undeclared.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    undeclared.withObject("values").putObject("codeOverrides").put("NOT-IN-PROFILE", "X1");
+    assertThatThrownBy(() -> runtime.activate(undeclared, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("codeOverrides")
+      .hasMessageContaining("NOT-IN-PROFILE");
+
+    ObjectNode shared = baseConnection(profile, "Shared code");
+    shared.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    shared.withObject("values").putObject("codeOverrides").put("HIVVL", "SAME").put("RIF", "SAME");
+    assertThatThrownBy(() -> runtime.activate(shared, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("SAME");
+  }
+
+  @Test
   void fileAssaySelectionIsSavedExplicitlyAndMustBelongToThePinnedProfile() throws Exception {
     var registry = new AnalyzerRuntimeRegistry();
     var runtime = new BridgeAnalyzerConnectionRuntime(registry, mock(FileWatcher.class), null, null);

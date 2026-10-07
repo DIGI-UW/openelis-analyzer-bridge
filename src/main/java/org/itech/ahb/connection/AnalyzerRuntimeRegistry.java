@@ -483,6 +483,13 @@ public class AnalyzerRuntimeRegistry {
     /** Profile-owned selection of ASTM R records that carry reportable results. */
     private AstmResultRecordSelection astmResultRecordSelection;
 
+    /**
+     * How the pinned profile and the saved connection read a result: where each part of a record
+     * sits, which raw values are run failures, the number format and any instrument codes the
+     * connection overrides. Null for a profile read the way it always was.
+     */
+    private org.itech.ahb.profile.ResultReading resultReading;
+
     /** Specimen group layout materialized only from the pinned HL7 profile. */
     private org.itech.ahb.profile.Hl7SpecimenPosition hl7SpecimenPosition =
       org.itech.ahb.profile.Hl7SpecimenPosition.PRECEDING;

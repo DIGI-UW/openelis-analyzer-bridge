@@ -494,12 +494,8 @@
       }
     },
     "numberFormat": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["decimalSeparator"],
-      "properties": {
-        "decimalSeparator": { "enum": [".", ","] }
-      }
+      "enum": [".", ","],
+      "description": "The decimal separator the instrument writes numbers with. A saved connection may replace it, because an instrument runs in the locale its lab set."
     },
     "astmResultParts": {
       "type": "object",
