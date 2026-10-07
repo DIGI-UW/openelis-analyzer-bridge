@@ -1,0 +1,194 @@
+{
+  "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "schemaVersion": "2.0",
+  "profileMeta": {
+    "id": "fluorocycler-xt",
+    "version": "5.0.0",
+    "displayName": "Bruker FluoroCycler XT",
+    "confidence": "MEDIUM_HIGH"
+  },
+  "analyzer_name": "Bruker FluoroCycler XT",
+  "manufacturer": "Bruker",
+  "model": "FluoroCycler XT",
+  "category": "MOLECULAR",
+  "protocol": {
+    "name": "FILE",
+    "format": "XLSX"
+  },
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "supported_extensions": [
+    ".ods",
+    ".xlsx",
+    ".xls"
+  ],
+  "column_mapping": {
+    "Sample ID": "sampleId",
+    "SampleID": "sampleId",
+    "Type": "qcTask",
+    "Calc. Conc.": "result",
+    "CalcConc": "result",
+    "Result": "interpretation",
+    "Interpretation": "interpretation",
+    "TargetName": "testCode",
+    "testCode": "testCode",
+    "WellPosition": "position"
+  },
+  "result_value_order": [
+    "result",
+    "interpretation"
+  ],
+  "default_test_mappings": [
+    {
+      "test_code": "VIH-1",
+      "loinc": "20447-9",
+      "unit": "copies/mL",
+      "result_type": "quantitative",
+      "test_name_hint": "HIV-1 viral load",
+      "values": [
+        "DETECTED",
+        "NOT DETECTED",
+        "INVALID",
+        "INDETERMINATE"
+      ],
+      "value_codes": {
+        "DETECTED": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA11882-0"
+          },
+          {
+            "system": "http://snomed.info/sct",
+            "code": "260373001"
+          },
+          {
+            "system": "https://openconceptlab.org/orgs/CIEL/sources/CIEL",
+            "code": "1301"
+          }
+        ],
+        "NOT DETECTED": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA11883-8"
+          },
+          {
+            "system": "http://snomed.info/sct",
+            "code": "260415000"
+          },
+          {
+            "system": "https://openconceptlab.org/orgs/CIEL/sources/CIEL",
+            "code": "1302"
+          }
+        ],
+        "INVALID": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA15841-2"
+          },
+          {
+            "system": "https://openconceptlab.org/orgs/CIEL/sources/CIEL",
+            "code": "163611"
+          }
+        ],
+        "INDETERMINATE": [
+          {
+            "system": "http://snomed.info/sct",
+            "code": "82334004"
+          },
+          {
+            "system": "https://openconceptlab.org/orgs/CIEL/sources/CIEL",
+            "code": "1138"
+          }
+        ]
+      },
+      "call_component": "call",
+      "components": [
+        {
+          "code": "call",
+          "label": "Call",
+          "result_type": "qualitative"
+        }
+      ],
+      "source": {
+        "document": "Bruker FluoroCycler XT, Molecular PCR Flat File Import Spec v1.0 (openelis-work designs/analyzer-integration)",
+        "section": "3.2, 4.1 to 4.3"
+      }
+    }
+  ],
+  "configDefaults": {
+    "dataFlow": "RESULTS_ONLY",
+    "fileFormat": "XLSX",
+    "filePattern": "*.{ods,ODS,xlsx,XLSX,xls,XLS}",
+    "hasHeader": true,
+    "sheetIndex": 0
+  },
+  "connectionFields": [
+    {
+      "key": "dataFlow",
+      "labelKey": "analyzer.setup.connect.dataFlow",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RESULTS_ONLY",
+          "labelKey": "analyzer.setup.connect.dataFlow.resultsOnly"
+        }
+      ]
+    },
+    {
+      "key": "directory",
+      "labelKey": "analyzer.connection.field.directory",
+      "inputKind": "FILE_PATH",
+      "required": true,
+      "choices": []
+    },
+    {
+      "key": "filePattern",
+      "labelKey": "analyzer.connection.field.filePattern",
+      "helpTextKey": "analyzer.connection.field.filePattern.help",
+      "inputKind": "TEXT",
+      "required": true,
+      "choices": []
+    }
+  ],
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": {
+      "positive-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Positive"
+      },
+      "negative-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Negative"
+      },
+      "standard-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Standard"
+      },
+      "positive-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "C+"
+      },
+      "negative-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "C-"
+      }
+    }
+  },
+  "catalog": {
+    "revision": 5,
+    "recognitionFingerprint": "sha256:5c0de42e1135b772b23e4c1ea04b0162b30fe36fc08ecef76a70108ba031be26",
+    "source": "SHIPPED",
+    "status": "ACTIVE",
+    "publishedAt": "2026-10-06T00:00:00Z",
+    "publishedBy": "distribution",
+    "revisionFingerprint": "sha256:fd06b67461df011ee085187a78d4c94b829fce7256aad6c14e35929198eb9c9d"
+  }
+}

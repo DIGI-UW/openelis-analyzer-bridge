@@ -98,6 +98,17 @@ class ShippedProfileCatalogTest {
       assertThat(profile.path("catalog").path("source").asText()).isEqualTo("SHIPPED");
       assertThat(profile.path("catalog").path("revision").asInt()).isPositive();
       assertThat(profile.path("configDefaults").has("qcRules")).isFalse();
+      if ("2.0".equals(profile.path("schemaVersion").asText())) {
+        // A baseline profile cites its source for every test (rule 19).
+        assertThat(profile.path("default_test_mappings")).allSatisfy(mapping -> {
+          assertThat(mapping.path("source").path("document").asText())
+            .as(mapping.path("test_code").asText())
+            .isNotBlank();
+          assertThat(mapping.path("source").path("section").asText())
+            .as(mapping.path("test_code").asText())
+            .isNotBlank();
+        });
+      }
       assertThat(profile.path("configDefaults").path("dataFlow").asText()).isEqualTo("RESULTS_ONLY");
 
       var dataFlowField = StreamSupport.stream(profile.path("connectionFields").spliterator(), false)
@@ -168,7 +179,17 @@ class ShippedProfileCatalogTest {
     assertThat(
       catalog.require("fluorocycler-xt", 3).profile().path("catalog").path("revisionFingerprint").asText()
     ).isEqualTo("sha256:566234eb28f34c491c5bc9cdccdace50a303d622c67c0d06f5b1b8076bee8525");
-    ObjectNode fluoro = catalog.requireLatest("fluorocycler-xt").profile();
+    assertThat(
+      catalog.require("fluorocycler-xt", 5).profile().path("catalog").path("revisionFingerprint").asText()
+    ).isEqualTo("sha256:fd06b67461df011ee085187a78d4c94b829fce7256aad6c14e35929198eb9c9d");
+    assertThat(
+      catalog.require("quantstudio", 4).profile().path("catalog").path("revisionFingerprint").asText()
+    ).isEqualTo("sha256:01205afb3179bc6397a485d9eb419343cb70ecf776bfed68d75f4a90ba8fafb5");
+    assertThat(catalog.requireLatest("fluorocycler-xt").profile().path("catalog").path("revision").asInt()).isEqualTo(
+      5
+    );
+    assertThat(catalog.requireLatest("quantstudio").profile().path("catalog").path("revision").asInt()).isEqualTo(4);
+    ObjectNode fluoro = catalog.require("fluorocycler-xt", 4).profile();
     assertThat(fluoro.path("catalog").path("revision").asInt()).isEqualTo(4);
     assertThat(fluoro.path("default_test_mappings"))
       .singleElement()
