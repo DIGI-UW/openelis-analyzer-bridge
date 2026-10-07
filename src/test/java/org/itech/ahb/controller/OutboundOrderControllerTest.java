@@ -142,7 +142,7 @@ class OutboundOrderControllerTest {
   void dispatchesToEachDurableClientSharingTheSameHost() throws Exception {
     ObjectMapper mapper = new ObjectMapper();
     ObjectNode profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
       registry,
@@ -162,7 +162,12 @@ class OutboundOrderControllerTest {
         .put("revision", profile.path("catalog").path("revision").asInt())
         .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
       connection.putObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
-      connection.withObject("values").put("connectionRole", "CLIENT").put("host", "192.0.2.10").put("port", port);
+      connection
+        .withObject("values")
+        .put("connectionRole", "CLIENT")
+        .put("dataFlow", "TWO_WAY")
+        .put("host", "192.0.2.10")
+        .put("port", port);
       runtime.activate(connection, profile);
     }
     when(astm.send(eq("192.0.2.10"), anyInt(), Mockito.anyList(), anyInt())).thenReturn(true);
@@ -181,14 +186,17 @@ class OutboundOrderControllerTest {
   void resultsOnlyConnectionCannotDispatchOrdersEvenWhenTheProfileSupportsThem(String role) throws Exception {
     ObjectMapper mapper = new ObjectMapper();
     ObjectNode profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = mapper
       .createObjectNode()
       .put("connectionId", "results-only")
       .put("clientAnalyzerId", "oe-results-only")
       .put("displayName", "Results only");
-    connection.putObject("profileRef").put("profileId", "genexpert-astm").put("revision", 5)
+    connection
+      .putObject("profileRef")
+      .put("profileId", "cepheid-genexpert-astm")
+      .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     connection.putObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     connection.withObject("values").put("connectionRole", role).put("host", "192.0.2.10").put("port", 9101);
@@ -209,7 +217,7 @@ class OutboundOrderControllerTest {
   void profileCanForbidOrdersEvenWithAnOutboundEndpoint(String disabledCapability) throws Exception {
     ObjectMapper mapper = new ObjectMapper();
     ObjectNode profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     profile
       .withObject(disabledCapability.equals("outboundOrders") ? "capabilities" : "communication")

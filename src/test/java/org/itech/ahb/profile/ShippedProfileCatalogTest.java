@@ -32,9 +32,16 @@ class ShippedProfileCatalogTest {
     6,
     "sha256:72e4d3ca7ebe5715c750a19579e038178709722294ee78686bf0f751f9253001",
     7,
-    "sha256:55c93b9f8327a26ccf7e04db1e1e08e8ce0c9214a2594351625247c22100bc84",
-    8,
-    "sha256:47d8857b028c36ac65959e33100f9db7afe23fac3841bd96543174e6b845f2be"
+    "sha256:55c93b9f8327a26ccf7e04db1e1e08e8ce0c9214a2594351625247c22100bc84"
+  );
+
+  private static final Map<String, String> BASELINE_FINGERPRINTS = Map.of(
+    "cepheid-genexpert-astm",
+    "sha256:1e2d53f6b797b25dbcd3c6947c5924ec1176b70b5dec2846fda691a6e74550ea",
+    "hain-fluorocycler-xt",
+    "sha256:5989781fabb39c7e405f6f1427823af5f9a40bfd0721abf470fda8f95551f4f7",
+    "thermo-quantstudio",
+    "sha256:9b5a84ddbc724ee696823898105a4f49edd41160fb9400bc51c109cda5d91ce1"
   );
 
   private static final Map<String, String> REVISION_ONE_FINGERPRINTS = Map.of(
@@ -165,7 +172,12 @@ class ShippedProfileCatalogTest {
           .as("genexpert-astm revision %d", revision)
           .isEqualTo(fingerprint)
     );
-    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(8);
+    assertThat(catalog.requireLatest("genexpert-astm").profile().path("catalog").path("revision").asInt()).isEqualTo(7);
+    BASELINE_FINGERPRINTS.forEach((profileId, fingerprint) -> {
+      ObjectNode baseline = catalog.requireLatest(profileId).profile();
+      assertThat(baseline.path("catalog").path("revision").asInt()).as(profileId).isEqualTo(1);
+      assertThat(baseline.path("catalog").path("revisionFingerprint").asText()).as(profileId).isEqualTo(fingerprint);
+    });
 
     assertThat(catalog.require("genexpert-astm", 7).profile().path("default_test_mappings")).anySatisfy(mapping -> {
       assertThat(mapping.path("test_code").asText()).isEqualTo("HIV-VL");
@@ -186,16 +198,10 @@ class ShippedProfileCatalogTest {
     assertThat(
       catalog.require("fluorocycler-xt", 3).profile().path("catalog").path("revisionFingerprint").asText()
     ).isEqualTo("sha256:566234eb28f34c491c5bc9cdccdace50a303d622c67c0d06f5b1b8076bee8525");
-    assertThat(
-      catalog.require("fluorocycler-xt", 5).profile().path("catalog").path("revisionFingerprint").asText()
-    ).isEqualTo("sha256:fd06b67461df011ee085187a78d4c94b829fce7256aad6c14e35929198eb9c9d");
-    assertThat(
-      catalog.require("quantstudio", 4).profile().path("catalog").path("revisionFingerprint").asText()
-    ).isEqualTo("sha256:01205afb3179bc6397a485d9eb419343cb70ecf776bfed68d75f4a90ba8fafb5");
     assertThat(catalog.requireLatest("fluorocycler-xt").profile().path("catalog").path("revision").asInt()).isEqualTo(
-      5
+      4
     );
-    assertThat(catalog.requireLatest("quantstudio").profile().path("catalog").path("revision").asInt()).isEqualTo(4);
+    assertThat(catalog.requireLatest("quantstudio").profile().path("catalog").path("revision").asInt()).isEqualTo(3);
     ObjectNode fluoro = catalog.require("fluorocycler-xt", 4).profile();
     assertThat(fluoro.path("catalog").path("revision").asInt()).isEqualTo(4);
     assertThat(fluoro.path("default_test_mappings"))

@@ -13,7 +13,7 @@ import java.io.InputStream;
  */
 public final class BaselineProfileFixtures {
 
-  private static final String ASTM_PROFILE = "analyzer-profiles/genexpert-astm-v7.json";
+  private static final String ASTM_PROFILE = "analyzer-profiles/cepheid-genexpert-astm.json";
 
   private BaselineProfileFixtures() {}
 

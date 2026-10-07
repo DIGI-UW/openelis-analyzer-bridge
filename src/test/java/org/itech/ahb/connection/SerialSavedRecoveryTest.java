@@ -71,11 +71,11 @@ class SerialSavedRecoveryTest {
       pair.start();
       profiles = new AnalyzerProfileCatalog(
         directory.resolve("profiles"),
-        List.of(new ClassPathResource("analyzer-profiles/genexpert-astm-v4.json")),
+        List.of(new ClassPathResource("analyzer-profiles/cepheid-genexpert-astm.json")),
         json,
         Clock.systemUTC()
       );
-      var draft = profiles.duplicateDraft("genexpert-astm", 4, "Serial recovery fixture", "test");
+      var draft = profiles.duplicateDraft("cepheid-genexpert-astm", 1, "Serial recovery fixture", "test");
       ObjectNode authored = draft.profile().deepCopy();
       authored
         .withObject("transport_config")

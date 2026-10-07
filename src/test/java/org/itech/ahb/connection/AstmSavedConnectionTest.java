@@ -82,11 +82,11 @@ class AstmSavedConnectionTest {
     if (outbox != null) outbox.close();
     profiles = new AnalyzerProfileCatalog(
       directory.resolve("profiles"),
-      List.of(new ClassPathResource("analyzer-profiles/genexpert-astm-v5.json")),
+      List.of(new ClassPathResource("analyzer-profiles/cepheid-genexpert-astm.json")),
       mapper,
       Clock.systemUTC()
     );
-    profile = profiles.require("genexpert-astm", 5).profile();
+    profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties forwarding = new HTTPForwardServerConfigurationProperties();
     forwarding.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
@@ -157,8 +157,8 @@ class AstmSavedConnectionTest {
       .put("displayName", name);
     request
       .putObject("profileRef")
-      .put("profileId", "genexpert-astm")
-      .put("revision", 5)
+      .put("profileId", "cepheid-genexpert-astm")
+      .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     ObjectNode values = request.putObject("values").put("host", "127.0.0.1");
     if (sender != null) values.put("senderId", sender);
@@ -186,8 +186,8 @@ class AstmSavedConnectionTest {
       .put("displayName", "GeneXpert bench");
     request
       .putObject("profileRef")
-      .put("profileId", "genexpert-astm")
-      .put("revision", 5)
+      .put("profileId", "cepheid-genexpert-astm")
+      .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     request.putObject("values").put("host", "127.0.0.1").put("senderId", "GX-BENCH");
     if (oldPort > 0) request.withObject("values").put("port", oldPort);
@@ -207,7 +207,7 @@ class AstmSavedConnectionTest {
     assertThat(catalog.require(id).path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
     assertThat(catalog.require(id).path("profileRef")).isEqualTo(created.path("profileRef"));
     assertDelivery(id, "GX-AFTER");
-    assertThat(profiles.require("genexpert-astm", 5).profile()).isEqualTo(original);
+    assertThat(profiles.require("cepheid-genexpert-astm", 1).profile()).isEqualTo(original);
   }
 
   private void assertDelivery(String connectionId, String accession) throws Exception {

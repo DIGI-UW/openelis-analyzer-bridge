@@ -43,7 +43,9 @@ class OutboundConnectionProbeTest {
       inbound.setPort(available.getLocalPort());
     }
     listeners.start("inbound", "oe-probe", inbound.getPort(), "LIS01_A");
-    profile = (ObjectNode) mapper.readTree(getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json"));
+    profile = (ObjectNode) mapper.readTree(
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
+    );
     connection = mapper
       .createObjectNode()
       .put("connectionId", "outbound-probe")
