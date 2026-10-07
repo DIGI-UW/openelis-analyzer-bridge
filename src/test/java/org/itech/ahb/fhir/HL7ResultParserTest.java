@@ -156,8 +156,8 @@ class HL7ResultParserTest {
     }
 
     @Test
-    @DisplayName("Falls back to PID-3 when OBR has no accession")
-    void fallbackToPid3WhenNoObrAccession() {
+    @DisplayName("Never takes the patient identifier in PID-3 for the accession")
+    void neverFallsBackToPid3WhenNoObrAccession() {
       String msg =
         "MSH|^~\\&|A|B|C|D|20260326||ORU^R01|1|P|2.3.1\r" +
         "PID|1||PATIENT_ID_123\r" +
@@ -167,7 +167,7 @@ class HL7ResultParserTest {
       ParsedResults parsed = HL7ResultParser.parseRaw(msg, ControlResultRecognition.none());
 
       assertNotNull(parsed);
-      assertEquals("PATIENT_ID_123", parsed.accessionNumber());
+      assertEquals("HL7-UNKNOWN", parsed.accessionNumber());
     }
 
     @Test

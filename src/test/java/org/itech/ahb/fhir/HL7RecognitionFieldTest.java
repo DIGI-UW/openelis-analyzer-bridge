@@ -89,14 +89,14 @@ class HL7RecognitionFieldTest {
       List.of(
         "MSH#$!?@#SENDER#LAB#OE#LAB#20260909##ORU$R01#1#P#2.5.1",
         "PID#1##PATIENT$$$AUTHORITY@CONTROL",
-        "OBR#1###PANEL",
+        "OBR#1##ACCESSION#PANEL",
         "OBX#1#NM#TEST$Display##7.5#unit$Display"
       ),
       TestControlRecognitions.rule("FIELD_EQUALS", "PID.3.4.2", "CONTROL")
     );
 
     assertNotNull(parsed);
-    assertEquals("PATIENT", parsed.accessionNumber());
+    assertEquals("ACCESSION", parsed.accessionNumber());
     assertTrue(parsed.results().get(0).isControl());
     assertEquals("TEST", parsed.results().get(0).testCode());
     assertEquals("7.5", parsed.results().get(0).value());
