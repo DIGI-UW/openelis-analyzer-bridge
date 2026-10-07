@@ -19,4 +19,14 @@ public class HttpInputConfiguration {
     registration.addUrlPatterns("/input");
     return registration;
   }
+
+  /** Pairing is open to anonymous callers and its request is a short code. */
+  @Bean
+  public FilterRegistrationBean<HttpInputSizeLimit> pairingSizeLimit() {
+    FilterRegistrationBean<HttpInputSizeLimit> registration = new FilterRegistrationBean<>(
+      new HttpInputSizeLimit(16 * 1024)
+    );
+    registration.addUrlPatterns("/pairing");
+    return registration;
+  }
 }

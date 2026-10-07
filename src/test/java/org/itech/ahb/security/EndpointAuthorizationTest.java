@@ -124,6 +124,8 @@ class EndpointAuthorizationTest {
     assertEquals(403, send("POST", "/input", null, "H|\\^&\rL|1\r").statusCode(), "no active HTTP connection");
     assertEquals(200, send("GET", "/pairing", null, null).statusCode());
     assertEquals(503, send("POST", "/pairing", null, "{\"code\":\"x\"}").statusCode(), "pairing needs HTTPS");
+    String oversized = "{\"code\":\"" + "x".repeat(32 * 1024) + "\"}";
+    assertEquals(413, send("POST", "/pairing", null, oversized).statusCode(), "a pairing request is small");
   }
 
   @ParameterizedTest
