@@ -181,8 +181,8 @@ fields it depends on, and refuses an unsupported `schemaVersion`. The Bridge
 refuses by name the fields OpenELIS must never send (`openelisTestId`,
 `openelisResultOptionId`, `labUnitId`, `controlLots`, `qcRules`, `westgard`,
 `operationalQc`, and the reserved keys under `values`), and stores only the
-pin fields it knows. Responses the Bridge sends are checked against their
-schemas before they leave it.
+pin fields it knows. Connection responses are checked against their schema
+before they leave the Bridge.
 
 ### Categorical answer hints
 
