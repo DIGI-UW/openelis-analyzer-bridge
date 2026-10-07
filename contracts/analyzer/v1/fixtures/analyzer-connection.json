@@ -10,6 +10,7 @@
   },
   "configRevision": 4,
   "configFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "codeOverrides": { "GLU": "GLUC" },
   "fields": [
     {
       "key": "connectionRole",

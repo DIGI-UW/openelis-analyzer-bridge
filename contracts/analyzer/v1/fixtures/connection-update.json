@@ -12,6 +12,9 @@
   "values": {
     "connectionRole": "LISTENER",
     "listenerPort": 5001,
-    "apiToken": "replacement-write-only-token"
+    "apiToken": "replacement-write-only-token",
+    "codeOverrides": {
+      "GLU": "GLUC"
+    }
   }
 }

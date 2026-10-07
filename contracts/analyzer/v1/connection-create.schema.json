@@ -54,6 +54,14 @@
           }
         ]
       },
+      "properties": {
+        "codeOverrides": {
+          "type": "object",
+          "propertyNames": { "type": "string", "minLength": 1 },
+          "additionalProperties": { "type": "string", "minLength": 1 },
+          "description": "The code this instrument sends for each profile test code it renames. Omitted keeps the saved overrides; an empty object clears them."
+        }
+      },
       "additionalProperties": {
         "type": ["string", "number", "boolean", "array", "object"]
       }

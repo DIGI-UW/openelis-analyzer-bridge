@@ -109,6 +109,10 @@ class AnalyzerConnectionCatalogTest {
     assertThat(entry.getCodeForLoinc("20447-9")).isEqualTo("HIVU");
     assertThat(entry.getResultReading().profileCode("HIVU")).isEqualTo("HIVVL");
 
+    ObjectNode cleared = rename.deepCopy().put("requestId", "clear-codes").put("expectedConfigRevision", 2);
+    cleared.withObject("values").putObject("codeOverrides");
+    assertThat(catalog.update(cleared).path("codeOverrides").size()).as("an empty object clears the codes").isZero();
+
     ObjectNode undeclared = createRequest(profile, "unknown-code", "oe-unknown");
     undeclared.withObject("values").putObject("codeOverrides").put("NOT-IN-PROFILE", "X");
     assertThatThrownBy(() -> catalog.create(undeclared))

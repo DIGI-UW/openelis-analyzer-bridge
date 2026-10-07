@@ -11,6 +11,7 @@
   "values": {
     "connectionRole": "LISTENER",
     "listenerPort": 5001,
-    "apiToken": "write-only-fixture-token"
+    "apiToken": "write-only-fixture-token",
+    "codeOverrides": {}
   }
 }
