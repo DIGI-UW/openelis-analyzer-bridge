@@ -23,6 +23,9 @@ public final class AnalyzerProfileCatalog {
   private static final String PROFILE_SCHEMA =
     "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json";
   private static final String PROFILE_SCHEMA_VERSION = "1.0";
+
+  /** Every profile authored, duplicated or updated here is written to the baseline contract. */
+  private static final String AUTHORED_SCHEMA_VERSION = "2.0";
   private static final String EMPTY_FINGERPRINT = "sha256:" + "0".repeat(64);
 
   private static final Comparator<ProfileRevision> BY_DISPLAY_NAME = Comparator.comparing(
@@ -80,7 +83,7 @@ public final class AnalyzerProfileCatalog {
     String profileId = nextProfileId();
     ObjectNode profile = objectMapper.createObjectNode();
     profile.put("$schema", PROFILE_SCHEMA);
-    profile.put("schemaVersion", PROFILE_SCHEMA_VERSION);
+    profile.put("schemaVersion", AUTHORED_SCHEMA_VERSION);
     ObjectNode profileMeta = profile.putObject("profileMeta");
     profileMeta.put("id", profileId);
     profileMeta.put("displayName", normalizedName);
@@ -144,7 +147,7 @@ public final class AnalyzerProfileCatalog {
     String normalizedActor = requireText(actor, "actor");
     ObjectNode profile = candidate.deepCopy();
     profile.put("$schema", PROFILE_SCHEMA);
-    profile.put("schemaVersion", PROFILE_SCHEMA_VERSION);
+    profile.put("schemaVersion", AUTHORED_SCHEMA_VERSION);
     ObjectNode profileMeta = profileMetadata(profile);
     String profileId = current.profile().path("profileMeta").path("id").asText();
     profileMeta.put("id", profileId);
@@ -358,7 +361,7 @@ public final class AnalyzerProfileCatalog {
   private ObjectNode publicationCandidate(ProfileDraft draft, String actor, Instant publishedAt) {
     ObjectNode profile = draft.profile();
     profile.put("$schema", PROFILE_SCHEMA);
-    profile.put("schemaVersion", PROFILE_SCHEMA_VERSION);
+    profile.put("schemaVersion", AUTHORED_SCHEMA_VERSION);
     ObjectNode profileMeta = profileMetadata(profile);
     String profileId = draft.profile().path("profileMeta").path("id").asText();
     profileMeta.put("id", profileId);
@@ -552,9 +555,22 @@ public final class AnalyzerProfileCatalog {
     return draftId;
   }
 
+  /**
+   * A published profile as a draft: the contract bans the hints an earlier profile may carry, so
+   * a copy of one starts without them.
+   */
   private static ObjectNode authoredCopy(ObjectNode publishedProfile) {
     ObjectNode profile = publishedProfile.deepCopy();
     profile.remove("catalog");
+    profile.put("schemaVersion", AUTHORED_SCHEMA_VERSION);
+    profile
+      .path("default_test_mappings")
+      .forEach(mapping -> {
+        if (mapping instanceof ObjectNode test) {
+          test.remove("specimen_type_hint");
+          test.remove("result_value_hints");
+        }
+      });
     return profile;
   }
 

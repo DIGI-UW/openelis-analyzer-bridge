@@ -84,6 +84,53 @@ class AnalyzerProfileCatalogTest {
   }
 
   @Test
+  void aProfileAuthoredHereIsWrittenToTheBaselineContract() throws Exception {
+    var draft = catalog.createDraft("Baseline Bench", "profile-creator");
+    String profileId = draft.profile().path("profileMeta").path("id").asText();
+    assertThat(draft.profile().path("schemaVersion").asText()).isEqualTo("2.0");
+
+    ObjectNode candidate = authoredFixture("analyzer-profile-file.json", profileId, "Baseline Bench");
+    candidate
+      .path("default_test_mappings")
+      .forEach(mapping -> ((ObjectNode) mapping).put("specimen_type_hint", "Plasma"));
+    var withHint = catalog.updateDraft(draft.draftId(), candidate, "profile-editor");
+    assertThat(withHint.profile().path("schemaVersion").asText()).isEqualTo("2.0");
+    assertThat(withHint.validationIssues()).anyMatch(issue -> issue.contains("specimen_type_hint"));
+  }
+
+  @Test
+  void duplicatingAnEarlierProfileDropsTheSiteHintsTheContractRemoved() throws Exception {
+    ObjectNode source = publishedFixture("analyzer-profile-file.json");
+    source.path("default_test_mappings").forEach(mapping -> ((ObjectNode) mapping).put("specimen_type_hint", "Plasma"));
+    ObjectNode sourceMeta = (ObjectNode) source.path("catalog");
+    sourceMeta.put(
+      "recognitionFingerprint",
+      fingerprints.recognitionFingerprint(source.path("controlResultRecognition"))
+    );
+    sourceMeta.put("revisionFingerprint", fingerprints.revisionFingerprint(source));
+    var withHints = new AnalyzerProfileCatalog(
+      catalogDirectory,
+      List.of(resource(source)),
+      objectMapper,
+      Clock.fixed(NOW, ZoneOffset.UTC),
+      () -> UUID.fromString("00000000-0000-0000-0000-0000000000a1")
+    );
+
+    var copy = withHints.duplicateDraft(
+      source.path("profileMeta").path("id").asText(),
+      source.path("catalog").path("revision").asInt(),
+      "Hint-free copy",
+      "profile-creator"
+    );
+
+    assertThat(copy.profile().path("schemaVersion").asText()).isEqualTo("2.0");
+    copy
+      .profile()
+      .path("default_test_mappings")
+      .forEach(mapping -> assertThat(mapping.has("specimen_type_hint")).isFalse());
+  }
+
+  @Test
   void createRemainsAnEditableDurableDraftUntilExplicitPublish() throws Exception {
     var draft = catalog.createDraft("Site Fluoro Profile", "profile-creator");
     String profileId = draft.profile().path("profileMeta").path("id").asText();
