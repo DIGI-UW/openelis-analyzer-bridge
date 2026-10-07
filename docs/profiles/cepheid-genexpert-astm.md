@@ -3,8 +3,8 @@
 Every code, value and record the profile declares, with the document and section that defines
 it. A row with no vendor document is listed under "Not verified" and is not in the profile.
 Revision 1 is `src/main/resources/analyzer-profiles/cepheid-genexpert-astm.json` (contract 2.0).
-It is the first baseline revision of this profile; the pre-baseline `genexpert-astm` revisions are
-not earlier versions of it (rule 6).
+It is the first baseline revision of this profile. It replaces the pre-baseline `genexpert-astm`
+profile, which the Bridge no longer ships, and is not a later revision of it (rule 6).
 
 ## Documents
 

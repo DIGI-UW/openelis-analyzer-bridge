@@ -1,7 +1,8 @@
 # hain-fluorocycler-xt, revision 1: evidence
 
 `src/main/resources/analyzer-profiles/hain-fluorocycler-xt.json` (contract 2.0), the first baseline revision
-of this profile; the pre-baseline `fluorocycler-xt` revisions are not earlier versions of it (rule 6).
+of this profile. It replaces the pre-baseline `fluorocycler-xt` profile, which the Bridge no longer
+ships, and is not a later revision of it (rule 6).
 
 ## Documents
 
@@ -21,8 +22,8 @@ a template, so the source is the integration spec the template comes from, not a
 | `DETECTED` LOINC LA11882-0, SNOMED 260373001, CIEL 1301; `NOT DETECTED` LA11883-8, 260415000, CIEL 1302; `INVALID` LA15841-2, CIEL 163611; `INDETERMINATE` SNOMED 82334004, CIEL 1138 | standard codings read from the LOINC answer lists, SNOMED and the CIEL release of 28 April 2026 (2026-10-05); no LOINC answer exists for Indeterminate |
 | columns `Sample ID`, `TargetName`, `Calc. Conc.`, `Result`, `Type`, `WellPosition`                                                                                                    | section 3.1 (already mapped by the pre-baseline `fluorocycler-xt`)                                                                                     |
 
-The profile has no translations: the template is filled in by the lab in English. The specimen
-type hint the pre-baseline `fluorocycler-xt` carried is removed (rule 1).
+The profile has no translations: the template is filled in by the lab in English. It declares no
+specimen type hint (rule 1).
 
 ## Not verified
 

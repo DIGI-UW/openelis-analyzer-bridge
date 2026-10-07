@@ -1,7 +1,8 @@
 # thermo-quantstudio, revision 1: evidence
 
 `src/main/resources/analyzer-profiles/thermo-quantstudio.json` (contract 2.0), the first baseline revision
-of this profile; the pre-baseline `quantstudio` revisions are not earlier versions of it (rule 6).
+of this profile. It replaces the pre-baseline `quantstudio` profile, which the Bridge no longer
+ships, and is not a later revision of it (rule 6).
 
 ## Documents
 
@@ -12,11 +13,11 @@ of this profile; the pre-baseline `quantstudio` revisions are not earlier versio
 
 ## Tests
 
-| Declared                                                                                                        | Defined in                                                     |
-| --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| test `VIH-1` (Target Name, FAM reporter), LOINC 20447-9, copies/mL, quantitative; its result is `Quantity Mean` | section 4.3 and 5.1                                            |
-| test `IC` (Target Name, CY5 reporter), LOINC 89578-3, quantitative; the internal control row                    | section 5.1 and 8                                              |
-| columns `Sample Name`, `Target Name`, `Quantity Mean`, `CT`, `Well Position`, `Task`                            | section 4.3 (already mapped by the pre-baseline `quantstudio`) |
+| Declared                                                                                                        | Defined in          |
+| --------------------------------------------------------------------------------------------------------------- | ------------------- |
+| test `VIH-1` (Target Name, FAM reporter), LOINC 20447-9, copies/mL, quantitative; its result is `Quantity Mean` | section 4.3 and 5.1 |
+| test `IC` (Target Name, CY5 reporter), LOINC 89578-3, quantitative; the internal control row                    | section 5.1 and 8   |
+| columns `Sample Name`, `Target Name`, `Quantity Mean`, `CT`, `Well Position`, `Task`                            | section 4.3         |
 
 Revision 4 changes the contract only: each test now cites its source. The values are unchanged.
 

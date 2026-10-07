@@ -676,31 +676,6 @@ class AnalyzerConnectionCatalogTest {
     assertThat(entry.getProfileRevision()).isEqualTo(1);
   }
 
-  @Test
-  void aConnectionPinnedToRevisionFourKeepsItsRevisionAndStillActivates() {
-    ObjectNode profile = profiles.require("genexpert-astm", 4).profile();
-    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-    AnalyzerConnectionCatalog catalog = catalog(
-      UUID::randomUUID,
-      new BridgeAnalyzerConnectionRuntime(
-        registry,
-        null,
-        org.mockito.Mockito.mock(AstmConnectionListeners.class),
-        org.mockito.Mockito.mock(SerialConnectionListeners.class)
-      )
-    );
-    ObjectNode request = createRequest(profile, "create-gx-v4", "oe-gx-v4");
-    request.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 9_600);
-    ObjectNode created = catalog.create(request);
-
-    catalog.applyRuntimeCommand(runtimeCommand(created, "activate-gx-v4", "ACTIVATE"));
-
-    var entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
-    assertThat(entry.getProfileRevision()).isEqualTo(4);
-    assertThat(entry.getListenerPort()).isEqualTo(12_001);
-    assertThat(entry.getInboundAddress()).isNull();
-  }
-
   /**
    * A regression pin for what OpenELIS activation relies on: readiness comes from the saved values
    * alone, so a connection check that fails is recorded and never becomes a readiness blocker.
