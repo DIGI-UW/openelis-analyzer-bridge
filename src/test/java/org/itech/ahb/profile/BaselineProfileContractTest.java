@@ -180,6 +180,18 @@ class BaselineProfileContractTest {
   }
 
   @Test
+  void aRunFailureValueMayHaveTranslationsButNotOneAnAnswerAlsoUses() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0).withObject("translations").putArray("ERROR").add("ERREUR");
+    assertThat(validator.validationIssues(profile)).isEmpty();
+
+    test(profile, 0).withObject("translations").withArray("ERROR").add("NON VALIDE");
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.default_test_mappings.HIVVL.translations gives one text to two values: NON VALIDE"
+    );
+  }
+
+  @Test
   void theNumberFormatIsADecimalSeparator() throws Exception {
     ObjectNode profile = baseline();
     profile.withObject("configDefaults").put("numberFormat", ";");

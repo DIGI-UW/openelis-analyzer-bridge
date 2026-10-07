@@ -167,6 +167,27 @@ class ASTMResultPartsParserTest {
   }
 
   @Test
+  void aRunFailureTheInstrumentWritesInAnotherLanguageIsStillAFailure() throws Exception {
+    var profile = BaselineProfileFixtures.genexpertHivViralLoad(new ObjectMapper());
+    ((com.fasterxml.jackson.databind.node.ObjectNode) profile.withArray("default_test_mappings").get(0)).withObject(
+        "translations"
+      )
+      .putArray("ERROR")
+      .add("ERREUR");
+    ParsedResults parsed = ASTMResultParser.parseRaw(
+      header() +
+      "O|1|Error||^^^HIVVL|R|20221116010119|||||||||ORH||||||||||F\r" +
+      main("ERREUR^", "40.00 to 10000000.00", "A") +
+      "L|1|N\r",
+      ControlResultRecognition.none(),
+      AstmResultRecordSelection.all(),
+      ResultReading.fromProfile(profile)
+    );
+
+    assertThat(parsed.results().get(0).parts().runFailed()).isTrue();
+  }
+
+  @Test
   void anInvalidRunIsACodedAnswerNotAFailure() {
     ParsedResults parsed = parse(
       header() +

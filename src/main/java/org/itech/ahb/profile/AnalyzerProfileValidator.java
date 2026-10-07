@@ -245,6 +245,8 @@ final class AnalyzerProfileValidator {
   private void validateValueSet(String path, JsonNode owner, List<String> failures) {
     Set<String> values = new LinkedHashSet<>();
     owner.path("values").forEach(value -> values.add(value.asText()));
+    Set<String> translatable = new LinkedHashSet<>(values);
+    owner.path("run_failure_values").forEach(value -> translatable.add(value.asText()));
     owner
       .path("value_codes")
       .fields()
@@ -266,12 +268,12 @@ final class AnalyzerProfileValidator {
         }
       });
     Map<String, String> textOwners = new LinkedHashMap<>();
-    values.forEach(value -> textOwners.put(value, value));
+    translatable.forEach(value -> textOwners.put(value, value));
     owner
       .path("translations")
       .fields()
       .forEachRemaining(entry -> {
-        if (!values.contains(entry.getKey())) {
+        if (!translatable.contains(entry.getKey())) {
           failures.add(path + ".translations names an undeclared value: " + entry.getKey());
           return;
         }

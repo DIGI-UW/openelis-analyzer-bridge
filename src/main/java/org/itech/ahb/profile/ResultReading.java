@@ -47,9 +47,9 @@ public record ResultReading(
     Map<String, Map<String, Set<String>>> runFailures = new HashMap<>();
     for (JsonNode mapping : profile.path("default_test_mappings")) {
       Map<String, Set<String>> bySubIdentity = new HashMap<>();
-      addAll(bySubIdentity, "", mapping.path("run_failure_values"));
+      addAll(bySubIdentity, "", mapping);
       for (JsonNode component : mapping.path("components")) {
-        addAll(bySubIdentity, component.path("sub_identity").asText(""), component.path("run_failure_values"));
+        addAll(bySubIdentity, component.path("sub_identity").asText(""), component);
       }
       if (bySubIdentity.isEmpty()) {
         continue;
@@ -80,10 +80,15 @@ public record ResultReading(
     return runFailures.getOrDefault(code, Map.of()).getOrDefault(subIdentity, Set.of()).contains(value);
   }
 
-  private static void addAll(Map<String, Set<String>> bySubIdentity, String subIdentity, JsonNode values) {
+  /** The failure values a test or component declares, and the vendor's translations of each. */
+  private static void addAll(Map<String, Set<String>> bySubIdentity, String subIdentity, JsonNode owner) {
+    JsonNode values = owner.path("run_failure_values");
     if (values.isArray() && !values.isEmpty()) {
       Set<String> failures = bySubIdentity.computeIfAbsent(subIdentity, key -> new HashSet<>());
-      values.forEach(value -> failures.add(value.asText()));
+      values.forEach(value -> {
+        failures.add(value.asText());
+        owner.path("translations").path(value.asText()).forEach(text -> failures.add(text.asText()));
+      });
     }
   }
 }
