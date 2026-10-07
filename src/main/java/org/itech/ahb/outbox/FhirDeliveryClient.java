@@ -1,10 +1,13 @@
 package org.itech.ahb.outbox;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharsetEncoder;
@@ -13,6 +16,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.util.HttpClientFactory;
@@ -29,10 +39,12 @@ public class FhirDeliveryClient {
   private final HTTPForwardServerConfigurationProperties httpConfig;
   private final HttpClient httpClient;
   private final int readTimeoutSeconds;
+  private final int maxResponseBytes;
 
   public FhirDeliveryClient(HTTPForwardServerConfigurationProperties httpConfig) {
     this.httpConfig = httpConfig;
     this.readTimeoutSeconds = httpConfig.getReadTimeoutSeconds();
+    this.maxResponseBytes = httpConfig.getMaxResponseBytes();
     this.httpClient = HttpClientFactory.create(
       httpConfig.getConnectTimeoutSeconds(),
       httpConfig.isInsecureTls(),
@@ -57,14 +69,74 @@ public class FhirDeliveryClient {
       if (httpConfig.getUsername() != null && !httpConfig.getUsername().isEmpty()) {
         addBasicAuth(builder, httpConfig.getUsername(), httpConfig.getPassword());
       }
-      HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-      return DeliveryOutcome.responded(response.statusCode(), response.body());
+      // The request timeout ends at the response headers; waiting on the whole exchange also bounds
+      // the time spent reading the body.
+      CompletableFuture<HttpResponse<String>> exchange = httpClient.sendAsync(
+        builder.build(),
+        info -> limitedBody(maxResponseBytes)
+      );
+      try {
+        HttpResponse<String> response = exchange.get(readTimeoutSeconds, TimeUnit.SECONDS);
+        return DeliveryOutcome.responded(response.statusCode(), response.body());
+      } catch (TimeoutException e) {
+        exchange.cancel(true);
+        return DeliveryOutcome.failed(
+          new HttpTimeoutException("OpenELIS response not complete within " + readTimeoutSeconds + "s")
+        );
+      } catch (ExecutionException e) {
+        return DeliveryOutcome.failed(e.getCause() instanceof Exception cause ? cause : e);
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       return DeliveryOutcome.failed(e);
     } catch (Exception e) {
       return DeliveryOutcome.failed(e);
     }
+  }
+
+  /** Collects a response body as UTF-8 text, failing once it grows past {@code limit} bytes. */
+  private static HttpResponse.BodySubscriber<String> limitedBody(int limit) {
+    return new HttpResponse.BodySubscriber<>() {
+      private final CompletableFuture<String> body = new CompletableFuture<>();
+      private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+      private Flow.Subscription subscription;
+
+      @Override
+      public CompletionStage<String> getBody() {
+        return body;
+      }
+
+      @Override
+      public void onSubscribe(Flow.Subscription subscription) {
+        this.subscription = subscription;
+        subscription.request(Long.MAX_VALUE);
+      }
+
+      @Override
+      public void onNext(List<ByteBuffer> items) {
+        if (body.isDone()) return;
+        for (ByteBuffer item : items) {
+          if (bytes.size() + item.remaining() > limit) {
+            subscription.cancel();
+            body.completeExceptionally(new IOException("OpenELIS response exceeded " + limit + " bytes"));
+            return;
+          }
+          byte[] chunk = new byte[item.remaining()];
+          item.get(chunk);
+          bytes.write(chunk, 0, chunk.length);
+        }
+      }
+
+      @Override
+      public void onError(Throwable failure) {
+        body.completeExceptionally(failure);
+      }
+
+      @Override
+      public void onComplete() {
+        body.complete(bytes.toString(StandardCharsets.UTF_8));
+      }
+    };
   }
 
   /** The OpenELIS analyzer ingestion endpoint, derived from the configured forwarding base. */
