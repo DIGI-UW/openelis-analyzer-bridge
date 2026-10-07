@@ -1,0 +1,172 @@
+{
+  "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "profileMeta": {
+    "id": "site.template-hl7",
+    "version": "1.0.0",
+    "displayName": "Template HL7 instrument",
+    "confidence": "LOW"
+  },
+  "analyzer_name": "Template HL7 instrument",
+  "manufacturer": "Manufacturer",
+  "category": "IMMUNOLOGY",
+  "protocol": {
+    "name": "HL7",
+    "version": "2.5.1"
+  },
+  "identifier_pattern": "SENDER-NAME|MODEL",
+  "transport": ["RS-232", "TCP/IP"],
+  "transport_config": {
+    "RS-232": {
+      "default_baud_rate": 9600,
+      "data_bits": 8,
+      "stop_bits": 1,
+      "parity": "NONE",
+      "flow_control": "NONE",
+      "read_timeout_ms": 1000,
+      "message_timeout_ms": 30000,
+      "reconnect_interval_ms": 5000,
+      "max_reconnect_attempts": -1,
+      "rts_enabled": true,
+      "dtr_enabled": true
+    },
+    "TCP/IP": {
+      "default_port": 5000,
+      "framing": "MLLP"
+    }
+  },
+  "msh3_pattern": "SENDING-APPLICATION",
+  "default_test_mappings": [
+    {
+      "test_code": "TEST-CODE",
+      "loinc": "0000-0",
+      "unit": "units",
+      "result_type": "quantitative",
+      "test_name_hint": "Name of the test as the instrument shows it",
+      "values": ["VALUE-ONE", "VALUE-TWO"],
+      "value_codes": {
+        "VALUE-ONE": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA00000-0"
+          }
+        ],
+        "VALUE-TWO": [
+          {
+            "system": "http://snomed.info/sct",
+            "code": "000000000"
+          }
+        ]
+      },
+      "translations": {
+        "VALUE-ONE": ["The same value in another language"]
+      },
+      "call_component": "call",
+      "run_failure_values": ["ERROR"],
+      "components": [
+        {
+          "code": "call",
+          "label": "Call",
+          "result_type": "qualitative"
+        },
+        {
+          "code": "ANALYTE Ct",
+          "label": "Analyte Ct",
+          "result_type": "quantitative",
+          "sub_identity": "ANALYTE&Ct"
+        }
+      ],
+      "source": {
+        "document": "Vendor document title and revision",
+        "section": "Section that defines this test"
+      }
+    }
+  ],
+  "configDefaults": {
+    "dataFlow": "RESULTS_ONLY",
+    "transport": "TCP/IP",
+    "connectionRole": "SERVER",
+    "aggregationMode": "PER_MESSAGE"
+  },
+  "schemaVersion": "2.0",
+  "communication": {
+    "mode": "ANALYZER_INITIATED",
+    "supports_lis_initiated": false
+  },
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": {}
+  },
+  "connectionFields": [
+    {
+      "key": "dataFlow",
+      "labelKey": "analyzer.setup.connect.dataFlow",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RESULTS_ONLY",
+          "labelKey": "analyzer.setup.connect.dataFlow.resultsOnly"
+        }
+      ]
+    },
+    {
+      "key": "transport",
+      "labelKey": "analyzer.connection.field.transport",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RS-232",
+          "labelKey": "analyzer.connection.transport.RS-232"
+        },
+        {
+          "value": "TCP/IP",
+          "labelKey": "analyzer.connection.transport.TCP/IP"
+        }
+      ]
+    },
+    {
+      "key": "host",
+      "labelKey": "analyzer.connection.field.host",
+      "helpTextKey": "analyzer.connection.field.host.help",
+      "inputKind": "TEXT",
+      "required": false,
+      "choices": [],
+      "visibleWhen": {
+        "fieldKey": "transport",
+        "operator": "EQUALS",
+        "value": "TCP/IP"
+      }
+    },
+    {
+      "key": "senderId",
+      "labelKey": "analyzer.connection.field.senderId",
+      "helpTextKey": "analyzer.connection.field.senderId.help",
+      "inputKind": "TEXT",
+      "required": false,
+      "choices": [],
+      "visibleWhen": {
+        "fieldKey": "transport",
+        "operator": "EQUALS",
+        "value": "TCP/IP"
+      }
+    },
+    {
+      "key": "serialPort",
+      "labelKey": "analyzer.connection.field.serialPort",
+      "inputKind": "TEXT",
+      "required": true,
+      "choices": [],
+      "visibleWhen": {
+        "fieldKey": "transport",
+        "operator": "EQUALS",
+        "value": "RS-232"
+      }
+    }
+  ]
+}

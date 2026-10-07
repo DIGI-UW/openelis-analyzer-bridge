@@ -1,0 +1,138 @@
+{
+  "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "schemaVersion": "2.0",
+  "profileMeta": {
+    "id": "site.template-file",
+    "version": "1.0.0",
+    "displayName": "Template file instrument",
+    "confidence": "LOW"
+  },
+  "analyzer_name": "Template file instrument",
+  "category": "MOLECULAR",
+  "protocol": {
+    "name": "FILE",
+    "format": "XLSX"
+  },
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "supported_extensions": [".ods", ".xlsx", ".xls"],
+  "column_mapping": {
+    "Sample ID": "sampleId",
+    "SampleID": "sampleId",
+    "Type": "qcTask",
+    "Calc. Conc.": "result",
+    "CalcConc": "result",
+    "Result": "interpretation",
+    "Interpretation": "interpretation",
+    "TargetName": "testCode",
+    "testCode": "testCode",
+    "WellPosition": "position"
+  },
+  "result_value_order": ["result", "interpretation"],
+  "default_test_mappings": [
+    {
+      "test_code": "TEST-CODE",
+      "loinc": "0000-0",
+      "unit": "units",
+      "result_type": "quantitative",
+      "test_name_hint": "Name of the test as the instrument shows it",
+      "values": ["VALUE-ONE", "VALUE-TWO"],
+      "value_codes": {
+        "VALUE-ONE": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA00000-0"
+          }
+        ],
+        "VALUE-TWO": [
+          {
+            "system": "http://snomed.info/sct",
+            "code": "000000000"
+          }
+        ]
+      },
+      "translations": {
+        "VALUE-ONE": ["The same value in another language"]
+      },
+      "call_component": "call",
+      "components": [
+        {
+          "code": "call",
+          "label": "Call",
+          "result_type": "qualitative"
+        }
+      ],
+      "source": {
+        "document": "Vendor document title and revision",
+        "section": "Section that defines this test"
+      }
+    }
+  ],
+  "configDefaults": {
+    "dataFlow": "RESULTS_ONLY",
+    "fileFormat": "XLSX",
+    "filePattern": "*.{ods,ODS,xlsx,XLSX,xls,XLS}",
+    "hasHeader": true,
+    "sheetIndex": 0
+  },
+  "connectionFields": [
+    {
+      "key": "dataFlow",
+      "labelKey": "analyzer.setup.connect.dataFlow",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RESULTS_ONLY",
+          "labelKey": "analyzer.setup.connect.dataFlow.resultsOnly"
+        }
+      ]
+    },
+    {
+      "key": "directory",
+      "labelKey": "analyzer.connection.field.directory",
+      "inputKind": "FILE_PATH",
+      "required": true,
+      "choices": []
+    },
+    {
+      "key": "filePattern",
+      "labelKey": "analyzer.connection.field.filePattern",
+      "helpTextKey": "analyzer.connection.field.filePattern.help",
+      "inputKind": "TEXT",
+      "required": true,
+      "choices": []
+    }
+  ],
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": {
+      "positive-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Positive"
+      },
+      "negative-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Negative"
+      },
+      "standard-control-task": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "QC_TASK",
+        "operand": "Standard"
+      },
+      "positive-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "C+"
+      },
+      "negative-control-prefix": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "C-"
+      }
+    }
+  }
+}
