@@ -720,7 +720,9 @@ ANALYZER_MOCK_DIR=/path/to/analyzer-mock-server ./scripts/e2e-tests/run-all.sh
 
 It covers OpenELIS unreachable with the bridge container recreated mid-outage, an answer lost
 after OpenELIS accepted the result, and a result recovered from the dead-message
-queue by an operator retry. It runs in CI as the `Docker acceptance` job.
+queue by an operator retry. It needs the analyzer mock to send traffic, so it
+runs where both are assembled: OpenELIS CI runs it against its Bridge and mock
+submodules. This repository's CI runs only the Bridge's own tests.
 
 Locally the suite starts its own isolated stack: a compose project named after
 the checkout, free host ports, and a free test subnet (`scripts/e2e-tests/isolation.sh`),
@@ -762,10 +764,12 @@ mvn -Dtest=UnifiedRoutingTest,HttpForwardingRouterTest test
 ./scripts/e2e-tests/test-serial.sh
 ```
 
-Cross-process analyzer behavior belongs in
-[DIGI-UW/analyzer-mock-server](https://github.com/DIGI-UW/analyzer-mock-server),
-which sends real protocol traffic to a running Bridge. Visible OpenELIS user
-stories are tested separately through the browser.
+Tests that need the Bridge and
+[DIGI-UW/analyzer-mock-server](https://github.com/DIGI-UW/analyzer-mock-server)
+together (the acceptance suite, and `PriorityProfileMockFixtureTest`, which runs
+only with `-DanalyzerMockDir`) run in OpenELIS CI against its submodules, which
+record the versions that go together. Visible OpenELIS user stories are tested
+separately through the browser.
 
 ## Project Structure
 

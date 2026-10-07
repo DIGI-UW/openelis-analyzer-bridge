@@ -18,8 +18,8 @@ MOCK_A="${E2E_SUBNET_PREFIX}.150"
 MOCK_B="${E2E_SUBNET_B_PREFIX}.150"
 BRIDGE_A="tcp://${E2E_SUBNET_PREFIX}.100:12001"
 BRIDGE_B="tcp://${E2E_SUBNET_B_PREFIX}.100:12001"
-PROFILE="genexpert-astm"
-REVISION=5
+PROFILE="cepheid-genexpert-astm"
+REVISION=1
 RUN="$(date +%s)"
 created=()
 
@@ -60,9 +60,9 @@ send() {
         --data "$(jq --null-input --compact-output \
             --arg destination "${destination}" --arg source_ip "${source_ip}" \
             --arg sender "${sender}" --arg accession "${accession}" '
-            {destination: $destination, source_ip: $source_ip, sample_id: $accession, count: 1}
+            {destination: $destination, source_ip: $source_ip, sample_id: $accession}
             + (if $sender == "" then {} else {sender_id: $sender} end)')" \
-        "${ANALYZER_MOCK_URL}/simulate/astm/genexpert_astm" \
+        "${ANALYZER_MOCK_URL}/simulate/fixture/genexpert_astm/hivvl/quantified" \
         | jq --exit-status '.pushed == 1' >/dev/null
 }
 
@@ -84,8 +84,8 @@ activate_connection "${by_address_a}"
 activate_connection "${by_address_b}"
 send "${BRIDGE_A}" "${MOCK_A}" "" "$(accession 1)"
 send "${BRIDGE_B}" "${MOCK_B}" "" "$(accession 2)"
-assert_normalized_capture "${by_address_a}" "${PROFILE}" "MTB-RIF" "TCP"
-assert_normalized_capture "${by_address_b}" "${PROFILE}" "MTB-RIF" "TCP"
+assert_normalized_capture "${by_address_a}" "${PROFILE}" "HIVVL" "TCP"
+assert_normalized_capture "${by_address_b}" "${PROFILE}" "HIVVL" "TCP"
 deactivate_connection "${by_address_a}"
 deactivate_connection "${by_address_b}"
 echo "   each address reached its own connection."
@@ -97,8 +97,8 @@ activate_connection "${by_sender_a}"
 activate_connection "${by_sender_b}"
 send "${BRIDGE_A}" "${MOCK_A}" "GX-LAB-B" "$(accession 3)"
 send "${BRIDGE_B}" "${MOCK_B}" "GX-LAB-A" "$(accession 4)"
-assert_normalized_capture "${by_sender_b}" "${PROFILE}" "MTB-RIF" "TCP"
-assert_normalized_capture "${by_sender_a}" "${PROFILE}" "MTB-RIF" "TCP"
+assert_normalized_capture "${by_sender_b}" "${PROFILE}" "HIVVL" "TCP"
+assert_normalized_capture "${by_sender_a}" "${PROFILE}" "HIVVL" "TCP"
 echo "   each System Name reached its own connection, whichever address it came from."
 
 echo "3. An instrument no connection names is held, not guessed..."
@@ -117,9 +117,9 @@ activate_connection "${shared_b}"
 # A blank System Name cannot belong to the connection that requires GX-LAB-B.
 # Only the connection without a sender constraint is eligible.
 send "${BRIDGE_A}" "${MOCK_A}" " " "$(accession 6)"
-assert_normalized_capture "${shared_a}" "${PROFILE}" "MTB-RIF" "TCP"
+assert_normalized_capture "${shared_a}" "${PROFILE}" "HIVVL" "TCP"
 send "${BRIDGE_A}" "${MOCK_A}" "GX-LAB-B" "$(accession 7)"
-assert_normalized_capture "${shared_b}" "${PROFILE}" "MTB-RIF" "TCP"
+assert_normalized_capture "${shared_b}" "${PROFILE}" "HIVVL" "TCP"
 deactivate_connection "${shared_a}"
 deactivate_connection "${shared_b}"
 echo "   unnamed traffic reached the unconstrained connection; named traffic reached its own connection."

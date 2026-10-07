@@ -20,18 +20,13 @@ echo "Taking OpenELIS off the network so its name stops resolving..."
 openelis_stop
 
 echo "Sending a GeneXpert result into the outage..."
-accession="$(
-    curl --silent --show-error --fail-with-body \
-        --request POST \
-        --header 'Content-Type: application/json' \
-        --data '{"destination":"tcp://openelis-analyzer-bridge:12001","count":1}' \
-        "${ANALYZER_MOCK_URL}/simulate/astm/genexpert_astm" \
-        | jq --raw-output '.results[0].sample_id // .sample_id // empty'
-)"
-[ -n "${accession}" ] || {
-    echo "The analyzer mock did not report which sample it sent" >&2
-    exit 1
-}
+accession="$(printf 'DEV0126%010d%03d' "$(date +%s)" "$((RANDOM % 1000))")"
+curl --silent --show-error --fail-with-body \
+    --request POST \
+    --header 'Content-Type: application/json' \
+    --data "{\"destination\":\"tcp://openelis-analyzer-bridge:12001\",\"sample_id\":\"${accession}\"}" \
+    "${ANALYZER_MOCK_URL}/simulate/fixture/genexpert_astm/hivvl/quantified" \
+    | jq --exit-status '.pushed == 1' >/dev/null
 echo "  analyzer sent accession ${accession}"
 
 id="$(wait_for_outbox_entry "${accession}" 30)"

@@ -15,5 +15,5 @@ curl --silent --show-error --fail-with-body \
     "${ANALYZER_MOCK_URL}/simulate/file/hain_fluorocycler" \
     | jq --exit-status '.written_path != null' >/dev/null
 
-assert_normalized_capture "${connection_id}" "fluorocycler-xt" "VIH-1" "FILE"
+assert_normalized_capture "${connection_id}" "hain-fluorocycler-xt" "VIH-1" "FILE"
 echo "FluoroCycler FILE result reached the normalized OpenELIS contract."

@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.itech.ahb.fhir.FileResultParser;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.Resource;
@@ -156,11 +157,13 @@ class PriorityProfileMockFixtureTest {
     return texts;
   }
 
+  /** The mock checkout OpenELIS supplies when it runs the Bridge and the mock together. */
   private static Path requiredMockRoot() {
     String configured = System.getProperty("analyzerMockDir");
-    if (configured == null || configured.isBlank()) {
-      throw new IllegalStateException("Run with -DanalyzerMockDir=/path/to/analyzer-mock-server");
-    }
+    Assumptions.assumeTrue(
+      configured != null && !configured.isBlank(),
+      "Needs the analyzer mock (-DanalyzerMockDir); OpenELIS runs it against both submodules"
+    );
     return Path.of(configured).toAbsolutePath().normalize();
   }
 }

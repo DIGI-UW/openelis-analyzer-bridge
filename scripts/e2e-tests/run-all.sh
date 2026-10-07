@@ -99,12 +99,12 @@ echo "Listening at boot on every published port: $(tr '\n' ' ' <<<"${listening}"
 echo ""
 
 GENEXPERT_CONNECTION_ID="$(create_connection \
-    "genexpert-astm" \
+    "cepheid-genexpert-astm" \
     "oe-e2e-genexpert" \
     "GeneXpert acceptance connection" \
-    '{"transport":"TCP/IP","connectionRole":"SERVER"}' 5)"
+    '{"transport":"TCP/IP","connectionRole":"SERVER"}')"
 export GENEXPERT_CONNECTION_ID
-# Revision 5 defaults to results-only; this test does not enable a separate outbound destination.
+# The profile defaults to results-only; this test does not enable a separate outbound destination.
 # Before activation the boot listener already holds 12001: the bridge's side must check as ready.
 # With no analyzer address saved, the advisory analyzer check is skipped and does not fail the result.
 probe="$(probe_connection "${GENEXPERT_CONNECTION_ID}")"
@@ -121,7 +121,7 @@ echo "Check-connection before activation: listener ready on the shared port, ana
 activate_connection "${GENEXPERT_CONNECTION_ID}"
 
 FLUOROCYCLER_CONNECTION_ID="$(create_connection \
-    "fluorocycler-xt" \
+    "hain-fluorocycler-xt" \
     "oe-e2e-fluorocycler" \
     "FluoroCycler acceptance connection" \
     '{"directory":"/mnt/analyzer-import"}')"
