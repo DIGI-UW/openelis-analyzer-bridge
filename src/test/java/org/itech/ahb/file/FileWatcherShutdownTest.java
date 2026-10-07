@@ -28,6 +28,7 @@ class FileWatcherShutdownTest {
     SqliteFileStateStore store = new SqliteFileStateStore(database);
     FileMessageHandler handler = mock(FileMessageHandler.class);
     FileConfig config = new FileConfig();
+    config.setImportRoots(java.util.List.of(directory.toString()));
     config.setRetryDelayMs(TimeUnit.MINUTES.toMillis(5));
     FileWatcher watcher = new FileWatcher(config, handler, store);
     watcher.addWatchDirectory(directory, "*.csv", ANALYZER);

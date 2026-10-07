@@ -157,6 +157,22 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     registry.unregister(registryKey(protocol, connectionId, values), analyzerId);
   }
 
+  /** A FILE directory must lie under the import roots before the connection is saved. */
+  @Override
+  public void validate(ObjectNode values, ObjectNode profile) {
+    if (fileWatcher == null || !"FILE".equals(profile.path("protocol").path("name").asText())) return;
+    if ("HTTP".equals(nullableText(values, "transport"))) return;
+    String directory = nullableText(values, "directory");
+    if (directory == null || directory.isBlank()) return;
+    org.itech.ahb.file.ImportRoots roots = fileWatcher.importRoots();
+    if (roots == null) return;
+    try {
+      roots.require(Path.of(directory));
+    } catch (IOException | java.nio.file.InvalidPathException exception) {
+      throw new AnalyzerConnectionException(exception.getMessage(), exception);
+    }
+  }
+
   @Override
   public synchronized void restore(ObjectNode connection, ObjectNode profile) {
     activate(connection, profile, false);

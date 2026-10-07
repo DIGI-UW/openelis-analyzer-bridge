@@ -199,6 +199,7 @@ class FileConnectionShutdownReplayTest {
     ).startDispatcher();
     var handler = outbox.fileHandler(registry);
     var config = new FileConfig();
+    config.setImportRoots(List.of(directory.toString()));
     config.setPollIntervalMs(50);
     config.setFileStabilityTimeoutMs(50);
     watcher = new FileWatcher(config, handler, store);

@@ -20,7 +20,9 @@ class FileWatcherWorkGateTest {
 
   @BeforeEach
   void setUp() throws IOException {
-    watcher = new FileWatcher(new FileConfig(), null, null);
+    FileConfig config = new FileConfig();
+    config.setImportRoots(java.util.List.of(directory.toString()));
+    watcher = new FileWatcher(config, null, null);
     watcher.addWatchDirectory(directory, "*.csv", "owner");
   }
 

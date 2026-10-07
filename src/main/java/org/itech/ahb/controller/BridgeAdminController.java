@@ -134,6 +134,11 @@ public class BridgeAdminController {
     for (Map.Entry<Path, List<AnalyzerEntry>> directory : byDirectory.entrySet()) {
       List<AnalyzerEntry> owners = directory.getValue();
       if (owners.stream().noneMatch(entry -> analyzerId.equals(entry.getId()))) continue;
+      try {
+        fileWatcher.importRoots().require(directory.getKey());
+      } catch (IOException outside) {
+        throw new IllegalArgumentException("Cannot reset: " + outside.getMessage());
+      }
       if (owners.stream().anyMatch(entry -> !analyzerId.equals(entry.getId()))) {
         throw new IllegalArgumentException("Cannot reset a directory shared by multiple analyzers");
       }

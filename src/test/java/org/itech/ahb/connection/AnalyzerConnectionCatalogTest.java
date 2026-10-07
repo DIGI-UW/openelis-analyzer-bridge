@@ -689,6 +689,65 @@ class AnalyzerConnectionCatalogTest {
     }
   }
 
+  @Test
+  void anActiveConnectionThatNoLongerRestoresDoesNotStopTheOthers() {
+    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, new RecordingRuntime());
+    ObjectNode first = catalog.create(createRequest(profile, "restore-first", "oe-restore-first"));
+    ObjectNode second = catalog.create(createRequest(profile, "restore-second", "oe-restore-second"));
+    catalog.applyRuntimeCommand(runtimeCommand(first, "activate-first", "ACTIVATE"));
+    catalog.applyRuntimeCommand(runtimeCommand(second, "activate-second", "ACTIVATE"));
+    String failing = first.path("connectionId").asText();
+    List<String> restored = new ArrayList<>();
+
+    catalog(
+      UUID::randomUUID,
+      new AnalyzerConnectionRuntime() {
+        @Override
+        public void activate(ObjectNode connection, ObjectNode pinned) {}
+
+        @Override
+        public void deactivate(ObjectNode connection, ObjectNode pinned) {}
+
+        @Override
+        public void restore(ObjectNode connection, ObjectNode pinned) {
+          if (failing.equals(connection.path("connectionId").asText())) {
+            throw new AnalyzerConnectionException("FILE directory is outside the import roots");
+          }
+          restored.add(connection.path("connectionId").asText());
+        }
+      }
+    );
+
+    assertThat(restored).containsExactly(second.path("connectionId").asText());
+  }
+
+  @Test
+  void aFileConnectionOutsideTheImportRootsIsRefusedAndNotSaved() throws Exception {
+    Path imports = java.nio.file.Files.createDirectories(temporaryDirectory.resolve("imports"));
+    org.itech.ahb.file.FileConfig config = new org.itech.ahb.file.FileConfig();
+    config.setImportRoots(List.of(imports.toString()));
+    org.itech.ahb.file.FileWatcher watcher = new org.itech.ahb.file.FileWatcher(config, null, null);
+    try {
+      var runtime = new BridgeAnalyzerConnectionRuntime(new AnalyzerRuntimeRegistry(), watcher, null, null);
+      AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, runtime);
+      ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
+      ObjectNode outside = createRequest(profile, "outside-root", "oe-outside");
+      outside.withObject("values").put("directory", temporaryDirectory.resolve("connections").toString());
+
+      assertThatThrownBy(() -> catalog.create(outside))
+        .isInstanceOf(AnalyzerConnectionException.class)
+        .hasMessageContaining("import roots");
+      assertThat(catalog.fileDirectoryClaims()).isEmpty();
+
+      ObjectNode inside = createRequest(profile, "inside-root", "oe-inside");
+      inside.withObject("values").put("directory", imports.resolve("fluorocycler/incoming").toString());
+      assertThat(catalog.create(inside).path("connectionId").asText()).isNotBlank();
+    } finally {
+      watcher.stop();
+    }
+  }
+
   private AnalyzerConnectionCatalog catalog(java.util.function.Supplier<UUID> ids) {
     return catalog(profiles, ids);
   }

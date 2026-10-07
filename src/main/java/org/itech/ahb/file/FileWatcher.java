@@ -50,6 +50,7 @@ import java.util.stream.Stream;
 public class FileWatcher {
 
     private final FileConfig fileConfig;
+    private final ImportRoots importRoots;
     private final FileMessageHandler messageHandler;
 
     private final Map<Path, FileMetadata> fileStabilityTracker = new ConcurrentHashMap<>();
@@ -201,6 +202,7 @@ public class FileWatcher {
 
     public FileWatcher(FileConfig fileConfig, FileMessageHandler messageHandler,
                        @Autowired(required = false) SqliteFileStateStore stateStore) {
+        this.importRoots = new ImportRoots(fileConfig.getImportRoots());
         this.fileConfig = fileConfig;
         this.messageHandler = messageHandler;
         // May be null when bridge.file.enabled=false (StateStoreConfig is
@@ -277,6 +279,7 @@ public class FileWatcher {
         if (stopping) {
             throw new IOException("Cannot activate a FILE watch while the service is stopping");
         }
+        importRoots.require(dirPath);
         Path normalized = dirPath.normalize();
         String effectiveGlob = (filePattern == null || filePattern.isBlank()) ? "*" : filePattern;
         registerDirectoryInternal(normalized, analyzerId, effectiveGlob, true);
@@ -1019,6 +1022,11 @@ public class FileWatcher {
      * Metadata for tracking file stability.
      */
     private record FileMetadata(Instant lastModified, long size) {
+    }
+
+    /** The directories FILE connections may use; every watched or cleaned directory lies under one. */
+    public ImportRoots importRoots() {
+        return importRoots;
     }
 
     /**

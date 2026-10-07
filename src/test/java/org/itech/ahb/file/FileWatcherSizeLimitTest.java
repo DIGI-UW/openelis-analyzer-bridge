@@ -31,6 +31,7 @@ class FileWatcherSizeLimitTest {
     Path small = Files.writeString(directory.resolve("small.csv"), "Sample,Test,Result\nS1,T1,1\n");
     FileMessageHandler handler = mock(FileMessageHandler.class);
     FileConfig config = new FileConfig();
+    config.setImportRoots(java.util.List.of(directory.toString()));
     config.setMaxFileSizeBytes(1024);
     SqliteFileStateStore store = new SqliteFileStateStore(directory.resolve("state.db"));
     try {

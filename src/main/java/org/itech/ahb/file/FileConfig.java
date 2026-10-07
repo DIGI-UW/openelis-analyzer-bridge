@@ -84,4 +84,11 @@ public class FileConfig {
      */
     private long maxFileSizeBytes = 20L * 1024 * 1024;
 
+    /**
+     * The directories FILE connections may use: the analyzer import and drop shares mounted into
+     * the container. A connection whose directory, with links resolved, lies outside every root is
+     * refused, so FILE ingestion, the raw-file view and reset deletion cannot reach anything else.
+     */
+    private java.util.List<String> importRoots = java.util.List.of("/data/analyzer-imports", "/data/analyzer-drops");
+
 }

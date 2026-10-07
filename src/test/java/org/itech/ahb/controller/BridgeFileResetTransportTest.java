@@ -94,6 +94,7 @@ class BridgeFileResetTransportTest {
     ).startDispatcher();
     FileMessageHandler handler = outbox.fileHandler(registry);
     FileConfig config = new FileConfig();
+    config.setImportRoots(List.of(directory.toString()));
     config.setEnabled(true);
     config.setPollIntervalMs(50);
     config.setFileStabilityTimeoutMs(50);

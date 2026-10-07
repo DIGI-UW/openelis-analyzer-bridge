@@ -18,7 +18,7 @@ services:
       - ./configuration.yml:/app/configuration.yml
       - bridge-data:/data/openelis-analyzer-bridge
       # File watcher directories (uncomment if bridge.file.enabled=true)
-      # - /path/to/analyzer-import:/mnt/analyzer-import:ro
+      # - /path/to/analyzer-import:/data/analyzer-imports:ro
     # Serial device passthrough for active RS-232 analyzer connections.
     # devices:
     #   - /dev/ttyUSB0:/dev/ttyUSB0

@@ -100,7 +100,7 @@ java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configu
 |-----------|---------------|---------|
 | `./configuration.yml` | `/app/configuration.yml` | Runtime configuration |
 | Named volume `bridge-data` | `/data/openelis-analyzer-bridge` | Durable state: delivery outbox, FILE state, saved connections and profile revisions. Keep it across upgrades |
-| `/path/to/import` | `/mnt/analyzer-import` | File watcher input (optional) |
+| `/path/to/import` | `/data/analyzer-imports` | FILE connection directories (optional). FILE directories must lie under `bridge.file.import-roots` (`BRIDGE_FILE_IMPORT_ROOTS`, default `/data/analyzer-imports,/data/analyzer-drops`) |
 
 ### Serial Devices
 

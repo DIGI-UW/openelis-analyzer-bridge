@@ -22,7 +22,7 @@ services:
       TZ: Pacific/Port_Moresby
     volumes:
       - ./configuration.test.yml:/app/configuration.yml:ro
-      - analyzer-input:/mnt/analyzer-import
+      - analyzer-input:/data/analyzer-imports
       # A named volume, not tmpfs: the outbox has to survive the container being recreated, which
       # is the whole point of the recovery scenario.
       - bridge-state:/data/openelis-analyzer-bridge

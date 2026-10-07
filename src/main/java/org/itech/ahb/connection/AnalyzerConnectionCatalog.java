@@ -21,11 +21,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.connection.AnalyzerConnectionException.Kind;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
 import org.itech.ahb.profile.ProfileFingerprintService;
 
 /** Durable, profile-pinned analyzer connections owned by Bridge. */
+@Slf4j
 public final class AnalyzerConnectionCatalog {
 
   private static final String SCHEMA_VERSION = "1.0";
@@ -105,6 +107,7 @@ public final class AnalyzerConnectionCatalog {
     String connectionId = ids.get().toString();
     ObjectNode values = effectiveValues(profile, suppliedValues);
     validateHttpSender(values);
+    runtime.validate(values, profile);
     ObjectNode record = objectMapper.createObjectNode();
     record.put("connectionId", connectionId);
     record.put("clientAnalyzerId", clientAnalyzerId);
@@ -150,6 +153,7 @@ public final class AnalyzerConnectionCatalog {
     validateValues(profile, suppliedValues);
     ObjectNode values = effectiveValues(profile, suppliedValues, (ObjectNode) existing.path("values"));
     validateHttpSender(values);
+    runtime.validate(values, profile);
     if (sameConfiguration(existing, profileRef, displayName, values)) {
       return view(existing, profile);
     }
@@ -370,24 +374,37 @@ public final class AnalyzerConnectionCatalog {
       .filter(record -> "ACTIVE".equals(record.path("actualRuntimeState").asText()))
       .sorted(Comparator.comparing(record -> record.path("connectionId").asText()))
       .forEach(record -> {
-        ObjectNode restored = record.deepCopy();
-        JsonNode configuration = record.path("activeRuntimeConfiguration");
-        if (configuration.isObject() && record.path("activeRuntimeRef").isObject()) {
-          restored.set("values", configuration.path("values").deepCopy());
-          restored.set("displayName", configuration.path("displayName").deepCopy());
-          ObjectNode active = (ObjectNode) record.path("activeRuntimeRef");
-          for (String key : List.of("profileRef", "configRevision", "configFingerprint")) {
-            restored.set(key, active.path(key).deepCopy());
-          }
-        } else if (!activeRuntimeMatchesConfiguration(record)) {
-          throw new AnalyzerConnectionException(
-            "Cannot restore active connection without its activated configuration: " +
-            record.path("connectionId").asText()
+        try {
+          restore(record);
+        } catch (RuntimeException exception) {
+          // One connection that can no longer run must not stop every other analyzer from delivering.
+          log.error(
+            "Active connection {} could not be restored and is not running: {}",
+            record.path("connectionId").asText(),
+            exception.getMessage()
           );
         }
-        ObjectNode profile = requirePinnedProfile((ObjectNode) restored.path("profileRef"));
-        runtime.restore(restored, profile.deepCopy());
       });
+  }
+
+  private void restore(ObjectNode record) {
+    ObjectNode restored = record.deepCopy();
+    JsonNode configuration = record.path("activeRuntimeConfiguration");
+    if (configuration.isObject() && record.path("activeRuntimeRef").isObject()) {
+      restored.set("values", configuration.path("values").deepCopy());
+      restored.set("displayName", configuration.path("displayName").deepCopy());
+      ObjectNode active = (ObjectNode) record.path("activeRuntimeRef");
+      for (String key : List.of("profileRef", "configRevision", "configFingerprint")) {
+        restored.set(key, active.path(key).deepCopy());
+      }
+    } else if (!activeRuntimeMatchesConfiguration(record)) {
+      throw new AnalyzerConnectionException(
+        "Cannot restore active connection without its activated configuration: " +
+        record.path("connectionId").asText()
+      );
+    }
+    ObjectNode profile = requirePinnedProfile((ObjectNode) restored.path("profileRef"));
+    runtime.restore(restored, profile.deepCopy());
   }
 
   private ObjectNode runtimeConfiguration(ObjectNode record) {

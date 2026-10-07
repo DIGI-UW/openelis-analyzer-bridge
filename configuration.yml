@@ -54,6 +54,10 @@ bridge:
     maxRetryAttempts: 150
     retryDelayMs: 1000
     maxRetryDelayMs: 600000
+    # A larger watched file is parked as FAILED_NEEDS_HANDLING without being read.
+    maxFileSizeBytes: ${BRIDGE_FILE_MAX_FILE_SIZE_BYTES:20971520}
+    # FILE connection directories must lie under one of these mounted shares, with links resolved.
+    importRoots: ${BRIDGE_FILE_IMPORT_ROOTS:/data/analyzer-imports,/data/analyzer-drops}
 
   # Durable delivery outbox. Every received result is persisted here before any
   # network I/O and stays, with its complete payload, until OpenELIS durably
