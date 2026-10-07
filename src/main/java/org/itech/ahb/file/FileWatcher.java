@@ -775,6 +775,11 @@ public class FileWatcher {
                 return;
             }
 
+            long size = Files.size(filePath);
+            if (size > fileConfig.getMaxFileSizeBytes()) {
+                parkOversized(filePath, analyzerId, size);
+                return;
+            }
             byte[] capturedBytes = Files.readAllBytes(filePath);
             fileHash = FileDeliveryIdentity.contentHash(capturedBytes);
             MDC.put("analyzerId", analyzerId);
@@ -843,6 +848,22 @@ public class FileWatcher {
      * notifier / alerting hooks to consume.
      * </p>
      */
+    /** A file over the size limit is keyed by a streamed hash and parked; its bytes are never held. */
+    private void parkOversized(Path filePath, String analyzerId, long size) throws IOException {
+        String fileHash = calculateFileHash(filePath);
+        var existing = stateStore.get(analyzerId, fileHash);
+        if (existing.isPresent() && existing.get().status() == FileProcessingState.Status.FAILED_NEEDS_HANDLING) {
+            stateStore.touchLastSeen(analyzerId, fileHash, filePath);
+            return;
+        }
+        String error = "File is " + size + " bytes; the limit is " + fileConfig.getMaxFileSizeBytes()
+                + " bytes (bridge.file.max-file-size-bytes)";
+        stateStore.upsertRetrying(analyzerId, fileHash, filePath);
+        stateStore.markFailedNeedsHandling(analyzerId, fileHash, filePath, error);
+        log.error("ANALYZER_FILE_FAILED_NEEDS_HANDLING analyzerId={} contentHash={} path={} error={}",
+                analyzerId, fileHash, filePath, error);
+    }
+
     private void handleProcessingFailure(Path filePath, String analyzerId, String fileHash, Exception error) {
         int attempts = stateStore.incrementAttempts(analyzerId, fileHash, error.getMessage());
         int max = fileConfig.getMaxRetryAttempts();

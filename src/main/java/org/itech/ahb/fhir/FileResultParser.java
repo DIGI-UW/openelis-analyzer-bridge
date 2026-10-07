@@ -51,6 +51,16 @@ import org.xml.sax.SAXException;
 @Slf4j
 public class FileResultParser {
 
+    /**
+     * Largest inflated spreadsheet part read: content.xml of an ODS file, or any part of an XLSX
+     * workbook. Real analyzer exports are a few megabytes; this leaves ample room.
+     */
+    static final long MAX_INFLATED_ENTRY_BYTES = 32L * 1024 * 1024;
+
+    static {
+        org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(MAX_INFLATED_ENTRY_BYTES);
+    }
+
     /** OpenDocument XML namespaces used to navigate ODS content.xml. */
     private static final String ODS_TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
     private static final String ODS_TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
@@ -280,8 +290,8 @@ public class FileResultParser {
 
     /**
      * Read an ODS file's {@code content.xml} and return its first non-empty
-     * table as a row-major list of cell text values. Public for reuse by
-     * the file-identity scanner.
+     * table as a row-major list of cell text values. Content that inflates past
+     * {@link #MAX_INFLATED_ENTRY_BYTES} is refused before it is parsed.
      */
     public static List<List<String>> readOdsContentXml(InputStream inputStream)
             throws IOException, SAXException, ParserConfigurationException {
@@ -296,7 +306,7 @@ public class FileResultParser {
                     dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
                     dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
                     DocumentBuilder db = dbf.newDocumentBuilder();
-                    Document doc = db.parse(zis);
+                    Document doc = db.parse(new InflateLimit(zis, MAX_INFLATED_ENTRY_BYTES));
                     NodeList tables = doc.getElementsByTagNameNS(ODS_TABLE_NS, "table");
                     for (int t = 0; t < tables.getLength(); t++) {
                         Element tbl = (Element) tables.item(t);
@@ -312,6 +322,39 @@ public class FileResultParser {
             }
         }
         return null;
+    }
+
+    /** Refuses to read past a limit, so a small archive cannot inflate into an unbounded document. */
+    private static final class InflateLimit extends java.io.FilterInputStream {
+
+        private final long limit;
+        private long count;
+
+        InflateLimit(InputStream in, long limit) {
+            super(in);
+            this.limit = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b >= 0) count(1);
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int n = super.read(buffer, offset, length);
+            if (n > 0) count(n);
+            return n;
+        }
+
+        private void count(int n) throws IOException {
+            count += n;
+            if (count > limit) {
+                throw new IOException("Spreadsheet content exceeds " + limit + " bytes when inflated");
+            }
+        }
     }
 
     private static List<List<String>> extractOdsTableRows(Element table) {

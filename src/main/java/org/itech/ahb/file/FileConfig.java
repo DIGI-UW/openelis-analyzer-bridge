@@ -78,4 +78,10 @@ public class FileConfig {
      */
     private long maxRetryDelayMs = 600_000;
 
+    /**
+     * Largest watched file the bridge reads. A larger file is parked as FAILED_NEEDS_HANDLING
+     * without being read; the HTTP input applies its own limit.
+     */
+    private long maxFileSizeBytes = 20L * 1024 * 1024;
+
 }
