@@ -46,6 +46,16 @@ public class OutboxHealthIndicator implements HealthIndicator {
         )
         .build();
     }
+    if (dispatcher.isStalled()) {
+      return Health.down()
+        .withDetail("reason", "dispatcher_stopped")
+        .withDetail(
+          "message",
+          "The delivery dispatcher has stopped. Received results are held in the outbox but are not " +
+          "being delivered; restart the bridge."
+        )
+        .build();
+    }
     try {
       Map<OutboxState, Integer> counts = store.countsByState();
       int undelivered =

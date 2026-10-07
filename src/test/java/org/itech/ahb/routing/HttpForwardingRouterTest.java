@@ -350,4 +350,56 @@ class HttpForwardingRouterTest {
       .rawMessage("H|\\^&|||Analyzer\rP|1\rO|1|SAMPLE-1\rR|1|^^^WBC|7.5|10*3/uL\rL|1")
       .build();
   }
+
+  @Test
+  @DisplayName("a message whose rendering throws is held for an operator at once, and receipt is still reported")
+  void aRenderThatThrowsIsHeldImmediately() {
+    try (var store = new org.itech.ahb.outbox.SqliteOutboxStore(tmpDir.resolve("throwing.db"))) {
+      var http = new HTTPForwardServerConfigurationProperties();
+      http.setUri(URI.create("http://127.0.0.1:" + port + "/analyzer"));
+      var client = new org.itech.ahb.outbox.FhirDeliveryClient(http);
+      NormalizedBundleRenderer throwing = new NormalizedBundleRenderer(new AnalyzerRuntimeRegistry()) {
+        @Override
+        public Outcome render(MessageEnvelope envelope, String targetUri) {
+          throw new ArrayIndexOutOfBoundsException("Index 0 out of bounds for length 0");
+        }
+      };
+      var dispatcher = new org.itech.ahb.outbox.OutboxDispatcher(
+        store,
+        client,
+        throwing,
+        new org.itech.ahb.outbox.OutboxProperties()
+      );
+      var router = new HttpForwardingRouter(store, dispatcher, client, throwing);
+      MessageEnvelope received = envelope("10.0.0.11");
+      var receipt = store.receive(
+        new org.itech.ahb.outbox.ReceivedMessage(
+          received.getSourceId(),
+          received.getSourcePort(),
+          received.getProtocol(),
+          received.getTransport(),
+          null,
+          received.getRawMessage(),
+          null,
+          received.getReceivedAt()
+        )
+      );
+
+      boolean reported = router.route(
+        MessageEnvelope.builder()
+          .protocol(received.getProtocol())
+          .transport(received.getTransport())
+          .sourceId(received.getSourceId())
+          .rawMessage(received.getRawMessage())
+          .outboxReceiptId(receipt.id())
+          .build()
+      );
+
+      assertTrue(reported, "the message is held whole, so there is nothing for the analyzer to resend");
+      OutboxEntry entry = store.get(receipt.id()).orElseThrow();
+      assertEquals(OutboxState.DMQ, entry.state());
+      assertEquals(FailureReason.RENDER_ERROR, entry.failureReason());
+      assertEquals(0, requestCount.get());
+    }
+  }
 }

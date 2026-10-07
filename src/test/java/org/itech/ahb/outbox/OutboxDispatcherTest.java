@@ -4,6 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.spy;
 
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -24,6 +29,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * The dispatcher's job is that an entry ends DELIVERED or in the dead-message queue, never lost and
@@ -313,5 +319,95 @@ class OutboxDispatcherTest {
 
     assertEquals(OutboxState.DELIVERED, store.get(id).orElseThrow().state());
     assertFalse(openElis.sent.isEmpty());
+  }
+
+  /** A renderer whose parsing exhausts memory, as a decompression bomb or an enormous field does. */
+  private static final class ExhaustingRenderer extends NormalizedBundleRenderer {
+
+    ExhaustingRenderer() {
+      super(new AnalyzerRuntimeRegistry());
+    }
+
+    @Override
+    public Outcome render(org.itech.ahb.normalizer.MessageEnvelope envelope, String targetUri) {
+      throw new OutOfMemoryError("Java heap space");
+    }
+  }
+
+  @Test
+  @DisplayName("dead-letters an entry whose rendering exhausts memory and goes on to deliver the rest")
+  void anEntryThatCannotBeRenderedNeverStopsDelivery() {
+    Receipt poisoned = store.receive(
+      new ReceivedMessage(
+        "10.0.0.9",
+        12001,
+        Protocol.ASTM,
+        Transport.TCP,
+        null,
+        "H|poison\rL|1",
+        null,
+        Instant.now().minusSeconds(60)
+      )
+    );
+    String id = queueOneDelivery();
+    // The bridge restarted before rendering it, so the entry is the dispatcher's to render.
+    store.recoverInterrupted(Instant.now());
+    OutboxDispatcher dispatcher = new OutboxDispatcher(
+      store,
+      ScriptedOpenElis.create(),
+      new ExhaustingRenderer(),
+      properties
+    );
+
+    dispatcher.dispatchDue();
+
+    OutboxEntry deadLettered = store.get(poisoned.id()).orElseThrow();
+    assertEquals(OutboxState.DMQ, deadLettered.state());
+    assertTrue(deadLettered.lastError().contains("OutOfMemoryError"), deadLettered.lastError());
+    assertEquals(OutboxState.DELIVERED, store.get(id).orElseThrow().state());
+    store.dismiss(poisoned.id(), "operator", Instant.now());
+    assertTrue(store.get(poisoned.id()).orElseThrow().dismissedAt() != null, "an operator can clear it");
+  }
+
+  @Test
+  @DisplayName("keeps its worker running after an error escapes a dispatch cycle")
+  void anErrorInACycleDoesNotEndTheWorker() {
+    properties.setPollInterval(Duration.ofMillis(20));
+    SqliteOutboxStore failingOnce = spy(store);
+    doThrow(new StackOverflowError()).doCallRealMethod().when(failingOnce).claimNextDue(any(), any(), any());
+    String id = queueOneDelivery();
+    OutboxDispatcher dispatcher = new OutboxDispatcher(
+      failingOnce,
+      ScriptedOpenElis.create(),
+      new NormalizedBundleRenderer(new AnalyzerRuntimeRegistry()),
+      properties
+    );
+    dispatcher.start();
+    try {
+      await().atMost(Duration.ofSeconds(5)).until(() -> store.get(id).orElseThrow().state() == OutboxState.DELIVERED);
+      assertTrue(dispatcher.isRunning());
+    } finally {
+      dispatcher.stop();
+    }
+  }
+
+  @Test
+  @DisplayName("does not report a dispatcher whose worker has ended as running")
+  void anEndedWorkerIsReportedAsStalled() throws InterruptedException {
+    OutboxDispatcher dispatcher = dispatcher(ScriptedOpenElis.create());
+    dispatcher.start();
+    try {
+      Thread worker = (Thread) ReflectionTestUtils.getField(dispatcher, "worker");
+      assertNotNull(worker);
+      worker.interrupt();
+      worker.join(5000);
+
+      assertFalse(worker.isAlive());
+      assertFalse(dispatcher.isRunning());
+      assertTrue(dispatcher.isStalled());
+    } finally {
+      dispatcher.stop();
+    }
+    assertFalse(dispatcher.isStalled(), "a dispatcher that was stopped on purpose is not stalled");
   }
 }

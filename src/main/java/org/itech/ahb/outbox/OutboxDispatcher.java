@@ -46,7 +46,7 @@ public class OutboxDispatcher {
   private volatile String inFlightId;
   private volatile Instant lastPollAt;
   private volatile Instant lastPurgeAt;
-  private Thread worker;
+  private volatile Thread worker;
 
   public OutboxDispatcher(
     OutboxStore store,
@@ -124,9 +124,10 @@ public class OutboxDispatcher {
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         return;
-      } catch (RuntimeException e) {
+      } catch (Throwable e) {
         // A failure here must never end the loop: the entries are still durable, and a dispatcher
-        // that died silently would look exactly like an OpenELIS outage.
+        // that died silently would look exactly like an OpenELIS outage. Errors are included: an
+        // allocation that failed has already released its memory.
         log.error("Outbox dispatch cycle failed; retrying after the poll interval", e);
         try {
           Thread.sleep(properties.getPollInterval().toMillis());
@@ -163,6 +164,8 @@ public class OutboxDispatcher {
       inFlightId = entry.id();
       try {
         attempt(entry);
+      } catch (Throwable failure) {
+        setAside(entry, failure);
       } finally {
         inFlightId = null;
       }
@@ -201,6 +204,29 @@ public class OutboxDispatcher {
     } catch (RuntimeException e) {
       // Retention housekeeping must never stop deliveries.
       log.warn("Outbox retention purge failed; it will be retried on the next cycle: {}", e.getMessage());
+    }
+  }
+
+  /**
+   * An entry whose handling threw must not stop the entries behind it. Rendering is deterministic
+   * for the stored bytes, so a render that threw goes to the dead-message queue, where an operator
+   * can see it, retry it after a fix, or dismiss it. Anything else is treated as transient: the
+   * lease is released and the entry is attempted again on a later cycle.
+   */
+  private void setAside(OutboxEntry entry, Throwable failure) {
+    try {
+      if (entry.state() == OutboxState.RECEIVED) {
+        String detail = failure.getMessage() == null ? "" : ": " + failure.getMessage();
+        String error = failure.getClass().getSimpleName() + detail;
+        store.markDeadLettered(entry.id(), FailureReason.RENDER_ERROR, "Rendering failed: " + error);
+        log.error("Could not render outbox entry {}; held in the dead-message queue", entry.id(), failure);
+      } else {
+        store.releaseLease(entry.id());
+        log.error("Handling outbox entry {} failed; it will be attempted again", entry.id(), failure);
+      }
+    } catch (Throwable secondary) {
+      failure.addSuppressed(secondary);
+      log.error("Could not set aside outbox entry {} after a failure", entry.id(), failure);
     }
   }
 
@@ -408,7 +434,14 @@ public class OutboxDispatcher {
   }
 
   public boolean isRunning() {
-    return running;
+    Thread current = worker;
+    return running && current != null && current.isAlive();
+  }
+
+  /** Started and not stopped, yet its worker has ended: nothing is being delivered. */
+  public boolean isStalled() {
+    Thread current = worker;
+    return running && current != null && !current.isAlive();
   }
 
   public String inFlightId() {
