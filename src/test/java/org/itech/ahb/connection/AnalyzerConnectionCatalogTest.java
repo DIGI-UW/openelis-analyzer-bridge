@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
 import org.itech.ahb.profile.ProfileCatalogProperties;
 import org.itech.ahb.profile.ProfileFingerprintService;
@@ -71,6 +72,48 @@ class AnalyzerConnectionCatalogTest {
     ObjectNode restored = catalog(UUID::randomUUID).require(created.path("connectionId").asText());
     assertThat(restored.path("readiness").path("ready").asBoolean()).isTrue();
     assertThat(restored.path("profileRef")).isEqualTo(created.path("profileRef"));
+  }
+
+  @Test
+  void aConnectionMaySetTheCodesItsInstrumentUsesAndTheyReachTheRuntime() {
+    ObjectNode profile = profiles.require("genexpert-astm", 8).profile();
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, runtime);
+    ObjectNode request = createRequest(profile, "renamed-codes", "oe-renamed");
+    request.withObject("values").putObject("codeOverrides").put("HIVVL", "HIVU");
+
+    ObjectNode created = catalog.create(request);
+    catalog.applyRuntimeCommand(runtimeCommand(created, "activate-renamed", "ACTIVATE"));
+
+    assertThat(created.path("codeOverrides").path("HIVVL").asText()).isEqualTo("HIVU");
+    ObjectNode rename = objectMapper
+      .createObjectNode()
+      .put("schemaVersion", "1.0")
+      .put("requestId", "rename-only")
+      .put("connectionId", created.path("connectionId").asText())
+      .put("expectedConfigRevision", 1)
+      .put("displayName", "renamed-codes again");
+    rename.set("profileRef", created.path("profileRef").deepCopy());
+    rename.putObject("values");
+    ObjectNode updated = catalog.update(rename);
+    assertThat(updated.path("codeOverrides").path("HIVVL").asText())
+      .as("an update that says nothing about codes keeps them")
+      .isEqualTo("HIVU");
+    AnalyzerEntry entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
+    assertThat(entry.getCodeForLoinc("20447-9")).isEqualTo("HIVU");
+    assertThat(entry.getResultReading().profileCode("HIVU")).isEqualTo("HIVVL");
+
+    ObjectNode undeclared = createRequest(profile, "unknown-code", "oe-unknown");
+    undeclared.withObject("values").putObject("codeOverrides").put("NOT-IN-PROFILE", "X");
+    assertThatThrownBy(() -> catalog.create(undeclared))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("NOT-IN-PROFILE");
   }
 
   @Test

@@ -28,6 +28,12 @@
     "profileRef": { "$ref": "#/$defs/profileRef" },
     "configRevision": { "type": "integer", "minimum": 1 },
     "configFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "codeOverrides": {
+      "type": "object",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "description": "The code this instrument sends for each profile test code it renames."
+    },
     "fields": {
       "type": "array",
       "items": { "$ref": "#/$defs/field" }

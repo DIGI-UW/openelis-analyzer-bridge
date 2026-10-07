@@ -435,6 +435,9 @@ public final class AnalyzerConnectionCatalog {
           values.set(key, existingValues.path(key).deepCopy());
         }
       }
+      if (!suppliedValues.has(CODE_OVERRIDES) && existingValues.has(CODE_OVERRIDES)) {
+        values.set(CODE_OVERRIDES, existingValues.path(CODE_OVERRIDES).deepCopy());
+      }
     }
     suppliedValues.fields().forEachRemaining(entry -> values.set(entry.getKey(), entry.getValue().deepCopy()));
     if (
@@ -484,6 +487,9 @@ public final class AnalyzerConnectionCatalog {
     copy(response, record, "configRevision");
     copy(response, record, "configFingerprint");
     response.set("fields", fields(record, profile));
+    if (record.path("values").has(CODE_OVERRIDES)) {
+      response.set(CODE_OVERRIDES, record.path("values").path(CODE_OVERRIDES).deepCopy());
+    }
     ArrayList<String> missingFields = missingRequiredFields(record, profile);
     ObjectNode readiness = response.putObject("readiness");
     readiness.put("ready", missingFields.isEmpty());
@@ -624,6 +630,9 @@ public final class AnalyzerConnectionCatalog {
     }
   }
 
+  /** A connection value every profile accepts: profile test code to the code this instrument sends. */
+  static final String CODE_OVERRIDES = "codeOverrides";
+
   private void validateValues(ObjectNode profile, ObjectNode values) {
     Map<String, JsonNode> descriptors = fieldDescriptors(profile);
     Iterator<String> keys = values.fieldNames();
@@ -631,6 +640,12 @@ public final class AnalyzerConnectionCatalog {
       String key = keys.next();
       if (key.isBlank()) {
         throw new AnalyzerConnectionException("Connection value keys must not be blank");
+      }
+      if (CODE_OVERRIDES.equals(key)) {
+        // The codes this instrument uses for the profile's assays; the runtime checks each
+        // against the pinned profile when the connection is applied.
+        BridgeAnalyzerConnectionRuntime.codeOverrides(profile, values);
+        continue;
       }
       JsonNode descriptor = descriptors.get(key);
       if (descriptor == null) {

@@ -398,9 +398,9 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     }
 
     Map<String, String> codeOverrides = codeOverrides(profile, values);
-    if ("ASTM".equals(entry.getExpectedProtocol())) {
-      entry.setResultReading(org.itech.ahb.profile.ResultReading.fromProfile(profile, values));
-    }
+    // Every protocol translates an instrument's own code back to the profile's; only an ASTM
+    // profile declares where each part of a record sits.
+    entry.setResultReading(org.itech.ahb.profile.ResultReading.fromProfile(profile, values));
     Set<String> mappedCodes = new LinkedHashSet<>();
     List<String> primaryCodes = new ArrayList<>();
     Map<String, String> codeToLoinc = new LinkedHashMap<>();
@@ -513,7 +513,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
    * The instrument codes this connection sets for the profile's assays, by profile code. Each must
    * belong to a test the pinned profile declares, and no two assays may share a code.
    */
-  private static Map<String, String> codeOverrides(JsonNode profile, JsonNode values) {
+  static Map<String, String> codeOverrides(JsonNode profile, JsonNode values) {
     Set<String> declared = new LinkedHashSet<>();
     profile.path("default_test_mappings").forEach(mapping -> declared.add(mapping.path("test_code").asText()));
     Map<String, String> overrides = new LinkedHashMap<>();
