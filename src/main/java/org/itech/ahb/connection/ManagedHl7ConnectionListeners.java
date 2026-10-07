@@ -138,7 +138,7 @@ public final class ManagedHl7ConnectionListeners implements Hl7ConnectionListene
     if (current != null && current.listener.isRunning()) {
       return current;
     }
-    HapiMLLPListener listener = new HapiMLLPListener(port, router);
+    HapiMLLPListener listener = new HapiMLLPListener(port, router, config.limits());
     try {
       listener.start();
     } catch (RuntimeException failure) {
