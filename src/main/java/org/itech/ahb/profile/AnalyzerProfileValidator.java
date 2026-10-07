@@ -223,8 +223,22 @@ final class AnalyzerProfileValidator {
         }
       }
       validateValueSet(path, mapping, failures);
+      validateRunFailureValues(path, mapping, failures);
       validateComponents(path, mapping, failures);
     }
+  }
+
+  /** A value that says the run produced nothing is not an answer a lab could map. */
+  private void validateRunFailureValues(String path, JsonNode mapping, List<String> failures) {
+    Set<String> values = new HashSet<>();
+    mapping.path("values").forEach(value -> values.add(value.asText()));
+    mapping
+      .path("run_failure_values")
+      .forEach(value -> {
+        if (values.contains(value.asText())) {
+          failures.add(path + ".run_failure_values repeats a declared value: " + value.asText());
+        }
+      });
   }
 
   /** The codes and translations a test or component gives its declared values. */
@@ -287,6 +301,7 @@ final class AnalyzerProfileValidator {
       }
       String componentPath = path + ".components." + code;
       validateValueSet(componentPath, component, failures);
+      validateRunFailureValues(componentPath, component, failures);
       if (
         "qualitative".equals(component.path("result_type").asText()) &&
         component.has("sub_identity") &&

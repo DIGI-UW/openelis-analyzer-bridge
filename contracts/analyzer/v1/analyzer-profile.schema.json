@@ -396,6 +396,7 @@
         "value_codes": { "$ref": "#/$defs/valueCodes" },
         "translations": { "$ref": "#/$defs/valueTranslations" },
         "call_component": { "$ref": "#/$defs/nonBlank" },
+        "run_failure_values": { "$ref": "#/$defs/runFailureValues" },
         "components": {
           "type": "array",
           "minItems": 1,
@@ -463,8 +464,16 @@
           "items": { "$ref": "#/$defs/nonBlank" }
         },
         "value_codes": { "$ref": "#/$defs/valueCodes" },
-        "translations": { "$ref": "#/$defs/valueTranslations" }
+        "translations": { "$ref": "#/$defs/valueTranslations" },
+        "run_failure_values": { "$ref": "#/$defs/runFailureValues" }
       }
+    },
+    "runFailureValues": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/nonBlank" },
+      "description": "Raw values that say the run produced no result (ERROR, NO RESULT). They are never answers, so a lab never maps them."
     },
     "assay": {
       "type": "object",
@@ -495,7 +504,7 @@
     "astmResultParts": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Where each part of a result sits in an ASTM R record, as R.field or R.field.component; note is the C record field that carries a note or an error.",
+      "description": "Where each part of a result sits in an ASTM record, as R.field or R.field.component; note is the C record field that carries a note or an error, patientId and patientName the P record fields the instrument reports the patient in, and specimenDescriptor the O record field that describes the specimen.",
       "properties": {
         "testCode": { "$ref": "#/$defs/astmResultField" },
         "assayName": { "$ref": "#/$defs/astmResultField" },
@@ -515,6 +524,18 @@
         "note": {
           "type": "string",
           "pattern": "^C\\.[1-9][0-9]*(\\.[1-9][0-9]*)?$"
+        },
+        "patientId": {
+          "type": "string",
+          "pattern": "^P\\.[1-9][0-9]*(\\.[1-9][0-9]*)?$"
+        },
+        "patientName": {
+          "type": "string",
+          "pattern": "^P\\.[1-9][0-9]*(\\.[1-9][0-9]*)?$"
+        },
+        "specimenDescriptor": {
+          "type": "string",
+          "pattern": "^O\\.[1-9][0-9]*(\\.[1-9][0-9]*)?$"
         }
       }
     },

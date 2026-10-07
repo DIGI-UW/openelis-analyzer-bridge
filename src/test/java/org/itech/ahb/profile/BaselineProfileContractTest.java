@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -14,8 +13,6 @@ import org.junit.jupiter.api.Test;
  * profile written to the contract is valid as it stands.
  */
 class BaselineProfileContractTest {
-
-  private static final String ASTM_PROFILE = "analyzer-profiles/genexpert-astm-v7.json";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
@@ -142,8 +139,8 @@ class BaselineProfileContractTest {
   void aQualitativeComponentDeclaresItsValues() throws Exception {
     ObjectNode profile = baseline();
     ObjectNode analyte = test(profile, 0).withArray("components").addObject();
-    analyte.put("code", "HIV-1").put("label", "HIV-1").put("result_type", "qualitative");
-    analyte.put("sub_identity", "HIV-1");
+    analyte.put("code", "ANALYTE-X").put("label", "Analyte X").put("result_type", "qualitative");
+    analyte.put("sub_identity", "ANALYTE-X");
 
     assertThat(validator.validationIssues(profile)).anyMatch(
       issue -> issue.contains("components") && issue.contains("values")
@@ -173,6 +170,16 @@ class BaselineProfileContractTest {
   }
 
   @Test
+  void aRunFailureValueIsNeverAlsoAnAnswer() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0).putArray("run_failure_values").add("ERROR").add("DETECTED");
+
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.default_test_mappings.HIVVL.run_failure_values repeats a declared value: DETECTED"
+    );
+  }
+
+  @Test
   void theNumberFormatIsADecimalSeparator() throws Exception {
     ObjectNode profile = baseline();
     profile.withObject("configDefaults").putObject("numberFormat").put("decimalSeparator", ";");
@@ -180,78 +187,8 @@ class BaselineProfileContractTest {
     assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("decimalSeparator"));
   }
 
-  /**
-   * GeneXpert's HIV-1 viral load as the contract wants it written: a number with a call, a log
-   * record and an analyte record, each with its sub-identity, sourced to the vendor's document.
-   */
   private ObjectNode baseline() throws Exception {
-    ObjectNode profile;
-    try (InputStream input = getClass().getClassLoader().getResourceAsStream(ASTM_PROFILE)) {
-      assertThat(input).as(ASTM_PROFILE).isNotNull();
-      profile = (ObjectNode) objectMapper.readTree(input);
-    }
-    profile.put("schemaVersion", "2.0");
-    profile
-      .withObject("configDefaults")
-      .withObject("extractionOverrides")
-      .putObject("resultParts")
-      .put("testCode", "R.3.4")
-      .put("assayName", "R.3.5")
-      .put("assayVersion", "R.3.6")
-      .put("analyte", "R.3.7")
-      .put("complement", "R.3.8")
-      .put("call", "R.4.1")
-      .put("number", "R.4.2")
-      .put("unit", "R.5")
-      .put("range", "R.6")
-      .put("flag", "R.7")
-      .put("operator", "R.11")
-      .put("instrument", "R.14");
-    profile.withObject("configDefaults").putObject("numberFormat").put("decimalSeparator", ".");
-    profile.set(
-      "default_test_mappings",
-      array(
-        """
-        [
-          {
-            "test_code":"HIVVL",
-            "loinc":"20447-9",
-            "unit":"copies/mL",
-            "result_type":"quantitative",
-            "values":["DETECTED","NOT DETECTED","INVALID"],
-            "value_codes":{
-              "DETECTED":[{"system":"http://loinc.org","code":"LA11882-0"},
-                          {"system":"http://snomed.info/sct","code":"260373001"}],
-              "NOT DETECTED":[{"system":"http://loinc.org","code":"LA11883-8"}],
-              "INVALID":[{"system":"http://loinc.org","code":"LA15841-2"}]
-            },
-            "translations":{"DETECTED":["DÉTECTÉ"],"NOT DETECTED":["NON DÉTECTÉ"],"INVALID":["NON VALIDE"]},
-            "call_component":"call",
-            "components":[
-              {"code":"call","label":"Call","result_type":"qualitative"},
-              {"code":"LOG","label":"Log copies/mL","result_type":"quantitative","unit":"log copies/mL","sub_identity":"&LOG"},
-              {"code":"HIV-1","label":"HIV-1","result_type":"qualitative","sub_identity":"HIV-1",
-               "values":["POS","NEG"],
-               "value_codes":{"POS":[{"system":"http://loinc.org","code":"LA6576-8"}],
-                              "NEG":[{"system":"http://loinc.org","code":"LA6577-6"}]}}
-            ],
-            "assay":{"name":"Xpert HIV-1 Viral Load XC","version":"3"},
-            "source":{"document":"Cepheid 303-0251 Rev. A","section":"1, 2.1.1"}
-          },
-          {
-            "test_code":"RIF",
-            "loinc":"89372-7",
-            "result_type":"qualitative",
-            "values":["DETECTED","NOT DETECTED","INDETERMINATE"],
-            "value_codes":{"DETECTED":[{"system":"http://loinc.org","code":"LA11882-0"}]},
-            "assay":{"name":"Xpert MTB/RIF Ultra","version":"1"},
-            "source":{"document":"Cepheid 301-2002 Rev. E","section":"6.3.4.1.6"}
-          }
-        ]
-        """
-      )
-    );
-    return profile;
+    return BaselineProfileFixtures.genexpertHivViralLoad(objectMapper);
   }
 
   private ObjectNode parts(ObjectNode profile) {
