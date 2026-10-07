@@ -20,17 +20,25 @@ bridge:
   http:
     # Comma-separated proxy IPs; empty means forwarded identity headers are ignored.
     trusted-proxies: ${BRIDGE_HTTP_TRUSTED_PROXIES:}
-  # HTTP Basic authentication for /input, /admin and the management APIs.
-  # Protects against unauthorized data injection via the HTTP transport.
-  # Non-HTTP transports (ASTM/TCP, MLLP, Serial, File) are unaffected.
+  # OpenELIS authenticates with the TLS client certificate it pins when it pairs with this Bridge.
+  # Until then, the Bridge serves only health, pairing and HTTP input (which admits only the
+  # address of an active HTTP connection). Analyzer transports are unaffected.
   #
-  # Password: Plaintext is BCrypt-encoded once at startup. Values already in delegating form
-  # ({bcrypt}$2a$..., {noop}..., etc.) are stored as-is — do not double-encode.
-  # In production, set BRIDGE_AUTH_PASSWORD env var. Default 'changeme' fails startup
+  # Pairing: OpenELIS sends this code once. Without one, an unpaired Bridge logs a generated code
+  # at each start. Setting a different code on a paired Bridge lets one OpenELIS pair again.
+  pairing:
+    code: ${BRIDGE_PAIRING_CODE:}
+  # The Bridge's key pair, generated here on first start when no server.ssl keystore is mounted,
+  # and the pairing record. Keep it on the persistent volume.
+  identity:
+    directory: ${BRIDGE_IDENTITY_DIRECTORY:/data/openelis-analyzer-bridge/identity}
+  # Optional HTTP Basic for an OpenELIS that has not paired yet; the first pairing ends it.
+  # Leave the password empty to rely on pairing alone. Plaintext is BCrypt-encoded at startup;
+  # values in delegating form ({bcrypt}$2a$...) are stored as-is. 'changeme' fails startup
   # unless spring.profiles.active includes dev or test.
   security:
-    username: bridge                            # HTTP Basic username
-    password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via env var in production
+    username: bridge
+    password: ${BRIDGE_AUTH_PASSWORD:}
 
   # Bridge-owned immutable analyzer profile revisions. Site-created revisions
   # must remain under the image's declared persistent /data volume.

@@ -22,8 +22,8 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * Integration tests for bridge security configuration (M7.1).
  * <p>
- * Verifies that the /input endpoint and the management APIs require HTTP Basic
- * authentication while the actuator health status remains publicly accessible.
+ * Verifies that the management APIs require authentication, that the actuator health status
+ * remains publicly accessible, and that /input admits only active HTTP connections' senders.
  * </p>
  */
 @SpringBootTest(properties = {
@@ -46,38 +46,48 @@ class SecurityConfigTest {
             + "P|1||||Doe^John\rL|1|N";
 
     @Nested
-    @DisplayName("/input endpoint authentication")
+    @DisplayName("/input endpoint: an analyzer transport identified by its sender")
     class InputEndpointTests {
 
+        @Autowired
+        private org.itech.ahb.connection.AnalyzerRuntimeRegistry registry;
+
         @Test
-        @DisplayName("Unauthenticated POST to /input returns 401")
-        void unauthenticatedInputReturns401() throws Exception {
+        @DisplayName("A sender without an active HTTP connection is refused with 403")
+        void unknownSenderIsRefused() throws Exception {
             mockMvc.perform(post("/input")
                     .content(SAMPLE_ASTM)
                     .contentType(MediaType.TEXT_PLAIN))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
 
         @Test
-        @DisplayName("Wrong credentials POST to /input returns 401")
-        void wrongCredentialsReturns401() throws Exception {
-            mockMvc.perform(post("/input")
-                    .with(httpBasic("wrong", "credentials"))
-                    .content(SAMPLE_ASTM)
-                    .contentType(MediaType.TEXT_PLAIN))
-                    .andExpect(status().isUnauthorized());
-        }
-
-        @Test
-        @DisplayName("Authenticated POST to /input succeeds")
-        void authenticatedInputSucceeds() throws Exception {
-            when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
-
+        @DisplayName("Credentials do not open HTTP input to an unknown sender")
+        void credentialsDoNotAdmitAnUnknownSender() throws Exception {
             mockMvc.perform(post("/input")
                     .with(httpBasic("testuser", "testpass"))
                     .content(SAMPLE_ASTM)
-                    .contentType("application/x-astm"))
-                    .andExpect(status().isOk());
+                    .contentType(MediaType.TEXT_PLAIN))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("An active HTTP connection's analyzer posts without a credential")
+        void activeHttpSenderNeedsNoCredential() throws Exception {
+            when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
+            var entry = new org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry();
+            entry.setId("http-analyzer");
+            entry.setInboundTransport("HTTP");
+            entry.setInboundSourceId("127.0.0.1");
+            registry.register("connection:http-analyzer", entry);
+            try {
+                mockMvc.perform(post("/input")
+                        .content(SAMPLE_ASTM)
+                        .contentType("application/x-astm"))
+                        .andExpect(status().isOk());
+            } finally {
+                registry.unregister("connection:http-analyzer", "http-analyzer");
+            }
         }
     }
 

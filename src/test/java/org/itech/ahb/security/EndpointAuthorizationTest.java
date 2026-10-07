@@ -56,6 +56,8 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMappi
 class EndpointAuthorizationTest {
 
   private static final String PUBLIC_ROUTE = "GET /actuator/health";
+  /** Open without a credential: the pairing code authorizes pairing; HTTP input checks its sender. */
+  private static final Set<String> OPEN_ROUTES = Set.of(PUBLIC_ROUTE, "GET /pairing", "POST /pairing", "POST /input");
   private static final String CREDENTIALS = "testuser:testpass";
 
   @DynamicPropertySource
@@ -100,7 +102,7 @@ class EndpointAuthorizationTest {
 
     List<String> reachable = new ArrayList<>();
     for (String route : routes) {
-      if (route.equals(PUBLIC_ROUTE)) {
+      if (OPEN_ROUTES.contains(route)) {
         continue;
       }
       String method = route.substring(0, route.indexOf(' '));
@@ -115,6 +117,13 @@ class EndpointAuthorizationTest {
       }
     }
     assertTrue(reachable.isEmpty(), () -> "Routes answered without credentials:\n" + String.join("\n", reachable));
+  }
+
+  @Test
+  void theOpenRoutesGiveAnonymousCallersNothingBeyondTheirPurpose() throws Exception {
+    assertEquals(403, send("POST", "/input", null, "H|\\^&\rL|1\r").statusCode(), "no active HTTP connection");
+    assertEquals(200, send("GET", "/pairing", null, null).statusCode());
+    assertEquals(503, send("POST", "/pairing", null, "{\"code\":\"x\"}").statusCode(), "pairing needs HTTPS");
   }
 
   @ParameterizedTest

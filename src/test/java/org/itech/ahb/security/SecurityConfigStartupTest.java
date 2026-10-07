@@ -25,7 +25,11 @@ class SecurityConfigStartupTest {
         JacksonAutoConfiguration.class
       )
     )
-    .withUserConfiguration(SecurityConfig.class);
+    .withUserConfiguration(SecurityConfig.class)
+    .withBean(
+      org.itech.ahb.pairing.PairingState.class,
+      () -> new org.itech.ahb.pairing.PairingState(java.nio.file.Path.of("target/startup-test-pairing"), "")
+    );
 
   private final String passwordSetting = "bridge.security.password=" + UUID.randomUUID();
 
@@ -50,10 +54,18 @@ class SecurityConfigStartupTest {
   }
 
   @Test
-  void refusesAnUnsetPasswordOutsideDevAndTest() {
-    runner.run(context -> {
-      assertThat(context).hasFailed();
-      assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("bridge.security.password");
-    });
+  void startsWithoutAPasswordBecausePairingAuthenticates() {
+    runner.run(context -> assertThat(context).hasNotFailed());
+    runner.withPropertyValues("bridge.security.password=").run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void refusesTheShippedDefaultPasswordOutsideDevAndTest() {
+    runner
+      .withPropertyValues("bridge.security.password=changeme")
+      .run(context -> {
+        assertThat(context).hasFailed();
+        assertThat(context.getStartupFailure()).rootCause().hasMessageContaining("bridge.security.password");
+      });
   }
 }

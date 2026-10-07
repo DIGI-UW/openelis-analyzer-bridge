@@ -54,6 +54,21 @@ public class AnalyzerRuntimeRegistry {
     return findAnalyzerEntry(sourceId).map(AnalyzerEntry::getId);
   }
 
+  /** Whether {@code sourceIp} is the address of an active HTTP analyzer connection. */
+  public synchronized boolean isActiveHttpSender(String sourceIp) {
+    String address = IpLiteral.canonicalize(sourceIp);
+    return address != null &&
+      analyzers
+        .entrySet()
+        .stream()
+        .anyMatch(
+          registered ->
+            "HTTP".equals(registered.getValue().getInboundTransport()) &&
+            (address.equals(registered.getValue().getInboundSourceId()) ||
+              address.equals(IpLiteral.canonicalize(registered.getKey())))
+        );
+  }
+
   /**
    * Finds an analyzer registry entry by source identifier.
    *

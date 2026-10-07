@@ -166,7 +166,7 @@ class SerialSavedRecoveryTest {
       UUID::randomUUID,
       new BridgeAnalyzerConnectionRuntime(registry, null, null, serial)
     );
-    http = new AnalyzerInputController(normalizer);
+    http = new AnalyzerInputController(normalizer, registry);
   }
 
   ObjectNode create(ObjectNode profile, String owner, String transport, String endpoint) {
