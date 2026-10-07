@@ -1,7 +1,10 @@
 package org.itech.ahb.fhir;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -32,8 +35,7 @@ public class HL7ResultParser {
     String header = rawMessage.stripLeading().split("[\\r\\n]", 2)[0];
     if (!header.startsWith("MSH") || header.length() < 8) return null;
     Delimiters delimiters = new Delimiters(header.charAt(3), header.charAt(4), header.charAt(5), header.charAt(7));
-    Map<String, String> fields = new HashMap<>();
-    extractRecognitionFields(header, "MSH", delimiters, fields);
+    Map<String, String> fields = extractRecognitionFields(header, "MSH", delimiters);
     String sender = fields.get("MSH.3.1");
     return sender == null || sender.isBlank() ? null : sender;
   }
@@ -61,7 +63,7 @@ public class HL7ResultParser {
     }
 
     String accession = null;
-    Map<String, String> fieldValues = new HashMap<>();
+    SegmentFields fieldValues = new SegmentFields();
     List<AnalyzerResult> results = new ArrayList<>();
     Delimiters delimiters = new Delimiters('|', '^', '~', '&');
     PendingObservation pending = null;
@@ -74,15 +76,16 @@ public class HL7ResultParser {
         pending = null;
       }
       if (specimenPosition == Hl7SpecimenPosition.FOLLOWING_OBX && "OBX".equals(segment)) {
-        fieldValues.keySet().removeIf(key -> key.startsWith("SPM."));
+        fieldValues.removeSegment("SPM");
       }
       if ("MSH".equals(segment) && line.length() >= 8) {
         delimiters = new Delimiters(line.charAt(3), line.charAt(4), line.charAt(5), line.charAt(7));
       }
       if (line.charAt(3) != delimiters.field()) continue;
-      extractRecognitionFields(line, segment, delimiters, fieldValues);
+      Map<String, String> extracted = extractRecognitionFields(line, segment, delimiters);
+      fieldValues.putSegment(segment, extracted);
       if (pending != null && "SPM".equals(segment)) {
-        extractRecognitionFields(line, segment, delimiters, pending.fields());
+        pending.fields().putSegment(segment, extracted);
       }
 
       if ("OBR".equals(segment)) {
@@ -94,7 +97,7 @@ public class HL7ResultParser {
         if (result != null) {
           String specimenId = actualAccession(accession, fieldValues, delimiters);
           if (specimenPosition == Hl7SpecimenPosition.FOLLOWING_OBX) {
-            pending = new PendingObservation(result, specimenId, new HashMap<>(fieldValues));
+            pending = new PendingObservation(result, specimenId, fieldValues.snapshot());
           } else {
             results.add(recognize(result, specimenId, fieldValues, recognition));
           }
@@ -112,7 +115,57 @@ public class HL7ResultParser {
     return results.isEmpty() ? null : new ParsedResults(accession, results);
   }
 
-  private record PendingObservation(AnalyzerResult result, String specimenId, Map<String, String> fields) {}
+  private record PendingObservation(AnalyzerResult result, String specimenId, SegmentFields fields) {}
+
+  /**
+   * Recognition fields keyed by path ({@code OBX.5.1}), held per segment so that replacing a
+   * segment's fields, or snapshotting all of them for a pending observation, costs the size of one
+   * segment rather than everything seen so far. A segment's own map is never changed once stored.
+   */
+  private static final class SegmentFields extends AbstractMap<String, String> {
+
+    private final Map<String, Map<String, String>> bySegment;
+
+    SegmentFields() {
+      this(new HashMap<>());
+    }
+
+    private SegmentFields(Map<String, Map<String, String>> bySegment) {
+      this.bySegment = bySegment;
+    }
+
+    void putSegment(String segment, Map<String, String> fields) {
+      bySegment.put(segment, fields);
+    }
+
+    void removeSegment(String segment) {
+      bySegment.remove(segment);
+    }
+
+    SegmentFields snapshot() {
+      return new SegmentFields(new HashMap<>(bySegment));
+    }
+
+    @Override
+    public String get(Object key) {
+      if (!(key instanceof String path)) return null;
+      int dot = path.indexOf('.');
+      Map<String, String> fields = bySegment.get(dot < 0 ? path : path.substring(0, dot));
+      return fields == null ? null : fields.get(path);
+    }
+
+    @Override
+    public boolean containsKey(Object key) {
+      return get(key) != null;
+    }
+
+    @Override
+    public Set<Entry<String, String>> entrySet() {
+      Set<Entry<String, String>> entries = new HashSet<>();
+      bySegment.values().forEach(fields -> entries.addAll(fields.entrySet()));
+      return entries;
+    }
+  }
 
   private static AnalyzerResult recognize(
     AnalyzerResult result,
@@ -138,19 +191,14 @@ public class HL7ResultParser {
   }
 
   /**
-   * Replace the segment's prior fields, including absent trailing components.
-   * Recognition captures each OBX, so later observations/orders cannot rewrite
-   * earlier results. Whole fields retain raw repetitions; component references
+   * A segment's recognition fields, which replace that segment's prior fields,
+   * including absent trailing components. Recognition captures each OBX, so later
+   * observations/orders cannot rewrite earlier results. Whole fields retain raw repetitions; component references
    * select the first repetition, as the profile path has no repetition index.
    */
-  private static void extractRecognitionFields(
-    String line,
-    String segment,
-    Delimiters delimiters,
-    Map<String, String> values
-  ) {
+  private static Map<String, String> extractRecognitionFields(String line, String segment, Delimiters delimiters) {
+    Map<String, String> values = new HashMap<>();
     String prefix = segment + ".";
-    values.keySet().removeIf(key -> key.startsWith(prefix));
     String[] fields = split(line, delimiters.field());
     boolean header = "MSH".equals(segment);
     if (header) values.put("MSH.1", String.valueOf(delimiters.field()));
@@ -169,6 +217,7 @@ public class HL7ResultParser {
         }
       }
     }
+    return values;
   }
 
   private static String[] split(String value, char delimiter) {
@@ -232,7 +281,7 @@ public class HL7ResultParser {
     }
 
     String valueType = fields.length > 2 ? fields[2].trim() : "";
-    boolean isNumeric = "NM".equals(valueType) || "SN".equals(valueType);
+    boolean isNumeric = ("NM".equals(valueType) || "SN".equals(valueType)) && NumericValue.isBoundedDecimal(value);
 
     // Use test code as both code and name (OE will map via AnalyzerTestNameCache)
     return isNumeric

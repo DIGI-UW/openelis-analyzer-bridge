@@ -692,21 +692,7 @@ public class FileResultParser {
     }
 
     private static boolean isNumericValue(String value) {
-        if (value == null || value.isEmpty()) {
-            return false;
-        }
-        // Values with comparison operators (<2, >100, <=5) are stored as text —
-        // they represent qualitative assertions, not pure numbers, and cannot be
-        // parsed as BigDecimal by FhirBundleBuilder.
-        if (value.startsWith("<") || value.startsWith(">") || value.startsWith("≤") || value.startsWith("≥")) {
-            return false;
-        }
-        try {
-            Double.parseDouble(value);
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        return NumericValue.isBoundedDecimal(value);
     }
 
     static boolean isControlRow(
