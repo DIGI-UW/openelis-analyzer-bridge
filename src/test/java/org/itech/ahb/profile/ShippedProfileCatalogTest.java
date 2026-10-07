@@ -92,7 +92,14 @@ class ShippedProfileCatalogTest {
 
     assertThat(catalog.latest())
       .extracting(revision -> revision.profile().path("profileMeta").path("id").asText())
-      .containsExactly("fluorocycler-xt", "genexpert-astm", "quantstudio");
+      .containsExactly(
+        "fluorocycler-xt",
+        "hain-fluorocycler-xt",
+        "cepheid-genexpert-astm",
+        "genexpert-astm",
+        "quantstudio",
+        "thermo-quantstudio"
+      );
     assertThat(catalog.latest()).allSatisfy(revision -> {
       ObjectNode profile = revision.profile();
       assertThat(profile.path("catalog").path("source").asText()).isEqualTo("SHIPPED");
@@ -126,10 +133,10 @@ class ShippedProfileCatalogTest {
       }
 
       switch (profile.path("profileMeta").path("id").asText()) {
-        case "fluorocycler-xt" -> assertThat(profile.path("result_value_order"))
+        case "fluorocycler-xt", "hain-fluorocycler-xt" -> assertThat(profile.path("result_value_order"))
           .extracting(JsonNode::asText)
           .containsExactly("result", "interpretation");
-        case "genexpert-astm" -> {
+        case "genexpert-astm", "cepheid-genexpert-astm" -> {
           JsonNode extraction = profile.path("configDefaults").path("extractionOverrides");
           JsonNode selection = extraction.path("resultRecordSelection");
           if ("2.0".equals(profile.path("schemaVersion").asText())) {
@@ -141,7 +148,7 @@ class ShippedProfileCatalogTest {
             assertThat(selection.path("targetField").asText()).isEqualTo("R.3.5");
           }
         }
-        case "quantstudio" -> assertThat(profile.path("result_value_order"))
+        case "quantstudio", "thermo-quantstudio" -> assertThat(profile.path("result_value_order"))
           .extracting(JsonNode::asText)
           .containsExactly("result", "ctValue");
         default -> throw new AssertionError("Unexpected priority profile");

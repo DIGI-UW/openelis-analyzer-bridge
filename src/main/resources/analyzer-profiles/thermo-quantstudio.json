@@ -2,7 +2,7 @@
   "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
   "schemaVersion": "2.0",
   "profileMeta": {
-    "id": "quantstudio",
+    "id": "thermo-quantstudio",
     "version": "2.0.0",
     "displayName": "Thermo Fisher QuantStudio QS5/QS7",
     "manufacturer": "Thermo Fisher",
@@ -21,10 +21,7 @@
     "outboundOrders": false,
     "connectionTest": true
   },
-  "supported_extensions": [
-    ".xls",
-    ".xlsx"
-  ],
+  "supported_extensions": [".xls", ".xlsx"],
   "column_mapping": {
     "Sample Name": "sampleId",
     "Target Name": "testCode",
@@ -33,15 +30,10 @@
     "Well Position": "position",
     "Task": "qcTask"
   },
-  "result_value_order": [
-    "result",
-    "ctValue"
-  ],
+  "result_value_order": ["result", "ctValue"],
   "sheet_detection": {
     "strategy": "header_scan",
-    "preferred_sheet_names": [
-      "Results"
-    ],
+    "preferred_sheet_names": ["Results"],
     "header_marker": "Well",
     "max_sheets_to_scan": 5,
     "max_rows_to_scan": 200
@@ -129,12 +121,12 @@
     }
   },
   "catalog": {
-    "revision": 4,
-    "revisionFingerprint": "sha256:01205afb3179bc6397a485d9eb419343cb70ecf776bfed68d75f4a90ba8fafb5",
+    "revision": 1,
     "recognitionFingerprint": "sha256:e5c668abfd8b64220efeff01dd57682dcbd883f2652d68d187505bbd4ac707ab",
     "source": "SHIPPED",
     "status": "ACTIVE",
     "publishedAt": "2026-10-06T00:00:00Z",
-    "publishedBy": "distribution"
+    "publishedBy": "distribution",
+    "revisionFingerprint": "sha256:9b5a84ddbc724ee696823898105a4f49edd41160fb9400bc51c109cda5d91ce1"
   }
 }

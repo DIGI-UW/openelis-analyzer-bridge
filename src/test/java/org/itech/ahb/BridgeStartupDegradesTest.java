@@ -49,8 +49,8 @@ class BridgeStartupDegradesTest {
   static void startupState(DynamicPropertyRegistry registry) throws IOException {
     Path root = Files.createTempDirectory("bridge-startup-degrades");
     Path shipped = Files.createDirectories(root.resolve("shipped"));
-    copyShipped("genexpert-astm-v8.json", shipped);
-    copyShipped("fluorocycler-xt-v5.json", shipped);
+    copyShipped("cepheid-genexpert-astm.json", shipped);
+    copyShipped("hain-fluorocycler-xt.json", shipped);
     Files.writeString(shipped.resolve("broken.json"), "{ not json");
 
     Path catalog = Files.createDirectories(root.resolve("catalog"));
@@ -59,16 +59,16 @@ class BridgeStartupDegradesTest {
     Files.createDirectories(catalog.resolve("broken-profile"));
     Files.writeString(catalog.resolve("broken-profile").resolve("1.json"), "{\"profile\":{}}");
 
-    ObjectNode genexpert = (ObjectNode) JSON.readTree(shippedProfile("genexpert-astm-v8.json"));
+    ObjectNode genexpert = (ObjectNode) JSON.readTree(shippedProfile("cepheid-genexpert-astm.json"));
     String fingerprint = genexpert.path("catalog").path("revisionFingerprint").asText();
     Path connections = Files.createDirectories(root.resolve("connections"));
-    write(connections, connection(GOOD, "oe-good", 8, fingerprint, "INACTIVE"));
+    write(connections, connection(GOOD, "oe-good", 1, fingerprint, "INACTIVE"));
     write(connections, connection(MISSING_REVISION, "oe-missing-revision", 99, fingerprint, "INACTIVE"));
-    write(connections, connection(CHANGED_FINGERPRINT, "oe-changed", 8, "sha256:" + "0".repeat(64), "INACTIVE"));
+    write(connections, connection(CHANGED_FINGERPRINT, "oe-changed", 1, "sha256:" + "0".repeat(64), "INACTIVE"));
     Files.writeString(connections.resolve(UNREADABLE + ".json"), "{ not json");
-    write(connections, connection(ACTIVE_WITHOUT_CONFIGURATION, "oe-active-unconfigured", 8, fingerprint, "ACTIVE"));
+    write(connections, connection(ACTIVE_WITHOUT_CONFIGURATION, "oe-active-unconfigured", 1, fingerprint, "ACTIVE"));
     write(connections, connection(ACTIVE_MISSING_REVISION, "oe-active-missing", 99, fingerprint, "ACTIVE"));
-    write(connections, connection(SAME_ANALYZER, "oe-good", 8, fingerprint, "INACTIVE"));
+    write(connections, connection(SAME_ANALYZER, "oe-good", 1, fingerprint, "INACTIVE"));
 
     registry.add("bridge.security.password", () -> RUN_LOGIN);
     registry.add("bridge.profile-catalog.shipped-pattern", () -> "file:" + shipped + "/*.json");
@@ -87,7 +87,7 @@ class BridgeStartupDegradesTest {
     catalog
       .path("profiles")
       .forEach(entry -> profileIds.add(entry.path("profile").path("profileMeta").path("id").asText()));
-    assertThat(profileIds).contains("genexpert-astm", "fluorocycler-xt");
+    assertThat(profileIds).contains("cepheid-genexpert-astm", "hain-fluorocycler-xt");
     assertThat(texts(catalog.path("issues"), "source"))
       .anyMatch(source -> source.contains("broken.json"))
       .anyMatch(source -> source.contains("bad-draft.json"))
@@ -151,7 +151,7 @@ class BridgeStartupDegradesTest {
     record.put("displayName", analyzerId);
     record
       .putObject("profileRef")
-      .put("profileId", "genexpert-astm")
+      .put("profileId", "cepheid-genexpert-astm")
       .put("revision", revision)
       .put("fingerprint", fingerprint);
     record.put("configRevision", 1);

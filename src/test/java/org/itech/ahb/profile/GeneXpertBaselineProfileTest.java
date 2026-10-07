@@ -35,7 +35,38 @@ class GeneXpertBaselineProfileTest {
     ObjectNode profile = profile();
     assertThat(new AnalyzerProfileValidator(objectMapper).validationIssues(profile)).isEmpty();
     assertThat(profile.path("schemaVersion").asText()).isEqualTo("2.0");
-    assertThat(profile.path("catalog").path("revision").asInt()).isEqualTo(8);
+    assertThat(profile.path("catalog").path("revision").asInt()).isEqualTo(1);
+    assertThat(profile.path("profileMeta").path("id").asText()).isEqualTo("cepheid-genexpert-astm");
+  }
+
+  @Test
+  void flusAndRsvCarryTheLivdCodesForThePlusAssayAndControlsAreCoded() throws Exception {
+    ObjectNode profile = profile();
+    java.util.Map<String, String> loincByCode = new java.util.HashMap<>();
+    profile.path("default_test_mappings").forEach(test ->
+      loincByCode.put(test.path("test_code").asText(), test.path("loinc").asText())
+    );
+    assertThat(loincByCode)
+      .containsEntry("SARSCOV2", "94500-6")
+      .containsEntry("FLUA", "85477-8")
+      .containsEntry("FLUB", "85478-6")
+      .containsEntry("RSV", "85479-4");
+
+    java.util.List<String> controls = new java.util.ArrayList<>();
+    for (JsonNode test : profile.path("default_test_mappings")) {
+      for (JsonNode component : test.path("components")) {
+        String code = component.path("code").asText();
+        if (!Set.of("SPC", "IQS-H", "IQS-L").contains(code)) continue;
+        controls.add(test.path("test_code").asText() + " " + code);
+        component.path("values").forEach(value ->
+          assertThat(component.path("value_codes").path(value.asText()).size())
+            .as(code + " " + value.asText() + " has a standard code")
+            .isPositive()
+        );
+        assertThat(component.path("run_failure_values").toString()).contains("NO RESULT");
+      }
+    }
+    assertThat(controls).contains("HIVVL IQS-H", "HIVVL IQS-L", "SARSCOV2 SPC", "SARSCOV2_3 SPC");
   }
 
   @Test
@@ -120,7 +151,7 @@ class GeneXpertBaselineProfileTest {
 
   private ObjectNode profile() throws Exception {
     try (
-      InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/genexpert-astm-v8.json")
+      InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/cepheid-genexpert-astm.json")
     ) {
       assertThat(input).isNotNull();
       return (ObjectNode) objectMapper.readTree(input);

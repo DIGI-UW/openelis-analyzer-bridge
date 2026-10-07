@@ -1,17 +1,21 @@
-# genexpert-astm, revision 8: evidence
+# cepheid-genexpert-astm, revision 1: evidence
 
 Every code, value and record the profile declares, with the document and section that defines
 it. A row with no vendor document is listed under "Not verified" and is not in the profile.
-Revision 8 is `src/main/resources/analyzer-profiles/genexpert-astm-v8.json` (contract 2.0).
+Revision 1 is `src/main/resources/analyzer-profiles/cepheid-genexpert-astm.json` (contract 2.0).
+It is the first baseline revision of this profile; the pre-baseline `genexpert-astm` revisions are
+not earlier versions of it (rule 6).
 
 ## Documents
 
-| Short name | Document                                                                                                         | Where                                                                                                                                   |
-| ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 301-2002   | Cepheid GeneXpert System Software LIS Interface Protocol Specification, 301-2002 Rev. E, December 2014           | `openelis-work/assets/vendor-manuals/genexpert-lis-protocol-spec.pdf`                                                                   |
-| 302-2261   | Cepheid GeneXpert LIS Interface Protocol Specification, 302-2261 Rev. C, September 2020                          | https://infomine.cepheid.com/sites/default/files/2021-10/LIS%20Protocol%20Specification%20302-2261%2C%20Rev.%20C.pdf                    |
-| 303-0251   | Cepheid Xpert HIV-1 Viral Load XC, Laboratory Information System Guidance, 303-0251 Rev. A, February 2023        | https://infomine.cepheid.com/sites/default/files/2023-05/303-0251%20Rev.%20A%20LIS%20Guidance%20Xpert%20HIV-1%20VL%20XC%20v3.pdf        |
-| 302-7279   | Cepheid Xpert Xpress CoV-2/Flu/RSV plus, Laboratory Information System Guidance, 302-7279 Rev. A, September 2021 | https://infomine.cepheid.com/sites/default/files/2021-10/LIS%20Guidance%20Bulletin%20CoV-2%20Flu%20RSV%20plus%20302-7279%20Rev.%20A.pdf |
+| Short name | Document                                                                                                         | Where                                                                                                                                        |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 301-2002   | Cepheid GeneXpert System Software LIS Interface Protocol Specification, 301-2002 Rev. E, December 2014           | `openelis-work/assets/vendor-manuals/genexpert-lis-protocol-spec.pdf`                                                                        |
+| 302-2261   | Cepheid GeneXpert LIS Interface Protocol Specification, 302-2261 Rev. C, September 2020                          | https://infomine.cepheid.com/sites/default/files/2021-10/LIS%20Protocol%20Specification%20302-2261%2C%20Rev.%20C.pdf                         |
+| 303-0251   | Cepheid Xpert HIV-1 Viral Load XC, Laboratory Information System Guidance, 303-0251 Rev. A, February 2023        | https://infomine.cepheid.com/sites/default/files/2023-05/303-0251%20Rev.%20A%20LIS%20Guidance%20Xpert%20HIV-1%20VL%20XC%20v3.pdf             |
+| 302-7279   | Cepheid Xpert Xpress CoV-2/Flu/RSV plus, Laboratory Information System Guidance, 302-7279 Rev. A, September 2021 | https://infomine.cepheid.com/sites/default/files/2021-10/LIS%20Guidance%20Bulletin%20CoV-2%20Flu%20RSV%20plus%20302-7279%20Rev.%20A.pdf      |
+| 303-3083   | Cepheid Xpert Xpress CoV-2 plus (US-IVD), Laboratory Information System Guidance, 303-3083 Rev. A, January 2024  | https://cepheid.com/content/dam/www-cepheid-com/documents/documents/303-3083%20Rev%20A%20LIS%20Guidance%20Xpress%20CoV-2%20plus%20US-IVD.pdf |
+| LIVD       | CDC LIVD SARS-CoV-2 test code mapping, published 2026-07-21, "LOINC Mapping" sheet                               | https://www.cdc.gov/laboratory-systems/php/livd-test-codemapping/index.html                                                                  |
 
 The example messages in 303-0251 section 2.1.1 and 302-7279 section 6 are in
 `src/test/resources/cepheid-examples/`; `GeneXpertBaselineProfileTest` replays all of them.
@@ -25,14 +29,18 @@ instrument (303-0251 section 1, 302-7279 section 2), so a connection may overrid
 | ------------ | ------------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------- |
 | `HIVVL`      | Xpert HIV-1 Viral Load XC, ADF version 3               | 303-0251 section 1 (host test code `HIVVL`)                            | 20447-9 (303-0251 does not give one; LOINC database)              | quantitative, with a call |
 | `SARSCOV2`   | Xpress SARS-CoV-2_Flu_RSV plus and SARS-CoV-2_Flu plus | 302-7279 section 2 (result code `SARSCOV2`)                            | 94500-6 (302-7279 section 3 gives it for the single-result assay) | qualitative               |
-| `FLUA`       | the same two panels                                    | 302-7279 section 2 (result code `FLUA`)                                | 92142-9 (LOINC database)                                          | qualitative               |
-| `FLUB`       | the same two panels                                    | 302-7279 section 2 (result code `FLUB`)                                | 92141-1 (LOINC database)                                          | qualitative               |
-| `RSV`        | Xpress SARS-CoV-2_Flu_RSV plus                         | 302-7279 section 2 (result code `RSV`)                                 | 92131-2 (LOINC database)                                          | qualitative               |
+| `FLUA`       | the same two panels                                    | 302-7279 section 2 (result code `FLUA`)                                | 85477-8 (LIVD, CoV-2/Flu/RSV plus)                                | qualitative               |
+| `FLUB`       | the same two panels                                    | 302-7279 section 2 (result code `FLUB`)                                | 85478-6 (LIVD, CoV-2/Flu/RSV plus)                                | qualitative               |
+| `RSV`        | Xpress SARS-CoV-2_Flu_RSV plus                         | 302-7279 section 2 (result code `RSV`)                                 | 85479-4 (LIVD, CoV-2/Flu/RSV plus)                                | qualitative               |
 | `SARSCOV2_3` | Xpress SARS-CoV-2 plus (single result)                 | 302-7279 section 2 (host test code `SARSCOV2_3`, also the upload code) | 94500-6 (302-7279 section 3)                                      | qualitative               |
 | `MTB`        | Xpert MTB/RIF, panel `MTBRIF`                          | 302-2261 appendix A (result code `MTB`)                                | 85362-2 (LOINC database)                                          | text                      |
 | `RIF`        | Xpert MTB/RIF, panel `MTBRIF`                          | 302-2261 appendix A (result code `RIF`)                                | 89372-7 (LOINC database)                                          | text                      |
 
-LOINC codes were checked against the NLM LOINC service on 2026-10-06. A vendor does not own a
+LOINC codes were checked against the NLM LOINC service on 2026-10-06. 302-7279 section 3 suggests
+only panel codes (95941-1 for the CoV-2/Flu/RSV plus panel, 95422-2 for the Flu plus panel, 94500-6
+for Xpress SARS-CoV-2 plus), so the Flu A, Flu B and RSV codes are LIVD's for this assay, all "in
+Upper respiratory specimen by NAA with probe detection". The earlier 92142-9, 92141-1 and 92131-2
+are LIVD's codes for the older, non-plus Xpert Xpress SARS-CoV-2/Flu/RSV. A vendor does not own a
 LOINC code; where the vendor document gives none, the code is the standard one for the analyte.
 
 The two panel assays send the same result codes under their own assay names (302-7279 section
@@ -41,14 +49,14 @@ OpenELIS as the instrument sent it.
 
 ## Values
 
-| Value                                                     | Where it is defined                                                | Standard codings                                                                                                                                             |
-| --------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DETECTED`, `NOT DETECTED`, `INVALID` (HIV-1 main result) | 303-0251 section 1, 2.1.1                                          | `DETECTED` LOINC LA11882-0, SNOMED 260373001, CIEL 1301; `NOT DETECTED` LOINC LA11883-8, SNOMED 260415000, CIEL 1302; `INVALID` LOINC LA15841-2, CIEL 163611 |
-| `POSITIVE`, `NEGATIVE`, `INVALID` (panel main results)    | 302-7279 section 7                                                 | `POSITIVE` LOINC LA6576-8, SNOMED 10828004, CIEL 703; `NEGATIVE` LOINC LA6577-6, SNOMED 260385009, CIEL 664; `INVALID` as above                              |
-| `POS`, `NEG`, `INVALID` (analyte calls)                   | 303-0251 2.1.1, 302-7279 section 6                                 | as `POSITIVE`, `NEGATIVE`, `INVALID`                                                                                                                         |
-| `PASS`, `FAIL`, `NA` (internal controls)                  | 303-0251 2.1.1 (`PASS`, `FAIL`), 302-7279 section 6 (`PASS`, `NA`) | none cited                                                                                                                                                   |
-| `ERROR`, `NO RESULT`                                      | 303-0251 section 1, 302-7279 section 7                             | run failures, not answers                                                                                                                                    |
-| `NO RESULT - REPEAT TEST`                                 | 302-7279 section 6.1.1.9                                           | run failure                                                                                                                                                  |
+| Value                                                     | Where it is defined                                                                                                                     | Standard codings                                                                                                                                                                             |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DETECTED`, `NOT DETECTED`, `INVALID` (HIV-1 main result) | 303-0251 section 1, 2.1.1                                                                                                               | `DETECTED` LOINC LA11882-0, SNOMED 260373001, CIEL 1301; `NOT DETECTED` LOINC LA11883-8, SNOMED 260415000, CIEL 1302; `INVALID` LOINC LA15841-2, CIEL 163611                                 |
+| `POSITIVE`, `NEGATIVE`, `INVALID` (panel main results)    | 302-7279 section 7                                                                                                                      | `POSITIVE` LOINC LA6576-8, SNOMED 10828004, CIEL 703; `NEGATIVE` LOINC LA6577-6, SNOMED 260385009, CIEL 664; `INVALID` as above                                                              |
+| `POS`, `NEG`, `INVALID` (analyte calls)                   | 303-0251 2.1.1, 302-7279 section 6                                                                                                      | as `POSITIVE`, `NEGATIVE`, `INVALID`                                                                                                                                                         |
+| `PASS`, `FAIL`, `NA` (internal controls)                  | 303-0251 2.1.1 (`PASS`, `FAIL`, `NO RESULT`), 302-7279 section 6 (`PASS`, `NA`), 303-3083 section 3 (`PASS`, `NA`, `FAIL`, `NO RESULT`) | `PASS` LOINC LA10392-1, `FAIL` LOINC LA25389-0 (answer list LL3837-3 of 90101-7 "Internal control result"); `NA` SNOMED 385432009 "Not applicable"; `NO RESULT` is the controls' run failure |
+| `ERROR`, `NO RESULT`                                      | 303-0251 section 1, 302-7279 section 7                                                                                                  | run failures, not answers                                                                                                                                                                    |
+| `NO RESULT - REPEAT TEST`                                 | 302-7279 section 6.1.1.9                                                                                                                | run failure                                                                                                                                                                                  |
 
 The LOINC and SNOMED codings were read from the LOINC answer lists LL744-4 and LL2021-5 through
 the NLM LOINC service and the CIEL release of 28 April 2026 (2026-10-05). `ERROR` and `NO RESULT`

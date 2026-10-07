@@ -2,7 +2,7 @@
   "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
   "schemaVersion": "2.0",
   "profileMeta": {
-    "id": "fluorocycler-xt",
+    "id": "hain-fluorocycler-xt",
     "version": "5.0.0",
     "displayName": "Bruker FluoroCycler XT",
     "confidence": "MEDIUM_HIGH"
@@ -20,11 +20,7 @@
     "outboundOrders": false,
     "connectionTest": true
   },
-  "supported_extensions": [
-    ".ods",
-    ".xlsx",
-    ".xls"
-  ],
+  "supported_extensions": [".ods", ".xlsx", ".xls"],
   "column_mapping": {
     "Sample ID": "sampleId",
     "SampleID": "sampleId",
@@ -37,10 +33,7 @@
     "testCode": "testCode",
     "WellPosition": "position"
   },
-  "result_value_order": [
-    "result",
-    "interpretation"
-  ],
+  "result_value_order": ["result", "interpretation"],
   "default_test_mappings": [
     {
       "test_code": "VIH-1",
@@ -48,12 +41,7 @@
       "unit": "copies/mL",
       "result_type": "quantitative",
       "test_name_hint": "HIV-1 viral load",
-      "values": [
-        "DETECTED",
-        "NOT DETECTED",
-        "INVALID",
-        "INDETERMINATE"
-      ],
+      "values": ["DETECTED", "NOT DETECTED", "INVALID", "INDETERMINATE"],
       "value_codes": {
         "DETECTED": [
           {
@@ -183,12 +171,12 @@
     }
   },
   "catalog": {
-    "revision": 5,
+    "revision": 1,
     "recognitionFingerprint": "sha256:5c0de42e1135b772b23e4c1ea04b0162b30fe36fc08ecef76a70108ba031be26",
     "source": "SHIPPED",
     "status": "ACTIVE",
     "publishedAt": "2026-10-06T00:00:00Z",
     "publishedBy": "distribution",
-    "revisionFingerprint": "sha256:fd06b67461df011ee085187a78d4c94b829fce7256aad6c14e35929198eb9c9d"
+    "revisionFingerprint": "sha256:5989781fabb39c7e405f6f1427823af5f9a40bfd0721abf470fda8f95551f4f7"
   }
 }

@@ -2,7 +2,7 @@
   "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
   "schemaVersion": "2.0",
   "profileMeta": {
-    "id": "genexpert-astm",
+    "id": "cepheid-genexpert-astm",
     "version": "3.0.0",
     "displayName": "Cepheid GeneXpert (ASTM Mode)",
     "confidence": "HIGH"
@@ -17,10 +17,7 @@
     "lowerLayerVersion": "LIS01_A"
   },
   "identifier_pattern": "GENEXPERT|CEPHEID",
-  "transport": [
-    "RS-232",
-    "TCP/IP"
-  ],
+  "transport": ["RS-232", "TCP/IP"],
   "transport_config": {
     "RS-232": {
       "default_baud_rate": 9600,
@@ -53,11 +50,7 @@
       "unit": "copies/mL",
       "result_type": "quantitative",
       "test_name_hint": "HIV-1 viral load",
-      "values": [
-        "DETECTED",
-        "NOT DETECTED",
-        "INVALID"
-      ],
+      "values": ["DETECTED", "NOT DETECTED", "INVALID"],
       "value_codes": {
         "DETECTED": [
           {
@@ -144,10 +137,7 @@
         ]
       },
       "call_component": "call",
-      "run_failure_values": [
-        "ERROR",
-        "NO RESULT"
-      ],
+      "run_failure_values": ["ERROR", "NO RESULT"],
       "components": [
         {
           "code": "call",
@@ -166,14 +156,8 @@
           "label": "HIV-1",
           "result_type": "qualitative",
           "sub_identity": "HIV-1",
-          "values": [
-            "POS",
-            "NEG",
-            "INVALID"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["POS", "NEG", "INVALID"],
+          "run_failure_values": ["NO RESULT"],
           "value_codes": {
             "POS": [
               {
@@ -257,13 +241,8 @@
           "label": "IQS-H",
           "result_type": "qualitative",
           "sub_identity": "IQS-H",
-          "values": [
-            "PASS",
-            "FAIL"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["PASS", "FAIL"],
+          "run_failure_values": ["NO RESULT"],
           "translations": {
             "NO RESULT": [
               "PAS DE RÉSULTAT",
@@ -273,6 +252,20 @@
               "SEM RESULTADO",
               "НЕТ РЕЗУЛЬТАТА",
               "НЕМАЄ РЕЗУЛЬТАТУ"
+            ]
+          },
+          "value_codes": {
+            "PASS": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA10392-1"
+              }
+            ],
+            "FAIL": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA25389-0"
+              }
             ]
           }
         },
@@ -293,13 +286,8 @@
           "label": "IQS-L",
           "result_type": "qualitative",
           "sub_identity": "IQS-L",
-          "values": [
-            "PASS",
-            "FAIL"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["PASS", "FAIL"],
+          "run_failure_values": ["NO RESULT"],
           "translations": {
             "NO RESULT": [
               "PAS DE RÉSULTAT",
@@ -309,6 +297,20 @@
               "SEM RESULTADO",
               "НЕТ РЕЗУЛЬТАТА",
               "НЕМАЄ РЕЗУЛЬТАТУ"
+            ]
+          },
+          "value_codes": {
+            "PASS": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA10392-1"
+              }
+            ],
+            "FAIL": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA25389-0"
+              }
             ]
           }
         },
@@ -339,11 +341,7 @@
       "loinc": "94500-6",
       "result_type": "qualitative",
       "test_name_hint": "SARS-CoV-2",
-      "values": [
-        "POSITIVE",
-        "NEGATIVE",
-        "INVALID"
-      ],
+      "values": ["POSITIVE", "NEGATIVE", "INVALID"],
       "value_codes": {
         "POSITIVE": [
           {
@@ -425,25 +423,15 @@
           "НЕМАЄ РЕЗУЛЬТАТУ"
         ]
       },
-      "run_failure_values": [
-        "ERROR",
-        "NO RESULT",
-        "NO RESULT - REPEAT TEST"
-      ],
+      "run_failure_values": ["ERROR", "NO RESULT", "NO RESULT - REPEAT TEST"],
       "components": [
         {
           "code": "SARS-CoV-2",
           "label": "SARS-CoV-2",
           "result_type": "qualitative",
           "sub_identity": "SARS-CoV-2",
-          "values": [
-            "POS",
-            "NEG",
-            "INVALID"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["POS", "NEG", "INVALID"],
+          "run_failure_values": ["NO RESULT"],
           "value_codes": {
             "POS": [
               {
@@ -521,14 +509,8 @@
           "label": "Sample processing control",
           "result_type": "qualitative",
           "sub_identity": "SPC",
-          "values": [
-            "PASS",
-            "FAIL",
-            "NA"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["PASS", "FAIL", "NA"],
+          "run_failure_values": ["NO RESULT"],
           "translations": {
             "NO RESULT": [
               "PAS DE RÉSULTAT",
@@ -538,6 +520,26 @@
               "SEM RESULTADO",
               "НЕТ РЕЗУЛЬТАТА",
               "НЕМАЄ РЕЗУЛЬТАТУ"
+            ]
+          },
+          "value_codes": {
+            "PASS": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA10392-1"
+              }
+            ],
+            "FAIL": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA25389-0"
+              }
+            ],
+            "NA": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "385432009"
+              }
             ]
           }
         },
@@ -559,20 +561,16 @@
         "version": "1"
       },
       "source": {
-        "document": "Cepheid 302-7279 Rev. A",
-        "section": "2 Suggested Assay Host Test Codes; 3 Suggested LOINC Codes; 6 Example Messages; 7 Observation Language Translations Table"
+        "document": "Cepheid 302-7279 Rev. A; Cepheid 303-3083 Rev. A",
+        "section": "2 Suggested Assay Host Test Codes; 3 Suggested LOINC Codes; 6 Example Messages; 7 Observation Language Translations Table; 303-3083 3 Example Messages (SPC values, NO RESULT)"
       }
     },
     {
       "test_code": "FLUA",
-      "loinc": "92142-9",
+      "loinc": "85477-8",
       "result_type": "qualitative",
       "test_name_hint": "Influenza A",
-      "values": [
-        "POSITIVE",
-        "NEGATIVE",
-        "INVALID"
-      ],
+      "values": ["POSITIVE", "NEGATIVE", "INVALID"],
       "value_codes": {
         "POSITIVE": [
           {
@@ -654,25 +652,15 @@
           "НЕМАЄ РЕЗУЛЬТАТУ"
         ]
       },
-      "run_failure_values": [
-        "ERROR",
-        "NO RESULT",
-        "NO RESULT - REPEAT TEST"
-      ],
+      "run_failure_values": ["ERROR", "NO RESULT", "NO RESULT - REPEAT TEST"],
       "components": [
         {
           "code": "Flu A 1",
           "label": "Flu A 1",
           "result_type": "qualitative",
           "sub_identity": "Flu A 1",
-          "values": [
-            "POS",
-            "NEG",
-            "INVALID"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["POS", "NEG", "INVALID"],
+          "run_failure_values": ["NO RESULT"],
           "value_codes": {
             "POS": [
               {
@@ -750,14 +738,8 @@
           "label": "Flu A 2",
           "result_type": "qualitative",
           "sub_identity": "Flu A 2",
-          "values": [
-            "POS",
-            "NEG",
-            "INVALID"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["POS", "NEG", "INVALID"],
+          "run_failure_values": ["NO RESULT"],
           "value_codes": {
             "POS": [
               {
@@ -835,14 +817,8 @@
           "label": "Sample processing control",
           "result_type": "qualitative",
           "sub_identity": "SPC",
-          "values": [
-            "PASS",
-            "FAIL",
-            "NA"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["PASS", "FAIL", "NA"],
+          "run_failure_values": ["NO RESULT"],
           "translations": {
             "NO RESULT": [
               "PAS DE RÉSULTAT",
@@ -852,6 +828,26 @@
               "SEM RESULTADO",
               "НЕТ РЕЗУЛЬТАТА",
               "НЕМАЄ РЕЗУЛЬТАТУ"
+            ]
+          },
+          "value_codes": {
+            "PASS": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA10392-1"
+              }
+            ],
+            "FAIL": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA25389-0"
+              }
+            ],
+            "NA": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "385432009"
+              }
             ]
           }
         },
@@ -873,20 +869,16 @@
         "version": "1"
       },
       "source": {
-        "document": "Cepheid 302-7279 Rev. A",
-        "section": "2 Suggested Assay Host Test Codes; 3 Suggested LOINC Codes; 6 Example Messages; 7 Observation Language Translations Table"
+        "document": "Cepheid 302-7279 Rev. A; CDC LIVD SARS-CoV-2 test code mapping 2026-07-21; Cepheid 303-3083 Rev. A",
+        "section": "2 Suggested Assay Host Test Codes; 6 Example Messages; 7 Observation Language Translations Table; LOINC Mapping sheet, Cepheid Xpert Xpress CoV-2/Flu/RSV plus (test LOINC; 302-7279 section 3 suggests only the panel code 95941-1); 303-3083 3 Example Messages (SPC values, NO RESULT)"
       }
     },
     {
       "test_code": "FLUB",
-      "loinc": "92141-1",
+      "loinc": "85478-6",
       "result_type": "qualitative",
       "test_name_hint": "Influenza B",
-      "values": [
-        "POSITIVE",
-        "NEGATIVE",
-        "INVALID"
-      ],
+      "values": ["POSITIVE", "NEGATIVE", "INVALID"],
       "value_codes": {
         "POSITIVE": [
           {
@@ -968,25 +960,15 @@
           "НЕМАЄ РЕЗУЛЬТАТУ"
         ]
       },
-      "run_failure_values": [
-        "ERROR",
-        "NO RESULT",
-        "NO RESULT - REPEAT TEST"
-      ],
+      "run_failure_values": ["ERROR", "NO RESULT", "NO RESULT - REPEAT TEST"],
       "components": [
         {
           "code": "Flu B",
           "label": "Flu B",
           "result_type": "qualitative",
           "sub_identity": "Flu B",
-          "values": [
-            "POS",
-            "NEG",
-            "INVALID"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["POS", "NEG", "INVALID"],
+          "run_failure_values": ["NO RESULT"],
           "value_codes": {
             "POS": [
               {
@@ -1064,14 +1046,8 @@
           "label": "Sample processing control",
           "result_type": "qualitative",
           "sub_identity": "SPC",
-          "values": [
-            "PASS",
-            "FAIL",
-            "NA"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["PASS", "FAIL", "NA"],
+          "run_failure_values": ["NO RESULT"],
           "translations": {
             "NO RESULT": [
               "PAS DE RÉSULTAT",
@@ -1081,6 +1057,26 @@
               "SEM RESULTADO",
               "НЕТ РЕЗУЛЬТАТА",
               "НЕМАЄ РЕЗУЛЬТАТУ"
+            ]
+          },
+          "value_codes": {
+            "PASS": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA10392-1"
+              }
+            ],
+            "FAIL": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA25389-0"
+              }
+            ],
+            "NA": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "385432009"
+              }
             ]
           }
         },
@@ -1102,20 +1098,16 @@
         "version": "1"
       },
       "source": {
-        "document": "Cepheid 302-7279 Rev. A",
-        "section": "2 Suggested Assay Host Test Codes; 3 Suggested LOINC Codes; 6 Example Messages; 7 Observation Language Translations Table"
+        "document": "Cepheid 302-7279 Rev. A; CDC LIVD SARS-CoV-2 test code mapping 2026-07-21; Cepheid 303-3083 Rev. A",
+        "section": "2 Suggested Assay Host Test Codes; 6 Example Messages; 7 Observation Language Translations Table; LOINC Mapping sheet, Cepheid Xpert Xpress CoV-2/Flu/RSV plus (test LOINC; 302-7279 section 3 suggests only the panel code 95941-1); 303-3083 3 Example Messages (SPC values, NO RESULT)"
       }
     },
     {
       "test_code": "RSV",
-      "loinc": "92131-2",
+      "loinc": "85479-4",
       "result_type": "qualitative",
       "test_name_hint": "RSV",
-      "values": [
-        "POSITIVE",
-        "NEGATIVE",
-        "INVALID"
-      ],
+      "values": ["POSITIVE", "NEGATIVE", "INVALID"],
       "value_codes": {
         "POSITIVE": [
           {
@@ -1197,25 +1189,15 @@
           "НЕМАЄ РЕЗУЛЬТАТУ"
         ]
       },
-      "run_failure_values": [
-        "ERROR",
-        "NO RESULT",
-        "NO RESULT - REPEAT TEST"
-      ],
+      "run_failure_values": ["ERROR", "NO RESULT", "NO RESULT - REPEAT TEST"],
       "components": [
         {
           "code": "RSV",
           "label": "RSV",
           "result_type": "qualitative",
           "sub_identity": "RSV",
-          "values": [
-            "POS",
-            "NEG",
-            "INVALID"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["POS", "NEG", "INVALID"],
+          "run_failure_values": ["NO RESULT"],
           "value_codes": {
             "POS": [
               {
@@ -1293,14 +1275,8 @@
           "label": "Sample processing control",
           "result_type": "qualitative",
           "sub_identity": "SPC",
-          "values": [
-            "PASS",
-            "FAIL",
-            "NA"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["PASS", "FAIL", "NA"],
+          "run_failure_values": ["NO RESULT"],
           "translations": {
             "NO RESULT": [
               "PAS DE RÉSULTAT",
@@ -1310,6 +1286,26 @@
               "SEM RESULTADO",
               "НЕТ РЕЗУЛЬТАТА",
               "НЕМАЄ РЕЗУЛЬТАТУ"
+            ]
+          },
+          "value_codes": {
+            "PASS": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA10392-1"
+              }
+            ],
+            "FAIL": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA25389-0"
+              }
+            ],
+            "NA": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "385432009"
+              }
             ]
           }
         },
@@ -1331,8 +1327,8 @@
         "version": "1"
       },
       "source": {
-        "document": "Cepheid 302-7279 Rev. A",
-        "section": "2 Suggested Assay Host Test Codes; 3 Suggested LOINC Codes; 6 Example Messages; 7 Observation Language Translations Table"
+        "document": "Cepheid 302-7279 Rev. A; CDC LIVD SARS-CoV-2 test code mapping 2026-07-21; Cepheid 303-3083 Rev. A",
+        "section": "2 Suggested Assay Host Test Codes; 6 Example Messages; 7 Observation Language Translations Table; LOINC Mapping sheet, Cepheid Xpert Xpress CoV-2/Flu/RSV plus (test LOINC; 302-7279 section 3 suggests only the panel code 95941-1); 303-3083 3 Example Messages (SPC values, NO RESULT)"
       }
     },
     {
@@ -1340,11 +1336,7 @@
       "loinc": "94500-6",
       "result_type": "qualitative",
       "test_name_hint": "SARS-CoV-2 (single-result assay)",
-      "values": [
-        "POSITIVE",
-        "NEGATIVE",
-        "INVALID"
-      ],
+      "values": ["POSITIVE", "NEGATIVE", "INVALID"],
       "value_codes": {
         "POSITIVE": [
           {
@@ -1426,25 +1418,15 @@
           "НЕМАЄ РЕЗУЛЬТАТУ"
         ]
       },
-      "run_failure_values": [
-        "ERROR",
-        "NO RESULT",
-        "NO RESULT - REPEAT TEST"
-      ],
+      "run_failure_values": ["ERROR", "NO RESULT", "NO RESULT - REPEAT TEST"],
       "components": [
         {
           "code": "SARS-CoV-2",
           "label": "SARS-CoV-2",
           "result_type": "qualitative",
           "sub_identity": "SARS-CoV-2",
-          "values": [
-            "POS",
-            "NEG",
-            "INVALID"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["POS", "NEG", "INVALID"],
+          "run_failure_values": ["NO RESULT"],
           "value_codes": {
             "POS": [
               {
@@ -1522,14 +1504,8 @@
           "label": "Sample processing control",
           "result_type": "qualitative",
           "sub_identity": "SPC",
-          "values": [
-            "PASS",
-            "FAIL",
-            "NA"
-          ],
-          "run_failure_values": [
-            "NO RESULT"
-          ],
+          "values": ["PASS", "FAIL", "NA"],
+          "run_failure_values": ["NO RESULT"],
           "translations": {
             "NO RESULT": [
               "PAS DE RÉSULTAT",
@@ -1539,6 +1515,26 @@
               "SEM RESULTADO",
               "НЕТ РЕЗУЛЬТАТА",
               "НЕМАЄ РЕЗУЛЬТАТУ"
+            ]
+          },
+          "value_codes": {
+            "PASS": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA10392-1"
+              }
+            ],
+            "FAIL": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA25389-0"
+              }
+            ],
+            "NA": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "385432009"
+              }
             ]
           }
         },
@@ -1560,8 +1556,8 @@
         "version": "1"
       },
       "source": {
-        "document": "Cepheid 302-7279 Rev. A",
-        "section": "2 Suggested Assay Host Test Codes; 3 Suggested LOINC Codes; 6 Example Messages; 7 Observation Language Translations Table"
+        "document": "Cepheid 302-7279 Rev. A; Cepheid 303-3083 Rev. A",
+        "section": "2 Suggested Assay Host Test Codes; 3 Suggested LOINC Codes; 6 Example Messages; 7 Observation Language Translations Table; 303-3083 3 Example Messages (SPC values, NO RESULT)"
       }
     },
     {
@@ -1752,12 +1748,12 @@
     }
   },
   "catalog": {
-    "revision": 8,
+    "revision": 1,
     "recognitionFingerprint": "sha256:68a4cf6c695d3a23662a7a5dc97983bbc78e38726f932517d09238d47aad701e",
     "source": "SHIPPED",
     "status": "ACTIVE",
     "publishedAt": "2026-10-06T00:00:00Z",
     "publishedBy": "distribution",
-    "revisionFingerprint": "sha256:47d8857b028c36ac65959e33100f9db7afe23fac3841bd96543174e6b845f2be"
+    "revisionFingerprint": "sha256:1e2d53f6b797b25dbcd3c6947c5924ec1176b70b5dec2846fda691a6e74550ea"
   }
 }
