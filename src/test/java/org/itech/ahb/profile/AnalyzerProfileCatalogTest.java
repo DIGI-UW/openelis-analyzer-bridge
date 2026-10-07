@@ -373,17 +373,20 @@ class AnalyzerProfileCatalogTest {
     ObjectNode tampered = publishedFixture("analyzer-profile-file.json");
     ((ObjectNode) tampered.path("profileMeta")).put("displayName", "Changed after publication");
 
-    assertThatThrownBy(
-      () ->
-        new AnalyzerProfileCatalog(
-          catalogDirectory,
-          List.of(resource(tampered, "tampered.json")),
-          objectMapper,
-          Clock.fixed(NOW, ZoneOffset.UTC)
-        )
-    )
-      .isInstanceOf(ProfileCatalogException.class)
-      .hasMessageContaining("revision fingerprint mismatch");
+    AnalyzerProfileCatalog loaded = new AnalyzerProfileCatalog(
+      catalogDirectory,
+      List.of(resource(tampered, "tampered.json")),
+      objectMapper,
+      Clock.fixed(NOW, ZoneOffset.UTC)
+    );
+
+    assertThat(loaded.latest()).as("a tampered revision is never served").isEmpty();
+    assertThat(loaded.issues())
+      .singleElement()
+      .satisfies(issue -> {
+        assertThat(issue.source()).isNotBlank();
+        assertThat(issue.reason()).contains("revision fingerprint mismatch");
+      });
   }
 
   @Test

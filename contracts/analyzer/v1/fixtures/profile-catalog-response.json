@@ -158,5 +158,11 @@
         ]
       }
     }
+  ],
+  "issues": [
+    {
+      "source": "file [/app/analyzer-profiles/broken.json]",
+      "reason": "Cannot load shipped profile: Unexpected character"
+    }
   ]
 }

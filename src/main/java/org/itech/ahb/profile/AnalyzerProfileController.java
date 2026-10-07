@@ -27,7 +27,7 @@ public class AnalyzerProfileController {
 
   @GetMapping
   public ProfileCatalogResponse list() {
-    return new ProfileCatalogResponse("1.0", catalog.catalogFingerprint(), catalog.latest());
+    return new ProfileCatalogResponse("1.0", catalog.catalogFingerprint(), catalog.latest(), catalog.issues());
   }
 
   @GetMapping("/drafts")
@@ -67,11 +67,7 @@ public class AnalyzerProfileController {
     requireRequest(request);
     return catalog.updateControlRecognition(
       draftId,
-      new ControlRecognitionAuthoring.Update(
-        request.mode(),
-        request.affirmedNoControlResults(),
-        request.conditions()
-      ),
+      new ControlRecognitionAuthoring.Update(request.mode(), request.affirmedNoControlResults(), request.conditions()),
       request.actor()
     );
   }
@@ -145,7 +141,8 @@ public class AnalyzerProfileController {
   public record ProfileCatalogResponse(
     String schemaVersion,
     String catalogFingerprint,
-    List<ProfileRevision> profiles
+    List<ProfileRevision> profiles,
+    List<AnalyzerProfileCatalog.CatalogIssue> issues
   ) {}
 
   public record CreateDraftRequest(String actor, String displayName) {}

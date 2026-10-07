@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -15,9 +16,11 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 
 /** Catalog of editable drafts and immutable revisions using the established profile contract. */
+@Slf4j
 public final class AnalyzerProfileCatalog {
 
   private static final String PROFILE_SCHEMA =
@@ -46,6 +49,10 @@ public final class AnalyzerProfileCatalog {
   private final ControlRecognitionAuthoring controlRecognitionAuthoring;
   private final Map<String, TreeMap<Integer, ProfileRevision>> revisions = new TreeMap<>();
   private final Map<String, ProfileDraft> drafts = new TreeMap<>();
+  private final List<CatalogIssue> issues = new ArrayList<>();
+
+  /** A file or condition the catalog set aside when it loaded, and why. */
+  public record CatalogIssue(String source, String reason) {}
 
   public AnalyzerProfileCatalog(
     Path catalogDirectory,
@@ -72,7 +79,12 @@ public final class AnalyzerProfileCatalog {
     loadShipped(shippedProfiles);
     loadPersistedRevisions();
     loadPersistedDrafts();
-    validateUniqueLatestDisplayNames();
+    reportDuplicateLatestDisplayNames();
+  }
+
+  /** What the catalog set aside when it loaded; every other profile and draft is served. */
+  public synchronized List<CatalogIssue> issues() {
+    return List.copyOf(issues);
   }
 
   public synchronized ProfileDraft createDraft(String displayName, String actor) {
@@ -391,6 +403,16 @@ public final class AnalyzerProfileCatalog {
   private void loadShipped(List<Resource> shippedProfiles) {
     for (Resource resource : shippedProfiles) {
       try {
+        loadShipped(resource);
+      } catch (RuntimeException exception) {
+        setAside(resource.getDescription(), exception);
+      }
+    }
+  }
+
+  private void loadShipped(Resource resource) {
+    {
+      try {
         ObjectNode profile = requireObject(
           objectMapper.readTree(resource.getInputStream()),
           "Shipped profile " + resource.getDescription()
@@ -417,7 +439,33 @@ public final class AnalyzerProfileCatalog {
   }
 
   private void loadPersistedRevisions() {
-    store.revisionDocuments().forEach(this::loadPersistedRevision);
+    loadEach(store::revisionPaths, path -> loadPersistedRevision(store.readDocument(path)));
+  }
+
+  private void loadEach(Supplier<List<Path>> paths, java.util.function.Consumer<Path> load) {
+    List<Path> found;
+    try {
+      found = paths.get();
+    } catch (RuntimeException exception) {
+      setAside("profile catalog directory", exception);
+      return;
+    }
+    for (Path path : found) {
+      try {
+        load.accept(path);
+      } catch (RuntimeException exception) {
+        setAside(path.toString(), exception);
+      }
+    }
+  }
+
+  private void setAside(String source, RuntimeException exception) {
+    StringBuilder reason = new StringBuilder(String.valueOf(exception.getMessage()));
+    for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+      reason.append(": ").append(cause.getMessage());
+    }
+    issues.add(new CatalogIssue(source, reason.toString()));
+    log.warn("Profile catalog set aside {}: {}", source, reason);
   }
 
   private void loadPersistedRevision(ProfileCatalogFileStore.StoredDocument stored) {
@@ -436,7 +484,7 @@ public final class AnalyzerProfileCatalog {
   }
 
   private void loadPersistedDrafts() {
-    store.draftDocuments().forEach(this::loadDraft);
+    loadEach(store::draftPaths, path -> loadDraft(store.readDocument(path)));
   }
 
   private void loadDraft(ProfileCatalogFileStore.StoredDocument stored) {
@@ -515,14 +563,23 @@ public final class AnalyzerProfileCatalog {
     }
   }
 
-  private void validateUniqueLatestDisplayNames() {
-    List<String> names = latest()
-      .stream()
-      .map(revision -> identityKey(revision.profile().path("profileMeta").path("displayName").asText()))
-      .toList();
-    if (names.stream().distinct().count() != names.size()) {
-      throw new ProfileCatalogException("Profile catalog contains duplicate displayName values");
+  /** Two profiles under one name stay loaded; the name is reported so one can be renamed. */
+  private void reportDuplicateLatestDisplayNames() {
+    Map<String, List<String>> idsByName = new TreeMap<>();
+    for (ProfileRevision revision : latest()) {
+      JsonNode meta = revision.profile().path("profileMeta");
+      idsByName
+        .computeIfAbsent(identityKey(meta.path("displayName").asText()), ignored -> new ArrayList<>())
+        .add(meta.path("id").asText());
     }
+    idsByName.forEach((name, ids) -> {
+      if (ids.size() > 1) {
+        setAside(
+          "displayName " + name,
+          new ProfileCatalogException("Profiles " + String.join(", ", ids) + " share this displayName")
+        );
+      }
+    });
   }
 
   private void add(ProfileRevision revision) {

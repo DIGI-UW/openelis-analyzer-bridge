@@ -17,15 +17,19 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.connection.AnalyzerConnectionException.Kind;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
 import org.itech.ahb.profile.ProfileFingerprintService;
 
 /** Durable, profile-pinned analyzer connections owned by Bridge. */
+@Slf4j
 public final class AnalyzerConnectionCatalog {
 
   private static final String SCHEMA_VERSION = "1.0";
@@ -39,6 +43,10 @@ public final class AnalyzerConnectionCatalog {
   private final ProfileFingerprintService fingerprints = new ProfileFingerprintService();
   private final Map<String, ObjectNode> connections = new HashMap<>();
   private final Map<String, String> connectionIdByClientAnalyzerId = new HashMap<>();
+  /** Saved connections that could not be loaded, by connection ID, with the reason. */
+  private final Map<String, String> setAside = new TreeMap<>();
+  /** Active connections that did not restore at startup, with the reason; cleared by the next activation. */
+  private final Map<String, String> restoreFailures = new TreeMap<>();
 
   public AnalyzerConnectionCatalog(
     Path directory,
@@ -176,15 +184,16 @@ public final class AnalyzerConnectionCatalog {
 
   public synchronized ObjectNode require(String connectionId) {
     ObjectNode record = requireRecord(connectionId);
-    ObjectNode profile = requirePinnedProfile((ObjectNode) record.path("profileRef"));
-    return view(record, profile);
+    return view(record, pinnedProfile(record).orElse(null));
   }
 
   /** Saved FILE ownership includes inactive connections; runtime registration is not ownership. */
   public synchronized java.util.List<FileDirectoryClaim> fileDirectoryClaims() {
     var claims = new ArrayList<FileDirectoryClaim>();
     for (ObjectNode record : connections.values()) {
-      ObjectNode profile = requirePinnedProfile((ObjectNode) record.path("profileRef"));
+      Optional<ObjectNode> pinned = pinnedProfile(record);
+      if (pinned.isEmpty()) continue;
+      ObjectNode profile = pinned.get();
       JsonNode values = record.path("values");
       if (
         !"FILE".equals(profile.path("protocol").path("name").asText()) ||
@@ -282,11 +291,17 @@ public final class AnalyzerConnectionCatalog {
       blocker.put("messageKey", "analyzer.connection.readiness.missingRequiredValues");
       return acknowledgement;
     }
-    if ("ACTIVE".equals(record.path("actualRuntimeState").asText()) && activeRuntimeMatchesConfiguration(record)) {
+    String connectionId = record.path("connectionId").asText();
+    if (
+      "ACTIVE".equals(record.path("actualRuntimeState").asText()) &&
+      activeRuntimeMatchesConfiguration(record) &&
+      !restoreFailures.containsKey(connectionId)
+    ) {
       return runtimeAcknowledgement(record, commandId, "ACTIVATE", "ALREADY_APPLIED");
     }
 
     runtime.activate(record.deepCopy(), profile.deepCopy());
+    restoreFailures.remove(connectionId);
     int runtimeRevision = record.path("runtimeRevision").asInt(1) + 1;
     String runtimeFingerprint = runtimeFingerprint(record, "ACTIVE", runtimeRevision);
     record.put("desiredRuntimeState", "ACTIVE");
@@ -370,24 +385,54 @@ public final class AnalyzerConnectionCatalog {
       .filter(record -> "ACTIVE".equals(record.path("actualRuntimeState").asText()))
       .sorted(Comparator.comparing(record -> record.path("connectionId").asText()))
       .forEach(record -> {
-        ObjectNode restored = record.deepCopy();
-        JsonNode configuration = record.path("activeRuntimeConfiguration");
-        if (configuration.isObject() && record.path("activeRuntimeRef").isObject()) {
-          restored.set("values", configuration.path("values").deepCopy());
-          restored.set("displayName", configuration.path("displayName").deepCopy());
-          ObjectNode active = (ObjectNode) record.path("activeRuntimeRef");
-          for (String key : List.of("profileRef", "configRevision", "configFingerprint")) {
-            restored.set(key, active.path(key).deepCopy());
-          }
-        } else if (!activeRuntimeMatchesConfiguration(record)) {
-          throw new AnalyzerConnectionException(
-            "Cannot restore active connection without its activated configuration: " +
-            record.path("connectionId").asText()
+        try {
+          restore(record);
+        } catch (RuntimeException exception) {
+          String connectionId = record.path("connectionId").asText();
+          String reason = reasonOf(exception);
+          restoreFailures.put(connectionId, reason);
+          log.warn(
+            "Bridge connection {} did not restore; it stays inactive until activated again: {}",
+            connectionId,
+            reason
           );
         }
-        ObjectNode profile = requirePinnedProfile((ObjectNode) restored.path("profileRef"));
-        runtime.restore(restored, profile.deepCopy());
       });
+  }
+
+  private void restore(ObjectNode record) {
+    ObjectNode restored = record.deepCopy();
+    JsonNode configuration = record.path("activeRuntimeConfiguration");
+    if (configuration.isObject() && record.path("activeRuntimeRef").isObject()) {
+      restored.set("values", configuration.path("values").deepCopy());
+      restored.set("displayName", configuration.path("displayName").deepCopy());
+      ObjectNode active = (ObjectNode) record.path("activeRuntimeRef");
+      for (String key : List.of("profileRef", "configRevision", "configFingerprint")) {
+        restored.set(key, active.path(key).deepCopy());
+      }
+    } else if (!activeRuntimeMatchesConfiguration(record)) {
+      throw new AnalyzerConnectionException(
+        "Cannot restore active connection without its activated configuration: " + record.path("connectionId").asText()
+      );
+    }
+    ObjectNode profile = requirePinnedProfile((ObjectNode) restored.path("profileRef"));
+    runtime.restore(restored, profile.deepCopy());
+  }
+
+  private Optional<ObjectNode> pinnedProfile(ObjectNode record) {
+    try {
+      return Optional.of(requirePinnedProfile((ObjectNode) record.path("profileRef")));
+    } catch (AnalyzerConnectionException exception) {
+      return Optional.empty();
+    }
+  }
+
+  private static String reasonOf(RuntimeException exception) {
+    StringBuilder reason = new StringBuilder(String.valueOf(exception.getMessage()));
+    for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+      reason.append(": ").append(cause.getMessage());
+    }
+    return reason.toString();
   }
 
   private ObjectNode runtimeConfiguration(ObjectNode record) {
@@ -398,6 +443,13 @@ public final class AnalyzerConnectionCatalog {
   }
 
   private ObjectNode requireRecord(String connectionId) {
+    String setAsideReason = setAside.get(connectionId);
+    if (setAsideReason != null) {
+      throw new AnalyzerConnectionException(
+        Kind.CONFLICT,
+        "Saved Bridge connection " + connectionId + " cannot be read: " + setAsideReason
+      );
+    }
     ObjectNode record = connections.get(connectionId);
     if (record == null) {
       throw new AnalyzerConnectionException(Kind.NOT_FOUND, "Unknown Bridge connection: " + connectionId);
@@ -486,14 +538,37 @@ public final class AnalyzerConnectionCatalog {
     response.set("profileRef", record.path("profileRef").deepCopy());
     copy(response, record, "configRevision");
     copy(response, record, "configFingerprint");
-    response.set("fields", fields(record, profile));
+    response.set("fields", profile == null ? objectMapper.createArrayNode() : fields(record, profile));
     if (record.path("values").has(CODE_OVERRIDES)) {
       response.set(CODE_OVERRIDES, record.path("values").path(CODE_OVERRIDES).deepCopy());
     }
-    ArrayList<String> missingFields = missingRequiredFields(record, profile);
+    String connectionId = record.path("connectionId").asText();
+    String restoreFailure = restoreFailures.get(connectionId);
+    ArrayList<String> missingFields = profile == null ? new ArrayList<>() : missingRequiredFields(record, profile);
     ObjectNode readiness = response.putObject("readiness");
-    readiness.put("ready", missingFields.isEmpty());
+    readiness.put("ready", profile != null && missingFields.isEmpty() && restoreFailure == null);
     ArrayNode blockers = readiness.putArray("blockers");
+    if (profile == null) {
+      ObjectNode blocker = blockers.addObject();
+      blocker.put("key", "profile-unavailable");
+      blocker.put("messageKey", "analyzer.connection.readiness.profileUnavailable");
+      blocker.putArray("fieldKeys");
+      JsonNode profileRef = record.path("profileRef");
+      blocker.put(
+        "detail",
+        profileRef.path("profileId").asText() +
+        "@" +
+        profileRef.path("revision").asInt() +
+        " is not in this Bridge's profile catalog with the pinned fingerprint"
+      );
+    }
+    if (restoreFailure != null) {
+      ObjectNode blocker = blockers.addObject();
+      blocker.put("key", "runtime-restore-failed");
+      blocker.put("messageKey", "analyzer.connection.readiness.restoreFailed");
+      blocker.putArray("fieldKeys");
+      blocker.put("detail", restoreFailure);
+    }
     if (!missingFields.isEmpty()) {
       ObjectNode blocker = blockers.addObject();
       blocker.put("key", "missing-required-values");
@@ -503,7 +578,11 @@ public final class AnalyzerConnectionCatalog {
     }
     response.set("latestProbe", record.path("latestProbe").deepCopy());
     copy(response, record, "desiredRuntimeState");
-    copy(response, record, "actualRuntimeState");
+    if (restoreFailure != null) {
+      response.put("actualRuntimeState", "ERROR");
+    } else {
+      copy(response, record, "actualRuntimeState");
+    }
     response.set("activeRuntimeRef", record.path("activeRuntimeRef").deepCopy());
     copy(response, record, "updatedAt");
     return response;
@@ -721,10 +800,21 @@ public final class AnalyzerConnectionCatalog {
         .filter(Files::isRegularFile)
         .filter(path -> path.getFileName().toString().endsWith(".json"))
         .sorted()
-        .map(this::read)
-        .forEach(this::add);
+        .forEach(this::load);
     } catch (IOException exception) {
       throw new AnalyzerConnectionException("Cannot scan Bridge connections " + directory, exception);
+    }
+  }
+
+  private void load(Path path) {
+    String fileName = path.getFileName().toString();
+    String connectionId = fileName.substring(0, fileName.length() - ".json".length());
+    try {
+      add(read(path));
+    } catch (RuntimeException exception) {
+      String reason = reasonOf(exception);
+      setAside.put(connectionId, reason);
+      log.warn("Saved Bridge connection {} was set aside: {}", connectionId, reason);
     }
   }
 
@@ -736,7 +826,7 @@ public final class AnalyzerConnectionCatalog {
       }
       requireText(object, "connectionId");
       requireText(object, "clientAnalyzerId");
-      requirePinnedProfile(requireObject(object, "profileRef"));
+      requireObject(object, "profileRef");
       requirePositiveInteger(object, "configRevision");
       requireObject(object, "values");
       return object;

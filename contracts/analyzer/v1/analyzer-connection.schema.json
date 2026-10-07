@@ -153,6 +153,11 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What set the item aside, for the operator."
         }
       }
     },

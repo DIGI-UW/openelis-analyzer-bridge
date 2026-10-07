@@ -26,7 +26,7 @@ final class ProfileCatalogFileStore {
     this.objectMapper = objectMapper;
   }
 
-  List<StoredDocument> revisionDocuments() {
+  List<Path> revisionPaths() {
     if (!Files.exists(catalogDirectory)) {
       return List.of();
     }
@@ -35,24 +35,18 @@ final class ProfileCatalogFileStore {
         .filter(Files::isRegularFile)
         .filter(path -> path.getFileName().toString().matches("[1-9][0-9]*\\.json"))
         .sorted()
-        .map(this::readDocument)
         .toList();
     } catch (IOException exception) {
       throw new ProfileCatalogException("Cannot scan profile catalog " + catalogDirectory, exception);
     }
   }
 
-  List<StoredDocument> draftDocuments() {
+  List<Path> draftPaths() {
     if (!Files.exists(draftDirectory)) {
       return List.of();
     }
     try (Stream<Path> files = Files.list(draftDirectory)) {
-      return files
-        .filter(Files::isRegularFile)
-        .filter(path -> path.toString().endsWith(".json"))
-        .sorted()
-        .map(this::readDocument)
-        .toList();
+      return files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".json")).sorted().toList();
     } catch (IOException exception) {
       throw new ProfileCatalogException("Cannot scan profile drafts " + draftDirectory, exception);
     }
@@ -107,7 +101,7 @@ final class ProfileCatalogFileStore {
     }
   }
 
-  private StoredDocument readDocument(Path path) {
+  StoredDocument readDocument(Path path) {
     try {
       JsonNode document = objectMapper.readTree(path.toFile());
       if (!(document instanceof ObjectNode object)) {
