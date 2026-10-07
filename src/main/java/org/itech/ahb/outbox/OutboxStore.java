@@ -128,7 +128,8 @@ public interface OutboxStore extends AutoCloseable {
 
   /**
    * Delete delivered and dismissed entries past their retention window, and any raw payload no entry
-   * references. Entries still in the dead-message queue are never purged.
+   * references. Entries still in the dead-message queue are never purged, and a null delivered
+   * retention keeps every delivered entry.
    *
    * @return how many entries were removed
    */

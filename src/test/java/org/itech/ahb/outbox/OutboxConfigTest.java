@@ -16,6 +16,14 @@ class OutboxConfigTest {
   }
 
   @Test
+  void aDeliveredResultIsKeptIndefinitelyUnlessRetentionIsConfigured() {
+    OutboxProperties.Retention retention = new OutboxProperties().getRetention();
+
+    assertThat(retention.getDelivered()).isNull();
+    assertThat(retention.getDismissed()).isEqualTo(java.time.Duration.ofDays(90));
+  }
+
+  @Test
   void theImagesDataVolumeIsNotTheTemporaryDirectory() {
     assertThat(OutboxConfig.isInTemporaryDirectory(Paths.get("/data/openelis-analyzer-bridge/outbox.db"))).isFalse();
   }

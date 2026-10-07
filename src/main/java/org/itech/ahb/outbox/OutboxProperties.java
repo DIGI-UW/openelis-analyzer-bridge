@@ -85,8 +85,11 @@ public class OutboxProperties {
   @Data
   public static class Retention {
 
-    /** How long a delivered entry is kept as proof of delivery. */
-    private Duration delivered = Duration.ofDays(30);
+    /**
+     * How long a delivered entry, with its message and rendered bundle, is kept as the audit copy
+     * of what the analyzer sent. Unset keeps it indefinitely.
+     */
+    private Duration delivered;
 
     /**
      * How long a dead-lettered entry is kept after an operator dismisses it. Entries nobody has

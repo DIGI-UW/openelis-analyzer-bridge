@@ -138,7 +138,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.outbox.retry.multiplier` | Growth factor per attempt | 2.0 |
 | `bridge.outbox.retry.max-delay` | Ceiling on the delay | 10m |
 | `bridge.outbox.retry.jitter` | Random proportion applied to each delay, so analyzers that failed together do not retry together | 0.2 |
-| `bridge.outbox.retention.delivered` | How long delivered entries are kept as proof of delivery | 30d |
+| `bridge.outbox.retention.delivered` | How long delivered entries, with their raw message and rendered bundle, are kept as the audit copy of what the analyzer sent. Unset keeps them indefinitely | unlimited |
 | `bridge.outbox.retention.dismissed` | How long dismissed dead letters are kept. Undismissed dead letters are never purged | 90d |
 | `bridge.outbox.payload-access-enabled` | Whether `/admin/outbox/<id>/payload` serves clinical content. Access is audited either way | true |
 | `management.health.outbox.enabled` | Report the delivery queue in `/actuator/health`. UP while results are queued, since riding out an outage is the job; DOWN only when the store is unreadable or had to be replaced | true |
