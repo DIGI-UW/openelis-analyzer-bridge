@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ca.uhn.fhir.context.FhirContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SpecVersion;
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.util.List;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Extension;
@@ -235,7 +238,21 @@ class ASTMResultPartsBundleTest {
     );
     assertThat(parsed).isNotNull();
     String json = FhirBundleBuilder.buildNormalizedBundle(parsed, context(), code -> null, "astm-v1:" + "a".repeat(64));
+    assertConformsToTheContract(json);
     return FHIR.newJsonParser().parseResource(Bundle.class, json);
+  }
+
+  /** The bundle is the boundary OpenELIS reads: it must stay inside the published normalized-bundle schema. */
+  private static void assertConformsToTheContract(String json) {
+    try {
+      var schema = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012).getSchema(
+        new ObjectMapper()
+          .readTree(Path.of("contracts", "analyzer", "v1", "normalized-fhir-bundle.schema.json").toFile())
+      );
+      assertThat(schema.validate(new ObjectMapper().readTree(json))).isEmpty();
+    } catch (java.io.IOException e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   private static AnalyzerContext context() {

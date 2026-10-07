@@ -46,8 +46,28 @@
                   "Device",
                   "Specimen",
                   "Observation",
-                  "DiagnosticReport"
+                  "DiagnosticReport",
+                  "Patient"
                 ]
+              }
+            },
+            "if": {
+              "properties": { "resourceType": { "const": "Patient" } }
+            },
+            "then": {
+              "required": ["extension"],
+              "properties": {
+                "extension": {
+                  "contains": {
+                    "required": ["url", "valueCode"],
+                    "properties": {
+                      "url": {
+                        "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-patient-source"
+                      },
+                      "valueCode": { "const": "instrument" }
+                    }
+                  }
+                }
               }
             }
           },
@@ -61,7 +81,8 @@
                   "Device",
                   "Specimen",
                   "Observation",
-                  "DiagnosticReport"
+                  "DiagnosticReport",
+                  "Patient"
                 ]
               }
             }
