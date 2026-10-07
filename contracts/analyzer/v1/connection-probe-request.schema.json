@@ -3,7 +3,6 @@
   "$id": "https://openelis-global.org/contracts/analyzer/v1/connection-probe-request.schema.json",
   "title": "Probe one saved Bridge connection revision v1",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "schemaVersion",
     "requestId",

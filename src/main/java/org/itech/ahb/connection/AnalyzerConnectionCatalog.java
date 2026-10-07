@@ -90,7 +90,7 @@ public final class AnalyzerConnectionCatalog {
     String requestId = requireText(request, "requestId");
     String clientAnalyzerId = requireText(request, "clientAnalyzerId");
     String displayName = requireText(request, "displayName");
-    ObjectNode profileRef = requireObject(request, "profileRef");
+    ObjectNode profileRef = pinOf(requireObject(request, "profileRef"));
     ObjectNode suppliedValues = requireObject(request, "values");
     ObjectNode profile = requirePinnedProfile(profileRef);
     validateValues(profile, suppliedValues);
@@ -152,7 +152,7 @@ public final class AnalyzerConnectionCatalog {
     }
 
     String displayName = requireText(request, "displayName");
-    ObjectNode profileRef = requireObject(request, "profileRef");
+    ObjectNode profileRef = pinOf(requireObject(request, "profileRef"));
     ObjectNode suppliedValues = requireObject(request, "values");
     ObjectNode profile = requirePinnedProfile(profileRef);
     validateValues(profile, suppliedValues);
@@ -417,6 +417,17 @@ public final class AnalyzerConnectionCatalog {
     }
     ObjectNode profile = requirePinnedProfile((ObjectNode) restored.path("profileRef"));
     runtime.restore(restored, profile.deepCopy());
+  }
+
+  /** The pin as the Bridge stores it: fields a newer client adds are not kept. */
+  private ObjectNode pinOf(ObjectNode supplied) {
+    ObjectNode pin = objectMapper.createObjectNode();
+    for (String key : List.of("profileId", "revision", "fingerprint")) {
+      if (supplied.has(key)) {
+        pin.set(key, supplied.path(key).deepCopy());
+      }
+    }
+    return pin;
   }
 
   private Optional<ObjectNode> pinnedProfile(ObjectNode record) {

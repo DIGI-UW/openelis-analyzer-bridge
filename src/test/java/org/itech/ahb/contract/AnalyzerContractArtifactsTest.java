@@ -276,6 +276,27 @@ class AnalyzerContractArtifactsTest {
   }
 
   @Test
+  @DisplayName("connection requests accept fields a newer OpenELIS adds")
+  void connectionRequestsAcceptAddedFields() throws IOException {
+    for (String[] pair : new String[][] {
+      { "connection-create.schema.json", "connection-create.json" },
+      { "connection-update.schema.json", "connection-update.json" },
+      { "connection-probe-request.schema.json", "connection-probe-request.json" },
+      { "connection-runtime-command.schema.json", "connection-activate.json" }
+    }) {
+      com.fasterxml.jackson.databind.node.ObjectNode request = (com.fasterxml.jackson.databind.node.ObjectNode) fixture(
+        pair[1]
+      ).deepCopy();
+      request.put("addedByANewerOpenElis", true);
+      if (request.path("profileRef").isObject()) {
+        ((com.fasterxml.jackson.databind.node.ObjectNode) request.path("profileRef")).put("addedByANewerOpenElis", 1);
+      }
+      var messages = validationMessages(pair[0], request);
+      assertTrue(messages.isEmpty(), () -> pair[0] + " refused an added field: " + messages);
+    }
+  }
+
+  @Test
   @DisplayName("generic connection values reject foreign-authority aliases")
   void connectionValuesRejectForeignAuthorityAliases() throws IOException {
     for (String reservedKey : new String[] {

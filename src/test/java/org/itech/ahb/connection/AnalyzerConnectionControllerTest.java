@@ -61,8 +61,9 @@ class AnalyzerConnectionControllerTest {
       () -> UUID.fromString("00000000-0000-0000-0000-000000000042")
     );
     ConnectionProbeExecutor executor = mock(ConnectionProbeExecutor.class);
-    when(executor.probeDirectory(anyString()))
-      .thenReturn(new ProbeCheck("DIRECTORY", "PASSED", "directory.ready", 7, Map.of()));
+    when(executor.probeDirectory(anyString())).thenReturn(
+      new ProbeCheck("DIRECTORY", "PASSED", "directory.ready", 7, Map.of())
+    );
     mockMvc = MockMvcBuilders.standaloneSetup(
       new AnalyzerConnectionController(
         connections,
@@ -95,9 +96,26 @@ class AnalyzerConnectionControllerTest {
   }
 
   @Test
-  void rejectsFieldsOutsideTheVersionedCreateContract() throws Exception {
+  void ignoresAFieldANewerOpenElisAddsAndKeepsTheProfilesProtocol() throws Exception {
     ObjectNode request = createRequest();
-    request.put("protocol", "FILE");
+    request.put("protocol", "ASTM");
+    request.withObject("profileRef").put("addedByANewerOpenElis", true);
+
+    mockMvc
+      .perform(
+        post("/api/connections")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(objectMapper.writeValueAsBytes(request))
+      )
+      .andExpect(status().isCreated())
+      .andExpect(jsonPath("$.profileRef.profileId").value("fluorocycler-xt"))
+      .andExpect(jsonPath("$.profileRef.addedByANewerOpenElis").doesNotExist());
+  }
+
+  @Test
+  void refusesAFieldOpenElisMustNeverSend() throws Exception {
+    ObjectNode request = createRequest();
+    request.putObject("operationalQc");
 
     mockMvc
       .perform(
@@ -168,8 +186,9 @@ class AnalyzerConnectionControllerTest {
     org.assertj.core.api.Assertions.assertThat(after.path("configRevision").asInt()).isEqualTo(1);
     org.assertj.core.api.Assertions.assertThat(after.path("configFingerprint").asText()).isNotBlank();
     org.assertj.core.api.Assertions.assertThat(after.path("desiredRuntimeState").asText()).isEqualTo("INACTIVE");
-    org.assertj.core.api.Assertions.assertThat(after.path("latestProbe").path("requestId").asText())
-      .isEqualTo("probe-1");
+    org.assertj.core.api.Assertions.assertThat(after.path("latestProbe").path("requestId").asText()).isEqualTo(
+      "probe-1"
+    );
   }
 
   @Test
