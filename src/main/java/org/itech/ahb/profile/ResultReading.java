@@ -77,7 +77,7 @@ public record ResultReading(
 
   /** Whether this raw value, on this record, says the run produced no result. */
   public boolean isRunFailure(String code, String subIdentity, String value) {
-    return runFailures.getOrDefault(code, Map.of()).getOrDefault(subIdentity, Set.of()).contains(value);
+    return runFailures.getOrDefault(profileCode(code), Map.of()).getOrDefault(subIdentity, Set.of()).contains(value);
   }
 
   /** The failure values a test or component declares, and the vendor's translations of each. */

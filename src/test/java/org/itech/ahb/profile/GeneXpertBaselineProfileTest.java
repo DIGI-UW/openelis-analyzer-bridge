@@ -43,9 +43,9 @@ class GeneXpertBaselineProfileTest {
   void flusAndRsvCarryTheLivdCodesForThePlusAssayAndControlsAreCoded() throws Exception {
     ObjectNode profile = profile();
     java.util.Map<String, String> loincByCode = new java.util.HashMap<>();
-    profile.path("default_test_mappings").forEach(test ->
-      loincByCode.put(test.path("test_code").asText(), test.path("loinc").asText())
-    );
+    profile
+      .path("default_test_mappings")
+      .forEach(test -> loincByCode.put(test.path("test_code").asText(), test.path("loinc").asText()));
     assertThat(loincByCode)
       .containsEntry("SARSCOV2", "94500-6")
       .containsEntry("FLUA", "85477-8")
@@ -58,15 +58,45 @@ class GeneXpertBaselineProfileTest {
         String code = component.path("code").asText();
         if (!Set.of("SPC", "IQS-H", "IQS-L").contains(code)) continue;
         controls.add(test.path("test_code").asText() + " " + code);
-        component.path("values").forEach(value ->
-          assertThat(component.path("value_codes").path(value.asText()).size())
-            .as(code + " " + value.asText() + " has a standard code")
-            .isPositive()
-        );
+        component
+          .path("values")
+          .forEach(
+            value ->
+              assertThat(component.path("value_codes").path(value.asText()).size())
+                .as(code + " " + value.asText() + " has a standard code")
+                .isPositive()
+          );
         assertThat(component.path("run_failure_values").toString()).contains("NO RESULT");
       }
     }
     assertThat(controls).contains("HIVVL IQS-H", "HIVVL IQS-L", "SARSCOV2 SPC", "SARSCOV2_3 SPC");
+  }
+
+  @Test
+  void aRunThatFailedUnderTheLabsOwnCodeIsStillAFailedRun() throws Exception {
+    ObjectNode values = objectMapper.createObjectNode();
+    values.putObject("codeOverrides").put("HIVVL", "HIVU");
+    ResultReading reading = ResultReading.fromProfile(profile(), values);
+    String message = Files.readString(EXAMPLES.resolve("hivvl-error.astm"), StandardCharsets.UTF_8).replace(
+      "^^^HIVVL^",
+      "^^^HIVU^"
+    );
+
+    ParsedResults parsed = ASTMResultParser.parseRaw(
+      message,
+      ControlResultRecognition.none(),
+      AstmResultRecordSelection.all(),
+      reading
+    );
+
+    AnalyzerResult main = parsed
+      .results()
+      .stream()
+      .filter(result -> result.parts().subIdentity().isEmpty())
+      .findFirst()
+      .orElseThrow();
+    assertThat(main.testCode()).isEqualTo("HIVU");
+    assertThat(main.parts().runFailed()).isTrue();
   }
 
   @Test
@@ -151,7 +181,9 @@ class GeneXpertBaselineProfileTest {
 
   private ObjectNode profile() throws Exception {
     try (
-      InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/cepheid-genexpert-astm.json")
+      InputStream input = getClass()
+        .getClassLoader()
+        .getResourceAsStream("analyzer-profiles/cepheid-genexpert-astm.json")
     ) {
       assertThat(input).isNotNull();
       return (ObjectNode) objectMapper.readTree(input);
