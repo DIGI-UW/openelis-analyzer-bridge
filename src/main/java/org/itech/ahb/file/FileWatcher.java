@@ -50,6 +50,7 @@ import java.util.stream.Stream;
 public class FileWatcher {
 
     private final FileConfig fileConfig;
+    private final ImportRoots importRoots;
     private final FileMessageHandler messageHandler;
 
     private final Map<Path, FileMetadata> fileStabilityTracker = new ConcurrentHashMap<>();
@@ -94,24 +95,17 @@ public class FileWatcher {
     private boolean shutdownComplete;
 
     /**
-     * Claim a physical file for the entire write/process/state-update operation.
-     * Uploads and watcher workers share this gate; a retry timestamp is not a lock.
+     * Claim a physical file for the entire process/state-update operation.
+     * Watcher workers share this gate; a retry timestamp is not a lock.
      * Returns null when busy, paused, stopping, or no matching registration remains active.
      */
-    public FileProcessingLease tryClaimFile(Path filePath, String expectedAnalyzerId) throws IOException {
+    public FileProcessingLease tryClaimFile(Path filePath) throws IOException {
         Path canonicalPath = filePath.toFile().getCanonicalFile().toPath();
         synchronized (processingMonitor) {
             if (stopping || pausedDirectories.keySet().stream().anyMatch(canonicalPath::startsWith)) {
                 return null;
             }
             String owner = determineAnalyzerId(filePath);
-            if (expectedAnalyzerId != null) {
-                // Explicit uploads select an active connection; its discovery glob is not an upload restriction.
-                Path parent = filePath.toAbsolutePath().normalize().getParent();
-                var registrations = registrationsByDirectory.getOrDefault(parent, List.of());
-                owner = registrations.stream().anyMatch(reg -> expectedAnalyzerId.equals(reg.analyzerId()))
-                        ? expectedAnalyzerId : null;
-            }
             if (owner == null) {
                 return null;
             }
@@ -208,6 +202,7 @@ public class FileWatcher {
 
     public FileWatcher(FileConfig fileConfig, FileMessageHandler messageHandler,
                        @Autowired(required = false) SqliteFileStateStore stateStore) {
+        this.importRoots = new ImportRoots(fileConfig.getImportRoots());
         this.fileConfig = fileConfig;
         this.messageHandler = messageHandler;
         // May be null when bridge.file.enabled=false (StateStoreConfig is
@@ -284,6 +279,7 @@ public class FileWatcher {
         if (stopping) {
             throw new IOException("Cannot activate a FILE watch while the service is stopping");
         }
+        importRoots.require(dirPath);
         Path normalized = dirPath.normalize();
         String effectiveGlob = (filePattern == null || filePattern.isBlank()) ? "*" : filePattern;
         registerDirectoryInternal(normalized, analyzerId, effectiveGlob, true);
@@ -541,7 +537,7 @@ public class FileWatcher {
             if (shutdownComplete) return;
             log.info("Stopping file watcher service...");
             // Coordinate startup/registration, but never hold the outer lock
-            // while waiting for monitor callbacks, processors, or uploads.
+            // while waiting for monitor callbacks or processors.
             synchronized (this) {
                 synchronized (processingMonitor) {
                     stopping = true;
@@ -561,7 +557,7 @@ public class FileWatcher {
             // are durable and will be rediscovered after process restart.
             shutdownExecutor(stabilityChecker, "stability-checker");
             shutdownExecutor(processorExecutor, "processor");
-            awaitUploadAndWorkerClaims();
+            awaitWorkerClaims();
 
             // The state store is shared; its bean owner closes it, not this service.
             shutdownComplete = true;
@@ -569,7 +565,7 @@ public class FileWatcher {
         }
     }
 
-    private void awaitUploadAndWorkerClaims() {
+    private void awaitWorkerClaims() {
         synchronized (processingMonitor) {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             while (!processingFiles.isEmpty()) {
@@ -771,7 +767,7 @@ public class FileWatcher {
         String fileHash = null;
         FileProcessingLease claim = null;
         try {
-            claim = tryClaimFile(filePath, null);
+            claim = tryClaimFile(filePath);
             if (claim == null) {
                 log.debug("No available active FILE claim for: {}", filePath.getFileName());
                 return;
@@ -782,7 +778,19 @@ public class FileWatcher {
                 return;
             }
 
-            byte[] capturedBytes = Files.readAllBytes(filePath);
+            // A link inside the share, or a watched directory repointed since activation, must not
+            // lead outside the import roots; the final component is opened without following links.
+            try {
+                importRoots.require(filePath);
+            } catch (IOException outside) {
+                log.warn("Not reading {}: {}", filePath, outside.getMessage());
+                return;
+            }
+            byte[] capturedBytes = readAtMost(filePath, fileConfig.getMaxFileSizeBytes());
+            if (capturedBytes == null) {
+                parkOversized(filePath, analyzerId);
+                return;
+            }
             fileHash = FileDeliveryIdentity.contentHash(capturedBytes);
             MDC.put("analyzerId", analyzerId);
             MDC.put("contentHash", fileHash);
@@ -850,6 +858,35 @@ public class FileWatcher {
      * notifier / alerting hooks to consume.
      * </p>
      */
+    /**
+     * The file's bytes, or null once more than {@code limit} have been read: the limit holds even
+     * for a file that grows while it is read.
+     */
+    private static byte[] readAtMost(Path filePath, long limit) throws IOException {
+        int bound = (int) Math.min(limit, Integer.MAX_VALUE - 9L);
+        try (InputStream in = Files.newInputStream(filePath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            byte[] bytes = in.readNBytes(bound + 1);
+            return bytes.length > bound ? null : bytes;
+        }
+    }
+
+    /** A file over the size limit is keyed by a streamed hash and parked; its bytes are never held. */
+    private void parkOversized(Path filePath, String analyzerId) throws IOException {
+        long size = Files.size(filePath);
+        String fileHash = calculateFileHash(filePath);
+        var existing = stateStore.get(analyzerId, fileHash);
+        if (existing.isPresent() && existing.get().status() == FileProcessingState.Status.FAILED_NEEDS_HANDLING) {
+            stateStore.touchLastSeen(analyzerId, fileHash, filePath);
+            return;
+        }
+        String error = "File is " + size + " bytes; the limit is " + fileConfig.getMaxFileSizeBytes()
+                + " bytes (bridge.file.max-file-size-bytes)";
+        stateStore.upsertRetrying(analyzerId, fileHash, filePath);
+        stateStore.markFailedNeedsHandling(analyzerId, fileHash, filePath, error);
+        log.error("ANALYZER_FILE_FAILED_NEEDS_HANDLING analyzerId={} contentHash={} path={} error={}",
+                analyzerId, fileHash, filePath, error);
+    }
+
     private void handleProcessingFailure(Path filePath, String analyzerId, String fileHash, Exception error) {
         int attempts = stateStore.incrementAttempts(analyzerId, fileHash, error.getMessage());
         int max = fileConfig.getMaxRetryAttempts();
@@ -1007,10 +1044,15 @@ public class FileWatcher {
     private record FileMetadata(Instant lastModified, long size) {
     }
 
+    /** The directories FILE connections may use; every watched or cleaned directory lies under one. */
+    public ImportRoots importRoots() {
+        return importRoots;
+    }
+
     /**
      * Accessor for the durable {@link FileStateStore}. Used by admin
      * controllers that surface state-store data ({@code FileStateController},
-     * {@code FileUploadController}, {@code RejectedBundlesController}) and by
+     * {@code RejectedBundlesController}) and by
      * integration tests that inspect RETRYING / PROCESSED / FAILED rows after
      * a simulated drop.
      */

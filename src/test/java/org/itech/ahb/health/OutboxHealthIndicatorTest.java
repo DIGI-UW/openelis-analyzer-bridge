@@ -80,4 +80,18 @@ class OutboxHealthIndicatorTest {
     assertEquals(Status.DOWN, health.getStatus());
     assertEquals("outbox_unreadable", health.getDetails().get("reason"));
   }
+
+  @Test
+  @DisplayName("goes DOWN when the dispatcher's worker has ended, because nothing is being delivered")
+  void aStalledDispatcherIsUnhealthy(@TempDir Path dir) {
+    try (SqliteOutboxStore store = new SqliteOutboxStore(dir.resolve("outbox.db"))) {
+      OutboxDispatcher dispatcher = mock(OutboxDispatcher.class);
+      when(dispatcher.isStalled()).thenReturn(true);
+
+      Health health = new OutboxHealthIndicator(store, dispatcher).health();
+
+      assertEquals(Status.DOWN, health.getStatus());
+      assertEquals("dispatcher_stopped", health.getDetails().get("reason"));
+    }
+  }
 }

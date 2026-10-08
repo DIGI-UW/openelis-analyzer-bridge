@@ -113,6 +113,7 @@ public final class AnalyzerConnectionCatalog {
     String connectionId = ids.get().toString();
     ObjectNode values = effectiveValues(profile, suppliedValues);
     validateHttpSender(values);
+    runtime.validate(values, profile);
     ObjectNode record = objectMapper.createObjectNode();
     record.put("connectionId", connectionId);
     record.put("clientAnalyzerId", clientAnalyzerId);
@@ -158,6 +159,7 @@ public final class AnalyzerConnectionCatalog {
     validateValues(profile, suppliedValues);
     ObjectNode values = effectiveValues(profile, suppliedValues, (ObjectNode) existing.path("values"));
     validateHttpSender(values);
+    runtime.validate(values, profile);
     if (sameConfiguration(existing, profileRef, displayName, values)) {
       return view(existing, profile);
     }
@@ -388,6 +390,7 @@ public final class AnalyzerConnectionCatalog {
         try {
           restore(record);
         } catch (RuntimeException exception) {
+          // One connection that can no longer run must not stop every other analyzer from delivering.
           String connectionId = record.path("connectionId").asText();
           String reason = reasonOf(exception);
           restoreFailures.put(connectionId, reason);

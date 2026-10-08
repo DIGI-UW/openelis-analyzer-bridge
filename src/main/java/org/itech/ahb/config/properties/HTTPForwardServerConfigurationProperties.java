@@ -64,6 +64,12 @@ public class HTTPForwardServerConfigurationProperties {
   private int readTimeoutSeconds = 30;
 
   /**
+   * Largest response body read from OpenELIS. Its answer is a short receipt; a larger body fails
+   * the attempt rather than being held in memory.
+   */
+  private int maxResponseBytes = 1024 * 1024;
+
+  /**
    * Maximum number of retry attempts for outbound requests.
    */
   private int maxAttempts = 3;

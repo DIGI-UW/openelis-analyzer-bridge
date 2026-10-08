@@ -12,6 +12,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.routing.MessageRouter;
 
 /**
@@ -19,11 +21,14 @@ import org.itech.ahb.routing.MessageRouter;
  * peer address and this port, and the registry resolves the connection; a bound listener stamps
  * the one saved connection it serves.
  */
+@Slf4j
 public final class HapiMLLPListener {
 
   private final int port;
   private final String sourceBindingId;
   private final MessageRouter router;
+  private final MllpLimits limits;
+  private final AtomicInteger openConnections = new AtomicInteger();
   private final CompletableFuture<Void> bound = new CompletableFuture<>();
   private volatile ServerSocket socket;
   private volatile boolean stopping;
@@ -35,14 +40,29 @@ public final class HapiMLLPListener {
 
   /** A shared listener on {@code port}: each message is attributed by the registry. */
   public HapiMLLPListener(int port, MessageRouter router) {
-    this(port, null, router, true);
+    this(port, null, router, true, MllpLimits.DEFAULTS);
+  }
+
+  /** A shared listener on {@code port} with explicit connection and message limits. */
+  public HapiMLLPListener(int port, MessageRouter router, MllpLimits limits) {
+    this(port, null, router, true, limits);
   }
 
   public HapiMLLPListener(int port, String sourceBindingId, MessageRouter router) {
-    this(port, sourceBindingId, router, false);
+    this(port, sourceBindingId, router, false, MllpLimits.DEFAULTS);
   }
 
-  private HapiMLLPListener(int port, String sourceBindingId, MessageRouter router, boolean shared) {
+  public HapiMLLPListener(int port, String sourceBindingId, MessageRouter router, MllpLimits limits) {
+    this(port, sourceBindingId, router, false, limits);
+  }
+
+  private HapiMLLPListener(
+    int port,
+    String sourceBindingId,
+    MessageRouter router,
+    boolean shared,
+    MllpLimits limits
+  ) {
     if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid HL7 listen port");
     if (!shared && (sourceBindingId == null || sourceBindingId.isBlank())) {
       throw new IllegalArgumentException("A saved-connection source binding is required");
@@ -50,6 +70,7 @@ public final class HapiMLLPListener {
     this.port = port;
     this.sourceBindingId = sourceBindingId;
     this.router = java.util.Objects.requireNonNull(router);
+    this.limits = java.util.Objects.requireNonNull(limits);
   }
 
   public synchronized void start() {
@@ -67,7 +88,18 @@ public final class HapiMLLPListener {
             @Override
             public Socket accept() throws IOException {
               try {
-                return super.accept();
+                while (true) {
+                  LimitedMllpSocket accepted = new LimitedMllpSocket(limits, openConnections);
+                  implAccept(accepted);
+                  if (accepted.admit()) return accepted;
+                  log.warn(
+                    "MLLP port {} refused a connection from {}: {} connections are already open",
+                    port,
+                    accepted.getInetAddress(),
+                    limits.maxConnections()
+                  );
+                  accepted.close();
+                }
               } catch (IOException failure) {
                 if (!isClosed() && isBound()) throw failure;
                 // HAPI retries IOExceptions until its acceptor is stopped. Closing

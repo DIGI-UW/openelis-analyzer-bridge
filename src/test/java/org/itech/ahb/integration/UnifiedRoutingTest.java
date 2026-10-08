@@ -141,7 +141,7 @@ class UnifiedRoutingTest {
 
         fileHandler = outbox.fileHandler(registry);
 
-        httpController = new AnalyzerInputController(normalizer);
+        httpController = new AnalyzerInputController(normalizer, registry);
 
         astmAdapter = new ASTMBridgeAdapter(normalizer);
 

@@ -265,8 +265,8 @@ public class ASTMResultParser {
         String[] fields = orderRecord.split(Pattern.quote(FIELD_DELIMITER));
         if (fields.length > O_SPECIMEN_ID_FIELD) {
             String specimenId = fields[O_SPECIMEN_ID_FIELD];
-            String[] components = specimenId.split(Pattern.quote(COMPONENT_DELIMITER));
-            String accession = components[0].trim();
+            int component = specimenId.indexOf(COMPONENT_DELIMITER);
+            String accession = (component < 0 ? specimenId : specimenId.substring(0, component)).trim();
             return accession.isEmpty() ? null : accession;
         }
         return null;
@@ -458,7 +458,11 @@ public class ASTMResultParser {
      */
     private static String cleanResultValue(String value) {
         if (value == null || value.isEmpty()) return value;
-        String cleaned = value.replaceAll("\\^+$", "");
+        int end = value.length();
+        while (end > 0 && value.charAt(end - 1) == '^') {
+            end--;
+        }
+        String cleaned = value.substring(0, end);
         if (cleaned.startsWith(COMPONENT_DELIMITER)) {
             cleaned = cleaned.substring(1);
         }
@@ -466,11 +470,6 @@ public class ASTMResultParser {
     }
 
     private static boolean isNumericValue(String value) {
-        try {
-            Double.parseDouble(value.replaceAll("[<>]", ""));
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        return NumericValue.isBoundedDecimal(value);
     }
 }

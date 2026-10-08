@@ -54,6 +54,21 @@ public class AnalyzerRuntimeRegistry {
     return findAnalyzerEntry(sourceId).map(AnalyzerEntry::getId);
   }
 
+  /** Whether {@code sourceIp} is the address of an active HTTP analyzer connection. */
+  public synchronized boolean isActiveHttpSender(String sourceIp) {
+    String address = IpLiteral.canonicalize(sourceIp);
+    return address != null &&
+      analyzers
+        .entrySet()
+        .stream()
+        .anyMatch(
+          registered ->
+            "HTTP".equals(registered.getValue().getInboundTransport()) &&
+            (address.equals(registered.getValue().getInboundSourceId()) ||
+              address.equals(IpLiteral.canonicalize(registered.getKey())))
+        );
+  }
+
   /**
    * Finds an analyzer registry entry by source identifier.
    *
@@ -463,16 +478,6 @@ public class AnalyzerRuntimeRegistry {
      * the pinned profile declares exactly one primary test mapping.
      */
     private String fileTestCode;
-
-    /**
-     * Vocabulary translation for {@code FileNameSelfDeclarationScanner}:
-     * maps OE test code → free-text synonyms the lab's files use
-     * (e.g. {@code "VIH-1" → ["HIV-1", "GENERIC_HIV_CV"]}).
-     */
-    private Map<String, List<String>> scannerSynonyms = Collections.emptyMap();
-
-    /** OE test codes this analyzer is allowed to emit (whitelist, not a default). */
-    private Set<String> mappedTestCodes = Collections.emptySet();
 
     /** Complete control-result recognition from the pinned Bridge profile. */
     private ControlResultRecognition controlResultRecognition;

@@ -416,7 +416,8 @@ class Hl7SavedConnectionTest {
       if (transport.equals("HTTP")) {
         var input = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
           new org.itech.ahb.controller.AnalyzerInputController(
-            outbox.normalizer(new AnalyzerIdentifier(registry), registry)
+            outbox.normalizer(new AnalyzerIdentifier(registry), registry),
+            registry
           )
         ).build();
         assertThat(

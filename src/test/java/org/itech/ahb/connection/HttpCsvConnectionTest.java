@@ -148,7 +148,7 @@ class HttpCsvConnectionTest {
     config.setReadTimeoutSeconds(2);
     outbox = OutboxTestSupport.create(directory.resolve("outbox"), config, registry);
     input = MockMvcBuilders.standaloneSetup(
-      new AnalyzerInputController(outbox.normalizer(new AnalyzerIdentifier(registry), registry))
+      new AnalyzerInputController(outbox.normalizer(new AnalyzerIdentifier(registry), registry), registry)
     ).build();
   }
 
@@ -379,8 +379,8 @@ class HttpCsvConnectionTest {
     assertThat(received.get(3).path("identifier")).isNotEqualTo(first.path("identifier"));
     connections.applyRuntimeCommand(command(connection, "DEACTIVATE"));
     String after = socketMessage(protocol, "AFTER-DEACTIVATE");
-    assertThat(postSocket(protocol, after, "192.0.2.25", null)).isNotEqualTo(200);
-    assertRetainedFailure(after, FailureReason.UNREGISTERED_SOURCE);
+    assertThat(postSocket(protocol, after, "192.0.2.25", null)).isEqualTo(403);
+    assertNothingStored(after);
     outbox.dispatcher.dispatchDue();
     assertThat(received).hasSize(4);
     verifyNoInteractions(watcher);
@@ -415,12 +415,13 @@ class HttpCsvConnectionTest {
 
   @ParameterizedTest
   @ValueSource(strings = { "ASTM", "HL7" })
-  void httpSocketIdentityFailuresRetainRawInputWithoutForwarding(String protocol) throws Exception {
+  void httpSocketIdentityFailuresAreRefusedOrHeldWithoutForwarding(String protocol) throws Exception {
     publishHttpProfile(protocol);
     activate("oe-http-source", "192.0.2.25");
     String unknown = socketMessage(protocol, "UNKNOWN-PEER");
-    assertThat(postSocket(protocol, unknown, "192.0.2.99", "192.0.2.25")).isNotEqualTo(200);
-    assertRetainedFailure(unknown, FailureReason.UNREGISTERED_SOURCE);
+    // HTTP input takes no credential, so a sender without an active connection is refused unstored.
+    assertThat(postSocket(protocol, unknown, "192.0.2.99", "192.0.2.25")).isEqualTo(403);
+    assertNothingStored(unknown);
     String opposite = protocol.equals("ASTM") ? "HL7" : "ASTM";
     String mismatch = socketMessage(opposite, "WRONG-PROTOCOL");
     assertThat(postSocket(opposite, mismatch, "192.0.2.25", null)).isNotEqualTo(200);
@@ -578,6 +579,12 @@ class HttpCsvConnectionTest {
       });
     if (forwarded != null) request.header("X-Forwarded-For", forwarded);
     return input.perform(request).andReturn().getResponse().getStatus();
+  }
+
+  private void assertNothingStored(String raw) {
+    assertThat(outbox.store.list(OutboxQuery.all(50))).noneSatisfy(entry ->
+      assertThat(outbox.store.rawPayload(entry.id())).contains(raw)
+    );
   }
 
   private void assertRetainedFailure(String raw, FailureReason reason) {

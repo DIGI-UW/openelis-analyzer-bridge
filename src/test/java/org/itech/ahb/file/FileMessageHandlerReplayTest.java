@@ -237,48 +237,6 @@ class FileMessageHandlerReplayTest {
   }
 
   @Test
-  void uploadPreservesUncapturedSameNameSourceAndQueuesItsOwnExactBytes() throws Exception {
-    Path source = csv("results.csv", "ORIGINAL,T1,7\n");
-    byte[] original = Files.readAllBytes(source);
-    byte[] uploaded = "Sample,Test,Result\nUPLOADED,T1,9\n".getBytes(StandardCharsets.UTF_8);
-    entry.setFileDirectory(directory.toString());
-    entry.setMappedTestCodes(java.util.Set.of("T1"));
-    var handler = handler();
-    var state = new SqliteFileStateStore(directory.resolve("state.db"));
-    var watcher = new FileWatcher(new FileConfig(), handler, state);
-    try {
-      watcher.addWatchDirectory(directory, "*.csv", "oe-1");
-      var controller = new org.itech.ahb.controller.FileUploadController(
-        registry,
-        handler,
-        new org.itech.ahb.fhir.FileNameSelfDeclarationScanner(),
-        watcher
-      );
-      var response = new org.springframework.mock.web.MockHttpServletResponse();
-      controller.uploadFile(
-        "oe-1",
-        "T1",
-        new org.springframework.mock.web.MockMultipartFile("file", "results.csv", "text/csv", uploaded),
-        response
-      );
-      assertEquals(200, response.getStatus(), response.getContentAsString());
-      assertArrayEquals(original, Files.readAllBytes(source), "an undiscovered source must never be overwritten");
-      var queued = outbox.store
-        .list(org.itech.ahb.outbox.OutboxQuery.inState(org.itech.ahb.outbox.OutboxState.RECEIVED, 10))
-        .get(0);
-      assertArrayEquals(uploaded, outbox.store.rawBytes(queued.id()).orElseThrow());
-      handler.processFile(source, "oe-1");
-      outbox.dispatcher.dispatchDue();
-      assertEquals(2, deliveries.size(), "both distinct inputs must remain deliverable");
-      assertTrue(deliveries.stream().anyMatch(bundle -> bundle.toString().contains("UPLOADED")));
-      assertTrue(deliveries.stream().anyMatch(bundle -> bundle.toString().contains("ORIGINAL")));
-    } finally {
-      watcher.stop();
-      state.close();
-    }
-  }
-
-  @Test
   void unavailableDurableStoreNeverAcknowledgesTheFile() throws Exception {
     Path file = csv("results.csv", "PATIENT-1,T1,2\n");
     var handler = handler();

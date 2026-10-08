@@ -124,7 +124,7 @@ FLUOROCYCLER_CONNECTION_ID="$(create_connection \
     "hain-fluorocycler-xt" \
     "oe-e2e-fluorocycler" \
     "FluoroCycler acceptance connection" \
-    '{"directory":"/mnt/analyzer-import"}')"
+    '{"directory":"/data/analyzer-imports"}')"
 export FLUOROCYCLER_CONNECTION_ID
 activate_connection "${FLUOROCYCLER_CONNECTION_ID}"
 

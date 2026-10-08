@@ -28,12 +28,38 @@ class BridgeAdminControllerTest {
   @TempDir
   Path watchDirectory;
 
+  @TempDir
+  Path elsewhere;
+
   private final AnalyzerConnectionCatalog connections = mock(AnalyzerConnectionCatalog.class);
-  private final FileWatcher watcher = new FileWatcher(new FileConfig(), null, null);
+  private FileWatcher watcher;
+
+  @org.junit.jupiter.api.BeforeEach
+  void startWatcher() {
+    FileConfig config = new FileConfig();
+    config.setImportRoots(java.util.List.of(watchDirectory.toString()));
+    watcher = new FileWatcher(config, null, null);
+  }
 
   @AfterEach
   void stopWatcher() {
     watcher.stop();
+  }
+
+  @Test
+  void resetRefusesADirectoryOutsideTheImportRoots() throws Exception {
+    Path kept = Files.writeString(elsewhere.resolve("outbox.db"), "state");
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    when(connections.fileDirectoryClaims()).thenReturn(
+      java.util.List.of(new FileDirectoryClaim("owner", elsewhere, "*.db"))
+    );
+    FileStateStore store = mock(FileStateStore.class);
+
+    var response = new BridgeAdminController(registry, store, connections, watcher).reset("owner");
+
+    assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+    assertEquals("state", Files.readString(kept));
+    verifyNoInteractions(store);
   }
 
   @Test
@@ -182,7 +208,7 @@ class BridgeAdminControllerTest {
     register(registry, "first", watchDirectory, "*.csv");
     watcher.addWatchDirectory(watchDirectory, "*.csv", "first");
     FileStateStore store = mock(FileStateStore.class);
-    try (var activeWork = watcher.tryClaimFile(pending, "first")) {
+    try (var activeWork = watcher.tryClaimFile(pending)) {
       org.junit.jupiter.api.Assertions.assertNotNull(activeWork);
       try {
         Thread.currentThread().interrupt();
@@ -195,7 +221,7 @@ class BridgeAdminControllerTest {
       assertEquals("data", Files.readString(pending));
       verifyNoInteractions(store);
     }
-    try (var resumed = watcher.tryClaimFile(pending, "first")) {
+    try (var resumed = watcher.tryClaimFile(pending)) {
       org.junit.jupiter.api.Assertions.assertNotNull(resumed, "failed reset must release its admission pause");
     }
   }
