@@ -53,8 +53,8 @@ class OutboundConnectionProbeTest {
       .put("configFingerprint", "sha256:" + "1".repeat(64));
     connection
       .putObject("profileRef")
-      .put("profileId", "genexpert-astm")
-      .put("revision", 5)
+      .put("profileId", "cepheid-genexpert-astm")
+      .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     connection
       .putObject("values")
