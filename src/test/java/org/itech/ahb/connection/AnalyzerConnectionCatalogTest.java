@@ -274,6 +274,44 @@ class AnalyzerConnectionCatalogTest {
     assertThat(profiles.require("cepheid-genexpert-astm", 1).profile()).isEqualTo(original);
   }
 
+  /**
+   * An analyzer left on a revision the Bridge no longer has (an authored type
+   * removed, or a migrated analyzer) is moved to an available one by an ordinary
+   * update, and then runs.
+   */
+  @Test
+  void aConnectionWhoseProfileRevisionIsGoneIsRepinnedByAnUpdateAndThenActivates() throws Exception {
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
+    RecordingRuntime runtime = new RecordingRuntime();
+    ObjectNode created = catalog(UUID::randomUUID, runtime).create(createRequest(profile, "gone", "oe-gone"));
+    String id = created.path("connectionId").asText();
+    Path saved = temporaryDirectory.resolve("connections").resolve(id + ".json");
+    ObjectNode record = (ObjectNode) objectMapper.readTree(saved.toFile());
+    record.withObject("profileRef").put("revision", 99);
+    objectMapper.writeValue(saved.toFile(), record);
+
+    AnalyzerConnectionCatalog restarted = catalog(UUID::randomUUID, runtime);
+    ObjectNode setAside = restarted.require(id);
+    assertThat(blockerKeys(setAside)).contains("profile-unavailable");
+
+    ObjectNode update = updateRequest(setAside, "repin");
+    update.set("profileRef", created.path("profileRef").deepCopy());
+    update.putObject("values");
+    ObjectNode repinned = restarted.update(update);
+
+    assertThat(repinned.path("profileRef")).isEqualTo(created.path("profileRef"));
+    assertThat(blockerKeys(repinned)).doesNotContain("profile-unavailable");
+    assertThat(repinned.path("readiness").path("ready").asBoolean()).isTrue();
+    restarted.applyRuntimeCommand(runtimeCommand(repinned, "activate-repinned", "ACTIVATE"));
+    assertThat(runtime.activations).containsExactly(id);
+  }
+
+  private static List<String> blockerKeys(ObjectNode connection) {
+    List<String> keys = new ArrayList<>();
+    connection.path("readiness").path("blockers").forEach(blocker -> keys.add(blocker.path("key").asText()));
+    return keys;
+  }
+
   private ObjectNode updateRequest(ObjectNode connection, String requestId) {
     ObjectNode request = objectMapper
       .createObjectNode()
