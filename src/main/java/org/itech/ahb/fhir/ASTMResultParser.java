@@ -338,6 +338,7 @@ public class ASTMResultParser {
         String operator = AstmResultParts.read(parts.operator(), fields);
         String version = AstmResultParts.read(parts.assayVersion(), fields);
         String instrument = AstmResultParts.read(parts.instrument(), fields);
+        String status = AstmResultParts.read(parts.status(), fields);
         String units = AstmResultParts.read(parts.unit(), fields);
         String raw = number.isEmpty() ? call : number;
         RecordParts recordParts = new RecordParts(
@@ -352,6 +353,7 @@ public class ASTMResultParser {
                 version.isEmpty() ? null : version,
                 operator.isEmpty() || operator.equals("<None>") ? null : operator,
                 instrument.isEmpty() ? null : instrument,
+                status.isEmpty() ? null : status,
                 reading.isRunFailure(testCode, subIdentity, raw),
                 List.of());
         boolean quantity = !number.isEmpty() || limit != null;

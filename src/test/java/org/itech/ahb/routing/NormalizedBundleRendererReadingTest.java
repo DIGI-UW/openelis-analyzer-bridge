@@ -52,6 +52,19 @@ class NormalizedBundleRendererReadingTest {
   }
 
   @Test
+  void theStatusTheInstrumentGaveTheResultIsCarried() throws Exception {
+    Observation observation = render(objectMapper.createObjectNode(), "HIVVL", "^1009.64");
+
+    assertThat(observation.getStatus()).isEqualTo(Observation.ObservationStatus.FINAL);
+    assertThat(
+      observation
+        .getExtensionByUrl("https://openelis-global.org/fhir/StructureDefinition/analyzer-result-status")
+        .getValue()
+        .primitiveValue()
+    ).isEqualTo("F");
+  }
+
+  @Test
   void aCodeNoOverrideNamesIsBundledAsTheInstrumentSentIt() throws Exception {
     Observation observation = render(objectMapper.createObjectNode(), "HIVU", "^1009.64");
 

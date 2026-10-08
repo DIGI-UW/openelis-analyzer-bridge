@@ -26,6 +26,20 @@ final class RecordSlots {
   private static final String CALL_SYSTEM = "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation";
   private static final String FLAG_SYSTEM = "http://terminology.hl7.org/CodeSystem/v2-0078";
   private static final String DATA_ABSENT = "http://terminology.hl7.org/CodeSystem/data-absent-reason";
+  private static final String RESULT_STATUS = ROOT + "analyzer-result-status";
+  // ASTM E1394 result status codes FHIR can express; the instrument's own code is always kept.
+  private static final Map<String, Observation.ObservationStatus> STATUS = Map.of(
+    "F",
+    Observation.ObservationStatus.FINAL,
+    "P",
+    Observation.ObservationStatus.PRELIMINARY,
+    "C",
+    Observation.ObservationStatus.CORRECTED,
+    "X",
+    Observation.ObservationStatus.CANCELLED,
+    "I",
+    Observation.ObservationStatus.REGISTERED
+  );
 
   /** The HL7 interpretation that states the call an instrument words in its own text. */
   private static final Map<String, String[]> CALLS = Map.of(
@@ -49,6 +63,10 @@ final class RecordSlots {
 
   static void apply(Observation observation, AnalyzerResult result) {
     RecordParts parts = result.parts();
+    if (parts.status() != null) {
+      observation.setStatus(STATUS.getOrDefault(parts.status(), Observation.ObservationStatus.UNKNOWN));
+      observation.addExtension(new Extension(RESULT_STATUS, new StringType(parts.status())));
+    }
     if (!parts.subIdentity().isEmpty()) {
       Extension subId = new Extension(SUB_ID);
       subId.addExtension("original-sub-identifier", new StringType(parts.subIdentity()));

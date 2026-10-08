@@ -16,6 +16,7 @@ import java.util.List;
  * @param range the reference range as sent
  * @param flags the instrument's flags as sent, except an off-scale comparator
  * @param instrument the instrument identification as sent
+ * @param status the result status the instrument gave the record (ASTM R.9), as sent
  * @param runFailed whether the profile says this value means the run produced no result
  * @param notes comments and error detail attached to the record
  */
@@ -31,6 +32,7 @@ public record RecordParts(
   String assayVersion,
   String operator,
   String instrument,
+  String status,
   boolean runFailed,
   List<String> notes
 ) {
@@ -55,6 +57,7 @@ public record RecordParts(
       assayVersion,
       operator,
       instrument,
+      status,
       runFailed,
       all
     );
