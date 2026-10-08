@@ -144,6 +144,8 @@ public class FhirBundleBuilder {
         new org.hl7.fhir.r4.model.CodeType(result.isControl() ? "CONTROL" : "PATIENT")
       );
       observation.addExtension(controlRecognitionExtension(context, result));
+      // The instrument's own status replaces this when it reported one.
+      observation.setStatus(Observation.ObservationStatus.UNKNOWN);
       if (result.parts() != null) {
         RecordSlots.apply(observation, result);
       }
