@@ -778,12 +778,19 @@ public class FileWatcher {
                 return;
             }
 
-            long size = Files.size(filePath);
-            if (size > fileConfig.getMaxFileSizeBytes()) {
-                parkOversized(filePath, analyzerId, size);
+            // A link inside the share, or a watched directory repointed since activation, must not
+            // lead outside the import roots; the final component is opened without following links.
+            try {
+                importRoots.require(filePath);
+            } catch (IOException outside) {
+                log.warn("Not reading {}: {}", filePath, outside.getMessage());
                 return;
             }
-            byte[] capturedBytes = Files.readAllBytes(filePath);
+            byte[] capturedBytes = readAtMost(filePath, fileConfig.getMaxFileSizeBytes());
+            if (capturedBytes == null) {
+                parkOversized(filePath, analyzerId);
+                return;
+            }
             fileHash = FileDeliveryIdentity.contentHash(capturedBytes);
             MDC.put("analyzerId", analyzerId);
             MDC.put("contentHash", fileHash);
@@ -851,8 +858,21 @@ public class FileWatcher {
      * notifier / alerting hooks to consume.
      * </p>
      */
+    /**
+     * The file's bytes, or null once more than {@code limit} have been read: the limit holds even
+     * for a file that grows while it is read.
+     */
+    private static byte[] readAtMost(Path filePath, long limit) throws IOException {
+        int bound = (int) Math.min(limit, Integer.MAX_VALUE - 9L);
+        try (InputStream in = Files.newInputStream(filePath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            byte[] bytes = in.readNBytes(bound + 1);
+            return bytes.length > bound ? null : bytes;
+        }
+    }
+
     /** A file over the size limit is keyed by a streamed hash and parked; its bytes are never held. */
-    private void parkOversized(Path filePath, String analyzerId, long size) throws IOException {
+    private void parkOversized(Path filePath, String analyzerId) throws IOException {
+        long size = Files.size(filePath);
         String fileHash = calculateFileHash(filePath);
         var existing = stateStore.get(analyzerId, fileHash);
         if (existing.isPresent() && existing.get().status() == FileProcessingState.Status.FAILED_NEEDS_HANDLING) {

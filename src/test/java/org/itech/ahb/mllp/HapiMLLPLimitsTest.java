@@ -136,4 +136,17 @@ class HapiMLLPLimitsTest {
     }
     assertEquals(true, exchange(port).contains("MSA|AA|"));
   }
+
+  @Test
+  @Timeout(30)
+  void aMessageThatStallsAfterItsStartIsCutOffAtTheDeadline() throws Exception {
+    int port = start(new MllpLimits(8, 1024 * 1024, Duration.ofSeconds(1)));
+    try (Socket socket = new Socket("127.0.0.1", port)) {
+      OutputStream out = socket.getOutputStream();
+      out.write(VT);
+      out.write("MSH|".getBytes(StandardCharsets.UTF_8));
+      out.flush();
+      assertTrue(closedByServer(socket, Duration.ofSeconds(6)), "a silent sender must not keep its connection");
+    }
+  }
 }
