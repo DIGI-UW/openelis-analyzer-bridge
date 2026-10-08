@@ -197,7 +197,7 @@ public class OutboxDispatcher {
         log.info(
           "Purged {} terminal outbox entries past retention (delivered after {}, dismissed after {})",
           removed,
-          properties.getRetention().getDelivered(),
+          properties.getRetention().getDelivered() == null ? "never" : properties.getRetention().getDelivered(),
           properties.getRetention().getDismissed()
         );
       }

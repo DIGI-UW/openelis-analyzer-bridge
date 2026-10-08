@@ -95,6 +95,8 @@ class FileMessageHandlerLoincTest {
         .stream()
         .anyMatch(value -> "http://loinc.org".equals(value.getSystem()) && "7855-0".equals(value.getCode()))
     );
+    // A results file reports no status of its own.
+    assertEquals(Observation.ObservationStatus.UNKNOWN, observation.getStatus());
   }
 
   @Test

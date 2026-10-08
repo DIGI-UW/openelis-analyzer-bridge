@@ -87,7 +87,7 @@ bridge:
       maxDelay: 10m
       jitter: 0.2
     retention:
-      delivered: 30d        # proof of delivery
+      # delivered: unset keeps every delivered message and bundle as the audit copy
       dismissed: 90d        # only entries an operator dismissed; undismissed dead letters are never purged
     payloadAccessEnabled: true
 

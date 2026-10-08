@@ -36,7 +36,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = baseConnection(profile, "Shared listener bench");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
@@ -61,7 +61,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = baseConnection(profile, "Previously saved inbound port");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
@@ -78,11 +78,71 @@ class BridgeAnalyzerConnectionRuntimeTest {
   }
 
   @Test
+  void aSavedCodeOverrideIsTheCodeTheInstrumentIsOrderedAndTranslatedBy() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = org.itech.ahb.profile.BaselineProfileFixtures.genexpertHivViralLoad(objectMapper);
+    ObjectNode connection = baseConnection(profile, "Renamed codes");
+    connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    connection.withObject("values").remove("port");
+    connection.withObject("values").putObject("codeOverrides").put("HIVVL", "HIVU");
+
+    runtime.activate(connection, profile);
+
+    AnalyzerEntry entry = registry
+      .findAnalyzerEntryByConnectionId(connection.path("connectionId").asText())
+      .orElseThrow();
+    assertThat(entry.getCodeForLoinc("20447-9")).isEqualTo("HIVU");
+    assertThat(entry.getLoincForCode("HIVU")).isEqualTo("20447-9");
+    assertThat(entry.getLoincForCode("HIVVL")).isNull();
+    assertThat(entry.getCodeForLoinc("89372-7")).isEqualTo("RIF");
+    assertThat(entry.getResultReading().profileCode("HIVU")).isEqualTo("HIVVL");
+  }
+
+  @Test
+  void aCodeOverrideMustNameACodeThePinnedProfileDeclaresAndStayUnique() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = org.itech.ahb.profile.BaselineProfileFixtures.genexpertHivViralLoad(objectMapper);
+    ObjectNode undeclared = baseConnection(profile, "Unknown code");
+    undeclared.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    undeclared.withObject("values").putObject("codeOverrides").put("NOT-IN-PROFILE", "X1");
+    assertThatThrownBy(() -> runtime.activate(undeclared, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("codeOverrides")
+      .hasMessageContaining("NOT-IN-PROFILE");
+
+    ObjectNode shared = baseConnection(profile, "Shared code");
+    shared.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    shared.withObject("values").putObject("codeOverrides").put("HIVVL", "SAME").put("RIF", "SAME");
+    assertThatThrownBy(() -> runtime.activate(shared, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("SAME");
+
+    ObjectNode taken = baseConnection(profile, "Another assay's code");
+    taken.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    taken.withObject("values").putObject("codeOverrides").put("HIVVL", "RIF");
+    assertThatThrownBy(() -> runtime.activate(taken, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("RIF");
+  }
+
+  @Test
   void fileAssaySelectionIsSavedExplicitlyAndMustBelongToThePinnedProfile() throws Exception {
     var registry = new AnalyzerRuntimeRegistry();
     var runtime = new BridgeAnalyzerConnectionRuntime(registry, mock(FileWatcher.class), null, null);
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/fluorocycler-xt.json")
+      getClass().getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
     );
     profile.withArray("default_test_mappings").addObject().put("test_code", "SECOND-ASSAY").put("loinc", "94500-6");
     ObjectNode saved = connection(profile);
@@ -111,7 +171,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       serialListeners
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/fluorocycler-xt.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
     );
     ObjectNode connection = connection(profile);
 
@@ -159,7 +219,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/fluorocycler-xt.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
     );
     Path originalDirectory = directory.resolve("original");
     Path replacementDirectory = directory.resolve("replacement");
@@ -188,7 +248,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/fluorocycler-xt.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
     );
     Path originalDirectory = directory.resolve("original");
     Path replacementDirectory = directory.resolve("replacement");
@@ -225,7 +285,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       serialListeners
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = baseConnection(profile, "GeneXpert bench 1");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
@@ -264,7 +324,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode literal = baseConnection(profile, "GeneXpert bench 1");
     literal.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
@@ -299,7 +359,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode first = sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A");
     ObjectNode second = sharedPortConnection(profile, "gx-b", "oe-b", "GeneXpert B");
@@ -333,7 +393,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
 
     runtime.restore(sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A"), profile);
@@ -393,7 +453,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       serialListeners
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = baseConnection(profile, "GeneXpert outbound bench");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
@@ -421,7 +481,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = clientConnection(profile, "fallback-client", "oe-fallback", 9100);
     connection.withObject("values").remove("port");
@@ -443,7 +503,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     profile.withObject("transport_config").withObject("TCP/IP").put("default_port", 6001);
     ObjectNode connection = clientConnection(profile, "profile-client", "oe-profile", 9100);
@@ -468,7 +528,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       serialListeners
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = baseConnection(profile, "GeneXpert serial bench");
     connection.withObject("values").put("transport", "RS-232").put("serialPort", "/dev/ttyUSB7");
@@ -503,7 +563,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       serialListeners
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode connection = baseConnection(profile, "GeneXpert bench 1");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
@@ -540,7 +600,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode first = clientConnection(profile, "connection-a", "oe-a", 9101);
     ObjectNode second = clientConnection(profile, "connection-b", "oe-b", 9102);
@@ -578,7 +638,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(SerialConnectionListeners.class)
     );
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode first = clientConnection(profile, "connection-a", "oe-a", 9101);
     ObjectNode second = clientConnection(profile, "connection-b", "oe-b", 9102);
@@ -615,7 +675,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
     var hl7 = mock(Hl7ConnectionListeners.class);
     var runtime = new BridgeAnalyzerConnectionRuntime(registry, null, astm, null, hl7);
     ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json")
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
     ObjectNode saved = baseConnection(profile, "Unsupported ASTM transport");
     saved.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());

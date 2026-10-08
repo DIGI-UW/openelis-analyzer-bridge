@@ -22,6 +22,7 @@ import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.profile.ControlRecognitionRule;
 import org.itech.ahb.profile.ControlResultRecognition;
+import org.itech.ahb.profile.ResultReading;
 import org.itech.ahb.profile.TabularResultValueSelection;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,6 +107,28 @@ class FileMessageHandlerReplayTest {
       java.util.Set.of("PATIENT", "CONTROL"),
       deliveries.subList(0, 2).stream().map(this::classification).collect(java.util.stream.Collectors.toSet())
     );
+  }
+
+  @Test
+  void aResultUnderTheLabsOwnCodeIsDeliveredAndReplayedUnderTheProfilesCodeWithItsLoinc() throws Exception {
+    entry.setResultReading(new ResultReading(null, '.', Map.of(), Map.of("LAB-T1", "T1")));
+    entry.setCodeToLoinc(Map.of("LAB-T1", "1234-5"));
+    Path file = csv("lab-code.csv", "PATIENT-1,LAB-T1,2\n");
+    rejectRequest.set(1);
+    handler().processFile(file, "oe-1");
+    outbox.dispatcher.dispatchDue();
+
+    // The replay renders from the receipt alone: the live connection no longer translates.
+    entry.setResultReading(null);
+    entry.setCodeToLoinc(Map.of());
+    Files.delete(file);
+    reopen();
+    outbox.dispatcher.dispatchDue();
+
+    assertEquals(2, deliveries.size());
+    for (JsonNode delivery : deliveries) {
+      assertEquals(java.util.Set.of("raw|T1", "http://loinc.org|1234-5"), codes(delivery));
+    }
   }
 
   @org.junit.jupiter.params.ParameterizedTest
@@ -267,6 +290,19 @@ class FileMessageHandlerReplayTest {
 
   private String id(int index) {
     return deliveries.get(index).path("identifier").path("value").asText();
+  }
+
+  private java.util.Set<String> codes(JsonNode bundle) {
+    java.util.Set<String> codes = new java.util.HashSet<>();
+    for (JsonNode entry : bundle.path("entry")) {
+      JsonNode resource = entry.path("resource");
+      if (!"Observation".equals(resource.path("resourceType").asText())) continue;
+      for (JsonNode coding : resource.path("code").path("coding")) {
+        String system = coding.path("system").asText();
+        codes.add((system.endsWith("analyzer-raw-code") ? "raw" : system) + "|" + coding.path("code").asText());
+      }
+    }
+    return codes;
   }
 
   private String classification(JsonNode bundle) {

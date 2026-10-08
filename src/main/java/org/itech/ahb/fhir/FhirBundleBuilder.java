@@ -12,6 +12,7 @@ import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.Device;
 import org.hl7.fhir.r4.model.DiagnosticReport;
 import org.hl7.fhir.r4.model.Observation;
+import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Quantity;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Specimen;
@@ -52,6 +53,34 @@ public class FhirBundleBuilder {
    * bundle rebuilt for a retry has to carry the identity the first attempt used.
    */
   public static String buildNormalizedBundle(
+    String accessionNumber,
+    List<AnalyzerResult> results,
+    AnalyzerContext context,
+    java.util.function.Function<String, String> codeToLoinc,
+    String messageId
+  ) {
+    return CTX.newJsonParser()
+      .setPrettyPrint(false)
+      .encodeResourceToString(normalizedBundle(accessionNumber, results, context, codeToLoinc, messageId));
+  }
+
+  /**
+   * Build the normalized bundle for a parsed message, with every part the instrument reported in
+   * its FHIR slot: the records' parts, the patient the instrument named and the specimen
+   * descriptor it sent.
+   */
+  public static String buildNormalizedBundle(
+    HL7ResultParser.ParsedResults parsed,
+    AnalyzerContext context,
+    java.util.function.Function<String, String> codeToLoinc,
+    String messageId
+  ) {
+    Bundle bundle = normalizedBundle(parsed.accessionNumber(), parsed.results(), context, codeToLoinc, messageId);
+    addInstrumentContext(bundle, parsed);
+    return CTX.newJsonParser().setPrettyPrint(false).encodeResourceToString(bundle);
+  }
+
+  private static Bundle normalizedBundle(
     String accessionNumber,
     List<AnalyzerResult> results,
     AnalyzerContext context,
@@ -115,8 +144,52 @@ public class FhirBundleBuilder {
         new org.hl7.fhir.r4.model.CodeType(result.isControl() ? "CONTROL" : "PATIENT")
       );
       observation.addExtension(controlRecognitionExtension(context, result));
+      // The instrument's own status replaces this when it reported one.
+      observation.setStatus(Observation.ObservationStatus.UNKNOWN);
+      if (result.parts() != null) {
+        RecordSlots.apply(observation, result);
+      }
     }
-    return CTX.newJsonParser().setPrettyPrint(false).encodeResourceToString(bundle);
+    return bundle;
+  }
+
+  /** The patient the instrument named and its specimen descriptor, each as reported. */
+  private static void addInstrumentContext(Bundle bundle, HL7ResultParser.ParsedResults parsed) {
+    if (parsed.specimenDescriptor() != null) {
+      bundle
+        .getEntry()
+        .stream()
+        .map(Bundle.BundleEntryComponent::getResource)
+        .filter(Specimen.class::isInstance)
+        .map(Specimen.class::cast)
+        .findFirst()
+        .ifPresent(specimen -> specimen.getType().setText(parsed.specimenDescriptor()));
+    }
+    InstrumentPatient reported = parsed.patient();
+    if (reported == null) {
+      return;
+    }
+    Patient patient = new Patient();
+    patient.addExtension(EXTENSION_ROOT + "analyzer-patient-source", new org.hl7.fhir.r4.model.CodeType("instrument"));
+    if (reported.identifier() != null) {
+      patient.addIdentifier().setValue(reported.identifier());
+    }
+    if (reported.family() != null || reported.given() != null) {
+      org.hl7.fhir.r4.model.HumanName name = patient.addName();
+      name.setFamily(reported.family());
+      if (reported.given() != null) {
+        name.addGiven(reported.given());
+      }
+    }
+    String patientUrl = "urn:uuid:" + UUID.randomUUID();
+    addEntry(bundle, patientUrl, patient, "Patient");
+    bundle
+      .getEntry()
+      .stream()
+      .map(Bundle.BundleEntryComponent::getResource)
+      .filter(Observation.class::isInstance)
+      .map(Observation.class::cast)
+      .forEach(observation -> observation.setSubject(new Reference(patientUrl)));
   }
 
   private static org.hl7.fhir.r4.model.Extension controlRecognitionExtension(
@@ -203,8 +276,10 @@ public class FhirBundleBuilder {
       obs.setSpecimen(new Reference(specimenUrl));
       obs.setDevice(new Reference(deviceUrl));
 
-      // Set value based on type
-      if (result.isNumeric()) {
+      // Set value based on type; a record with parts says its own value in its slots.
+      if (result.parts() != null) {
+        // see RecordSlots
+      } else if (result.isNumeric()) {
         Quantity qty = new Quantity();
         qty.setValue(new BigDecimal(result.value()));
         if (result.units() != null) {
@@ -457,14 +532,15 @@ public class FhirBundleBuilder {
     String lotNumber,
     String controlLevel,
     String controlType,
-    org.itech.ahb.profile.ControlResultRecognitionEvaluator.Assessment controlRecognitionAssessment
+    org.itech.ahb.profile.ControlResultRecognitionEvaluator.Assessment controlRecognitionAssessment,
+    RecordParts parts
   ) {
     public static AnalyzerResult numeric(String testCode, String testName, String value, String units) {
-      return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null, null);
+      return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null, null, null);
     }
 
     public static AnalyzerResult text(String testCode, String testName, String value) {
-      return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null, null, null);
+      return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null, null, null, null);
     }
 
     public AnalyzerResult withControl(boolean control) {
@@ -479,7 +555,8 @@ public class FhirBundleBuilder {
         lotNumber,
         controlLevel,
         controlType,
-        controlRecognitionAssessment
+        controlRecognitionAssessment,
+        parts
       );
     }
 
@@ -495,7 +572,8 @@ public class FhirBundleBuilder {
         lotNumber,
         controlLevel,
         controlType,
-        controlRecognitionAssessment
+        controlRecognitionAssessment,
+        parts
       );
     }
 
@@ -511,7 +589,8 @@ public class FhirBundleBuilder {
         lot,
         controlLevel,
         controlType,
-        controlRecognitionAssessment
+        controlRecognitionAssessment,
+        parts
       );
     }
 
@@ -527,7 +606,8 @@ public class FhirBundleBuilder {
         lotNumber,
         level,
         controlType,
-        controlRecognitionAssessment
+        controlRecognitionAssessment,
+        parts
       );
     }
 
@@ -543,7 +623,8 @@ public class FhirBundleBuilder {
         lotNumber,
         controlLevel,
         type,
-        controlRecognitionAssessment
+        controlRecognitionAssessment,
+        parts
       );
     }
 
@@ -561,7 +642,44 @@ public class FhirBundleBuilder {
         lotNumber,
         controlLevel,
         controlType,
-        assessment
+        assessment,
+        parts
+      );
+    }
+
+    /** The same result under the profile's code for it, whatever code the instrument sent. */
+    public AnalyzerResult withTestCode(String code) {
+      return new AnalyzerResult(
+        code,
+        code,
+        value,
+        units,
+        isNumeric,
+        isControl,
+        timestamp,
+        lotNumber,
+        controlLevel,
+        controlType,
+        controlRecognitionAssessment,
+        parts
+      );
+    }
+
+    /** The same result with every part the instrument reported on its record. */
+    public AnalyzerResult withParts(RecordParts recordParts) {
+      return new AnalyzerResult(
+        testCode,
+        testName,
+        value,
+        units,
+        isNumeric,
+        isControl,
+        timestamp,
+        lotNumber,
+        controlLevel,
+        controlType,
+        controlRecognitionAssessment,
+        recordParts
       );
     }
   }

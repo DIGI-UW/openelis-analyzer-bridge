@@ -3,7 +3,6 @@
   "$id": "https://openelis-global.org/contracts/analyzer/v1/connection-runtime-command.schema.json",
   "title": "Idempotent Bridge connection runtime command v1",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "schemaVersion",
     "commandId",

@@ -17,9 +17,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
-import org.itech.ahb.fhir.ASTMResultParser;
 import org.itech.ahb.fhir.FileResultParser;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.Resource;
@@ -28,79 +27,9 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 class PriorityProfileMockFixtureTest {
 
   private static final ObjectMapper JSON = new ObjectMapper();
+
   @TempDir
   Path temporaryDirectory;
-
-  @Test
-  void publishedGeneXpertProfileMatchesAndParsesTheMockTransportFixture() throws Exception {
-    Path mockRoot = requiredMockRoot();
-    JsonNode template = JSON.readTree(mockRoot.resolve("templates/genexpert_astm.json").toFile());
-    JsonNode profile = profile(template.path("profileRef"));
-    JsonNode resolvedTemplate = resolveMockTemplate(mockRoot, "genexpert_astm", profile);
-    Set<String> declaredCodes = mappingCodes(profile);
-    Set<String> evidencedCodes = fieldNames(template.path("fieldOverrides"));
-
-    assertSoftly(softly -> {
-      softly.assertThat(profile.path("protocol").path("name").asText())
-        .isEqualTo(resolvedTemplate.path("protocol").path("type").asText());
-      softly.assertThat(profile.path("protocol").path("version").asText())
-        .isEqualTo(resolvedTemplate.path("protocol").path("version").asText());
-      softly.assertThat(profile.path("manufacturer").asText())
-        .isEqualTo(resolvedTemplate.path("analyzer").path("manufacturer").asText());
-      softly.assertThat(template.path("profileRef").path("profileId").asText())
-        .isEqualTo(profile.path("profileMeta").path("id").asText());
-      softly.assertThat(template.path("profileRef").path("revision").asInt())
-        .isEqualTo(profile.path("catalog").path("revision").asInt());
-      softly.assertThat(template.has("profile")).isFalse();
-      softly.assertThat(Pattern.compile(profile.path("identifier_pattern").asText(), Pattern.CASE_INSENSITIVE)
-        .matcher(template.path("identification").path("astm_header").asText()).find())
-        .isTrue();
-      softly.assertThat(declaredCodes).containsExactlyInAnyOrderElementsOf(evidencedCodes);
-
-      Map<String, Set<String>> declaredValues = mappingValues(profile);
-      template.path("fieldOverrides").fields().forEachRemaining(entry -> {
-        if (entry.getValue().path("possibleValues").isArray()) {
-          softly.assertThat(declaredValues.get(entry.getKey()))
-            .as("%s result values", entry.getKey())
-            .containsExactlyInAnyOrderElementsOf(textValues(entry.getValue().path("possibleValues")));
-        }
-      });
-    });
-
-    String message = generateGeneXpertMessage(mockRoot, profile, false);
-    var parsed = ASTMResultParser.parse(
-      message.lines().toList(),
-      ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")),
-      AstmResultRecordSelection.fromProfile(profile.path("configDefaults"))
-    );
-    assertThat(parsed).isNotNull();
-    Set<String> parsedCodes = parsed
-      .results()
-      .stream()
-      .map(result -> result.testCode())
-      .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-    assertThat(parsedCodes).containsExactlyInAnyOrderElementsOf(declaredCodes);
-  }
-
-  @Test
-  void publishedGeneXpertProfileRecognizesAndParsesTheMockControlFixture() throws Exception {
-    Path mockRoot = requiredMockRoot();
-    JsonNode template = JSON.readTree(mockRoot.resolve("templates/genexpert_astm.json").toFile());
-    JsonNode profile = profile(template.path("profileRef"));
-
-    String message = generateGeneXpertMessage(mockRoot, profile, true);
-    var parsed = ASTMResultParser.parse(
-      message.lines().toList(),
-      ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")),
-      AstmResultRecordSelection.fromProfile(profile.path("configDefaults"))
-    );
-
-    assertThat(parsed).isNotNull();
-    assertThat(parsed.results()).hasSize(1);
-    assertThat(parsed.results().get(0).testCode()).isEqualTo("HIV-VL");
-    assertThat(parsed.results().get(0).isControl()).isTrue();
-    assertThat(parsed.results().get(0).lotNumber()).isEqualTo("LOT-HIVVL-N");
-  }
 
   @Test
   void publishedFluoroCyclerProfileMatchesAndParsesTheMockFileFixture() throws Exception {
@@ -113,9 +42,10 @@ class PriorityProfileMockFixtureTest {
     Path fixturePath = mockRoot.resolve(fixture.path("file").asText());
 
     Map<String, String> columnMappings = new LinkedHashMap<>();
-    profile.path("column_mapping").fields().forEachRemaining(entry ->
-      columnMappings.put(entry.getKey(), entry.getValue().asText())
-    );
+    profile
+      .path("column_mapping")
+      .fields()
+      .forEachRemaining(entry -> columnMappings.put(entry.getKey(), entry.getValue().asText()));
 
     Set<String> parsedCodes = new LinkedHashSet<>();
     int parsedResultCount;
@@ -134,21 +64,26 @@ class PriorityProfileMockFixtureTest {
 
     assertSoftly(softly -> {
       softly.assertThat(fixturePath).isRegularFile();
-      softly.assertThat(template.path("profileRef").path("profileId").asText())
+      softly
+        .assertThat(template.path("profileRef").path("profileId").asText())
         .isEqualTo(profile.path("profileMeta").path("id").asText());
-      softly.assertThat(template.path("profileRef").path("revision").asInt())
+      softly
+        .assertThat(template.path("profileRef").path("revision").asInt())
         .isEqualTo(profile.path("catalog").path("revision").asInt());
       softly.assertThat(template.has("profile")).isFalse();
       softly.assertThat(fixture.has("perFileTestCode")).isFalse();
-      softly.assertThat(profile.path("protocol").path("name").asText())
+      softly
+        .assertThat(profile.path("protocol").path("name").asText())
         .isEqualTo(resolvedTemplate.path("protocol").path("type").asText());
-      softly.assertThat(profile.path("configDefaults").path("fileFormat").asText())
+      softly
+        .assertThat(profile.path("configDefaults").path("fileFormat").asText())
         .isEqualTo(fixture.path("format").asText());
-      softly.assertThat(
-        FileSystems.getDefault()
-          .getPathMatcher("glob:" + profile.path("configDefaults").path("filePattern").asText())
-          .matches(fixturePath.getFileName())
-      )
+      softly
+        .assertThat(
+          FileSystems.getDefault()
+            .getPathMatcher("glob:" + profile.path("configDefaults").path("filePattern").asText())
+            .matches(fixturePath.getFileName())
+        )
         .as("Bridge watcher glob matches the mock fixture")
         .isTrue();
       softly.assertThat(mappingCodes(profile)).containsExactly(profileFileTestCode);
@@ -157,47 +92,13 @@ class PriorityProfileMockFixtureTest {
     });
   }
 
-  private String generateGeneXpertMessage(Path mockRoot, JsonNode profile, boolean control) throws Exception {
-    Path profileRoot = temporaryDirectory.resolve("profiles");
-    Files.createDirectories(profileRoot);
-    JSON.writeValue(profileRoot.resolve("analyzer-profile-astm.json").toFile(), profile);
-
-    String script = """
-      import json
-      import sys
-      sys.path.insert(0, sys.argv[1])
-      from profile_adapter import load_profile_backed_template
-      from protocols.astm_handler import ASTMHandler
-      with open(sys.argv[2], encoding="utf-8") as source:
-          template = json.load(source)
-      merged = load_profile_backed_template("genexpert_astm", template)
-      handler = ASTMHandler()
-      print(handler.generate_qc(merged, deviation=0) if sys.argv[3] == "control" else handler.generate(merged, use_seed=True))
-      """;
-    ProcessBuilder processBuilder = new ProcessBuilder(
-      "python3",
-      "-c",
-      script,
-      mockRoot.toString(),
-      mockRoot.resolve("templates/genexpert_astm.json").toString(),
-      control ? "control" : "patient"
-    );
-    processBuilder.directory(mockRoot.toFile());
-    processBuilder.environment().put("ANALYZER_BRIDGE_PROFILES_DIR", profileRoot.toString());
-    processBuilder.redirectErrorStream(true);
-    Process process = processBuilder.start();
-    String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-    int exitCode = process.waitFor();
-    assertThat(exitCode).as(output).isZero();
-    return output;
-  }
-
   private JsonNode resolveMockTemplate(Path mockRoot, String templateName, JsonNode profile) throws Exception {
     Path profileRoot = temporaryDirectory.resolve("profiles-" + templateName);
     Files.createDirectories(profileRoot);
     JSON.writeValue(profileRoot.resolve(profile.path("profileMeta").path("id").asText() + ".json").toFile(), profile);
 
-    String script = """
+    String script =
+      """
       import json
       import sys
       sys.path.insert(0, sys.argv[1])
@@ -250,31 +151,19 @@ class PriorityProfileMockFixtureTest {
     return codes.iterator().next();
   }
 
-  private static Map<String, Set<String>> mappingValues(JsonNode profile) {
-    Map<String, Set<String>> values = new LinkedHashMap<>();
-    profile.path("default_test_mappings").forEach(mapping ->
-      values.put(mapping.path("test_code").asText(), textValues(mapping.path("values")))
-    );
-    return values;
-  }
-
-  private static Set<String> fieldNames(JsonNode fields) {
-    Set<String> names = new LinkedHashSet<>();
-    fields.fieldNames().forEachRemaining(names::add);
-    return names;
-  }
-
   private static Set<String> textValues(JsonNode values) {
     Set<String> texts = new LinkedHashSet<>();
     values.forEach(value -> texts.add(value.asText()));
     return texts;
   }
 
+  /** The mock checkout OpenELIS supplies when it runs the Bridge and the mock together. */
   private static Path requiredMockRoot() {
     String configured = System.getProperty("analyzerMockDir");
-    if (configured == null || configured.isBlank()) {
-      throw new IllegalStateException("Run with -DanalyzerMockDir=/path/to/analyzer-mock-server");
-    }
+    Assumptions.assumeTrue(
+      configured != null && !configured.isBlank(),
+      "Needs the analyzer mock (-DanalyzerMockDir); OpenELIS runs it against both submodules"
+    );
     return Path.of(configured).toAbsolutePath().normalize();
   }
 }

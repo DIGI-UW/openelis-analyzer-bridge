@@ -83,7 +83,9 @@ class FileConnectionShutdownReplayTest {
     receiver.start();
     var executor = Executors.newFixedThreadPool(2);
     try {
-      profile = (ObjectNode) json.readTree(getClass().getResourceAsStream("/analyzer-profiles/fluorocycler-xt.json"));
+      profile = (ObjectNode) json.readTree(
+        getClass().getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
+      );
       profile.withObject("profileMeta").put("id", "test.file-shutdown");
       profile.withObject("protocol").put("format", "CSV");
       profile.putArray("supported_extensions").add(".csv");

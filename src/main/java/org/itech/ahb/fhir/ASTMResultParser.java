@@ -12,10 +12,12 @@ import java.util.Map;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
+import org.itech.ahb.profile.AstmResultParts;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlRecognitionRule;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.ControlResultRecognitionEvaluator;
+import org.itech.ahb.profile.ResultReading;
 
 /**
  * Extracts lab results from ASTM LIS2-A2 messages.
@@ -57,14 +59,31 @@ public class ASTMResultParser {
     public static HL7ResultParser.ParsedResults parse(
             List<String> lines, ControlResultRecognition recognition,
             AstmResultRecordSelection resultRecordSelection) {
+        return parse(lines, recognition, resultRecordSelection, null);
+    }
+
+    /**
+     * Parse ASTM message lines, reading every part of each result record where the pinned
+     * profile says it sits. A profile that declares no result parts is read as it always was.
+     *
+     * @param reading how the pinned profile reads a result; null for the established reading
+     */
+    public static HL7ResultParser.ParsedResults parse(
+            List<String> lines, ControlResultRecognition recognition,
+            AstmResultRecordSelection resultRecordSelection, ResultReading reading) {
         if (lines == null || lines.isEmpty()) return null;
         if (resultRecordSelection == null) {
             throw new IllegalArgumentException("ASTM result-record selection is required");
         }
+        AstmResultParts parts = reading == null ? null : reading.astmParts();
 
         String accession = null;
         ControlResultRecognitionEvaluator.Assessment recognitionAssessment = null;
         List<AnalyzerResult> results = new ArrayList<>();
+        InstrumentPatient patient = null;
+        String specimenDescriptor = null;
+        // The result a following C record belongs to; null after a record that said nothing.
+        int commentTarget = -1;
 
         for (String line : lines) {
             if (line == null || line.isEmpty()) continue;
@@ -81,10 +100,31 @@ public class ASTMResultParser {
                     }
                     recognitionAssessment = ControlResultRecognitionEvaluator.evaluate(
                             recognition, accession, fieldValues);
+                    if (parts != null) {
+                        String descriptor = AstmResultParts.read(parts.specimenDescriptor(), fields);
+                        specimenDescriptor = descriptor.isEmpty() ? null : descriptor;
+                    }
+                }
+                case "P" -> {
+                    if (parts != null) {
+                        patient = readPatient(line, parts);
+                    }
+                }
+                case "C" -> {
+                    if (parts != null && commentTarget >= 0) {
+                        String note = readNote(line, parts);
+                        if (note != null) {
+                            AnalyzerResult target = results.get(commentTarget);
+                            results.set(commentTarget, target.withParts(target.parts().withNote(note)));
+                        }
+                    }
                 }
                 case "R" -> {
+                    commentTarget = -1;
                     if (accession != null) {
-                        AnalyzerResult result = parseResultRecord(line, resultRecordSelection);
+                        AnalyzerResult result = parts == null
+                                ? parseResultRecord(line, resultRecordSelection)
+                                : parseResultRecord(line, resultRecordSelection, parts, reading);
                         if (result != null) {
                             result = result.withControlRecognition(recognitionAssessment);
                             if (recognitionAssessment.matchedRule().isPresent()) {
@@ -94,6 +134,7 @@ public class ASTMResultParser {
                                         .withControlType(rule.controlType());
                             }
                             results.add(result);
+                            commentTarget = parts == null ? -1 : results.size() - 1;
                         }
                     }
                 }
@@ -126,7 +167,9 @@ public class ASTMResultParser {
 
         if (accession == null) accession = "ASTM-UNKNOWN";
 
-        return results.isEmpty() ? null : new HL7ResultParser.ParsedResults(accession, results);
+        return results.isEmpty()
+                ? null
+                : new HL7ResultParser.ParsedResults(accession, results, patient, specimenDescriptor);
     }
 
     /**
@@ -135,12 +178,70 @@ public class ASTMResultParser {
     public static HL7ResultParser.ParsedResults parseRaw(
             String rawAstm, ControlResultRecognition recognition,
             AstmResultRecordSelection resultRecordSelection) {
+        return parseRaw(rawAstm, recognition, resultRecordSelection, null);
+    }
+
+    public static HL7ResultParser.ParsedResults parseRaw(
+            String rawAstm, ControlResultRecognition recognition,
+            AstmResultRecordSelection resultRecordSelection, ResultReading reading) {
         if (rawAstm == null || rawAstm.isBlank()) return null;
         List<String> lines = new ArrayList<>();
         for (String line : rawAstm.split("\r")) {
             if (!line.isBlank()) lines.add(line.trim());
         }
-        return parse(lines, recognition, resultRecordSelection);
+        return parse(lines, recognition, resultRecordSelection, reading);
+    }
+
+    /** The patient a P record reports, where the profile says to read one; null when it reports none. */
+    private static InstrumentPatient readPatient(String patientRecord, AstmResultParts parts) {
+        String[] fields = patientRecord.split(Pattern.quote(FIELD_DELIMITER), -1);
+        String identifier = AstmResultParts.read(parts.patientId(), fields);
+        String name = AstmResultParts.read(parts.patientName(), fields);
+        String[] components = name.split(Pattern.quote(COMPONENT_DELIMITER), -1);
+        String family = components.length > 0 ? components[0].trim() : "";
+        String given = components.length > 1 ? components[1].trim() : "";
+        if (identifier.isEmpty() && family.isEmpty() && given.isEmpty()) {
+            return null;
+        }
+        return new InstrumentPatient(
+                identifier.isEmpty() ? null : identifier,
+                family.isEmpty() ? null : family,
+                given.isEmpty() ? null : given);
+    }
+
+    /**
+     * The note or error a C record carries. Its comment text is id^code^description^details^time
+     * (Cepheid 301-2002 Rev E 6.3.4.1.7); a comment of one component is the text itself.
+     */
+    private static String readNote(String commentRecord, AstmResultParts parts) {
+        String[] fields = commentRecord.split(Pattern.quote(FIELD_DELIMITER), -1);
+        String text = AstmResultParts.read(parts.note(), fields);
+        if (text.isEmpty()) {
+            return null;
+        }
+        String[] components = text.split(Pattern.quote(COMPONENT_DELIMITER), -1);
+        if (components.length == 1) {
+            return text;
+        }
+        String id = components[0].trim();
+        String code = components.length > 1 ? components[1].trim() : "";
+        String description = components.length > 2 ? components[2].trim() : "";
+        String details = components.length > 3 ? components[3].trim() : "";
+        String time = components.length > 4 ? astmTime(components[4].trim()) : null;
+        StringBuilder note = new StringBuilder(id);
+        if (!code.isEmpty()) {
+            note.append(' ').append(code);
+        }
+        if (!description.isEmpty()) {
+            note.append(": ").append(description);
+        }
+        if (!details.isEmpty()) {
+            note.append(" (").append(details).append(')');
+        }
+        if (time != null) {
+            note.append(" at ").append(time.substring(0, Math.min(time.length(), 19)));
+        }
+        return note.toString();
     }
 
     /**
@@ -203,6 +304,86 @@ public class ASTMResultParser {
             result = result.withTimestamp(timestamp);
         }
         return result;
+    }
+
+    /**
+     * Parse one R record into every part the profile locates on it. A record with neither a
+     * call nor a number says nothing, so it is not a result.
+     */
+    static AnalyzerResult parseResultRecord(
+            String resultRecord, AstmResultRecordSelection resultRecordSelection, AstmResultParts parts,
+            ResultReading reading) {
+        if (!resultRecordSelection.includes(resultRecord)) {
+            return null;
+        }
+        String[] fields = resultRecord.split(Pattern.quote(FIELD_DELIMITER), -1);
+        String testCode = AstmResultParts.read(parts.testCode(), fields);
+        String call = AstmResultParts.read(parts.call(), fields);
+        String number = AstmResultParts.read(parts.number(), fields);
+        if (testCode.isEmpty() || (call.isEmpty() && number.isEmpty())) {
+            return null;
+        }
+        String assayName = AstmResultParts.read(parts.assayName(), fields);
+        // A record that names its assay is the main result: its analyte field is a result name.
+        String analyte = assayName.isEmpty() ? AstmResultParts.read(parts.analyte(), fields) : "";
+        String complement = AstmResultParts.read(parts.complement(), fields);
+        String subIdentity = complement.isEmpty() ? analyte : analyte + "&" + complement;
+        String range = AstmResultParts.read(parts.range(), fields);
+        String flag = AstmResultParts.read(parts.flag(), fields);
+        boolean offScale = flag.equals("<") || flag.equals(">");
+        String comparator = offScale ? flag : null;
+        String limit = number.isEmpty() && offScale ? limitOf(range, flag) : null;
+        String canonicalNumber = number.isEmpty() ? null : reading.canonicalNumber(number);
+        String canonicalLimit = limit == null ? null : reading.canonicalNumber(limit);
+        String operator = AstmResultParts.read(parts.operator(), fields);
+        String version = AstmResultParts.read(parts.assayVersion(), fields);
+        String instrument = AstmResultParts.read(parts.instrument(), fields);
+        String status = AstmResultParts.read(parts.status(), fields);
+        String units = AstmResultParts.read(parts.unit(), fields);
+        String raw = number.isEmpty() ? call : number;
+        RecordParts recordParts = new RecordParts(
+                subIdentity,
+                call.isEmpty() ? null : call,
+                canonicalNumber,
+                comparator,
+                canonicalLimit,
+                range.isEmpty() ? null : range,
+                flag.isEmpty() || offScale ? List.of() : List.of(flag),
+                assayName.isEmpty() ? null : assayName,
+                version.isEmpty() ? null : version,
+                operator.isEmpty() || operator.equals("<None>") ? null : operator,
+                instrument.isEmpty() ? null : instrument,
+                status.isEmpty() ? null : status,
+                reading.isRunFailure(testCode, subIdentity, raw),
+                List.of());
+        boolean quantity = !number.isEmpty() || limit != null;
+        AnalyzerResult result = quantity
+                ? AnalyzerResult.numeric(testCode, testCode, raw, units.isEmpty() ? null : units)
+                : AnalyzerResult.text(testCode, testCode, raw);
+        String time = testTime(fields, parts);
+        if (time != null) {
+            result = result.withTimestamp(time);
+        }
+        return result.withParts(recordParts);
+    }
+
+    /** The range limit an off-scale flag points at: the lower limit of "40.00 to 10000000.00" for "<". */
+    private static String limitOf(String range, String flag) {
+        String[] limits = range.split("\\s+to\\s+", -1);
+        String limit = flag.equals("<") ? limits[0] : limits[limits.length - 1];
+        return limits.length == 2 && !limit.isBlank() ? limit.trim() : null;
+    }
+
+    /** The time the test was performed, from the completed part, else the started part. */
+    private static String testTime(String[] resultFields, AstmResultParts parts) {
+        for (AstmResultParts.Field part : new AstmResultParts.Field[] {parts.completed(), parts.started()}) {
+            String raw = AstmResultParts.read(part, resultFields);
+            String time = raw.isEmpty() ? null : astmTime(raw);
+            if (time != null) {
+                return time;
+            }
+        }
+        return null;
     }
 
     /**

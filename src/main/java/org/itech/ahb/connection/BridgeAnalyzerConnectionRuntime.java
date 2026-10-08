@@ -413,6 +413,10 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       entry.setTabularResultValueSelection(TabularResultValueSelection.fromProfile(profile));
     }
 
+    Map<String, String> codeOverrides = codeOverrides(profile, values);
+    // Every protocol translates an instrument's own code back to the profile's; only an ASTM
+    // profile declares where each part of a record sits.
+    entry.setResultReading(org.itech.ahb.profile.ResultReading.fromProfile(profile, values));
     List<String> primaryCodes = new ArrayList<>();
     Map<String, String> codeToLoinc = new LinkedHashMap<>();
     for (JsonNode mapping : profile.path("default_test_mappings")) {
@@ -420,7 +424,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       String loinc = requiredText(mapping, "loinc", "Profile test LOINC");
       primaryCodes.add(code);
       List<String> aliases = new ArrayList<>();
-      aliases.add(code);
+      // The instrument sends the code this connection set for the assay, else the profile's.
+      aliases.add(codeOverrides.getOrDefault(code, code));
       mapping.path("aliases").forEach(alias -> aliases.add(alias.asText()));
       aliases.forEach(alias -> codeToLoinc.put(alias, loinc));
     }
@@ -512,6 +517,65 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       throw new AnalyzerConnectionException(label + " is required");
     }
     return result;
+  }
+
+  /**
+   * The instrument codes this connection sets for the profile's assays, by profile code. Each must
+   * belong to a test the pinned profile declares, and no two assays may share a code, including a
+   * code or alias the profile already gives another assay.
+   */
+  static Map<String, String> codeOverrides(JsonNode profile, JsonNode values) {
+    Set<String> declared = new LinkedHashSet<>();
+    Map<String, String> declaredOwners = new LinkedHashMap<>();
+    profile
+      .path("default_test_mappings")
+      .forEach(mapping -> {
+        String code = mapping.path("test_code").asText();
+        declared.add(code);
+        declaredOwners.put(code, code);
+        mapping.path("aliases").forEach(alias -> declaredOwners.put(alias.asText(), code));
+      });
+    Map<String, String> overrides = new LinkedHashMap<>();
+    Map<String, String> owners = new LinkedHashMap<>();
+    JsonNode configured = values.path("codeOverrides");
+    if (configured.isMissingNode() || configured.isNull()) {
+      return overrides;
+    }
+    if (!configured.isObject()) {
+      throw new AnalyzerConnectionException("codeOverrides must map profile test codes to instrument codes");
+    }
+    configured
+      .fields()
+      .forEachRemaining(entry -> {
+        if (!declared.contains(entry.getKey())) {
+          throw new AnalyzerConnectionException(
+            "codeOverrides names a code the pinned profile does not declare: " + entry.getKey()
+          );
+        }
+        if (!entry.getValue().isTextual() || entry.getValue().asText().isBlank()) {
+          throw new AnalyzerConnectionException("codeOverrides needs an instrument code for " + entry.getKey());
+        }
+        String instrumentCode = entry.getValue().asText().trim();
+        String declaredOwner = declaredOwners.get(instrumentCode);
+        if (declaredOwner != null && !declaredOwner.equals(entry.getKey())) {
+          throw new AnalyzerConnectionException(
+            "codeOverrides gives " +
+            entry.getKey() +
+            " the code " +
+            instrumentCode +
+            ", which the profile uses for " +
+            declaredOwner
+          );
+        }
+        String previous = owners.putIfAbsent(instrumentCode, entry.getKey());
+        if (previous != null) {
+          throw new AnalyzerConnectionException(
+            "codeOverrides gives " + instrumentCode + " to both " + previous + " and " + entry.getKey()
+          );
+        }
+        overrides.put(entry.getKey(), instrumentCode);
+      });
+    return overrides;
   }
 
   private static String nullableText(JsonNode value, String field) {

@@ -175,6 +175,15 @@ may be added compatibly; removing a field or changing its required meaning
 requires a new major contract directory. There is no parallel thin-profile
 schema, compatibility reader/writer, or bulk full-state registration contract.
 
+Readers on both sides ignore fields they do not know, so an added optional
+field reaches an older reader without breaking it; each reader checks the
+fields it depends on, and refuses an unsupported `schemaVersion`. The Bridge
+refuses by name the fields OpenELIS must never send (`openelisTestId`,
+`openelisResultOptionId`, `labUnitId`, `controlLots`, `qcRules`, `westgard`,
+`operationalQc`, and the reserved keys under `values`), and stores only the
+pin fields it knows. Connection responses are checked against their schema
+before they leave the Bridge.
+
 ### Categorical answer hints
 
 A test mapping may supply optional `result_value_hints`, an object whose keys

@@ -57,7 +57,8 @@ public class AnalyzerRuntimeRegistry {
   /** Whether {@code sourceIp} is the address of an active HTTP analyzer connection. */
   public synchronized boolean isActiveHttpSender(String sourceIp) {
     String address = IpLiteral.canonicalize(sourceIp);
-    return address != null &&
+    return (
+      address != null &&
       analyzers
         .entrySet()
         .stream()
@@ -66,7 +67,8 @@ public class AnalyzerRuntimeRegistry {
             "HTTP".equals(registered.getValue().getInboundTransport()) &&
             (address.equals(registered.getValue().getInboundSourceId()) ||
               address.equals(IpLiteral.canonicalize(registered.getKey())))
-        );
+        )
+    );
   }
 
   /**
@@ -488,6 +490,13 @@ public class AnalyzerRuntimeRegistry {
     /** Profile-owned selection of ASTM R records that carry reportable results. */
     private AstmResultRecordSelection astmResultRecordSelection;
 
+    /**
+     * How the pinned profile and the saved connection read a result: where each part of a record
+     * sits, which raw values are run failures, the number format and any instrument codes the
+     * connection overrides. Null for a profile read the way it always was.
+     */
+    private org.itech.ahb.profile.ResultReading resultReading;
+
     /** Specimen group layout materialized only from the pinned HL7 profile. */
     private org.itech.ahb.profile.Hl7SpecimenPosition hl7SpecimenPosition =
       org.itech.ahb.profile.Hl7SpecimenPosition.PRECEDING;
@@ -500,6 +509,11 @@ public class AnalyzerRuntimeRegistry {
      * never sees analyzer codes — it speaks LOINC over FHIR.
      */
     private java.util.Map<String, String> codeToLoinc = Collections.emptyMap();
+
+    /** The LOINC of a result already under the profile's code; the table is keyed by the codes the instrument sends. */
+    public String getLoincForProfileCode(String profileCode) {
+      return getLoincForCode(resultReading == null ? profileCode : resultReading.instrumentCode(profileCode));
+    }
 
     /** Resolve an analyzer test code to its LOINC (inbound). Null if unmapped. */
     public String getLoincForCode(String analyzerCode) {

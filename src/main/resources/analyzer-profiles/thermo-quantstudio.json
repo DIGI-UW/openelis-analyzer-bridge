@@ -1,9 +1,9 @@
 {
   "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "profileMeta": {
-    "id": "quantstudio",
-    "version": "1.2.0",
+    "id": "thermo-quantstudio",
+    "version": "2.0.0",
     "displayName": "Thermo Fisher QuantStudio QS5/QS7",
     "manufacturer": "Thermo Fisher",
     "confidence": "VALIDATED"
@@ -30,6 +30,7 @@
     "Well Position": "position",
     "Task": "qcTask"
   },
+  "result_value_order": ["result", "ctValue"],
   "sheet_detection": {
     "strategy": "header_scan",
     "preferred_sheet_names": ["Results"],
@@ -43,14 +44,22 @@
       "test_name_hint": "HIV-1 Viral Load",
       "loinc": "20447-9",
       "unit": "copies/mL",
-      "result_type": "quantitative"
+      "result_type": "quantitative",
+      "source": {
+        "document": "QuantStudio 5 / 7 Flex, Field Mapping & Integration Spec v1.3.1 (openelis-work designs/analyzer-integration)",
+        "section": "4.3, 5.1, 8"
+      }
     },
     {
       "test_code": "IC",
       "test_name_hint": "Internal Control DNA",
       "loinc": "89578-3",
       "unit": "",
-      "result_type": "quantitative"
+      "result_type": "quantitative",
+      "source": {
+        "document": "QuantStudio 5 / 7 Flex, Field Mapping & Integration Spec v1.3.1 (openelis-work designs/analyzer-integration)",
+        "section": "4.3, 5.1, 8"
+      }
     }
   ],
   "configDefaults": {
@@ -112,12 +121,12 @@
     }
   },
   "catalog": {
-    "revision": 2,
-    "revisionFingerprint": "sha256:3c9ad066168504b4dced8934568aaa9bab6492d73c2ba318b92c16095593b025",
+    "revision": 1,
     "recognitionFingerprint": "sha256:e5c668abfd8b64220efeff01dd57682dcbd883f2652d68d187505bbd4ac707ab",
     "source": "SHIPPED",
     "status": "ACTIVE",
-    "publishedAt": "2026-08-26T00:00:00Z",
-    "publishedBy": "distribution"
+    "publishedAt": "2026-10-06T00:00:00Z",
+    "publishedBy": "distribution",
+    "revisionFingerprint": "sha256:9b5a84ddbc724ee696823898105a4f49edd41160fb9400bc51c109cda5d91ce1"
   }
 }

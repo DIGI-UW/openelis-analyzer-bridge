@@ -97,21 +97,22 @@ class GeneXpertTestTimeTest {
 
   private void registerGeneXpert() throws Exception {
     JsonNode profile;
-    try (InputStream json = getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json")) {
+    try (InputStream json = getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")) {
       profile = new ObjectMapper().readTree(json);
     }
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId("oe-gx");
     entry.setBridgeConnectionId("gx");
     entry.setName("gx");
-    entry.setProfileId("genexpert-astm");
-    entry.setProfileRevision(5);
+    entry.setProfileId("cepheid-genexpert-astm");
+    entry.setProfileRevision(1);
     entry.setExpectedProtocol("ASTM");
     entry.setInboundTransport("TCP/IP");
     entry.setListenerPort(PORT);
     entry.setControlResultRecognition(ControlResultRecognition.fromProfile(profile.path("controlResultRecognition")));
     entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
     entry.setAstmResultRecordSelection(AstmResultRecordSelection.fromProfile(profile.path("configDefaults")));
+    entry.setResultReading(org.itech.ahb.profile.ResultReading.fromProfile(profile));
     entry.setCodeToLoinc(Map.of());
     registry.register("connection:gx", entry);
   }
@@ -120,10 +121,17 @@ class GeneXpertTestTimeTest {
     return new DefaultASTMMessage(
       "H|@^\\|TEST-MSG-0001||TESTLAB^GeneXpert^6.2|||||TEST LAB||P|1394-97|20260923155007\r" +
       "P|1|||TEST PATIENT|^^^^\r" +
-      "O|1|" + sampleId + "|Cepheid-TEST-0001|^^^MTB-RIF_ULTRA 2|R|" + started + "|||||||||ORH||||||||||F\r" +
-      "R|1|^MTB-RIF_ULTRA 2^^^Xpert MTB-RIF Ultra^1^MTB^|MTB DETECTED LOW^|||||F||Test Operator|" + started +
-      "|" + completed + "|Cepheid-TEST^000001^000000001^000000001^00001^20270110|\r" +
-      "R|2|^^^MTB-RIF_ULTRA 2^^^SPC^Ct|^25.9|||\r" +
+      "O|1|" +
+      sampleId +
+      "|Cepheid-TEST-0001|^^^SARSCOV2_3|R|" +
+      started +
+      "|||||||||ORH||||||||||F\r" +
+      "R|1|^^^SARSCOV2_3^Xpress SARS-CoV-2 plus^1^^|POSITIVE^|||||F||Test Operator|" +
+      started +
+      "|" +
+      completed +
+      "|Cepheid-TEST^000001^000000001^000000001^00001^20270110|\r" +
+      "R|2|^^^SARSCOV2_3^^^SPC^Ct|^25.9|||\r" +
       "L|1|N\r"
     );
   }
@@ -135,15 +143,17 @@ class GeneXpertTestTimeTest {
       .filter(entry -> sampleId.equals(entry.accession()))
       .findFirst()
       .orElseThrow(() -> new AssertionError("no rendered delivery for " + sampleId + " in " + rendered));
-    Bundle bundle = FHIR.newJsonParser().parseResource(Bundle.class, outbox.store.fhirPayload(delivery.id()).orElseThrow());
+    Bundle bundle = FHIR.newJsonParser()
+      .parseResource(Bundle.class, outbox.store.fhirPayload(delivery.id()).orElseThrow());
     List<Observation> observations = bundle
       .getEntry()
       .stream()
       .map(Bundle.BundleEntryComponent::getResource)
       .filter(Observation.class::isInstance)
       .map(Observation.class::cast)
+      .filter(observation -> !observation.hasExtension("http://hl7.org/fhir/StructureDefinition/observation-v2-subid"))
       .toList();
-    assertThat(observations).as("only the assay record is a result").hasSize(1);
+    assertThat(observations).as("one main result; the SPC record is its component").hasSize(1);
     return observations.get(0);
   }
 

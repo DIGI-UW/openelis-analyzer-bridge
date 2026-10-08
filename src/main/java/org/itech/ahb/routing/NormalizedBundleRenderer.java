@@ -133,7 +133,8 @@ public class NormalizedBundleRenderer {
         case ASTM -> ASTMResultParser.parse(
           splitOn(envelope.getRawMessage(), false),
           recognition,
-          analyzer.getAstmResultRecordSelection()
+          analyzer.getAstmResultRecordSelection(),
+          analyzer.getResultReading()
         );
         default -> null;
       };
@@ -225,10 +226,9 @@ public class NormalizedBundleRenderer {
     );
     try {
       String fhirJson = FhirBundleBuilder.buildNormalizedBundle(
-        parsed.accessionNumber(),
-        parsed.results(),
+        parsed.underProfileCodes(analyzer.getResultReading()),
         analyzerContext,
-        analyzer::getLoincForCode,
+        analyzer::getLoincForProfileCode,
         messageId
       );
       return new Outcome.Rendered(

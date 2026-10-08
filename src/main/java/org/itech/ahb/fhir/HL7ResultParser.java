@@ -95,7 +95,7 @@ public class HL7ResultParser {
       if ("OBX".equals(segment)) {
         AnalyzerResult result = parseObxSegment(line, delimiters);
         if (result != null) {
-          String specimenId = actualAccession(accession, fieldValues, delimiters);
+          String specimenId = actualAccession(accession);
           if (specimenPosition == Hl7SpecimenPosition.FOLLOWING_OBX) {
             pending = new PendingObservation(result, specimenId, fieldValues.snapshot());
           } else {
@@ -108,7 +108,7 @@ public class HL7ResultParser {
     if (pending != null) {
       results.add(recognize(pending.result(), pending.specimenId(), pending.fields(), recognition));
     }
-    accession = actualAccession(accession, fieldValues, delimiters);
+    accession = actualAccession(accession);
     // Recognition already used instrument evidence, never this display-only fallback.
     if (accession == null) accession = "HL7-UNKNOWN";
 
@@ -182,12 +182,9 @@ public class HL7ResultParser {
     return result;
   }
 
-  private static String actualAccession(String accession, Map<String, String> fields, Delimiters delimiters) {
-    if (accession != null && !accession.isBlank()) return accession;
-    String patientId = fields.get("PID.3");
-    if (patientId == null) return null;
-    String identifier = split(split(patientId, delimiters.repetition())[0], delimiters.component())[0].trim();
-    return identifier.isBlank() ? null : identifier;
+  /** The accession the instrument named; a patient identifier is never one. */
+  private static String actualAccession(String accession) {
+    return accession != null && !accession.isBlank() ? accession : null;
   }
 
   /**
@@ -317,5 +314,31 @@ public class HL7ResultParser {
     return null;
   }
 
-  public record ParsedResults(String accessionNumber, List<AnalyzerResult> results) {}
+  /**
+   * @param patient the patient the instrument reported, when its profile says where to read one
+   * @param specimenDescriptor the instrument's own description of the specimen, as sent
+   */
+  public record ParsedResults(
+    String accessionNumber,
+    List<AnalyzerResult> results,
+    InstrumentPatient patient,
+    String specimenDescriptor
+  ) {
+    public ParsedResults(String accessionNumber, List<AnalyzerResult> results) {
+      this(accessionNumber, results, null, null);
+    }
+
+    /** These results under the profile's own codes, where the connection sets other codes for its instrument. */
+    public ParsedResults underProfileCodes(org.itech.ahb.profile.ResultReading reading) {
+      if (reading == null || reading.profileCodeByInstrumentCode().isEmpty()) {
+        return this;
+      }
+      return new ParsedResults(
+        accessionNumber,
+        results.stream().map(result -> result.withTestCode(reading.profileCode(result.testCode()))).toList(),
+        patient,
+        specimenDescriptor
+      );
+    }
+  }
 }

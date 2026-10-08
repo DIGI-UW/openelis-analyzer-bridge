@@ -568,6 +568,19 @@ class SqliteOutboxStoreTest {
     }
 
     @Test
+    @DisplayName("keeps a delivered result, and its message, when delivered retention is unlimited")
+    void keepsDeliveredResultsWhenRetentionIsUnlimited() {
+      receiveAndRender(RAW_ASTM, "astm-v1:a", "ACC-1");
+      store.markDelivered("astm-v1:a", 200, "receipt-1", "{}");
+
+      int removed = store.purgeExpired(Instant.now().plus(Duration.ofDays(3650)), null, Duration.ofDays(90));
+
+      assertEquals(0, removed);
+      assertTrue(store.get("astm-v1:a").isPresent());
+      assertEquals(RAW_ASTM, store.rawPayload("astm-v1:a").orElseThrow());
+    }
+
+    @Test
     @DisplayName("purges delivered and dismissed entries past their window, with their content")
     void purgesExpiredEntries() {
       receiveAndRender(RAW_ASTM, "astm-v1:a", "ACC-1");

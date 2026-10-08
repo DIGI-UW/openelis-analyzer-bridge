@@ -43,7 +43,9 @@ class OutboundConnectionProbeTest {
       inbound.setPort(available.getLocalPort());
     }
     listeners.start("inbound", "oe-probe", inbound.getPort(), "LIS01_A");
-    profile = (ObjectNode) mapper.readTree(getClass().getResourceAsStream("/analyzer-profiles/genexpert-astm-v5.json"));
+    profile = (ObjectNode) mapper.readTree(
+      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
+    );
     connection = mapper
       .createObjectNode()
       .put("connectionId", "outbound-probe")
@@ -51,8 +53,8 @@ class OutboundConnectionProbeTest {
       .put("configFingerprint", "sha256:" + "1".repeat(64));
     connection
       .putObject("profileRef")
-      .put("profileId", "genexpert-astm")
-      .put("revision", 5)
+      .put("profileId", "cepheid-genexpert-astm")
+      .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
     connection
       .putObject("values")

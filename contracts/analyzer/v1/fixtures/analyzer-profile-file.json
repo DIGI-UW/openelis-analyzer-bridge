@@ -39,7 +39,8 @@
       "test_code": "VIH-1",
       "test_name_hint": "HIV-1 Viral Load",
       "loinc": "20447-9",
-      "unit": "copies/mL"
+      "unit": "copies/mL",
+      "result_type": "quantitative"
     }
   ],
   "configDefaults": {

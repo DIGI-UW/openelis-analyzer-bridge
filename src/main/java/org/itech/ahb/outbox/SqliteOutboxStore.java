@@ -871,13 +871,15 @@ public class SqliteOutboxStore implements OutboxStore {
   public synchronized int purgeExpired(Instant now, Duration deliveredRetention, Duration dismissedRetention) {
     return inTransaction(() -> {
       int removed = 0;
-      try (
-        PreparedStatement st = conn.prepareStatement(
-          "DELETE FROM outbox WHERE state = 'DELIVERED' AND delivered_at IS NOT NULL AND delivered_at < ?"
-        )
-      ) {
-        st.setString(1, ts(now.minus(deliveredRetention)));
-        removed += st.executeUpdate();
+      if (deliveredRetention != null) {
+        try (
+          PreparedStatement st = conn.prepareStatement(
+            "DELETE FROM outbox WHERE state = 'DELIVERED' AND delivered_at IS NOT NULL AND delivered_at < ?"
+          )
+        ) {
+          st.setString(1, ts(now.minus(deliveredRetention)));
+          removed += st.executeUpdate();
+        }
       }
       // Only entries an operator has explicitly dismissed age out. An undismissed DMQ entry is
       // undelivered clinical data and is never purged, however old it gets.

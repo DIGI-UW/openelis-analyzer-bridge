@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
 
 class AnalyzerProfileValidatorTest {
 
-  private static final String FILE_PROFILE = "analyzer-profiles/fluorocycler-xt.json";
-  private static final String ASTM_PROFILE = "analyzer-profiles/genexpert-astm.json";
+  private static final String FILE_PROFILE = "analyzer-profiles/hain-fluorocycler-xt.json";
+  private static final String ASTM_PROFILE = "analyzer-profiles/cepheid-genexpert-astm.json";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
@@ -142,7 +142,7 @@ class AnalyzerProfileValidatorTest {
   void rejectsDuplicateConnectionFieldKeys() throws Exception {
     ObjectNode profile = fileProfile();
     ArrayNode fields = (ArrayNode) profile.path("connectionFields");
-    fields.add(fields.get(0).deepCopy());
+    fields.add(field(profile, "directory").deepCopy());
 
     assertThat(validator.validationIssues(profile)).contains("$.connectionFields keys must be unique: directory");
   }
@@ -150,7 +150,7 @@ class AnalyzerProfileValidatorTest {
   @Test
   void rejectsConnectionVisibilityThatReferencesAnUndeclaredField() throws Exception {
     ObjectNode profile = fileProfile();
-    ObjectNode condition = ((ObjectNode) profile.path("connectionFields").get(0)).putObject("visibleWhen");
+    ObjectNode condition = field(profile, "directory").putObject("visibleWhen");
     condition.put("fieldKey", "inventedTransport");
     condition.put("operator", "EQUALS");
     condition.put("value", "FILE");
@@ -163,8 +163,8 @@ class AnalyzerProfileValidatorTest {
   @Test
   void rejectsCircularConnectionVisibilityDependencies() throws Exception {
     ObjectNode profile = fileProfile();
-    ObjectNode directory = (ObjectNode) profile.path("connectionFields").get(0);
-    ObjectNode filePattern = (ObjectNode) profile.path("connectionFields").get(1);
+    ObjectNode directory = field(profile, "directory");
+    ObjectNode filePattern = field(profile, "filePattern");
     directory.putObject("visibleWhen").put("fieldKey", "filePattern").put("operator", "EQUALS").put("value", "*.csv");
     filePattern
       .putObject("visibleWhen")
@@ -180,11 +180,20 @@ class AnalyzerProfileValidatorTest {
   @Test
   void rejectsSecretDefaultsBecausePublishedProfilesMustNotContainCredentials() throws Exception {
     ObjectNode profile = fileProfile();
-    ((ObjectNode) profile.path("connectionFields").get(1)).put("inputKind", "SECRET");
+    field(profile, "filePattern").put("inputKind", "SECRET");
 
     assertThat(validator.validationIssues(profile)).contains(
       "$.configDefaults.filePattern must not supply a SECRET default"
     );
+  }
+
+  private static ObjectNode field(ObjectNode profile, String key) {
+    for (var field : profile.path("connectionFields")) {
+      if (key.equals(field.path("key").asText())) {
+        return (ObjectNode) field;
+      }
+    }
+    throw new AssertionError("no connection field " + key);
   }
 
   private ObjectNode fileProfile() throws Exception {

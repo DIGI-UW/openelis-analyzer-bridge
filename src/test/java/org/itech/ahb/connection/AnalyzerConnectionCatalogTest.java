@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
 import org.itech.ahb.profile.ProfileCatalogProperties;
 import org.itech.ahb.profile.ProfileFingerprintService;
@@ -55,7 +56,7 @@ class AnalyzerConnectionCatalogTest {
   /** Guards saved-connection readiness and immutable profile content; socket delivery is tested separately. */
   @Test
   void publishedInboundProfileDoesNotRequireAnAnalyzerListenerPort() {
-    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     ObjectNode original = profile.deepCopy();
     RecordingRuntime runtime = new RecordingRuntime();
     AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, runtime);
@@ -67,15 +68,61 @@ class AnalyzerConnectionCatalogTest {
     assertThat(field(created, "port").path("visibleWhen").path("value").asText()).isEqualTo("CLIENT");
     catalog.applyRuntimeCommand(runtimeCommand(created, "activate-portless", "ACTIVATE"));
     assertThat(runtime.activations).containsExactly(created.path("connectionId").asText());
-    assertThat(profiles.require("genexpert-astm", 5).profile()).isEqualTo(original);
+    assertThat(profiles.require("cepheid-genexpert-astm", 1).profile()).isEqualTo(original);
     ObjectNode restored = catalog(UUID::randomUUID).require(created.path("connectionId").asText());
     assertThat(restored.path("readiness").path("ready").asBoolean()).isTrue();
     assertThat(restored.path("profileRef")).isEqualTo(created.path("profileRef"));
   }
 
   @Test
+  void aConnectionMaySetTheCodesItsInstrumentUsesAndTheyReachTheRuntime() {
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, runtime);
+    ObjectNode request = createRequest(profile, "renamed-codes", "oe-renamed");
+    request.withObject("values").putObject("codeOverrides").put("HIVVL", "HIVU");
+
+    ObjectNode created = catalog.create(request);
+    catalog.applyRuntimeCommand(runtimeCommand(created, "activate-renamed", "ACTIVATE"));
+
+    assertThat(created.path("codeOverrides").path("HIVVL").asText()).isEqualTo("HIVU");
+    ObjectNode rename = objectMapper
+      .createObjectNode()
+      .put("schemaVersion", "1.0")
+      .put("requestId", "rename-only")
+      .put("connectionId", created.path("connectionId").asText())
+      .put("expectedConfigRevision", 1)
+      .put("displayName", "renamed-codes again");
+    rename.set("profileRef", created.path("profileRef").deepCopy());
+    rename.putObject("values");
+    ObjectNode updated = catalog.update(rename);
+    assertThat(updated.path("codeOverrides").path("HIVVL").asText())
+      .as("an update that says nothing about codes keeps them")
+      .isEqualTo("HIVU");
+    AnalyzerEntry entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
+    assertThat(entry.getCodeForLoinc("20447-9")).isEqualTo("HIVU");
+    assertThat(entry.getResultReading().profileCode("HIVU")).isEqualTo("HIVVL");
+
+    ObjectNode cleared = rename.deepCopy().put("requestId", "clear-codes").put("expectedConfigRevision", 2);
+    cleared.withObject("values").putObject("codeOverrides");
+    assertThat(catalog.update(cleared).path("codeOverrides").size()).as("an empty object clears the codes").isZero();
+
+    ObjectNode undeclared = createRequest(profile, "unknown-code", "oe-unknown");
+    undeclared.withObject("values").putObject("codeOverrides").put("NOT-IN-PROFILE", "X");
+    assertThatThrownBy(() -> catalog.create(undeclared))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("NOT-IN-PROFILE");
+  }
+
+  @Test
   void outboundClientPortIsOptionalWhenTheDeploymentCanResolveIt() {
-    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID);
     ObjectNode request = createRequest(profile, "optional-outbound-port", "oe-client-default");
     request.withObject("values").put("connectionRole", "CLIENT").put("host", "192.0.2.10");
@@ -88,7 +135,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void changingServerToClientDoesNotInheritAnOldIncomingPort() {
-    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
       registry,
@@ -140,8 +187,8 @@ class AnalyzerConnectionCatalogTest {
   @ParameterizedTest
   @CsvSource({ "SERVER,6001", "CLIENT,6001", "SERVER,0", "CLIENT,0" })
   void publishedProfileCanResetOutboundOverrideAndRetainItsPinAcrossRestart(String role, int profilePort) {
-    ObjectNode original = profiles.require("genexpert-astm", 5).profile().deepCopy();
-    var draft = profiles.duplicateDraft("genexpert-astm", 5, "Outbound default fixture", "profile-editor");
+    ObjectNode original = profiles.require("cepheid-genexpert-astm", 1).profile().deepCopy();
+    var draft = profiles.duplicateDraft("cepheid-genexpert-astm", 1, "Outbound default fixture", "profile-editor");
     ObjectNode candidate = draft.profile();
     candidate.withObject("configDefaults").put("outboundPortMode", "DEFAULT");
     if (profilePort > 0) candidate.withObject("transport_config").withObject("TCP/IP").put("default_port", profilePort);
@@ -224,7 +271,45 @@ class AnalyzerConnectionCatalogTest {
     assertThat(restoredRegistry.findAnalyzerEntryByConnectionId(id).orElseThrow().getOutboundPort()).isEqualTo(
       expectedDefault
     );
-    assertThat(profiles.require("genexpert-astm", 5).profile()).isEqualTo(original);
+    assertThat(profiles.require("cepheid-genexpert-astm", 1).profile()).isEqualTo(original);
+  }
+
+  /**
+   * An analyzer left on a revision the Bridge no longer has (an authored type
+   * removed, or a migrated analyzer) is moved to an available one by an ordinary
+   * update, and then runs.
+   */
+  @Test
+  void aConnectionWhoseProfileRevisionIsGoneIsRepinnedByAnUpdateAndThenActivates() throws Exception {
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
+    RecordingRuntime runtime = new RecordingRuntime();
+    ObjectNode created = catalog(UUID::randomUUID, runtime).create(createRequest(profile, "gone", "oe-gone"));
+    String id = created.path("connectionId").asText();
+    Path saved = temporaryDirectory.resolve("connections").resolve(id + ".json");
+    ObjectNode record = (ObjectNode) objectMapper.readTree(saved.toFile());
+    record.withObject("profileRef").put("revision", 99);
+    objectMapper.writeValue(saved.toFile(), record);
+
+    AnalyzerConnectionCatalog restarted = catalog(UUID::randomUUID, runtime);
+    ObjectNode setAside = restarted.require(id);
+    assertThat(blockerKeys(setAside)).contains("profile-unavailable");
+
+    ObjectNode update = updateRequest(setAside, "repin");
+    update.set("profileRef", created.path("profileRef").deepCopy());
+    update.putObject("values");
+    ObjectNode repinned = restarted.update(update);
+
+    assertThat(repinned.path("profileRef")).isEqualTo(created.path("profileRef"));
+    assertThat(blockerKeys(repinned)).doesNotContain("profile-unavailable");
+    assertThat(repinned.path("readiness").path("ready").asBoolean()).isTrue();
+    restarted.applyRuntimeCommand(runtimeCommand(repinned, "activate-repinned", "ACTIVATE"));
+    assertThat(runtime.activations).containsExactly(id);
+  }
+
+  private static List<String> blockerKeys(ObjectNode connection) {
+    List<String> keys = new ArrayList<>();
+    connection.path("readiness").path("blockers").forEach(blocker -> keys.add(blocker.path("key").asText()));
+    return keys;
   }
 
   private ObjectNode updateRequest(ObjectNode connection, String requestId) {
@@ -241,7 +326,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void createAppliesPinnedProfileDefaultsOnceAndSurvivesRestart() {
-    ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
+    ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
     ObjectNode request = createRequest(profile, "create-fluoro-1", "oe-42");
     request.withObject("values").put("directory", "/data/instruments/fluoro-1");
 
@@ -263,7 +348,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void inactiveFileOwnershipSurvivesCatalogRestartAndDeactivation() {
-    ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
+    ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID);
     Path shared = temporaryDirectory.resolve("shared");
     ObjectNode firstRequest = createRequest(profile, "first-file", "first");
@@ -284,7 +369,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void updateRequiresTheCurrentRevisionAndKeepsTheExactProfilePin() {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000099"));
     ObjectNode create = createRequest(profile, "create-genexpert-1", "oe-99");
     create.withObject("values").put("host", "192.0.2.10").put("port", 5000);
@@ -311,7 +396,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void updateDoesNotCreateANewRevisionWhenTheEffectiveConfigurationIsUnchanged() {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000097"));
     ObjectNode create = createRequest(profile, "create-genexpert-noop", "oe-97");
     create.withObject("values").put("port", 5000);
@@ -334,7 +419,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void updateChangesOnlySuppliedValuesAndRetainsTheDurableBridgeConfiguration() {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000098"));
     ObjectNode create = createRequest(profile, "create-genexpert-patch", "oe-98");
     create.withObject("values").put("connectionRole", "CLIENT").put("host", "192.0.2.10").put("port", 5000);
@@ -357,7 +442,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void createRejectsAProfileFingerprintThatDoesNotIdentifyThePinnedRevision() {
-    ObjectNode profile = profiles.require("quantstudio", 1).profile();
+    ObjectNode profile = profiles.require("thermo-quantstudio", 1).profile();
     ObjectNode request = createRequest(profile, "create-quantstudio-1", "oe-100");
     ((ObjectNode) request.path("profileRef")).put("fingerprint", "sha256:" + "0".repeat(64));
 
@@ -368,7 +453,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void fileProfileDeclaresRequiredDirectoryAndProfileDefaults() {
-    ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
+    ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
     ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000077")).create(
       createRequest(profile, "create-fluoro-empty", "oe-77")
     );
@@ -387,13 +472,22 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void priorityAstmProfilePreservesBothTransportsAndRendersItsDeclaredFields() {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     ObjectNode created = catalog(() -> UUID.fromString("00000000-0000-0000-0000-000000000088")).create(
       createRequest(profile, "create-genexpert-empty", "oe-88")
     );
 
     assertThat(textValues(profile.path("transport"))).containsExactly("RS-232", "TCP/IP");
-    assertThat(fieldKeys(created)).containsExactly("transport", "connectionRole", "host", "port", "serialPort");
+    assertThat(fieldKeys(created)).containsExactly(
+      "dataFlow",
+      "transport",
+      "connectionRole",
+      "host",
+      "senderId",
+      "port",
+      "serialPort",
+      "numberFormat"
+    );
     assertThat(currentValue(created, "transport").asText()).isEqualTo("TCP/IP");
     assertThat(currentValue(created, "connectionRole").asText()).isEqualTo("SERVER");
     assertThat(field(created, "host").path("validationErrors")).isEmpty();
@@ -406,7 +500,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void hidesDependentFieldsWhenTheirControllingFieldIsHidden() {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     ObjectNode request = createRequest(profile, "create-genexpert-serial", "oe-serial");
     request
       .withObject("values")
@@ -425,7 +519,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void rendersAnUnfamiliarFieldDirectlyFromThePinnedProfile() throws Exception {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     ArrayNode fields = (ArrayNode) profile.path("connectionFields");
     ObjectNode listenerPort = fields.addObject();
     listenerPort.put("key", "listenerPort");
@@ -450,7 +544,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void masksProfileDeclaredSecretsAndPreservesAnOmittedSecretOnUpdate() throws Exception {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     ObjectNode secret = ((ArrayNode) profile.path("connectionFields")).addObject();
     secret.put("key", "apiToken");
     secret.put("labelKey", "synthetic.connection.apiToken");
@@ -487,7 +581,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void rejectsValuesThatThePinnedProfileDoesNotDeclare() {
-    ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
+    ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
     ObjectNode request = createRequest(profile, "create-invented-1", "oe-invented");
     request.withObject("values").put("inventedSetting", "value");
 
@@ -498,7 +592,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void activationIsExactIdempotentAndRestoredAfterCatalogRestart() {
-    ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
+    ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
     RecordingRuntime firstRuntime = new RecordingRuntime();
     AnalyzerConnectionCatalog catalog = catalog(
       () -> UUID.fromString("00000000-0000-0000-0000-000000000055"),
@@ -539,7 +633,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void restartRejoinsTheDeploymentAstmListenerWithTheSavedConnectionAndPinnedProfile() {
-    ObjectNode profile = profiles.require("genexpert-astm", 1).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AstmConnectionListeners firstListeners = mock(AstmConnectionListeners.class);
     BridgeAnalyzerConnectionRuntime firstRuntime = new BridgeAnalyzerConnectionRuntime(
       new org.itech.ahb.connection.AnalyzerRuntimeRegistry(),
@@ -573,7 +667,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void genexpertRevisionFiveOffersHostAndSenderIdForAServerConnectionWithoutRequiringThem() {
-    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     ObjectNode request = createRequest(profile, "create-gx-v5", "oe-gx-v5");
     request.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 12_001);
 
@@ -588,8 +682,8 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
-  void genexpertRevisionFiveConnectionActivatesWithHostAndSenderIdMaterialised() {
-    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+  void aGeneXpertConnectionActivatesWithHostAndSenderIdMaterialised() {
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     AnalyzerConnectionCatalog catalog = catalog(
       UUID::randomUUID,
@@ -600,7 +694,7 @@ class AnalyzerConnectionCatalogTest {
         org.mockito.Mockito.mock(SerialConnectionListeners.class)
       )
     );
-    ObjectNode request = createRequest(profile, "create-gx-v5-named", "oe-gx-v5-named");
+    ObjectNode request = createRequest(profile, "create-gx-named", "oe-gx-named");
     request
       .withObject("values")
       .put("transport", "TCP/IP")
@@ -610,39 +704,14 @@ class AnalyzerConnectionCatalogTest {
       .put("senderId", "GX-LAB-A");
     ObjectNode created = catalog.create(request);
 
-    ObjectNode activated = catalog.applyRuntimeCommand(runtimeCommand(created, "activate-gx-v5", "ACTIVATE"));
+    ObjectNode activated = catalog.applyRuntimeCommand(runtimeCommand(created, "activate-gx-named", "ACTIVATE"));
 
     assertThat(activated.path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
     var entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
     assertThat(entry.getListenerPort()).isEqualTo(12_001);
     assertThat(entry.getInboundAddress()).isEqualTo("10.0.0.21");
     assertThat(entry.getSenderId()).isEqualTo("GX-LAB-A");
-    assertThat(entry.getProfileRevision()).isEqualTo(5);
-  }
-
-  @Test
-  void aConnectionPinnedToRevisionFourKeepsItsRevisionAndStillActivates() {
-    ObjectNode profile = profiles.require("genexpert-astm", 4).profile();
-    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
-    AnalyzerConnectionCatalog catalog = catalog(
-      UUID::randomUUID,
-      new BridgeAnalyzerConnectionRuntime(
-        registry,
-        null,
-        org.mockito.Mockito.mock(AstmConnectionListeners.class),
-        org.mockito.Mockito.mock(SerialConnectionListeners.class)
-      )
-    );
-    ObjectNode request = createRequest(profile, "create-gx-v4", "oe-gx-v4");
-    request.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 9_600);
-    ObjectNode created = catalog.create(request);
-
-    catalog.applyRuntimeCommand(runtimeCommand(created, "activate-gx-v4", "ACTIVATE"));
-
-    var entry = registry.findAnalyzerEntryByConnectionId(created.path("connectionId").asText()).orElseThrow();
-    assertThat(entry.getProfileRevision()).isEqualTo(4);
-    assertThat(entry.getListenerPort()).isEqualTo(12_001);
-    assertThat(entry.getInboundAddress()).isNull();
+    assertThat(entry.getProfileRevision()).isEqualTo(1);
   }
 
   /**
@@ -651,7 +720,7 @@ class AnalyzerConnectionCatalogTest {
    */
   @Test
   void aFailedConnectionCheckIsRecordedButNeverBlocksReadiness() throws Exception {
-    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID);
     try (java.net.ServerSocket foreign = new java.net.ServerSocket(0)) {
       ObjectNode request = createRequest(profile, "create-gx-probe", "oe-gx-probe");
@@ -691,7 +760,7 @@ class AnalyzerConnectionCatalogTest {
 
   @Test
   void anActiveConnectionThatNoLongerRestoresDoesNotStopTheOthers() {
-    ObjectNode profile = profiles.require("genexpert-astm", 5).profile();
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, new RecordingRuntime());
     ObjectNode first = catalog.create(createRequest(profile, "restore-first", "oe-restore-first"));
     ObjectNode second = catalog.create(createRequest(profile, "restore-second", "oe-restore-second"));
@@ -731,7 +800,7 @@ class AnalyzerConnectionCatalogTest {
     try {
       var runtime = new BridgeAnalyzerConnectionRuntime(new AnalyzerRuntimeRegistry(), watcher, null, null);
       AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, runtime);
-      ObjectNode profile = profiles.require("fluorocycler-xt", 1).profile();
+      ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
       ObjectNode outside = createRequest(profile, "outside-root", "oe-outside");
       outside.withObject("values").put("directory", temporaryDirectory.resolve("connections").toString());
 

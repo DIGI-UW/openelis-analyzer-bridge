@@ -77,7 +77,9 @@ class HttpCsvConnectionTest {
       exchange.close();
     });
     receiver.start();
-    profile = (ObjectNode) mapper.readTree(getClass().getResourceAsStream("/analyzer-profiles/fluorocycler-xt.json"));
+    profile = (ObjectNode) mapper.readTree(
+      getClass().getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
+    );
     profile.withObject("profileMeta").put("id", "test.http-tabular");
     profile.withObject("protocol").put("format", "CSV");
     profile.putArray("supported_extensions").add(".csv");
@@ -505,11 +507,11 @@ class HttpCsvConnectionTest {
   private void publishHttpProfile(String protocol) {
     profiles = new AnalyzerProfileCatalog(
       directory.resolve("profiles"),
-      List.of(new ClassPathResource("analyzer-profiles/genexpert-astm-v5.json")),
+      List.of(new ClassPathResource("analyzer-profiles/cepheid-genexpert-astm.json")),
       mapper,
       Clock.systemUTC()
     );
-    var draft = profiles.duplicateDraft("genexpert-astm", 5, "Synthetic HTTP " + protocol, "test-author");
+    var draft = profiles.duplicateDraft("cepheid-genexpert-astm", 1, "Synthetic HTTP " + protocol, "test-author");
     ObjectNode candidate = draft.profile();
     candidate.putArray("transport").add("HTTP");
     candidate.putObject("transport_config").putObject("HTTP");
