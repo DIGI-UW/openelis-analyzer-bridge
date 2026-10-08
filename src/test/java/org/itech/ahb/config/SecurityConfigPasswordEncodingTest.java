@@ -23,4 +23,14 @@ class SecurityConfigPasswordEncodingTest {
         String preEncoded = passwordEncoder.encode("secret");
         assertEquals(preEncoded, SecurityConfig.encodePasswordIfPlaintext(preEncoded, passwordEncoder));
     }
+
+    @Test
+    void aBlankPasswordNeverBecomesACredential() {
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalArgumentException.class, () -> SecurityConfig.encodePasswordIfPlaintext("", passwordEncoder));
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalArgumentException.class, () -> SecurityConfig.encodePasswordIfPlaintext("   ", passwordEncoder));
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalArgumentException.class, () -> SecurityConfig.encodePasswordIfPlaintext(null, passwordEncoder));
+    }
 }

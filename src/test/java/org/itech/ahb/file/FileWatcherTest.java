@@ -71,6 +71,7 @@ class FileWatcherTest {
         Files.createDirectories(watchDir);
 
         fileConfig = new FileConfig();
+        fileConfig.setImportRoots(java.util.List.of(tempDir.toString()));
         fileConfig.setEnabled(true);
         fileConfig.setStateStorePath(stateStorePath.toString());
         fileConfig.setFileStabilityTimeoutMs(100);

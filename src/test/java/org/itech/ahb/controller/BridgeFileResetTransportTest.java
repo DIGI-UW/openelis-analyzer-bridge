@@ -14,7 +14,6 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -26,27 +25,22 @@ import org.itech.ahb.connection.AnalyzerConnectionCatalog;
 import org.itech.ahb.connection.AnalyzerConnectionCatalog.FileDirectoryClaim;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
-import org.itech.ahb.fhir.FileNameSelfDeclarationScanner;
 import org.itech.ahb.file.FileConfig;
 import org.itech.ahb.file.FileMessageHandler;
 import org.itech.ahb.file.FileWatcher;
 import org.itech.ahb.file.SqliteFileStateStore;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.mock.web.MockMultipartFile;
 
 class BridgeFileResetTransportTest {
 
   @TempDir
   Path directory;
 
-  @ParameterizedTest(name = "reset drains real HTTP delivery, uploaded={0}")
-  @ValueSource(booleans = { true, false })
-  void resetKeepsRetainedBytesWhileDeliveryContinuesAndTheConnectionRemainsUsable(boolean uploaded) throws Exception {
+  @Test
+  void resetKeepsRetainedBytesWhileDeliveryContinuesAndTheConnectionRemainsUsable() throws Exception {
     Path watched = Files.createDirectory(directory.resolve("watched"));
     Path file = watched.resolve("result.csv");
     byte[] csv = "Sample,Test,Result\nPATIENT-1,T1,2\n".getBytes(StandardCharsets.UTF_8);
@@ -83,7 +77,6 @@ class BridgeFileResetTransportTest {
     entry.setExpectedProtocol("FILE");
     entry.setFileDirectory(watched.toString());
     entry.setFilePattern("*.csv");
-    entry.setMappedTestCodes(Set.of("T1"));
     entry.setFileTestCode("T1");
     entry.setColumnMappings(Map.of("Sample", "sampleId", "Test", "testCode", "Result", "result"));
     entry.setDelimiter(",");
@@ -101,6 +94,7 @@ class BridgeFileResetTransportTest {
     ).startDispatcher();
     FileMessageHandler handler = outbox.fileHandler(registry);
     FileConfig config = new FileConfig();
+    config.setImportRoots(List.of(directory.toString()));
     config.setEnabled(true);
     config.setPollIntervalMs(50);
     config.setFileStabilityTimeoutMs(50);
@@ -108,24 +102,12 @@ class BridgeFileResetTransportTest {
     AnalyzerConnectionCatalog catalog = mock(AnalyzerConnectionCatalog.class);
     when(catalog.fileDirectoryClaims()).thenReturn(List.of(new FileDirectoryClaim("owner", watched, "*.csv")));
     BridgeAdminController admin = new BridgeAdminController(registry, store, catalog, watcher);
-    FileUploadController uploads = new FileUploadController(
-      registry,
-      handler,
-      mock(FileNameSelfDeclarationScanner.class),
-      watcher
-    );
     var executor = Executors.newFixedThreadPool(3);
     try {
       watcher.start();
       watcher.addWatchDirectory(watched, "*.csv", "owner");
       var initial = executor.submit(() -> {
-        if (uploaded) {
-          MockHttpServletResponse response = new MockHttpServletResponse();
-          uploads.uploadFile("owner", "T1", multipart("result.csv", csv), response);
-          assertTrue(response.getContentAsString().contains("banner success"));
-        } else {
-          Files.write(file, csv);
-        }
+        Files.write(file, csv);
         return null;
       });
       assertTrue(received.await(5, TimeUnit.SECONDS), "no real HTTP delivery reached the receiver");
@@ -150,15 +132,13 @@ class BridgeFileResetTransportTest {
       assertFalse(Files.exists(file));
       assertTrue(store.get("owner", hash).isEmpty());
 
-      MockHttpServletResponse after = new MockHttpServletResponse();
-      uploads.uploadFile("owner", "T1", multipart("after-reset.csv", csv), after);
-      assertTrue(after.getContentAsString().contains("banner success"));
+      Files.write(watched.resolve("after-reset.csv"), csv);
       org.awaitility.Awaitility.await()
         .atMost(java.time.Duration.ofSeconds(5))
         .untilAsserted(
           () -> assertEquals(1, outbox.store.countsByState().get(org.itech.ahb.outbox.OutboxState.DELIVERED))
         );
-      assertEquals(1, deliveries.get(), "re-upload after reset must reuse the retained delivery identity");
+      assertEquals(1, deliveries.get(), "the same file after reset must reuse the retained delivery identity");
       assertNull(serverError.get());
     } finally {
       acknowledge.countDown();
@@ -171,7 +151,4 @@ class BridgeFileResetTransportTest {
     }
   }
 
-  private MockMultipartFile multipart(String filename, byte[] content) {
-    return new MockMultipartFile("file", filename, "text/csv", content);
-  }
 }

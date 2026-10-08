@@ -1,12 +1,9 @@
 package org.itech.ahb.security;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import org.itech.ahb.normalizer.MessageEnvelope;
 import org.itech.ahb.normalizer.MessageNormalizer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
     "bridge.file.enabled=false",
 })
 @AutoConfigureMockMvc
-class PreHashedPasswordSecurityIT {
+class PreHashedPasswordSecurityTest {
 
     private static final PasswordEncoder encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
 
@@ -46,13 +43,10 @@ class PreHashedPasswordSecurityIT {
 
     @Test
     @DisplayName("HTTP Basic accepts plaintext that matches pre-encoded bridge.security.password")
-    void inputWithMatchingPlaintextSucceeds() throws Exception {
-        when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
-
-        mockMvc.perform(post("/input")
-                .with(httpBasic("testuser", "from-secret-manager"))
-                .content("H|\\^&\r")
-                .contentType("application/x-astm"))
+    void matchingPlaintextAuthenticates() throws Exception {
+        mockMvc.perform(get("/api/profiles").with(httpBasic("testuser", "from-secret-manager")))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/api/profiles").with(httpBasic("testuser", "something-else")))
+                .andExpect(status().isUnauthorized());
     }
 }

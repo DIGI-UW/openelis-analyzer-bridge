@@ -59,6 +59,7 @@ public class AnalyzerInputController {
   private static final String CONTENT_TYPE_HL7_V2_ALT = "x-application/hl7-v2";
 
   private final org.itech.ahb.normalizer.MessageNormalizer normalizer;
+  private final org.itech.ahb.connection.AnalyzerRuntimeRegistry registry;
 
   @Value("${bridge.http.trusted-proxies:}")
   private String trustedProxies = "";
@@ -67,9 +68,14 @@ public class AnalyzerInputController {
    * Constructs a new AnalyzerInputController.
    *
    * @param normalizer the message normalizer for routing
+   * @param registry the active connections, which decide which senders may post
    */
-  public AnalyzerInputController(org.itech.ahb.normalizer.MessageNormalizer normalizer) {
+  public AnalyzerInputController(
+    org.itech.ahb.normalizer.MessageNormalizer normalizer,
+    org.itech.ahb.connection.AnalyzerRuntimeRegistry registry
+  ) {
     this.normalizer = normalizer;
+    this.registry = registry;
   }
 
   /**
@@ -101,6 +107,14 @@ public class AnalyzerInputController {
     // Extract source IP early for inclusion in all responses
     String sourceIp = extractSourceIp(xForwardedFor, request);
     log.debug("Source IP: {}", sourceIp);
+
+    // Anyone can reach this endpoint without a credential; only an active HTTP connection's
+    // analyzer may post, and anything else is refused before it is stored.
+    if (!registry.isActiveHttpSender(sourceIp)) {
+      log.warn("Refused HTTP input from {}: no active HTTP connection has that address", sourceIp);
+      return ResponseEntity.status(HttpStatus.FORBIDDEN)
+        .body(new InputResponse(false, "No active HTTP analyzer connection for this sender", sourceIp, null, null));
+    }
 
     // Validate request body
     if (requestBody == null || requestBody.trim().isEmpty()) {

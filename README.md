@@ -100,7 +100,7 @@ java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configu
 |-----------|---------------|---------|
 | `./configuration.yml` | `/app/configuration.yml` | Runtime configuration |
 | Named volume `bridge-data` | `/data/openelis-analyzer-bridge` | Durable state: delivery outbox, FILE state, saved connections and profile revisions. Keep it across upgrades |
-| `/path/to/import` | `/mnt/analyzer-import` | File watcher input (optional) |
+| `/path/to/import` | `/data/analyzer-imports` | FILE connection directories (optional). FILE directories must lie under `bridge.file.import-roots` (`BRIDGE_FILE_IMPORT_ROOTS`, default `/data/analyzer-imports,/data/analyzer-drops`) |
 
 ### Serial Devices
 
@@ -121,9 +121,10 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 |----------|-------------|---------|
 | **OpenELIS Forwarding** | | |
 | `org.itech.ahb.forward-http-server.uri` | OpenELIS analyzer endpoint base URI; results are posted to `{uri}/fhir`. Set it for every deployment | `https://localhost:8443` |
-| `org.itech.ahb.forward-http-server.username` | Basic auth username | Optional |
-| `org.itech.ahb.forward-http-server.password` | Basic auth password | Optional |
-| `org.itech.ahb.forward-http-server.insecure-tls` | Disable TLS verification for forwarding and health checks | false |
+| `org.itech.ahb.forward-http-server.username` | Basic auth username, sent only before the Bridge is paired | Optional |
+| `org.itech.ahb.forward-http-server.password` | Basic auth password, sent only before the Bridge is paired | Optional |
+| `org.itech.ahb.forward-http-server.insecure-tls` | Disable TLS verification for forwarding and health checks before pairing. Ignored once paired | false |
+| `org.itech.ahb.forward-http-server.max-response-bytes` | Largest OpenELIS answer read; a larger one fails the attempt | 1048576 |
 | `org.itech.ahb.forward-http-server.connect-timeout-seconds` | HTTP connect timeout | 30 |
 | `org.itech.ahb.forward-http-server.read-timeout-seconds` | HTTP read timeout | 30 |
 | `org.itech.ahb.forward-http-server.health-uri` | Endpoint the forwarding health check probes. Must be the same host as the forward URI, or a green probe does not mean deliveries are arriving; the bridge logs an ERROR at startup if they differ | Optional |
@@ -141,7 +142,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.outbox.retention.delivered` | How long delivered entries are kept as proof of delivery | 30d |
 | `bridge.outbox.retention.dismissed` | How long dismissed dead letters are kept. Undismissed dead letters are never purged | 90d |
 | `bridge.outbox.payload-access-enabled` | Whether `/admin/outbox/<id>/payload` serves clinical content. Access is audited either way | true |
-| `management.health.outbox.enabled` | Report the delivery queue in `/actuator/health`. UP while results are queued, since riding out an outage is the job; DOWN only when the store is unreadable or had to be replaced | true |
+| `management.health.outbox.enabled` | Report the delivery queue in `/actuator/health`. UP while results are queued, since riding out an outage is the job; DOWN when the store is unreadable or had to be replaced, or the delivery dispatcher has stopped | true |
 | **ASTM TCP** | | |
 | `org.itech.ahb.astm.enabled` | Bind the shared ASTM listeners at boot | true |
 | `org.itech.ahb.listen-astm-server.port` | Shared ASTM LIS1-A listener port (`ORG_ITECH_AHB_LISTEN_ASTM_SERVER_PORT`) | 12001 |
@@ -149,6 +150,9 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **MLLP (HL7)** | | |
 | `org.itech.ahb.mllp.enabled` | Run HL7 MLLP: bind the shared listener at boot and allow HL7 server connections | false |
 | `org.itech.ahb.mllp.port` | Shared MLLP listener port | 2575 |
+| `org.itech.ahb.mllp.max-connections` | Concurrent MLLP connections; more are closed on accept | 64 |
+| `org.itech.ahb.mllp.max-message-bytes` | Largest MLLP message before its connection is closed | 16777216 |
+| `org.itech.ahb.mllp.message-timeout-seconds` | Time a message may take from start to end block | 60 |
 | **File Watcher** | | |
 | `bridge.file.enabled` | Enable FILE connection runtime | true |
 | `bridge.file.stateStorePath` | Durable file-processing state database | `/data/openelis-analyzer-bridge/state.db` in the Docker image; JVM temporary directory otherwise |
@@ -157,6 +161,8 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.file.maxRetryAttempts` | Processing attempts before a file is parked for an operator | 150 |
 | `bridge.file.retryDelayMs` | Initial retry backoff | 1000 |
 | `bridge.file.maxRetryDelayMs` | Ceiling on the file retry backoff | 600000 |
+| `bridge.file.maxFileSizeBytes` | Largest watched file read; a larger one is parked as FAILED_NEEDS_HANDLING (`BRIDGE_FILE_MAX_FILE_SIZE_BYTES`) | 20971520 |
+| `bridge.file.importRoots` | Directories FILE connections may use, with links resolved (`BRIDGE_FILE_IMPORT_ROOTS`) | `/data/analyzer-imports,/data/analyzer-drops` |
 | **Profile Catalog** | | |
 | `bridge.profile-catalog.directory` | Durable site-profile revision store | `/data/openelis-analyzer-bridge/profile-catalog` |
 | `bridge.profile-catalog.shipped-pattern` | Packaged profile resource pattern | `classpath*:/analyzer-profiles/**/*.json` |
@@ -165,8 +171,11 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Connectivity** | | |
 | `bridge.connectivity.advertised-host` | Reserved; currently unused by connection activation and receiver probes | Optional; setting it has no runtime effect |
 | **Security** | | |
-| `bridge.security.username` | HTTP Basic username | bridge |
-| `bridge.security.password` | HTTP Basic password: plaintext or `{bcrypt}...` (use env var in prod) | changeme |
+| `bridge.pairing.code` | One-time code OpenELIS pairs with (`BRIDGE_PAIRING_CODE`); without one, a generated code is logged | Generated |
+| `bridge.identity.directory` | Generated key pair and pairing record (`BRIDGE_IDENTITY_DIRECTORY`) | `/data/openelis-analyzer-bridge/identity` |
+| `bridge.security.username` | HTTP Basic username, until pairing | bridge |
+| `bridge.security.password` | HTTP Basic password until pairing: plaintext or `{bcrypt}...`; empty means pairing only | Empty |
+| `bridge.http.max-input-bytes` | Largest HTTP input body | 20971520 |
 | **Server** | | |
 | `server.port` | HTTP server port | 8443 |
 
@@ -219,16 +228,15 @@ Invalid serial settings still fail rather than being treated as temporary absenc
 
 ### FILE shutdown and recovery
 
-Stopping the FILE service closes admissions for uploads and watcher work before
-stopping its polling and processing executors. Already-started operations retain
-ownership through their final state write. Shutdown then waits up to 30 seconds
-for remaining claims, including uploads running on request threads. A timeout or
+Stopping the FILE service closes admissions for watcher work before stopping its
+polling and processing executors. Already-started operations retain ownership
+through their final state write. Shutdown then waits up to 30 seconds for
+remaining claims. A timeout or
 interruption reports incomplete shutdown; it does not release those claims or
 report successful cancellation. Do not treat this failure as a completed drain.
 
-Both watched files and manual uploads commit their exact original bytes, pinned
-profile identity, parser settings and selected assay to the common outbox before
-reporting receipt. Parsing and OpenELIS delivery run from that retained receipt.
+Watched files commit their exact original bytes, pinned profile identity and
+parser settings to the common outbox before reporting receipt. Parsing and OpenELIS delivery run from that retained receipt.
 After receipt, deletion or renaming of the source file does not prevent recovery.
 Partial delivery retries only outstanding accessions; an unacknowledged delivery
 keeps its identifier and payload. Exhausted delivery stays in the common dead
@@ -237,13 +245,10 @@ message queue for operator retry. Preserve the outbox volume across restarts.
 The separate FILE state database tracks discovery: `PROCESSED` means durably
 queued, not accepted by OpenELIS. Its retry timers cover failures before durable
 capture. Preserve source files and discovery state for files not yet received.
-An upload never overwrites an existing same-name source file; its optional source
-copy may be skipped after the uploaded bytes have been queued. An explicit
-upload uses the selected active connection independently of its discovery glob.
 
 On upgrade, old unresolved `RETRYING` discovery rows are held as
-`FAILED_NEEDS_HANDLING`. Older releases did not retain original bytes or manual
-assay choices, so operators must re-upload the original with its verified assay.
+`FAILED_NEEDS_HANDLING`. Older releases did not retain original bytes, so operators
+must place the original file in the watched directory again.
 Existing paths, attempt counts and errors are retained. Missing historical bytes
 or selections cannot be reconstructed. New receipts recover automatically from
 the outbox. A stopped watcher cannot be restarted; recovery creates a new instance.
@@ -385,13 +390,13 @@ and file results do not carry the analyzer's test time.
 curl -k https://localhost:8442/actuator/health
 
 # Every component with its details (authenticated)
-curl -k -u bridge:changeme https://localhost:8442/actuator/health
+curl -k --cert openelis.crt --key openelis.key https://localhost:8442/actuator/health
 
 # Individual transport health (authenticated)
-curl -k -u bridge:changeme https://localhost:8442/actuator/health/httpforward   # OpenELIS connectivity
-curl -k -u bridge:changeme https://localhost:8442/actuator/health/mllp          # MLLP listener status
-curl -k -u bridge:changeme https://localhost:8442/actuator/health/serial        # Serial port status
-curl -k -u bridge:changeme https://localhost:8442/actuator/health/filewatcher   # File watcher status
+curl -k --cert openelis.crt --key openelis.key https://localhost:8442/actuator/health/httpforward   # OpenELIS connectivity
+curl -k --cert openelis.crt --key openelis.key https://localhost:8442/actuator/health/mllp          # MLLP listener status
+curl -k --cert openelis.crt --key openelis.key https://localhost:8442/actuator/health/serial        # Serial port status
+curl -k --cert openelis.crt --key openelis.key https://localhost:8442/actuator/health/filewatcher   # File watcher status
 ```
 
 The server always uses TLS on 8443; `-k` accepts the self-signed development
@@ -478,13 +483,60 @@ readinessProbe:
 
 ## Security
 
-Every HTTP endpoint requires HTTP Basic authentication except
-`GET /actuator/health`, which shows anonymous callers only the overall status.
-That covers `/input`, `/api/*`, `/admin/*`, every other actuator endpoint, and any
-endpoint added later: the security configuration lists the one public endpoint,
-not the protected ones. Authentication cannot be switched off:
-`bridge.security.enabled=false` stops the Bridge at startup. Non-HTTP transports
-(ASTM/TCP, MLLP, Serial, File) are unaffected.
+### Pairing with OpenELIS
+
+The Bridge serves HTTPS with its own identity. When no `server.ssl` keystore is
+mounted, it generates a key pair in `bridge.identity.directory` on first start
+and keeps it there, so keep that directory on the persistent volume. A mounted
+keystore is used as it is.
+
+OpenELIS authenticates by pairing. Until it pairs, anonymous callers reach only
+`GET /actuator/health` (overall status), `GET /pairing`, `POST /pairing`, and the
+analyzer transport `POST /input`. Every other endpoint, including any added
+later, answers 401. To pair, OpenELIS posts the pairing code to `/pairing` while
+presenting its TLS client certificate:
+
+```bash
+curl -k --cert openelis.crt --key openelis.key -H 'Content-Type: application/json' \
+  -d '{"code":"LSHE-NEYZ-MNJ4-RP98-QR7B","serverCertificateSha256":"<sha256 of the certificate OpenELIS serves>"}' \
+  https://localhost:8442/pairing
+```
+
+The Bridge records the SHA-256 fingerprints of that client certificate and of
+the certificate OpenELIS serves (the client certificate's, when
+`serverCertificateSha256` is omitted), and answers with its own certificate and
+fingerprint for OpenELIS to pin. From then on only that client certificate
+authenticates, and result delivery and the OpenELIS health probe present the
+Bridge certificate and trust OpenELIS by its pinned fingerprint, or by the system
+trust store for its host.
+
+The code comes from `BRIDGE_PAIRING_CODE`. Without one, an unpaired Bridge logs a
+generated code at each start. A code pairs once; ten wrong codes close pairing
+until the next start. To pair a different OpenELIS, or after OpenELIS changes its
+certificate, set a new `BRIDGE_PAIRING_CODE` and restart: the next pairing with
+it replaces the current one. Removing `pairing.json` from the identity directory
+unpairs the Bridge.
+
+### Passwords until pairing
+
+A configured `bridge.security.password` keeps HTTP Basic working for a Bridge
+that has not been paired, so an OpenELIS that still uses a password is not cut
+off by an upgrade. The first pairing ends password access. Leave the password
+empty to rely on pairing alone; a blank password is never a credential. The
+shipped default `changeme` stops startup unless `spring.profiles.active` includes
+`dev` or `test`, and `bridge.security.enabled=false` stops startup too.
+Pre-encoded passwords in Spring's delegating form (`{bcrypt}$2a$10$...`) are
+stored as-is; plaintext is BCrypt-encoded once at startup.
+
+### Analyzer transports
+
+Non-HTTP transports (ASTM/TCP, MLLP, serial, file) do not authenticate; they
+attribute traffic by address and sender name. Each is bounded: MLLP caps
+concurrent connections, message size and message time
+(`org.itech.ahb.mllp.max-connections`, `max-message-bytes`,
+`message-timeout-seconds`); ASTM receipts have per-frame and per-message
+deadlines and size limits; watched files over `bridge.file.max-file-size-bytes`
+are parked unread; FILE directories must lie under `bridge.file.import-roots`.
 
 Active connections have distinct runtime registrations even when they share an
 analyzer host. A host-only inbound lookup is accepted only when it identifies one
@@ -500,7 +552,7 @@ address and overwrite forwarded port and real-IP headers. Do not enable generic
 servlet/container forwarded-header rewriting: keep
 `server.forward-headers-strategy=none` so Bridge can inspect the real socket peer.
 
-HTTP `/input` accepts ASTM, HL7 and profile-configured CSV/TSV messages through active saved connections. It uses the shared HTTP endpoint; no per-analyzer listening port or watched directory is required. The source peer identifies the connection. An automatic connection test cannot prove that an incoming HTTP sender works; verification requires actual result delivery. The existing test response explains this limitation.
+HTTP `/input` accepts ASTM, HL7 and profile-configured CSV/TSV messages through active saved connections. It uses the shared HTTP endpoint; no per-analyzer listening port or watched directory is required. The source peer identifies the connection, and a sender whose address is not an active HTTP connection is refused with 403 before anything is stored. A body larger than `bridge.http.max-input-bytes` (20 MB) is refused. An automatic connection test cannot prove that an incoming HTTP sender works; verification requires actual result delivery. The existing test response explains this limitation.
 
 For HTTP connections, `host` must be a numeric IPv4 or IPv6 address, not a
 hostname, port-qualified address, network range, or scoped/interface address.
@@ -508,46 +560,6 @@ Saved sender bindings, incoming addresses, and trusted proxy addresses use the
 same normalized representation, including equivalent IPv6 spellings. Hostnames
 are never resolved to authorize an HTTP sender. This restriction does not change
 hostname support for outbound TCP connections.
-
-### Configuration
-
-```yaml
-bridge:
-  security:
-    username: bridge
-    password: ${BRIDGE_AUTH_PASSWORD:changeme}   # Set via environment variable
-```
-
-### Usage
-
-```bash
-# Authenticated request to /input
-curl -k -u bridge:changeme -X POST https://localhost:8442/input \
-  -H "Content-Type: application/hl7-v2" \
-  -d "MSH|^~\&|ANALYZER|LAB|..."
-
-# Unauthenticated returns 401
-curl -k -X POST https://localhost:8442/input -d "test"
-# → 401 Unauthorized
-```
-
-### Production Setup
-
-**Required:** Set the password via environment variable. The default `changeme` causes startup failure when `spring.profiles.active` is not `dev` or `test`. `BRIDGE_AUTH_PASSWORD` is read through the `${BRIDGE_AUTH_PASSWORD:changeme}` placeholder in the sample `configuration.yml`; with a configuration file that lacks it, set `BRIDGE_SECURITY_PASSWORD` instead, which binds `bridge.security.password` directly.
-
-```bash
-export BRIDGE_AUTH_PASSWORD=your-secure-password
-docker compose up -d
-```
-
-Or in Docker Compose:
-
-```yaml
-environment:
-  BRIDGE_AUTH_PASSWORD: your-secure-password
-```
-
-Pre-encoded passwords are supported using Spring’s delegating form: set `bridge.security.password={bcrypt}$2a$10$...` (or another `{id}...` scheme) and the bridge stores that value as-is. Plaintext values are BCrypt-encoded once at startup—do not double-encode.
 
 ## Result Delivery
 
@@ -591,7 +603,7 @@ RECEIVED ──▶ PENDING ──▶ RETRYING ──▶ DELIVERED
 | `PENDING` | Rendered into the OpenELIS contract and waiting for its first attempt |
 | `RETRYING` | An attempt failed in a way that can still succeed; scheduled with backoff |
 | `DELIVERED` | OpenELIS durably accepted it and returned a receipt |
-| `DMQ` | Cannot be delivered without a person: retries spent, or OpenELIS refused it |
+| `DMQ` | Cannot be delivered without a person: retries spent, OpenELIS refused it, or it could not be rendered |
 
 What a transport reports back to an analyzer means "the bridge is holding this
 result", not "OpenELIS has it". The bridge refuses a message only when it does
@@ -603,9 +615,15 @@ received content, which OpenELIS deduplicates on. A redelivery after a restart
 carries the same identity as the first attempt, so a result accepted once is
 never staged twice.
 
+A message whose rendering fails, including one that throws or exhausts memory,
+goes to the dead-message queue with the error, where it can be retried after a
+fix or dismissed; the dispatcher moves on to the entries behind it.
+
 ### Operating the delivery queue
 
 All endpoints require authentication (see Security) and live under `/admin/outbox`.
+The examples use a password, which works only before pairing; once paired, use the
+OpenELIS client certificate (`--cert`/`--key`), or the OpenELIS analyzer pages.
 
 ```bash
 # What is the bridge holding, and is anything stuck?
@@ -702,7 +720,7 @@ to the analyzer's test code and sends an HL7 ORM or ASTM order to the
 connection's outbound endpoint.
 
 ```bash
-curl -k -u bridge:changeme -X POST https://localhost:8442/api/orders \
+curl -k --cert openelis.crt --key openelis.key -X POST https://localhost:8442/api/orders \
   -H "Content-Type: application/json" \
   -d '{"connectionId":"<saved connection id>",
        "order":{"accessionNumber":"ACC-1","patientId":"P-1","loincCodes":["94500-6"]}}'

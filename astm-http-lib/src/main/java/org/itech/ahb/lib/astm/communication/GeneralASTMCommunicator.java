@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -122,6 +123,8 @@ public class GeneralASTMCommunicator implements Communicator {
   private static final int RECIEVE_FRAME_TIMEOUT = 30; // in seconds
   private static final int SEND_FRAME_TIMEOUT = 15; // in seconds
   private static final int MAX_FRAME_RETRY_ATTEMPTS = 5; // 6 - 1 as retries are after first attmpt
+  public static final int MAX_FRAMES_PER_MESSAGE = 4096;
+  public static final int MAX_MESSAGE_CHARACTERS = 16 * 1024 * 1024;
 
   public static final int MAX_FRAME_SIZE_E138195 = 247;
   public static final int MAX_TEXT_SIZE_E138195 = MAX_FRAME_SIZE_E138195 - OVERHEAD_CHARACTER_COUNT;
@@ -151,6 +154,8 @@ public class GeneralASTMCommunicator implements Communicator {
   private Boolean receiveEstablished = false;
   private AstmReceiptObserver receiptObserver = AstmReceiptObserver.NONE;
   private byte[] previousReceivedFrame;
+  private Duration frameDeadline = Duration.ofSeconds(RECIEVE_FRAME_TIMEOUT);
+  private Duration nonCompliantMessageDeadline = Duration.ofSeconds(NON_COMPLIANT_RECEIVE_TIMEOUT);
 
   public void setReceiptObserver(AstmReceiptObserver observer) {
     receiptObserver = java.util.Objects.requireNonNull(observer);
@@ -234,6 +239,26 @@ public class GeneralASTMCommunicator implements Communicator {
     return receiveInNonCompliantMode();
   }
 
+  /** Overrides the receive deadlines; the defaults are the protocol timeouts. */
+  void setReceiveDeadlines(Duration frame, Duration nonCompliantMessage) {
+    this.frameDeadline = frame;
+    this.nonCompliantMessageDeadline = nonCompliantMessage;
+  }
+
+  /**
+   * Reads one character, failing once the deadline has passed. The socket timeout is the time left,
+   * so a silent peer and a trickling one are both cut off.
+   */
+  private char readCharBefore(long deadlineNanos, String what) throws IOException, InterruptedException {
+    long remaining = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+    if (remaining <= 0) {
+      throw new SocketTimeoutException(what + " was not complete within its deadline");
+    }
+    socket.setSoTimeout((int) Math.min(remaining, Integer.MAX_VALUE));
+    return ThreadUtil.readCharWithInterruptCheck(reader);
+  }
+
+
   public Boolean establishmentReceive() throws IOException, InterruptedException {
     socket.setSoTimeout(ESTABLISHMENT_SOCKET_TIMEOUT * 1000);
     char establishmentChar = (ThreadUtil.readCharWithInterruptCheck(reader));
@@ -273,64 +298,46 @@ public class GeneralASTMCommunicator implements Communicator {
     }
   }
 
-  /**
+    /**
    * Receives an ASTM message that is being sent non-compliantly (not using a proper ASTM transmission protocol).
-   * The non-compliant mode reads character by character until the termination record is reached.
+   * Records are read up to each carriage return until the termination record arrives, within one
+   * deadline for the whole message and within the frame and message size limits. A closed or silent
+   * connection ends the receipt.
    *
    * @return the received ASTM message.
-   * @throws ASTMCommunicationException if there is a communication error in the ASTM transmission protocol.
-   * @throws IOException if an I/O error occurs.
+   * @throws ASTMCommunicationException if the message passes a size limit or the receipt is interrupted.
+   * @throws IOException if an I/O error occurs, including the peer closing the connection or the deadline passing.
    */
   private ASTMMessage receiveInNonCompliantMode() throws IOException, ASTMCommunicationException {
-    final FutureTask<ASTMMessage> recievedMessageFuture = new FutureTask<>(receiveIncompliantMessage());
+    long deadline = System.nanoTime() + nonCompliantMessageDeadline.toNanos();
+    List<ASTMRecord> records = new ArrayList<>();
+    long characters = 0;
     try {
-      recievedMessageFuture.run();
-      return recievedMessageFuture.get(NON_COMPLIANT_RECEIVE_TIMEOUT, TimeUnit.SECONDS);
-    } catch (TimeoutException e) {
-      recievedMessageFuture.cancel(true);
-      log.error("a timeout occured while receiving message in non-compliant mode", e);
-    } catch (InterruptedException | ExecutionException e) {
-      log.error("the thread was interrupted or had an error in exeuction", e);
-    }
-    throw new ASTMCommunicationException("non compliant mode could not return a valid ASTM message");
-  }
-
-  /**
-   * Callable that recieves an ASTM message that is being sent non-compliantly (not using the ASTM transmission protocol).
-   * Instead the message is read character by character until the termination record is reached.
-   *
-   * @return callable thread that returns the received ASTM message.
-   */
-  private Callable<ASTMMessage> receiveIncompliantMessage() {
-    return new Callable<ASTMMessage>() {
-      @Override
-      public ASTMMessage call() throws IOException, ASTMCommunicationException {
-        List<ASTMRecord> records = new ArrayList<>();
-        boolean messageTerminationRecordReceived = false;
-        int i = 0;
-        while (!messageTerminationRecordReceived) {
-          try {
-            Set<FrameError> frameErrors = readNextIncompliantRecord(records);
-            if (frameErrors.isEmpty()) {
-              log.debug("record successfully received");
-              if (records.get(i).getRecord().trim().endsWith(TERMINATION_RECORD_END)) {
-                messageTerminationRecordReceived = true;
-              }
-              ++i;
-            } else {
-              log.debug("frame unsuccessfully received due to: " + frameErrors);
-            }
-          } catch (Exception e) {
-            log.error("the receiving phase had an error in exeuction", e);
-          }
+      while (true) {
+        if (records.size() >= MAX_FRAMES_PER_MESSAGE) {
+          throw new ASTMCommunicationException("non-compliant message exceeds " + MAX_FRAMES_PER_MESSAGE + " records");
         }
-
-        return decodePayload(
-          astmInterpreterFactory.createInterpreterForRecords(records).interpretASTMRecordsToMessage(records)
-        );
+        String text = readNextIncompliantRecord(records, deadline);
+        characters += text.length();
+        if (characters > MAX_MESSAGE_CHARACTERS) {
+          throw new ASTMCommunicationException(
+            "non-compliant message exceeds " + MAX_MESSAGE_CHARACTERS + " characters"
+          );
+        }
+        if (!records.isEmpty() && records.get(records.size() - 1).getRecord().trim().endsWith(TERMINATION_RECORD_END)) {
+          break;
+        }
       }
-    };
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new ASTMCommunicationException("receipt of a non-compliant message was interrupted", e);
+    }
+    return decodePayload(
+      astmInterpreterFactory.createInterpreterForRecords(records).interpretASTMRecordsToMessage(records)
+    );
   }
+
+  
 
   /**
    * Re-reads an assembled message's text as payload text.
@@ -374,20 +381,26 @@ public class GeneralASTMCommunicator implements Communicator {
   private ASTMMessage receiveInCompliantMode() throws IOException, ASTMCommunicationException, FrameParsingException {
     List<ASTMFrame> frames = new ArrayList<>();
     int i = 0;
+    long characters = 0;
     List<Exception> exceptions = new ArrayList<>();
     while (exceptions.size() <= MAX_FRAME_RETRY_ATTEMPTS) {
       if (exceptions.size() > 0) {
         log.debug("attempting retry of frame " + i);
       }
-      final FutureTask<ReadFrameInfo> recievedFrameFuture = new FutureTask<>(receiveNextFrameTask(frames));
       try {
-        recievedFrameFuture.run();
-        ReadFrameInfo frameInfo = recievedFrameFuture.get(RECIEVE_FRAME_TIMEOUT, TimeUnit.SECONDS);
+        ReadFrameInfo frameInfo = receiveNextFrame(frames, System.nanoTime() + frameDeadline.toNanos());
         if (frameInfo.getStartChar() == EOT) {
           break;
         }
         Set<FrameError> frameErrors = frameInfo.getFrameErrors();
         if (frameErrors.isEmpty()) {
+          if (frames.size() > MAX_FRAMES_PER_MESSAGE) {
+            throw new ASTMCommunicationException("message exceeds " + MAX_FRAMES_PER_MESSAGE + " frames");
+          }
+          characters += frames.get(frames.size() - 1).getText().length();
+          if (characters > MAX_MESSAGE_CHARACTERS) {
+            throw new ASTMCommunicationException("message exceeds " + MAX_MESSAGE_CHARACTERS + " characters");
+          }
           log.debug("frame successfully received");
           log.trace("sending: '" + LogUtil.convertForDisplay(ACK) + "' to indicate received frame correctly");
           writer.append(ACK); //it is also permitted to send an EOT to try to end the transmission after reading a frame
@@ -401,11 +414,9 @@ public class GeneralASTMCommunicator implements Communicator {
           writer.flush();
           exceptions.add(new ASTMCommunicationException("frame unsuccessfully received due to: " + frameErrors));
         }
-      } catch (TimeoutException e) {
-        recievedFrameFuture.cancel(true);
-        throw new ASTMCommunicationException("a timeout occured while receiving message in non-compliant mode", e);
-      } catch (InterruptedException | ExecutionException e) {
-        throw new ASTMCommunicationException("the thread was interrupted or had an error in exeuction", e);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new ASTMCommunicationException("receipt of a frame was interrupted", e);
       }
     }
 
@@ -445,37 +456,36 @@ public class GeneralASTMCommunicator implements Communicator {
     return message;
   }
 
-  /**
-   * Creates a callable task that reads a single frame and adds it to the list of frames.
+    /**
+   * Reads a single frame, or the end of transmission, within the frame deadline and adds a valid
+   * frame to the list of frames.
    *
-   * @param frames the list of frames that this task will add the next frame to.
-   * @return a callable task that returns the information about the frame that was read
-   * @throws IOException if an I/O error occurs.
+   * @param frames the list of frames that this method will add the next frame to.
+   * @param deadline the System.nanoTime() by which the frame must have arrived
+   * @return the information about the frame that was read
+   * @throws IOException if an I/O error occurs, including the deadline passing.
+   * @throws InterruptedException if the operation is interrupted.
+   * @throws ASTMCommunicationException if the frame is far larger than the protocol allows.
    */
-  private Callable<ReadFrameInfo> receiveNextFrameTask(List<ASTMFrame> frames) throws IOException {
-    return new Callable<ReadFrameInfo>() {
-      @Override
-      public ReadFrameInfo call() throws IOException, InterruptedException {
-        socket.setSoTimeout(RECIEVE_FRAME_TIMEOUT * 1000);
-        char startChar = ThreadUtil.readCharWithInterruptCheck(reader);
-        log.trace(
-          "received: '" +
-          LogUtil.convertForDisplay(startChar) +
-          "'. Expecting start of frame ['" +
-          LogUtil.convertForDisplay(STX) +
-          "'] aka [0x02]"
-        );
-        if (startChar == EOT) {
-          log.debug("'" + LogUtil.convertForDisplay(EOT) + "' detected");
-          return new ReadFrameInfo(new HashSet<>(), startChar);
-        } else if (startChar == STX) {
-          return new ReadFrameInfo(readNextCompliantFrame(frames, (frames.size() + 1) % 8), startChar);
-        } else {
-          log.error("illegal start character '" + LogUtil.convertForDisplay(startChar) + "' detected");
-          return new ReadFrameInfo(Set.of(FrameError.ILLEGAL_START), startChar);
-        }
-      }
-    };
+  private ReadFrameInfo receiveNextFrame(List<ASTMFrame> frames, long deadline)
+    throws IOException, InterruptedException, ASTMCommunicationException {
+    char startChar = readCharBefore(deadline, "frame");
+    log.trace(
+      "received: '" +
+      LogUtil.convertForDisplay(startChar) +
+      "'. Expecting start of frame ['" +
+      LogUtil.convertForDisplay(STX) +
+      "'] aka [0x02]"
+    );
+    if (startChar == EOT) {
+      log.debug("'" + LogUtil.convertForDisplay(EOT) + "' detected");
+      return new ReadFrameInfo(new HashSet<>(), startChar);
+    } else if (startChar == STX) {
+      return new ReadFrameInfo(readNextCompliantFrame(frames, (frames.size() + 1) % 8, deadline), startChar);
+    } else {
+      log.error("illegal start character '" + LogUtil.convertForDisplay(startChar) + "' detected");
+      return new ReadFrameInfo(Set.of(FrameError.ILLEGAL_START), startChar);
+    }
   }
 
   /**
@@ -487,16 +497,16 @@ public class GeneralASTMCommunicator implements Communicator {
    * @throws IOException if an I/O error occurs.
    * @throws InterruptedException if the operation is interrupted.
    */
-  private Set<FrameError> readNextCompliantFrame(List<ASTMFrame> frames, int expectedFrameNumber)
-    throws IOException, InterruptedException {
+  private Set<FrameError> readNextCompliantFrame(List<ASTMFrame> frames, int expectedFrameNumber, long deadline)
+    throws IOException, InterruptedException, ASTMCommunicationException {
     log.debug("reading frame...");
     Set<FrameError> frameErrors = new HashSet<>();
 
-    char frameNumberChar = ThreadUtil.readCharWithInterruptCheck(reader);
+    char frameNumberChar = readCharBefore(deadline, "frame");
     log.trace("received: '" + LogUtil.convertForDisplay(frameNumberChar) + "'. Expecting frame number [0-7]");
 
     int receivedFrameNumber = Character.getNumericValue(frameNumberChar);
-    char curChar = ThreadUtil.readCharWithInterruptCheck(reader);
+    char curChar = readCharBefore(deadline, "frame");
 
     int frameSize = 0;
     int maxTextSize = (astmVersion == ASTMVersion.LIS01_A ? MAX_TEXT_SIZE : MAX_TEXT_SIZE_E138195);
@@ -520,16 +530,21 @@ public class GeneralASTMCommunicator implements Communicator {
         if (!sizeExceededLogged) {
           frameErrors.add(FrameError.MAX_SIZE_EXCEEDED);
           log.error(
-            "frame size exceeded max {} at position {} — continuing to read until ETX/ETB (subsequent size errors suppressed)",
+            "frame size exceeded max {} at position {} — discarding until ETX/ETB (subsequent size errors suppressed)",
             maxTextSize,
             frameSize
           );
           sizeExceededLogged = true;
         }
+        // An oversized frame is refused with NAK once it ends; one that keeps going ends the receipt.
+        if (frameSize > 2 * maxTextSize) {
+          throw new ASTMCommunicationException("frame exceeds " + maxTextSize + " characters without ending");
+        }
+      } else {
+        textBuilder.append(curChar);
       }
-      textBuilder.append(curChar);
       ++frameSize;
-      curChar = ThreadUtil.readCharWithInterruptCheck(reader);
+      curChar = readCharBefore(deadline, "frame");
     }
     boolean finalFrame = (curChar == ETX);
     String text = textBuilder.toString();
@@ -549,20 +564,20 @@ public class GeneralASTMCommunicator implements Communicator {
       "'] aka [0x17, 0x03]"
     );
     StringBuilder checksum = new StringBuilder();
-    checksum.append(ThreadUtil.readCharWithInterruptCheck(reader));
-    checksum.append(ThreadUtil.readCharWithInterruptCheck(reader));
+    checksum.append(readCharBefore(deadline, "frame"));
+    checksum.append(readCharBefore(deadline, "frame"));
 
     log.debug("checking checksum...");
     if (!checksumFits(checksum.toString(), frameNumberChar, text, curChar)) {
       frameErrors.add(FrameError.BAD_CHECKSUM);
     }
     String endFrameControlCode = "";
-    char endOfFrameChar = ThreadUtil.readCharWithInterruptCheck(reader);
+    char endOfFrameChar = readCharBefore(deadline, "frame");
     endFrameControlCode = endFrameControlCode + endOfFrameChar;
     if (CR != endOfFrameChar) {
       frameErrors.add(FrameError.ILLEGAL_END);
     }
-    endOfFrameChar = ThreadUtil.readCharWithInterruptCheck(reader);
+    endOfFrameChar = readCharBefore(deadline, "frame");
     endFrameControlCode = endFrameControlCode + endOfFrameChar;
     if (LF != endOfFrameChar) {
       frameErrors.add(FrameError.ILLEGAL_END);
@@ -600,23 +615,30 @@ public class GeneralASTMCommunicator implements Communicator {
     return frameErrors;
   }
 
-  /**
-   * Read the next ASTM record and add it to the list of ASTM records
+    /**
+   * Read the next ASTM record and add it to the list of ASTM records unless it carries illegal
+   * characters.
    *
    * @param records the list of records that this method will add to
-   * @return a Set of issues with the "frame" (record in this case) that was received. for  This will be empty if no issue was detected.
+   * @param deadline the System.nanoTime() by which the whole message must have arrived
+   * @return the record text as read, whether or not it was added
+   * @throws ASTMCommunicationException if the record is longer than a frame may be
    * @throws IOException if an I/O error occurs.
    * @throws InterruptedException if the operation is interrupted.
    */
-  private Set<FrameError> readNextIncompliantRecord(List<ASTMRecord> records) throws IOException, InterruptedException {
+  private String readNextIncompliantRecord(List<ASTMRecord> records, long deadline)
+    throws IOException, InterruptedException, ASTMCommunicationException {
     log.debug("reading incompliant record...");
-    Set<FrameError> recordErrors = new HashSet<>();
+    boolean illegal = false;
     StringBuilder textBuilder = new StringBuilder();
     char curChar = ' ';
     while (curChar != CR) {
-      curChar = ThreadUtil.readCharWithInterruptCheck(reader);
+      curChar = readCharBefore(deadline, "non-compliant message");
       if (RESTRICTED_CHARACTERS.contains(curChar)) {
-        recordErrors.add(FrameError.ILLEGAL_CHAR);
+        illegal = true;
+      }
+      if (textBuilder.length() >= MAX_TEXT_SIZE) {
+        throw new ASTMCommunicationException("non-compliant record exceeds " + MAX_TEXT_SIZE + " characters");
       }
       textBuilder.append(curChar);
     }
@@ -628,12 +650,14 @@ public class GeneralASTMCommunicator implements Communicator {
       "'. Expecting ASTM frame. Illegal characters [0x00-0x06, 0x08, 0x0A, 0x0E-0x1F, 0x7F, 0xFF]"
     );
 
-    if (recordErrors.isEmpty()) {
+    if (!illegal) {
       ASTMRecord record = astmInterpreterFactory.createInterpreterForText(text).interpretASTMTextToRecord(text);
       records.add(record);
       log.debug("record added to list of record");
+    } else {
+      log.debug("record not added: it carries illegal characters");
     }
-    return recordErrors;
+    return text;
   }
 
   @Override

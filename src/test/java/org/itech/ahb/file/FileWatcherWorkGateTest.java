@@ -20,7 +20,9 @@ class FileWatcherWorkGateTest {
 
   @BeforeEach
   void setUp() throws IOException {
-    watcher = new FileWatcher(new FileConfig(), null, null);
+    FileConfig config = new FileConfig();
+    config.setImportRoots(java.util.List.of(directory.toString()));
+    watcher = new FileWatcher(config, null, null);
     watcher.addWatchDirectory(directory, "*.csv", "owner");
   }
 
@@ -30,16 +32,15 @@ class FileWatcherWorkGateTest {
   }
 
   @Test
-  void manualUploadSelectsAnActiveConnectionIndependentlyOfTheDiscoveryPattern() throws Exception {
-    Path selected = directory.resolve("manual-export.xlsx");
-    assertNull(watcher.tryClaimFile(selected, null), "watcher discovery remains restricted to its configured glob");
-    try (var receipt = watcher.tryClaimFile(selected, "owner")) {
+  void claimsFollowTheActiveRegistrationAndItsDiscoveryPattern() throws Exception {
+    Path selected = directory.resolve("export.csv");
+    assertNull(watcher.tryClaimFile(directory.resolve("export.xlsx")), "discovery stays restricted to its glob");
+    try (var receipt = watcher.tryClaimFile(selected)) {
       assertNotNull(receipt);
-      assertNull(watcher.tryClaimFile(selected, "owner"), "physical file exclusion still applies");
+      assertNull(watcher.tryClaimFile(selected), "physical file exclusion still applies");
     }
-    assertNull(watcher.tryClaimFile(selected, "different-analyzer"));
     watcher.removeWatchRegistration(directory, "owner");
-    assertNull(watcher.tryClaimFile(selected, "owner"), "inactive connections cannot admit uploads");
+    assertNull(watcher.tryClaimFile(selected), "inactive connections admit no work");
   }
 
   @Test
@@ -47,7 +48,7 @@ class FileWatcherWorkGateTest {
     try (var pause = watcher.pauseDirectory(directory)) {
       watcher.stop();
     }
-    try (var claim = watcher.tryClaimFile(directory.resolve("result.csv"), "owner")) {
+    try (var claim = watcher.tryClaimFile(directory.resolve("result.csv"))) {
       assertNull(claim);
     }
   }
@@ -61,7 +62,7 @@ class FileWatcherWorkGateTest {
 
   @Test
   void interruptedShutdownDoesNotPretendTheActiveClaimWasCancelled() throws Exception {
-    try (var worker = watcher.tryClaimFile(directory.resolve("busy.csv"), "owner")) {
+    try (var worker = watcher.tryClaimFile(directory.resolve("busy.csv"))) {
       assertNotNull(worker);
       try {
         Thread.currentThread().interrupt();
@@ -73,7 +74,7 @@ class FileWatcherWorkGateTest {
       var claims = (java.util.Set<?>) ReflectionTestUtils.getField(watcher, "processingFiles");
       assertNotNull(claims);
       assertEquals(1, claims.size(), "an interrupted wait must not release somebody else's work");
-      assertNull(watcher.tryClaimFile(directory.resolve("new.csv"), "owner"));
+      assertNull(watcher.tryClaimFile(directory.resolve("new.csv")));
     }
     watcher.stop();
   }
@@ -83,11 +84,11 @@ class FileWatcherWorkGateTest {
     Path file = directory.resolve("result.csv");
     try (var outer = watcher.pauseDirectory(directory)) {
       try (var inner = watcher.pauseDirectory(directory)) {
-        assertNull(watcher.tryClaimFile(file, "owner"));
+        assertNull(watcher.tryClaimFile(file));
       }
-      assertNull(watcher.tryClaimFile(file, "owner"));
+      assertNull(watcher.tryClaimFile(file));
     }
-    try (var claim = watcher.tryClaimFile(file, "owner")) {
+    try (var claim = watcher.tryClaimFile(file)) {
       assertNotNull(claim);
     }
   }
@@ -95,7 +96,7 @@ class FileWatcherWorkGateTest {
   @Test
   void interruptedDrainReleasesItsPauseWithoutReleasingTheActiveWorker() throws Exception {
     Path busy = directory.resolve("busy.csv");
-    try (var worker = watcher.tryClaimFile(busy, "owner")) {
+    try (var worker = watcher.tryClaimFile(busy)) {
       assertNotNull(worker);
       try {
         Thread.currentThread().interrupt();
@@ -104,8 +105,8 @@ class FileWatcherWorkGateTest {
       } finally {
         Thread.interrupted();
       }
-      assertNull(watcher.tryClaimFile(busy, "owner"));
-      try (var other = watcher.tryClaimFile(directory.resolve("other.csv"), "owner")) {
+      assertNull(watcher.tryClaimFile(busy));
+      try (var other = watcher.tryClaimFile(directory.resolve("other.csv"))) {
         assertNotNull(other, "failed drain must not leave the directory permanently paused");
       }
     }
@@ -117,14 +118,14 @@ class FileWatcherWorkGateTest {
     Path alias = Files.createSymbolicLink(directory.resolve("alias"), physical);
     watcher.addWatchDirectory(physical, "*.csv", "owner");
     watcher.addWatchDirectory(alias, "*.csv", "owner");
-    try (var worker = watcher.tryClaimFile(physical.resolve("result.csv"), "owner")) {
+    try (var worker = watcher.tryClaimFile(physical.resolve("result.csv"))) {
       assertNotNull(worker);
-      assertNull(watcher.tryClaimFile(alias.resolve("result.csv"), "owner"));
+      assertNull(watcher.tryClaimFile(alias.resolve("result.csv")));
     }
     try (var pause = watcher.pauseDirectory(alias)) {
-      assertNull(watcher.tryClaimFile(physical.resolve("new.csv"), "owner"));
+      assertNull(watcher.tryClaimFile(physical.resolve("new.csv")));
     }
-    try (var worker = watcher.tryClaimFile(physical.resolve("new.csv"), "owner")) {
+    try (var worker = watcher.tryClaimFile(physical.resolve("new.csv"))) {
       assertNotNull(worker);
     }
   }

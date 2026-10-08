@@ -3,6 +3,7 @@ package org.itech.ahb.routing;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.normalizer.MessageEnvelope;
+import org.itech.ahb.outbox.FailureReason;
 import org.itech.ahb.outbox.FhirDeliveryClient;
 import org.itech.ahb.outbox.OutboxDispatcher;
 import org.itech.ahb.outbox.OutboxStore;
@@ -102,7 +103,18 @@ public class HttpForwardingRouter implements MessageRouter {
       );
       return false;
     }
-    NormalizedBundleRenderer.Outcome outcome = renderer.render(envelope, deliveryClient.targetUri().toString());
+    NormalizedBundleRenderer.Outcome outcome;
+    try {
+      outcome = renderer.render(envelope, deliveryClient.targetUri().toString());
+    } catch (RuntimeException | StackOverflowError | OutOfMemoryError e) {
+      // A parser defect or a hostile message must not escape onto the transport thread, where the
+      // entry would sit leased and unrendered.
+      log.error("Rendering a {} message from {} failed", envelope.getProtocol(), envelope.getSourceId(), e);
+      outcome = new NormalizedBundleRenderer.Outcome.Failed(
+        FailureReason.RENDER_ERROR,
+        "Rendering failed: " + e.getClass().getSimpleName()
+      );
+    }
     if (outcome instanceof NormalizedBundleRenderer.Outcome.Failed failed) {
       log.error("{} for analyzer source {}", failed.message(), envelope.getSourceId());
       outbox.markDeadLettered(receiptId, failed.reason(), failed.message());

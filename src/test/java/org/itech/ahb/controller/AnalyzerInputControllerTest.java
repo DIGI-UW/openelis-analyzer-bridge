@@ -40,6 +40,9 @@ class AnalyzerInputControllerTest {
   @Mock
   private MessageNormalizer mockNormalizer;
 
+  @Mock
+  private org.itech.ahb.connection.AnalyzerRuntimeRegistry senders;
+
   // Sample messages
   private static final String SAMPLE_ASTM_MESSAGE =
     "H|\\^&|||HOST^NAME|||||||LIS2-A2|20260205120000\r" +
@@ -62,7 +65,8 @@ class AnalyzerInputControllerTest {
 
   @BeforeEach
   void setUp() {
-    controller = new AnalyzerInputController(mockNormalizer);
+    controller = new AnalyzerInputController(mockNormalizer, senders);
+    lenient().when(senders.isActiveHttpSender(any())).thenReturn(true);
     lenient().when(mockRequest.getRemoteAddr()).thenReturn("127.0.0.1");
     // Default: normalizer returns success
     lenient().when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(true);
@@ -143,6 +147,7 @@ class AnalyzerInputControllerTest {
           )
         );
       context.registerBean(MessageNormalizer.class, () -> mockNormalizer);
+      context.registerBean(org.itech.ahb.connection.AnalyzerRuntimeRegistry.class, () -> senders);
       context.register(AnalyzerInputController.class);
       context.refresh();
 
@@ -801,5 +806,16 @@ class AnalyzerInputControllerTest {
       assertEquals(HttpStatus.OK, response.getStatusCode());
       verify(mockNormalizer, times(1)).process(any());
     }
+  }
+
+  @Test
+  void aSenderWithoutAnActiveHttpConnectionIsRefusedBeforeAnythingIsStored() {
+    when(senders.isActiveHttpSender("203.0.113.9")).thenReturn(false);
+    when(mockRequest.getRemoteAddr()).thenReturn("203.0.113.9");
+
+    var response = controller.receiveAnalyzerMessage(SAMPLE_CSV_MESSAGE, "text/csv", null, null, mockRequest);
+
+    assertEquals(403, response.getStatusCode().value());
+    org.mockito.Mockito.verifyNoInteractions(mockNormalizer);
   }
 }

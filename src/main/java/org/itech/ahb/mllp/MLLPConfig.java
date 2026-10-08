@@ -31,4 +31,17 @@ public class MLLPConfig {
    * Saved HL7 server connections join this listener without an analyzer-level port.
    */
   private int port = 2575;
+
+  /** Concurrent connections the MLLP port admits; further connections are closed on accept. */
+  private int maxConnections = MllpLimits.DEFAULTS.maxConnections();
+
+  /** Largest message, from its start block to its end block, before the connection is closed. */
+  private int maxMessageBytes = MllpLimits.DEFAULTS.maxMessageBytes();
+
+  /** Seconds a message may take from its start block to its end block. */
+  private int messageTimeoutSeconds = (int) MllpLimits.DEFAULTS.messageTimeout().toSeconds();
+
+  public MllpLimits limits() {
+    return new MllpLimits(maxConnections, maxMessageBytes, java.time.Duration.ofSeconds(messageTimeoutSeconds));
+  }
 }

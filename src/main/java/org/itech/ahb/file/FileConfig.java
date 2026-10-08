@@ -78,4 +78,17 @@ public class FileConfig {
      */
     private long maxRetryDelayMs = 600_000;
 
+    /**
+     * Largest watched file the bridge reads. A larger file is parked as FAILED_NEEDS_HANDLING
+     * without being read; the HTTP input applies its own limit.
+     */
+    private long maxFileSizeBytes = 20L * 1024 * 1024;
+
+    /**
+     * The directories FILE connections may use: the analyzer import and drop shares mounted into
+     * the container. A connection whose directory, with links resolved, lies outside every root is
+     * refused, so FILE ingestion, the raw-file view and reset deletion cannot reach anything else.
+     */
+    private java.util.List<String> importRoots = java.util.List.of("/data/analyzer-imports", "/data/analyzer-drops");
+
 }
