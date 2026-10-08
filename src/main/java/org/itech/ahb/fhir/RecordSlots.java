@@ -41,6 +41,36 @@ final class RecordSlots {
     Observation.ObservationStatus.REGISTERED
   );
 
+  private static final java.util.regex.Pattern RANGE = java.util.regex.Pattern.compile(
+    "\\s*(\\d+(?:[.,]\\d+)?)\\s+to\\s+(\\d+(?:[.,]\\d+)?)\\s*"
+  );
+
+  /**
+   * The range the instrument reported the result against, as sent; its limits too when it reads as
+   * "low to high". FHIR has no element for an instrument's reportable range, so it is a reference
+   * range that says what it is.
+   */
+  private static Observation.ObservationReferenceRangeComponent range(String text, String units) {
+    Observation.ObservationReferenceRangeComponent range = new Observation.ObservationReferenceRangeComponent();
+    range.setText(text);
+    range.setType(new CodeableConcept().setText("Instrument reportable range"));
+    java.util.regex.Matcher limits = RANGE.matcher(text);
+    if (limits.matches()) {
+      range.setLow(limit(limits.group(1), units));
+      range.setHigh(limit(limits.group(2), units));
+    }
+    return range;
+  }
+
+  private static org.hl7.fhir.r4.model.SimpleQuantity limit(String number, String units) {
+    org.hl7.fhir.r4.model.SimpleQuantity limit = new org.hl7.fhir.r4.model.SimpleQuantity();
+    limit.setValue(new BigDecimal(number.replace(',', '.')));
+    if (units != null) {
+      limit.setUnit(units);
+    }
+    return limit;
+  }
+
   /** The HL7 interpretation that states the call an instrument words in its own text. */
   private static final Map<String, String[]> CALLS = Map.of(
     "DETECTED",
@@ -91,6 +121,9 @@ final class RecordSlots {
       }
     } else {
       observation.setValue(new StringType(parts.call()));
+    }
+    if (parts.range() != null) {
+      observation.addReferenceRange(range(parts.range(), result.units()));
     }
     parts.flags().forEach(flag -> observation.addInterpretation(flag(flag)));
     if (parts.assayName() != null) {
