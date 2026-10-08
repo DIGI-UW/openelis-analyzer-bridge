@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.fhir.FhirBundleBuilder;
@@ -11,6 +12,7 @@ import org.itech.ahb.fhir.FileResultParser;
 import org.itech.ahb.fhir.HL7ResultParser;
 import org.itech.ahb.outbox.FailureReason;
 import org.itech.ahb.outbox.RenderedDelivery;
+import org.itech.ahb.profile.ResultReading;
 import org.itech.ahb.routing.NormalizedBundleRenderer.Outcome;
 
 /** Renders retained FILE bytes using only the immutable receipt-time parser context. No I/O to the source path. */
@@ -75,6 +77,7 @@ public final class FileResultRenderer {
       snapshot.setControlResultRecognition(context.recognition());
       snapshot.setRecognitionFingerprint(context.recognitionFingerprint());
       snapshot.setCodeToLoinc(context.codeToLoinc());
+      snapshot.setResultReading(new ResultReading(null, '.', Map.of(), context.profileCodeByInstrumentCode()));
       List<RenderedDelivery> deliveries = new ArrayList<>();
       for (var accession : parsed) {
         deliveries.add(
@@ -107,7 +110,6 @@ public final class FileResultRenderer {
     String contentHash
   ) {
     Objects.requireNonNull(analyzerEntry, "analyzerEntry is required");
-    java.util.function.Function<String, String> codeToLoinc = analyzerEntry::getLoincForCode;
     FhirBundleBuilder.AnalyzerContext context = new FhirBundleBuilder.AnalyzerContext(
       analyzerEntry.getBridgeConnectionId(),
       analyzerEntry.getId(),
@@ -121,9 +123,9 @@ public final class FileResultRenderer {
     );
     return FhirBundleBuilder.buildNormalizedBundle(
       parsed.accessionNumber(),
-      parsed.results(),
+      parsed.underProfileCodes(analyzerEntry.getResultReading()).results(),
       context,
-      codeToLoinc,
+      analyzerEntry::getLoincForProfileCode,
       FileDeliveryIdentity.forAccession(analyzerEntry.getBridgeConnectionId(), contentHash, parsed.accessionNumber())
     );
   }

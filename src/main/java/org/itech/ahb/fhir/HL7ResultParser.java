@@ -327,5 +327,18 @@ public class HL7ResultParser {
     public ParsedResults(String accessionNumber, List<AnalyzerResult> results) {
       this(accessionNumber, results, null, null);
     }
+
+    /** These results under the profile's own codes, where the connection sets other codes for its instrument. */
+    public ParsedResults underProfileCodes(org.itech.ahb.profile.ResultReading reading) {
+      if (reading == null || reading.profileCodeByInstrumentCode().isEmpty()) {
+        return this;
+      }
+      return new ParsedResults(
+        accessionNumber,
+        results.stream().map(result -> result.withTestCode(reading.profileCode(result.testCode()))).toList(),
+        patient,
+        specimenDescriptor
+      );
+    }
   }
 }

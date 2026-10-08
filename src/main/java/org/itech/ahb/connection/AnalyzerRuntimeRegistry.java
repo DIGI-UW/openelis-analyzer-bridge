@@ -57,7 +57,8 @@ public class AnalyzerRuntimeRegistry {
   /** Whether {@code sourceIp} is the address of an active HTTP analyzer connection. */
   public synchronized boolean isActiveHttpSender(String sourceIp) {
     String address = IpLiteral.canonicalize(sourceIp);
-    return address != null &&
+    return (
+      address != null &&
       analyzers
         .entrySet()
         .stream()
@@ -66,7 +67,8 @@ public class AnalyzerRuntimeRegistry {
             "HTTP".equals(registered.getValue().getInboundTransport()) &&
             (address.equals(registered.getValue().getInboundSourceId()) ||
               address.equals(IpLiteral.canonicalize(registered.getKey())))
-        );
+        )
+    );
   }
 
   /**
@@ -507,6 +509,11 @@ public class AnalyzerRuntimeRegistry {
      * never sees analyzer codes — it speaks LOINC over FHIR.
      */
     private java.util.Map<String, String> codeToLoinc = Collections.emptyMap();
+
+    /** The LOINC of a result already under the profile's code; the table is keyed by the codes the instrument sends. */
+    public String getLoincForProfileCode(String profileCode) {
+      return getLoincForCode(resultReading == null ? profileCode : resultReading.instrumentCode(profileCode));
+    }
 
     /** Resolve an analyzer test code to its LOINC (inbound). Null if unmapped. */
     public String getLoincForCode(String analyzerCode) {

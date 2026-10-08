@@ -1,5 +1,6 @@
 package org.itech.ahb.file;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
@@ -30,7 +31,8 @@ public record FileReceiptContext(
   TabularFileLayout layout,
   TabularResultValueSelection resultSelection,
   ControlResultRecognition recognition,
-  Map<String, String> codeToLoinc
+  Map<String, String> codeToLoinc,
+  @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> profileCodeByInstrumentCode
 ) {
   public FileReceiptContext {
     if (version != 1) throw new IllegalArgumentException("Unsupported FILE receipt context version: " + version);
@@ -42,6 +44,9 @@ public record FileReceiptContext(
     Objects.requireNonNull(profileFingerprint, "profileFingerprint");
     columnMappings = columnMappings == null ? Map.of() : Map.copyOf(columnMappings);
     codeToLoinc = codeToLoinc == null ? Map.of() : Map.copyOf(codeToLoinc);
+    profileCodeByInstrumentCode = profileCodeByInstrumentCode == null
+      ? Map.of()
+      : Map.copyOf(profileCodeByInstrumentCode);
   }
 
   public static FileReceiptContext capture(Path path, AnalyzerEntry entry, String explicitTestCode) {
@@ -68,7 +73,8 @@ public record FileReceiptContext(
       entry.getTabularFileLayout(),
       entry.getTabularResultValueSelection(),
       entry.getControlResultRecognition(),
-      entry.getCodeToLoinc()
+      entry.getCodeToLoinc(),
+      entry.getResultReading() == null ? Map.of() : entry.getResultReading().profileCodeByInstrumentCode()
     );
   }
 

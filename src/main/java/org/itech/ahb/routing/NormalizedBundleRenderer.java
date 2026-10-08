@@ -226,13 +226,9 @@ public class NormalizedBundleRenderer {
     );
     try {
       String fhirJson = FhirBundleBuilder.buildNormalizedBundle(
-        translated(parsed, analyzer.getResultReading()),
+        parsed.underProfileCodes(analyzer.getResultReading()),
         analyzerContext,
-        // The connection's LOINC table is keyed by the codes its instrument sends.
-        code ->
-          analyzer.getLoincForCode(
-            analyzer.getResultReading() == null ? code : analyzer.getResultReading().instrumentCode(code)
-          ),
+        analyzer::getLoincForProfileCode,
         messageId
       );
       return new Outcome.Rendered(
@@ -256,27 +252,6 @@ public class NormalizedBundleRenderer {
         "Could not render the OpenELIS contract: " + e.getMessage()
       );
     }
-  }
-
-  /** The results under the profile's own codes, where the saved connection sets other codes for the instrument. */
-  private static HL7ResultParser.ParsedResults translated(
-    HL7ResultParser.ParsedResults parsed,
-    org.itech.ahb.profile.ResultReading reading
-  ) {
-    if (reading == null || reading.profileCodeByInstrumentCode().isEmpty()) {
-      return parsed;
-    }
-    List<FhirBundleBuilder.AnalyzerResult> results = parsed
-      .results()
-      .stream()
-      .map(result -> result.withTestCode(reading.profileCode(result.testCode())))
-      .toList();
-    return new HL7ResultParser.ParsedResults(
-      parsed.accessionNumber(),
-      results,
-      parsed.patient(),
-      parsed.specimenDescriptor()
-    );
   }
 
   /** Split a raw message into non-blank lines, normalizing line endings for HL7. */
