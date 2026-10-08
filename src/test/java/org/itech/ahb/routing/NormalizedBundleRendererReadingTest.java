@@ -6,6 +6,7 @@ import ca.uhn.fhir.context.FhirContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
+import java.util.Map;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Extension;
 import org.hl7.fhir.r4.model.Observation;
@@ -37,6 +38,20 @@ class NormalizedBundleRendererReadingTest {
   }
 
   @Test
+  void aResultUnderTheLabsOwnCodeKeepsTheLoincOfTheAssay() throws Exception {
+    ObjectNode values = objectMapper.createObjectNode();
+    values.putObject("codeOverrides").put("HIVVL", "HIVU");
+
+    // The connection's table, as the runtime builds it: the lab's code, not the profile's.
+    Observation observation = render(values, Map.of("HIVU", "20447-9"), "HIVU", "^1009.64");
+
+    assertThat(observation.getCode().getCoding()).anySatisfy(coding -> {
+      assertThat(coding.getSystem()).isEqualTo("http://loinc.org");
+      assertThat(coding.getCode()).isEqualTo("20447-9");
+    });
+  }
+
+  @Test
   void aCodeNoOverrideNamesIsBundledAsTheInstrumentSentIt() throws Exception {
     Observation observation = render(objectMapper.createObjectNode(), "HIVU", "^1009.64");
 
@@ -58,6 +73,15 @@ class NormalizedBundleRendererReadingTest {
   }
 
   private Observation render(ObjectNode connectionValues, String codeSent, String data) throws Exception {
+    return render(connectionValues, Map.of(), codeSent, data);
+  }
+
+  private Observation render(
+    ObjectNode connectionValues,
+    Map<String, String> codeToLoinc,
+    String codeSent,
+    String data
+  ) throws Exception {
     ObjectNode profile = BaselineProfileFixtures.genexpertHivViralLoad(objectMapper);
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     AnalyzerEntry entry = new AnalyzerEntry();
@@ -71,6 +95,7 @@ class NormalizedBundleRendererReadingTest {
     entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
     entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
     entry.setResultReading(ResultReading.fromProfile(profile, connectionValues));
+    entry.setCodeToLoinc(codeToLoinc);
     registry.register("10.0.0.7", entry);
     String message =
       "H|@^\\|URM-1||GeneXpert PC^GeneXpert^1.0|||||GX||P|1394-97|20221202104017\r" +

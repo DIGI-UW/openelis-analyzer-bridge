@@ -228,7 +228,11 @@ public class NormalizedBundleRenderer {
       String fhirJson = FhirBundleBuilder.buildNormalizedBundle(
         translated(parsed, analyzer.getResultReading()),
         analyzerContext,
-        analyzer::getLoincForCode,
+        // The connection's LOINC table is keyed by the codes its instrument sends.
+        code ->
+          analyzer.getLoincForCode(
+            analyzer.getResultReading() == null ? code : analyzer.getResultReading().instrumentCode(code)
+          ),
         messageId
       );
       return new Outcome.Rendered(

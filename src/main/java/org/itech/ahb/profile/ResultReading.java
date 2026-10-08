@@ -70,6 +70,17 @@ public record ResultReading(
     return profileCodeByInstrumentCode.getOrDefault(instrumentCode, instrumentCode);
   }
 
+  /** The code the instrument sends for a profile code: the connection's own code where it overrides it. */
+  public String instrumentCode(String profileCode) {
+    return profileCodeByInstrumentCode
+      .entrySet()
+      .stream()
+      .filter(entry -> entry.getValue().equals(profileCode))
+      .map(Map.Entry::getKey)
+      .findFirst()
+      .orElse(profileCode);
+  }
+
   /** A number as the instrument wrote it, in the plain decimal form a FHIR decimal takes. */
   public String canonicalNumber(String text) {
     return decimalSeparator == '.' ? text : text.replace(decimalSeparator, '.');
