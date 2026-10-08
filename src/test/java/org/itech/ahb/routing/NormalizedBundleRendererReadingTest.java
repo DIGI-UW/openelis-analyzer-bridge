@@ -65,6 +65,16 @@ class NormalizedBundleRendererReadingTest {
   }
 
   @Test
+  void anOverrideSavedWithSpacesStillTranslatesTheCodeTheInstrumentSends() throws Exception {
+    ObjectNode values = objectMapper.createObjectNode();
+    values.putObject("codeOverrides").put("HIVVL", " HIVU ");
+
+    Observation observation = render(values, "HIVU", "^1009.64");
+
+    assertThat(observation.getCode().getCodingFirstRep().getCode()).isEqualTo("HIVVL");
+  }
+
+  @Test
   void aCodeNoOverrideNamesIsBundledAsTheInstrumentSentIt() throws Exception {
     Observation observation = render(objectMapper.createObjectNode(), "HIVU", "^1009.64");
 

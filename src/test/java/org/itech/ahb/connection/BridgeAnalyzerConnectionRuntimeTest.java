@@ -128,6 +128,13 @@ class BridgeAnalyzerConnectionRuntimeTest {
     assertThatThrownBy(() -> runtime.activate(shared, profile))
       .isInstanceOf(AnalyzerConnectionException.class)
       .hasMessageContaining("SAME");
+
+    ObjectNode taken = baseConnection(profile, "Another assay's code");
+    taken.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    taken.withObject("values").putObject("codeOverrides").put("HIVVL", "RIF");
+    assertThatThrownBy(() -> runtime.activate(taken, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("RIF");
   }
 
   @Test

@@ -521,11 +521,20 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
 
   /**
    * The instrument codes this connection sets for the profile's assays, by profile code. Each must
-   * belong to a test the pinned profile declares, and no two assays may share a code.
+   * belong to a test the pinned profile declares, and no two assays may share a code, including a
+   * code or alias the profile already gives another assay.
    */
   static Map<String, String> codeOverrides(JsonNode profile, JsonNode values) {
     Set<String> declared = new LinkedHashSet<>();
-    profile.path("default_test_mappings").forEach(mapping -> declared.add(mapping.path("test_code").asText()));
+    Map<String, String> declaredOwners = new LinkedHashMap<>();
+    profile
+      .path("default_test_mappings")
+      .forEach(mapping -> {
+        String code = mapping.path("test_code").asText();
+        declared.add(code);
+        declaredOwners.put(code, code);
+        mapping.path("aliases").forEach(alias -> declaredOwners.put(alias.asText(), code));
+      });
     Map<String, String> overrides = new LinkedHashMap<>();
     Map<String, String> owners = new LinkedHashMap<>();
     JsonNode configured = values.path("codeOverrides");
@@ -547,6 +556,17 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
           throw new AnalyzerConnectionException("codeOverrides needs an instrument code for " + entry.getKey());
         }
         String instrumentCode = entry.getValue().asText().trim();
+        String declaredOwner = declaredOwners.get(instrumentCode);
+        if (declaredOwner != null && !declaredOwner.equals(entry.getKey())) {
+          throw new AnalyzerConnectionException(
+            "codeOverrides gives " +
+            entry.getKey() +
+            " the code " +
+            instrumentCode +
+            ", which the profile uses for " +
+            declaredOwner
+          );
+        }
         String previous = owners.putIfAbsent(instrumentCode, entry.getKey());
         if (previous != null) {
           throw new AnalyzerConnectionException(

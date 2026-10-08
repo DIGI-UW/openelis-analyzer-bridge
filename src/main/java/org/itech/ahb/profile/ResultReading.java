@@ -42,7 +42,7 @@ public record ResultReading(
       connectionValues
         .path("codeOverrides")
         .fields()
-        .forEachRemaining(entry -> profileCodeByInstrumentCode.put(entry.getValue().asText(), entry.getKey()));
+        .forEachRemaining(entry -> profileCodeByInstrumentCode.put(entry.getValue().asText().trim(), entry.getKey()));
     }
     Map<String, Map<String, Set<String>>> runFailures = new HashMap<>();
     for (JsonNode mapping : profile.path("default_test_mappings")) {
