@@ -48,8 +48,12 @@ class OutboxDispatcherTest {
     }
 
     static ScriptedOpenElis create() {
+      return create("http://localhost:1");
+    }
+
+    static ScriptedOpenElis create(String base) {
       HTTPForwardServerConfigurationProperties config = new HTTPForwardServerConfigurationProperties();
-      config.setUri(URI.create("http://localhost:1/analyzer"));
+      config.setUri(URI.create(base));
       config.setConnectTimeoutSeconds(1);
       config.setReadTimeoutSeconds(1);
       return new ScriptedOpenElis(config);
@@ -134,6 +138,20 @@ class OutboxDispatcherTest {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+  }
+
+  @Test
+  @DisplayName("a refused forwarding URI holds every delivery, sending nothing and spending no attempts")
+  void aRefusedForwardingUriHoldsDeliveries() {
+    String id = queueOneDelivery();
+    ScriptedOpenElis openElis = ScriptedOpenElis.create("http://localhost:1/api/OpenELIS-Global/analyzer");
+
+    assertEquals(0, dispatcher(openElis).dispatchDue());
+
+    OutboxEntry entry = store.get(id).orElseThrow();
+    assertEquals(OutboxState.PENDING, entry.state());
+    assertEquals(0, entry.attempts());
+    assertTrue(openElis.sent.isEmpty());
   }
 
   @Test

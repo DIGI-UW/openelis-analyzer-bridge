@@ -191,7 +191,7 @@ class FileConnectionShutdownReplayTest {
     registry = new AnalyzerRuntimeRegistry();
     store = new SqliteFileStateStore(directory.resolve("state.db"));
     var http = new HTTPForwardServerConfigurationProperties();
-    http.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
+    http.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort()));
     http.setReadTimeoutSeconds(10);
     if (outbox != null) outbox.close();
     outbox = org.itech.ahb.outbox.OutboxTestSupport.create(

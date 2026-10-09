@@ -97,11 +97,13 @@ org:
   itech:
     ahb:
       forward-http-server:
-        # Base URI for normalized result delivery. Bridge appends /fhir for all
-        # supported protocols and transports.
-        # Example: http://localhost:8080/api/OpenELIS-Global/analyzer
+        # The OpenELIS base URL, including its context path. Results go to
+        # {uri}/analyzer/fhir and the health check probes {uri}/health.
+        # Example: http://localhost:8080/api/OpenELIS-Global
         #       -> http://localhost:8080/api/OpenELIS-Global/analyzer/fhir
-        uri: http://localhost:8080/api/OpenELIS-Global/analyzer
+        # A value ending in /analyzer, or any health-uri, is refused: results are
+        # held, not delivered, until it is corrected.
+        uri: http://localhost:8080/api/OpenELIS-Global
         username:
         password:
         insecure-tls: false

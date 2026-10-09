@@ -145,6 +145,11 @@ public class OutboxDispatcher {
    * @return how many entries were attempted
    */
   public int dispatchDue() {
+    if (client.refusal().isPresent()) {
+      // Held, not attempted: no attempt is spent and nothing reaches the dead-message queue, so the
+      // results go out on the first poll after the URL is corrected and the Bridge restarted.
+      return 0;
+    }
     int handled = 0;
     Set<String> attempted = new HashSet<>();
     while (!stopping) {

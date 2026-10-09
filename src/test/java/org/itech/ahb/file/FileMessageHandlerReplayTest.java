@@ -56,7 +56,7 @@ class FileMessageHandlerReplayTest {
     });
     server.start();
     config = new HTTPForwardServerConfigurationProperties();
-    config.setUri(URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/analyzer"));
+    config.setUri(URI.create("http://127.0.0.1:" + server.getAddress().getPort()));
     config.setReadTimeoutSeconds(2);
     registry = new AnalyzerRuntimeRegistry();
     entry = new AnalyzerEntry();

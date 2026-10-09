@@ -3,7 +3,6 @@ package org.itech.ahb.outbox;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -68,7 +67,7 @@ public class FhirDeliveryClient {
       targetUri(),
       httpConfig.getConnectTimeoutSeconds(),
       readTimeoutSeconds
-    );
+    );    refusal().ifPresent(reason -> log.error("Forwarding URL refused. {}", reason));
   }
 
   /** POST the bundle once and report what came back, or what stopped it. */
@@ -176,29 +175,14 @@ public class FhirDeliveryClient {
     };
   }
 
-  /** The OpenELIS analyzer ingestion endpoint, derived from the configured forwarding base. */
+  /** The OpenELIS analyzer ingestion endpoint, derived from the configured OpenELIS base URL. */
   public URI targetUri() {
-    URI baseUri = httpConfig.getUri();
-    String basePath = baseUri.getPath();
-    if (basePath == null || basePath.isEmpty()) {
-      basePath = "/analyzer";
-    } else if (basePath.endsWith("/")) {
-      basePath = basePath.substring(0, basePath.length() - 1);
-    }
-    try {
-      return new URI(
-        baseUri.getScheme(),
-        baseUri.getUserInfo(),
-        baseUri.getHost(),
-        baseUri.getPort(),
-        basePath + "/fhir",
-        baseUri.getQuery(),
-        baseUri.getFragment()
-      );
-    } catch (URISyntaxException e) {
-      log.error("Failed to build FHIR target URI", e);
-      return baseUri;
-    }
+    return httpConfig.deliveryUri();
+  }
+
+  /** Why the forwarding configuration must not be delivered to, or empty when it can be. */
+  public java.util.Optional<String> refusal() {
+    return httpConfig.refusal();
   }
 
   /**

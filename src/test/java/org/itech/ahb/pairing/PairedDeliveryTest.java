@@ -67,7 +67,7 @@ class PairedDeliveryTest {
 
   private FhirDeliveryClient client(PairingState pairing, BridgeIdentity bridge) {
     HTTPForwardServerConfigurationProperties config = new HTTPForwardServerConfigurationProperties();
-    config.setUri(URI.create("https://localhost:" + openElis.getAddress().getPort() + "/analyzer"));
+    config.setUri(URI.create("https://localhost:" + openElis.getAddress().getPort()));
     config.setUsername("legacy");
     config.setPassword("testpass".toCharArray());
     config.setConnectTimeoutSeconds(2);
@@ -114,8 +114,7 @@ class PairedDeliveryTest {
     PairingState pairing = new PairingState(directory.resolve("pairing"), "code-for-health");
     pairing.pair("code-for-health", "c".repeat(64), server.fingerprint());
     HTTPForwardServerConfigurationProperties config = new HTTPForwardServerConfigurationProperties();
-    config.setUri(URI.create("https://localhost:" + openElis.getAddress().getPort() + "/analyzer"));
-    config.setHealthUri(URI.create("https://localhost:" + openElis.getAddress().getPort() + "/health"));
+    config.setUri(URI.create("https://localhost:" + openElis.getAddress().getPort()));
 
     var health = new org.itech.ahb.health.HTTPForwardServerHealthIndicator(
       config,

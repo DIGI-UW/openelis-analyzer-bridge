@@ -120,14 +120,14 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | Property | Description | Default |
 |----------|-------------|---------|
 | **OpenELIS Forwarding** | | |
-| `org.itech.ahb.forward-http-server.uri` | OpenELIS analyzer endpoint base URI; results are posted to `{uri}/fhir`. Set it for every deployment | `https://localhost:8443` |
+| `org.itech.ahb.forward-http-server.uri` | The OpenELIS base URL, including its context path (for example `https://lab.example.org/api/OpenELIS-Global`). Results are posted to `{uri}/analyzer/fhir` and the health check probes `{uri}/health`. A value ending in `/analyzer` (the form before 3.3.1) is refused: results are held, not delivered, and forwarding health is DOWN naming the value to set. Set it for every deployment | `https://localhost:8443` |
 | `org.itech.ahb.forward-http-server.username` | Basic auth username, sent only before the Bridge is paired | Optional |
 | `org.itech.ahb.forward-http-server.password` | Basic auth password, sent only before the Bridge is paired | Optional |
 | `org.itech.ahb.forward-http-server.insecure-tls` | Disable TLS verification for forwarding and health checks before pairing. Ignored once paired | false |
 | `org.itech.ahb.forward-http-server.max-response-bytes` | Largest OpenELIS answer read; a larger one fails the attempt | 1048576 |
 | `org.itech.ahb.forward-http-server.connect-timeout-seconds` | HTTP connect timeout | 30 |
 | `org.itech.ahb.forward-http-server.read-timeout-seconds` | HTTP read timeout | 30 |
-| `org.itech.ahb.forward-http-server.health-uri` | Endpoint the forwarding health check probes. Must be the same host as the forward URI, or a green probe does not mean deliveries are arriving; the bridge logs an ERROR at startup if they differ | Optional |
+| `org.itech.ahb.forward-http-server.health-uri` | Removed in 3.3.1; the health check follows `uri`. Setting it is refused the same way as an old `uri` | |
 | `org.itech.ahb.forward-http-server.max-attempts` | Deprecated. Retry scheduling moved to `bridge.outbox.retry.*` when delivery became durable; this property is still bound but unused | 3 |
 | `org.itech.ahb.forward-http-server.backoff-ms` | Deprecated, as above | 1000 |
 | **Delivery Outbox** | | |
