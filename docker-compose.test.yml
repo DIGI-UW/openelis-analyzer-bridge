@@ -14,7 +14,7 @@ services:
       - "${E2E_MLLP_PORT:-2575}:2575"           # Shared MLLP listener, bound at boot
       - "${E2E_BRIDGE_PORT:-8443}:8443"         # HTTP /input endpoint + actuator
     environment:
-      SPRING_PROFILE: test
+      SPRING_PROFILES_ACTIVE: test
       LOGGING_LEVEL_ORG_ITECH: DEBUG
       LOGGING_LEVEL_ROOT: INFO
       OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-150}

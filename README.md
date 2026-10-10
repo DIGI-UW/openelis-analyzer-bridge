@@ -69,7 +69,10 @@ docker logs --follow openelis-analyzer-bridge
 ```
 
 `docker-compose.yml` runs the published `itechuw/openelis-analyzer-bridge:latest`
-image; it does not build from this checkout.
+image, for amd64 and arm64 hosts; it does not build from this checkout. It runs
+the image's default `prod` profile. `SPRING_PROFILES_ACTIVE` selects another;
+the older `SPRING_PROFILE` still works when it is the only one set, and logs a
+warning.
 
 ### Building from Source
 

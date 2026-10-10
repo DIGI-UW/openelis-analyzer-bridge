@@ -18,7 +18,7 @@ services:
       - ./configuration.yml:/app/configuration.yml
     logging: *local-logging
     environment:
-      SPRING_PROFILE: dev
+      SPRING_PROFILES_ACTIVE: dev
       # INFO, not TRACE: the vendored ASTM library logs whole clinical messages at TRACE, so that
       # level puts patient results into ordinary container logs.
       LOGGING_LEVEL_ORG_ITECH: INFO

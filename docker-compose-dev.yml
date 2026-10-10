@@ -42,7 +42,7 @@ services:
     extra_hosts:
       - "host.openelis.org:10.0.0.101"
     environment:
-      SPRING_PROFILE: dev
+      SPRING_PROFILES_ACTIVE: dev
       LOGGING_LEVEL_ORG_ITECH: DEBUG
       JAVA_OPTS: |
         -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:8000
