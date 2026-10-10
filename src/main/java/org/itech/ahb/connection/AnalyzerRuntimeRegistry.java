@@ -490,6 +490,9 @@ public class AnalyzerRuntimeRegistry {
     /** Profile-owned selection of ASTM R records that carry reportable results. */
     private AstmResultRecordSelection astmResultRecordSelection;
 
+    /** Profile-owned selection of HL7 OBX segments that carry reportable results. */
+    private org.itech.ahb.profile.Hl7ResultRecordSelection hl7ResultRecordSelection;
+
     /**
      * How the pinned profile and the saved connection read a result: where each part of a record
      * sits, which raw values are run failures, the number format and any instrument codes the

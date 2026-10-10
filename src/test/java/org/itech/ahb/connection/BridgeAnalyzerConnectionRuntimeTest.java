@@ -427,6 +427,8 @@ class BridgeAnalyzerConnectionRuntimeTest {
     );
     profile.putObject("protocol").put("name", "HL7").put("version", "2.5.1");
     profile.putObject("controlResultRecognition").put("mode", "NONE").put("affirmedNoControlResults", true);
+    // The fixture is an ASTM profile; an HL7 profile has no ASTM record selection.
+    ((ObjectNode) profile.path("configDefaults")).remove("extractionOverrides");
     ObjectNode connection = baseConnection(profile, "HL7 fixture bench");
     connection.withObject("values").put("transport", "TCP/IP").put("connectionRole", "SERVER").put("port", 9123);
 

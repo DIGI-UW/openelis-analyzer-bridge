@@ -405,6 +405,9 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       entry.setHl7SpecimenPosition(
         org.itech.ahb.profile.Hl7SpecimenPosition.fromProfile(profile.path("configDefaults"))
       );
+      entry.setHl7ResultRecordSelection(
+        org.itech.ahb.profile.Hl7ResultRecordSelection.fromProfile(profile.path("configDefaults"))
+      );
     } else if ("FILE".equals(entry.getExpectedProtocol())) {
       if (!"HTTP".equals(entry.getInboundTransport())) {
         entry.setFileDirectory(Path.of(requiredText(values, "directory", "FILE directory")).normalize().toString());
@@ -414,8 +417,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     }
 
     Map<String, String> codeOverrides = codeOverrides(profile, values);
-    // Every protocol translates an instrument's own code back to the profile's; only an ASTM
-    // profile declares where each part of a record sits.
+    // Every protocol translates an instrument's own code back to the profile's; an ASTM or HL7
+    // profile also declares where each part of a record sits.
     entry.setResultReading(org.itech.ahb.profile.ResultReading.fromProfile(profile, values));
     List<String> primaryCodes = new ArrayList<>();
     Map<String, String> codeToLoinc = new LinkedHashMap<>();

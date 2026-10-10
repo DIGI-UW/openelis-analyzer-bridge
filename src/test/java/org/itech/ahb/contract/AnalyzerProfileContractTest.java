@@ -215,6 +215,16 @@ class AnalyzerProfileContractTest {
   void hl7ProfileContractValidatesSocketFieldsAndRecognition() throws IOException {
     ObjectNode profile = fixture("analyzer-profile-astm.json").deepCopy();
     profile.putObject("protocol").put("name", "HL7").put("version", "2.5.1");
+    ObjectNode overrides = ((ObjectNode) profile.path("configDefaults")).putObject("extractionOverrides");
+    ObjectNode astmSelection = overrides.putObject("resultRecordSelection");
+    astmSelection.put("mode", "FIELD_NON_BLANK").put("targetField", "R.4.1");
+    assertFalse(PROFILE_SCHEMA.validate(profile).isEmpty(), "accepted an ASTM record selection on an HL7 profile");
+    overrides
+      .putObject("resultRecordSelection")
+      .put("mode", "EXCLUDE")
+      .put("targetField", "OBX.3.1")
+      .putArray("values")
+      .add("08001");
     ObjectNode rules = (ObjectNode) profile.path("controlResultRecognition").path("rules");
     rules.removeAll();
     ObjectNode rule = rules.putObject("fixture-control");

@@ -80,7 +80,7 @@ class NormalizedBundleRendererReadingTest {
 
     Observation.ObservationReferenceRangeComponent range = observation.getReferenceRangeFirstRep();
     assertThat(range.getText()).isEqualTo("40.00 to 10000000.00");
-    assertThat(range.getType().getText()).isEqualTo("Instrument reportable range");
+    assertThat(range.getType().getText()).isEqualTo("Instrument-reported range");
     assertThat(range.getLow().getValue()).isEqualByComparingTo(new BigDecimal("40"));
     assertThat(range.getHigh().getValue()).isEqualByComparingTo(new BigDecimal("10000000"));
     assertThat(range.getLow().getUnit()).isEqualTo("copies/mL");

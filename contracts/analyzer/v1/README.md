@@ -69,6 +69,25 @@ for that segment type, including fields omitted from the new segment. Later
 observations and orders never reclassify earlier results. This field extraction
 does not activate an HL7 listener or establish a sender's routing authority.
 
+### HL7 result parts and record selection
+
+An HL7 profile locates each part of a result the way an ASTM profile does, in
+`configDefaults.extractionOverrides.resultParts`, with the same field paths:
+`testCode` and `value` (required), `subIdentity`, `unit`, `range`, `flag`,
+`status` and `instrument` in the OBX; `completed` and `operator` in the OBX or
+the OBR before it; `patientId` and `patientName` in the PID (the name field is
+read as family and given); `specimenDescriptor` in the OBR or SPM; and `note` in
+an NTE that follows the observation. OBX-2 decides whether the value is a number
+(`NM`, `SN`) or an answer. Repetitions of the flag field (`H~A`) are separate
+flags. An observation with no value is not a result. A profile without
+`resultParts` is read as before: OBX-3, OBX-5 and OBX-6 only.
+
+`resultRecordSelection` says which OBX segments carry results. `ALL`, the
+default, reads every one. `EXCLUDE` names a `targetField` and the `values` that
+mark an OBX as something else, such as an instrument's settings, histogram
+images or alarms; every other OBX is a result, including one under a code the
+profile does not declare, which OpenELIS holds for review.
+
 ## Ownership boundary
 
 - Bridge owns profile revisions, durable connections and their entered values,

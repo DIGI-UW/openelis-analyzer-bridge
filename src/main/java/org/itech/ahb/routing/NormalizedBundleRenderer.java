@@ -128,7 +128,11 @@ public class NormalizedBundleRenderer {
         case HL7 -> HL7ResultParser.parse(
           splitOn(envelope.getRawMessage(), true),
           recognition,
-          analyzer.getHl7SpecimenPosition()
+          analyzer.getHl7SpecimenPosition(),
+          analyzer.getHl7ResultRecordSelection() == null
+            ? org.itech.ahb.profile.Hl7ResultRecordSelection.all()
+            : analyzer.getHl7ResultRecordSelection(),
+          analyzer.getResultReading()
         );
         case ASTM -> ASTMResultParser.parse(
           splitOn(envelope.getRawMessage(), false),
