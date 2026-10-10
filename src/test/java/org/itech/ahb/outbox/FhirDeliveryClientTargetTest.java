@@ -26,6 +26,15 @@ class FhirDeliveryClientTargetTest {
   }
 
   @Test
+  @DisplayName("a base URL's query stays a query, and the endpoint extends its path")
+  void aQueryOnTheBaseUrlStaysAQuery() {
+    assertEquals(
+      URI.create("https://oe.example/Open%20ELIS/analyzer/fhir?site=lab%261"),
+      clientFor("https://oe.example/Open%20ELIS?site=lab%261").targetUri()
+    );
+  }
+
+  @Test
   @DisplayName("a trailing slash on the base URL makes no difference")
   void aTrailingSlashMakesNoDifference() {
     assertEquals(

@@ -63,9 +63,16 @@ public class HTTPForwardServerConfigurationProperties {
    */
   private long backoffMs = 1000;
 
-  /** An OpenELIS endpoint under the base URL, for example {@code /analyzer/fhir}. */
+  /**
+   * An OpenELIS endpoint under the base URL, for example {@code /analyzer/fhir}. The endpoint extends
+   * the base URL's path; a query on the base URL stays a query.
+   */
   public URI resolve(String path) {
-    String base = uri.toString();
-    return URI.create((base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + path);
+    String basePath = uri.getRawPath() == null ? "" : uri.getRawPath();
+    if (basePath.endsWith("/")) {
+      basePath = basePath.substring(0, basePath.length() - 1);
+    }
+    String query = uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery();
+    return URI.create(uri.getScheme() + "://" + uri.getRawAuthority() + basePath + path + query);
   }
 }
