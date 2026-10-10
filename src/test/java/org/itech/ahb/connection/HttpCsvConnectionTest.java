@@ -142,7 +142,7 @@ class HttpCsvConnectionTest {
       runtime
     );
     var config = new HTTPForwardServerConfigurationProperties();
-    config.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
+    config.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort()));
     config.setMaxAttempts(1);
     config.setConnectTimeoutSeconds(2);
     config.setReadTimeoutSeconds(2);

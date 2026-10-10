@@ -3,7 +3,6 @@ package org.itech.ahb.config.properties;
 import java.net.URI;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.web.bind.annotation.RequestMethod;
 
 /**
  * Configuration properties for the HTTP server that this application should forward to when it receives
@@ -14,7 +13,8 @@ import org.springframework.web.bind.annotation.RequestMethod;
 public class HTTPForwardServerConfigurationProperties {
 
   /**
-   * The URI of the HTTP forward server.
+   * The OpenELIS base URL, for example {@code https://openelis.example:8443/OpenELIS-Global}. Results
+   * go to {@code {uri}/analyzer/fhir} and the health check reads {@code {uri}/health}.
    */
   private URI uri = URI.create("https://localhost:8443");
 
@@ -27,22 +27,6 @@ public class HTTPForwardServerConfigurationProperties {
    * The password for authentication.
    */
   private char[] password;
-
-  /**
-   * The URI for health checks to ensure the connection between the http server
-   * and this server is healthy.
-   */
-  private URI healthUri;
-
-  /**
-   * The HTTP method for health checks.
-   */
-  private RequestMethod healthMethod = RequestMethod.GET;
-
-  /**
-   * The body of the health check request.
-   */
-  private String healthBody = "";
 
   /**
    * Disable TLS certificate and hostname verification for HTTPS connections.
@@ -78,4 +62,10 @@ public class HTTPForwardServerConfigurationProperties {
    * Initial exponential backoff delay in milliseconds.
    */
   private long backoffMs = 1000;
+
+  /** An OpenELIS endpoint under the base URL, for example {@code /analyzer/fhir}. */
+  public URI resolve(String path) {
+    String base = uri.toString();
+    return URI.create((base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + path);
+  }
 }

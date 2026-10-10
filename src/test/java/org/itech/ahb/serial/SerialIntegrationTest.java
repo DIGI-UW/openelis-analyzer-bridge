@@ -149,7 +149,7 @@ class SerialIntegrationTest {
 
             // Create HTTP config and wire M7 pipeline: HttpForwardingRouter -> MessageNormalizer -> SerialMessageHandler
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
+            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global"));
 
             SerialMessageHandler handler = normalizedHandler(httpConfig, "ASTM");
 
@@ -186,7 +186,7 @@ class SerialIntegrationTest {
             assumeTrue(testPortPair != null, "SERIAL_TEST_PORT_PAIR not set");
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
+            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global"));
 
             SerialMessageHandler handler = normalizedHandler(httpConfig, "HL7");
 

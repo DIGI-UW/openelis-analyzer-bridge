@@ -51,7 +51,7 @@ class SharedListenerAttributionTest {
     registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties http = new HTTPForwardServerConfigurationProperties();
     // Nothing listens here: these tests stop at rendering and never need OpenELIS to answer.
-    http.setUri(java.net.URI.create("http://127.0.0.1:1/api/OpenELIS-Global/analyzer"));
+    http.setUri(java.net.URI.create("http://127.0.0.1:1/api/OpenELIS-Global"));
     outbox = OutboxTestSupport.create(directory, http, registry);
     MessageNormalizer normalizer = outbox.normalizer(new AnalyzerIdentifier(registry), registry);
     sharedListener = new ASTMBridgeAdapter(normalizer, SHARED_PORT);

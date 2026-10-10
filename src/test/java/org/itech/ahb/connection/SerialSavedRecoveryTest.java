@@ -154,7 +154,7 @@ class SerialSavedRecoveryTest {
     if (outbox != null) outbox.close();
     registry = new AnalyzerRuntimeRegistry();
     var config = new HTTPForwardServerConfigurationProperties();
-    config.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
+    config.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort()));
     outbox = OutboxTestSupport.create(directory.resolve("outbox"), config, registry).startDispatcher();
     var normalizer = outbox.normalizer(new AnalyzerIdentifier(registry), registry);
     serial = new SerialPortListener(new SerialMessageHandler(normalizer));

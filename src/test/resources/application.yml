@@ -8,6 +8,13 @@ org:
       forward-http-server:
         uri: http://localhost:8080/test
 
+# No OpenELIS answers in these contexts, so forwarding would always read DOWN and take the overall
+# status with it. Forwarding health has its own tests.
+management:
+  health:
+    httpforward:
+      enabled: false
+
 server:
   port: 0  # Random port for tests
 
