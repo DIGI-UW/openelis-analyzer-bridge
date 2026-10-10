@@ -165,7 +165,7 @@ class BaselineProfileContractTest {
     assertThat(validator.validationIssues(unknownPart)).anyMatch(issue -> issue.contains("nonsense"));
 
     ObjectNode foreignField = baseline();
-    parts(foreignField).put("call", "OBX-5.1");
+    parts(foreignField).put("call", "OBX.5.1");
     assertThat(validator.validationIssues(foreignField)).anyMatch(issue -> issue.contains("call"));
   }
 

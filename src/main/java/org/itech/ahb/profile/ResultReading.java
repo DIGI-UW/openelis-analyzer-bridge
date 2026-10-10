@@ -14,6 +14,7 @@ import java.util.Set;
  */
 public record ResultReading(
   AstmResultParts astmParts,
+  Hl7ResultParts hl7Parts,
   char decimalSeparator,
   Map<String, Map<String, Set<String>>> runFailures,
   Map<String, String> profileCodeByInstrumentCode
@@ -57,8 +58,10 @@ public record ResultReading(
       runFailures.put(mapping.path("test_code").asText(), bySubIdentity);
       mapping.path("aliases").forEach(alias -> runFailures.put(alias.asText(), bySubIdentity));
     }
+    boolean hl7 = "HL7".equals(profile.path("protocol").path("name").asText());
     return new ResultReading(
-      AstmResultParts.fromProfile(configDefaults),
+      hl7 ? null : AstmResultParts.fromProfile(configDefaults),
+      hl7 ? Hl7ResultParts.fromProfile(configDefaults) : null,
       configured.charAt(0),
       runFailures,
       profileCodeByInstrumentCode

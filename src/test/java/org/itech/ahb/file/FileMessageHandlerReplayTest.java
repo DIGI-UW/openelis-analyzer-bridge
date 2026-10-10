@@ -111,7 +111,7 @@ class FileMessageHandlerReplayTest {
 
   @Test
   void aResultUnderTheLabsOwnCodeIsDeliveredAndReplayedUnderTheProfilesCodeWithItsLoinc() throws Exception {
-    entry.setResultReading(new ResultReading(null, '.', Map.of(), Map.of("LAB-T1", "T1")));
+    entry.setResultReading(new ResultReading(null, null, '.', Map.of(), Map.of("LAB-T1", "T1")));
     entry.setCodeToLoinc(Map.of("LAB-T1", "1234-5"));
     Path file = csv("lab-code.csv", "PATIENT-1,LAB-T1,2\n");
     rejectRequest.set(1);

@@ -84,6 +84,26 @@ Observation per record, with the number in `valueQuantity`, an off-scale flag as
 as `method`, the operator as `performer`, comments as `note`, and a run failure as
 `dataAbsentReason` with no value.
 
+HL7 names fields by the paths control recognition reads, `SEG.field[.component[.subcomponent]]`.
+Observation parts are OBX paths; `completed` and `operator` may also name the OBR before the
+observation, `patientId` and `patientName` the PID, `specimenDescriptor` the OBR or SPM, and
+`note` the NTE that follows it:
+
+```json
+"resultParts": {
+  "testCode": "OBX.3.1", "subIdentity": "OBX.4", "value": "OBX.5", "unit": "OBX.6.1",
+  "range": "OBX.7", "flag": "OBX.8", "status": "OBX.11", "completed": "OBX.14",
+  "operator": "OBX.16", "instrument": "OBX.18", "note": "NTE.3",
+  "patientId": "PID.3.1", "patientName": "PID.5", "specimenDescriptor": "SPM.4"
+}
+```
+
+OBX-2 decides whether `value` is a number (`NM`, `SN`) or a call, and each repetition of the flag
+field (`H~A`) is a flag. An HL7 `resultRecordSelection` is `ALL`, or `EXCLUDE` with a
+`targetField` and the `values` that mark an OBX as something other than a result, such as an
+instrument's settings, histogram images or discriminators. Everything else is a result, so a code
+the profile does not declare still reaches OpenELIS, which holds it for review.
+
 A profile without `resultParts` is read as before.
 
 ## Number format
@@ -103,5 +123,5 @@ may share a code.
 
 `mvn test` validates every shipped profile against the schema and checks that each baseline test
 cites a source. A shipped baseline profile also replays the vendor's example messages
-(`GeneXpertBaselineProfileTest`): every record is a declared test, component and value, and every
-declared one is shown by an example.
+(`GeneXpertBaselineProfileTest`, `MindrayBc5380BaselineProfileTest`): every record is a declared
+test, component and value, and every declared one is shown by an example.

@@ -1,0 +1,475 @@
+{
+  "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "schemaVersion": "2.0",
+  "profileMeta": {
+    "id": "mindray-bc5380",
+    "version": "1.0.0",
+    "displayName": "Mindray BC-5380",
+    "confidence": "HIGH"
+  },
+  "analyzer_name": "Mindray BC-5380",
+  "manufacturer": "Mindray",
+  "model": "BC-5380",
+  "category": "HEMATOLOGY",
+  "protocol": {
+    "name": "HL7",
+    "version": "2.3.1"
+  },
+  "identifier_pattern": "BC-5380",
+  "transport": [
+    "TCP/IP"
+  ],
+  "transport_config": {
+    "TCP/IP": {}
+  },
+  "communication": {
+    "mode": "ANALYZER_INITIATED",
+    "supports_lis_initiated": false
+  },
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "default_test_mappings": [
+    {
+      "test_code": "6690-2",
+      "loinc": "6690-2",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "WBC",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "704-7",
+      "loinc": "704-7",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "BAS#",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "706-2",
+      "loinc": "706-2",
+      "result_type": "quantitative",
+      "test_name_hint": "BAS%",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "751-8",
+      "loinc": "751-8",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "NEU#",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "770-8",
+      "loinc": "770-8",
+      "result_type": "quantitative",
+      "test_name_hint": "NEU%",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "711-2",
+      "loinc": "711-2",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "EOS#",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "713-8",
+      "loinc": "713-8",
+      "result_type": "quantitative",
+      "test_name_hint": "EOS%",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "731-0",
+      "loinc": "731-0",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "LYM#",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "736-9",
+      "loinc": "736-9",
+      "result_type": "quantitative",
+      "test_name_hint": "LYM%",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "742-7",
+      "loinc": "742-7",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "MON#",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "5905-5",
+      "loinc": "5905-5",
+      "result_type": "quantitative",
+      "test_name_hint": "MON%",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "26477-0",
+      "loinc": "26477-0",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "ALY#",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "13046-8",
+      "loinc": "13046-8",
+      "result_type": "quantitative",
+      "test_name_hint": "ALY%",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "789-8",
+      "loinc": "789-8",
+      "unit": "10*12/L",
+      "result_type": "quantitative",
+      "test_name_hint": "RBC",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "718-7",
+      "loinc": "718-7",
+      "unit": "g/L",
+      "result_type": "quantitative",
+      "test_name_hint": "HGB",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "787-2",
+      "loinc": "787-2",
+      "unit": "fL",
+      "result_type": "quantitative",
+      "test_name_hint": "MCV",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "785-6",
+      "loinc": "785-6",
+      "unit": "pg",
+      "result_type": "quantitative",
+      "test_name_hint": "MCH",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "786-4",
+      "loinc": "786-4",
+      "unit": "g/L",
+      "result_type": "quantitative",
+      "test_name_hint": "MCHC",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "788-0",
+      "loinc": "788-0",
+      "result_type": "quantitative",
+      "test_name_hint": "RDW-CV",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "21000-5",
+      "loinc": "21000-5",
+      "unit": "fL",
+      "result_type": "quantitative",
+      "test_name_hint": "RDW-SD",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "4544-3",
+      "loinc": "4544-3",
+      "result_type": "quantitative",
+      "test_name_hint": "HCT",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "777-3",
+      "loinc": "777-3",
+      "unit": "10*9/L",
+      "result_type": "quantitative",
+      "test_name_hint": "PLT",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "32623-1",
+      "loinc": "32623-1",
+      "unit": "fL",
+      "result_type": "quantitative",
+      "test_name_hint": "MPV",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "32207-3",
+      "loinc": "32207-3",
+      "result_type": "quantitative",
+      "test_name_hint": "PDW",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    },
+    {
+      "test_code": "10002",
+      "loinc": "51637-7",
+      "unit": "mL/L",
+      "result_type": "quantitative",
+      "test_name_hint": "PCT",
+      "source": {
+        "document": "Mindray BC-5380 Operator's Manual H-046-001572-00 version 4.0, appendix C Communication",
+        "section": "C.5 Table 10 HL7 types and coding marks; C.3.3 Example of a complete message"
+      }
+    }
+  ],
+  "configDefaults": {
+    "dataFlow": "RESULTS_ONLY",
+    "connectionRole": "SERVER",
+    "transport": "TCP/IP",
+    "aggregationMode": "PER_MESSAGE",
+    "extractionOverrides": {
+      "specimenPosition": "PRECEDING",
+      "resultRecordSelection": {
+        "mode": "EXCLUDE",
+        "targetField": "OBX.3.1",
+        "values": [
+          "08001",
+          "08002",
+          "08003",
+          "30525-0",
+          "01001",
+          "01002",
+          "05001",
+          "15000",
+          "15001",
+          "15002",
+          "15003",
+          "15004",
+          "15005",
+          "15006",
+          "15007",
+          "15008",
+          "15050",
+          "15051",
+          "15052",
+          "15053",
+          "15054",
+          "15055",
+          "15056",
+          "15100",
+          "15111",
+          "15112",
+          "15113",
+          "15114",
+          "15115",
+          "15116",
+          "15200"
+        ]
+      },
+      "resultParts": {
+        "testCode": "OBX.3.1",
+        "value": "OBX.5",
+        "unit": "OBX.6.1",
+        "range": "OBX.7",
+        "flag": "OBX.8",
+        "status": "OBX.11",
+        "completed": "OBR.7",
+        "operator": "OBR.32",
+        "patientId": "PID.3.1",
+        "patientName": "PID.5",
+        "specimenDescriptor": "OBR.15"
+      }
+    },
+    "flagMappings": {},
+    "transforms": {},
+    "numberFormat": "."
+  },
+  "connectionFields": [
+    {
+      "key": "dataFlow",
+      "labelKey": "analyzer.setup.connect.dataFlow",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RESULTS_ONLY",
+          "labelKey": "analyzer.setup.connect.dataFlow.resultsOnly"
+        }
+      ]
+    },
+    {
+      "key": "transport",
+      "labelKey": "analyzer.connection.field.transport",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "TCP/IP",
+          "labelKey": "analyzer.connection.transport.TCP/IP"
+        }
+      ]
+    },
+    {
+      "key": "connectionRole",
+      "labelKey": "analyzer.connection.field.connectionRole",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "SERVER",
+          "labelKey": "analyzer.connection.role.server"
+        }
+      ]
+    },
+    {
+      "key": "host",
+      "labelKey": "analyzer.connection.field.host",
+      "helpTextKey": "analyzer.connection.field.host.help",
+      "inputKind": "TEXT",
+      "required": false,
+      "choices": [],
+      "visibleWhen": {
+        "fieldKey": "transport",
+        "operator": "EQUALS",
+        "value": "TCP/IP"
+      }
+    },
+    {
+      "key": "senderId",
+      "labelKey": "analyzer.connection.field.senderId",
+      "helpTextKey": "analyzer.connection.field.senderId.help",
+      "inputKind": "TEXT",
+      "required": false,
+      "choices": [],
+      "visibleWhen": {
+        "fieldKey": "transport",
+        "operator": "EQUALS",
+        "value": "TCP/IP"
+      }
+    },
+    {
+      "key": "port",
+      "labelKey": "analyzer.connection.field.port",
+      "inputKind": "NUMBER",
+      "required": true,
+      "choices": [],
+      "visibleWhen": {
+        "fieldKey": "transport",
+        "operator": "EQUALS",
+        "value": "TCP/IP"
+      }
+    },
+    {
+      "key": "numberFormat",
+      "labelKey": "analyzer.connection.field.numberFormat",
+      "inputKind": "SELECT",
+      "required": false,
+      "choices": [
+        {
+          "value": ".",
+          "labelKey": "analyzer.connection.numberFormat.point"
+        },
+        {
+          "value": ",",
+          "labelKey": "analyzer.connection.numberFormat.comma"
+        }
+      ]
+    }
+  ],
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": {
+      "hl7-processing-id-qc": {
+        "ruleType": "FIELD_EQUALS",
+        "targetField": "MSH.11",
+        "operand": "Q"
+      }
+    }
+  },
+  "catalog": {
+    "revision": 1,
+    "recognitionFingerprint": "sha256:208945a9b47700fa3de269fe93495f2b13faf9ea6203bcb9028ba183b3919df9",
+    "source": "SHIPPED",
+    "status": "ACTIVE",
+    "publishedAt": "2026-10-10T00:00:00Z",
+    "publishedBy": "distribution",
+    "revisionFingerprint": "sha256:045924336ca75aa61ac6b6b44f37df59d1636ac4e78195757c5d94f0f96e8da8"
+  }
+}

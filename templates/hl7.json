@@ -85,7 +85,16 @@
     "dataFlow": "RESULTS_ONLY",
     "transport": "TCP/IP",
     "connectionRole": "SERVER",
-    "aggregationMode": "PER_MESSAGE"
+    "aggregationMode": "PER_MESSAGE",
+    "extractionOverrides": {
+      "resultRecordSelection": { "mode": "ALL" },
+      "resultParts": {
+        "testCode": "OBX.3.1", "subIdentity": "OBX.4", "value": "OBX.5", "unit": "OBX.6.1",
+        "range": "OBX.7", "flag": "OBX.8", "status": "OBX.11", "completed": "OBX.14",
+        "operator": "OBX.16", "instrument": "OBX.18", "note": "NTE.3",
+        "patientId": "PID.3.1", "patientName": "PID.5", "specimenDescriptor": "SPM.4"
+      }
+    }
   },
   "schemaVersion": "2.0",
   "communication": {

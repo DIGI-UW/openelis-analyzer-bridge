@@ -23,6 +23,8 @@ class ShippedProfileCatalogTest {
     "sha256:1e2d53f6b797b25dbcd3c6947c5924ec1176b70b5dec2846fda691a6e74550ea",
     "hain-fluorocycler-xt",
     "sha256:5989781fabb39c7e405f6f1427823af5f9a40bfd0721abf470fda8f95551f4f7",
+    "mindray-bc5380",
+    "sha256:045924336ca75aa61ac6b6b44f37df59d1636ac4e78195757c5d94f0f96e8da8",
     "thermo-quantstudio",
     "sha256:9b5a84ddbc724ee696823898105a4f49edd41160fb9400bc51c109cda5d91ce1"
   );
@@ -73,7 +75,7 @@ class ShippedProfileCatalogTest {
 
     assertThat(catalog.latest())
       .extracting(revision -> revision.profile().path("profileMeta").path("id").asText())
-      .containsExactly("hain-fluorocycler-xt", "cepheid-genexpert-astm", "thermo-quantstudio");
+      .containsExactly("hain-fluorocycler-xt", "cepheid-genexpert-astm", "mindray-bc5380", "thermo-quantstudio");
     assertThat(catalog.latest()).allSatisfy(revision -> {
       ObjectNode profile = revision.profile();
       assertThat(profile.path("catalog").path("source").asText()).isEqualTo("SHIPPED");
@@ -111,6 +113,12 @@ class ShippedProfileCatalogTest {
           JsonNode selection = extraction.path("resultRecordSelection");
           // Every record is a result; the profile's result parts say what each one is.
           assertThat(selection.path("mode").asText()).isEqualTo("ALL");
+          assertThat(extraction.path("resultParts").isObject()).isTrue();
+        }
+        case "mindray-bc5380" -> {
+          JsonNode extraction = profile.path("configDefaults").path("extractionOverrides");
+          // The instrument's settings and histogram segments are not results; every other OBX is.
+          assertThat(extraction.path("resultRecordSelection").path("mode").asText()).isEqualTo("EXCLUDE");
           assertThat(extraction.path("resultParts").isObject()).isTrue();
         }
         case "thermo-quantstudio" -> assertThat(profile.path("result_value_order"))

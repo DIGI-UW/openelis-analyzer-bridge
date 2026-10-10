@@ -42,18 +42,18 @@ final class RecordSlots {
   );
 
   private static final java.util.regex.Pattern RANGE = java.util.regex.Pattern.compile(
-    "\\s*(\\d+(?:[.,]\\d+)?)\\s+to\\s+(\\d+(?:[.,]\\d+)?)\\s*"
+    "\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:\\sto\\s|-)\\s*(\\d+(?:[.,]\\d+)?)\\s*"
   );
 
   /**
    * The range the instrument reported the result against, as sent; its limits too when it reads as
-   * "low to high". FHIR has no element for an instrument's reportable range, so it is a reference
-   * range that says what it is.
+   * "low to high" (Cepheid's ASTM reportable range) or "low-high" (HL7 OBX-7). What the range means
+   * is the instrument's, so the reference range says only that the instrument reported it.
    */
   private static Observation.ObservationReferenceRangeComponent range(String text, String units) {
     Observation.ObservationReferenceRangeComponent range = new Observation.ObservationReferenceRangeComponent();
     range.setText(text);
-    range.setType(new CodeableConcept().setText("Instrument reportable range"));
+    range.setType(new CodeableConcept().setText("Instrument-reported range"));
     java.util.regex.Matcher limits = RANGE.matcher(text);
     if (limits.matches()) {
       range.setLow(limit(limits.group(1), units));

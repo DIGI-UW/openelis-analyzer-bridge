@@ -428,8 +428,11 @@ public class ASTMResultParser {
         return null;
     }
 
-    /** LIS2-A2 dates are YYYYMMDDHHMMSS, truncated to the precision the instrument knows. */
-    private static String astmTime(String raw) {
+    /**
+     * LIS2-A2 dates are YYYYMMDDHHMMSS, truncated to the precision the instrument knows. An HL7 v2
+     * TS without fractional seconds or an offset has the same shape.
+     */
+    static String astmTime(String raw) {
         ZoneId zone = ZoneId.systemDefault();
         String time;
         try {

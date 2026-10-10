@@ -77,7 +77,7 @@ public final class FileResultRenderer {
       snapshot.setControlResultRecognition(context.recognition());
       snapshot.setRecognitionFingerprint(context.recognitionFingerprint());
       snapshot.setCodeToLoinc(context.codeToLoinc());
-      snapshot.setResultReading(new ResultReading(null, '.', Map.of(), context.profileCodeByInstrumentCode()));
+      snapshot.setResultReading(new ResultReading(null, null, '.', Map.of(), context.profileCodeByInstrumentCode()));
       List<RenderedDelivery> deliveries = new ArrayList<>();
       for (var accession : parsed) {
         deliveries.add(
