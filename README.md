@@ -120,14 +120,13 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | Property | Description | Default |
 |----------|-------------|---------|
 | **OpenELIS Forwarding** | | |
-| `org.itech.ahb.forward-http-server.uri` | OpenELIS analyzer endpoint base URI; results are posted to `{uri}/fhir`. Set it for every deployment | `https://localhost:8443` |
+| `org.itech.ahb.forward-http-server.uri` | OpenELIS base URL, for example `https://openelis:8443/OpenELIS-Global`. Results are posted to `{uri}/analyzer/fhir` and forwarding health reads `{uri}/health`. Set it for every deployment | `https://localhost:8443` |
 | `org.itech.ahb.forward-http-server.username` | Basic auth username, sent only before the Bridge is paired | Optional |
 | `org.itech.ahb.forward-http-server.password` | Basic auth password, sent only before the Bridge is paired | Optional |
 | `org.itech.ahb.forward-http-server.insecure-tls` | Disable TLS verification for forwarding and health checks before pairing. Ignored once paired | false |
 | `org.itech.ahb.forward-http-server.max-response-bytes` | Largest OpenELIS answer read; a larger one fails the attempt | 1048576 |
 | `org.itech.ahb.forward-http-server.connect-timeout-seconds` | HTTP connect timeout | 30 |
 | `org.itech.ahb.forward-http-server.read-timeout-seconds` | HTTP read timeout | 30 |
-| `org.itech.ahb.forward-http-server.health-uri` | Endpoint the forwarding health check probes. Must be the same host as the forward URI, or a green probe does not mean deliveries are arriving; the bridge logs an ERROR at startup if they differ | Optional |
 | `org.itech.ahb.forward-http-server.max-attempts` | Deprecated. Retry scheduling moved to `bridge.outbox.retry.*` when delivery became durable; this property is still bound but unused | 3 |
 | `org.itech.ahb.forward-http-server.backoff-ms` | Deprecated, as above | 1000 |
 | **Delivery Outbox** | | |

@@ -51,7 +51,7 @@ class FhirDeliveryClientBoundsTest {
     });
     server.start();
 
-    DeliveryOutcome outcome = clientFor("/analyzer", 5, 1024 * 1024).deliver("{}");
+    DeliveryOutcome outcome = clientFor("", 5, 1024 * 1024).deliver("{}");
 
     assertFalse(outcome.reachedOpenElis());
     assertTrue(outcome.describeFailure().contains("exceeded"), outcome.describeFailure());
@@ -78,7 +78,7 @@ class FhirDeliveryClientBoundsTest {
 
     DeliveryOutcome outcome = assertTimeoutPreemptively(
       Duration.ofSeconds(5),
-      () -> clientFor("/analyzer", 1, 1024 * 1024).deliver("{}")
+      () -> clientFor("", 1, 1024 * 1024).deliver("{}")
     );
 
     assertFalse(outcome.reachedOpenElis());
@@ -98,7 +98,7 @@ class FhirDeliveryClientBoundsTest {
     });
     server.start();
 
-    DeliveryOutcome outcome = clientFor("/analyzer", 5, 1024 * 1024).deliver("{}");
+    DeliveryOutcome outcome = clientFor("", 5, 1024 * 1024).deliver("{}");
 
     assertEquals(200, outcome.httpStatus());
     assertEquals("{\"receiptId\":\"rcpt-1\"}", outcome.body());
@@ -109,7 +109,7 @@ class FhirDeliveryClientBoundsTest {
   void anUnreachableOpenElisIsAConnectionFailure() {
     HTTPForwardServerConfigurationProperties config = new HTTPForwardServerConfigurationProperties();
     // TEST-NET-1 is never routed, so the connection attempt waits out its own timeout.
-    config.setUri(URI.create("http://192.0.2.1:9/analyzer"));
+    config.setUri(URI.create("http://192.0.2.1:9"));
     config.setConnectTimeoutSeconds(2);
     config.setReadTimeoutSeconds(1);
 

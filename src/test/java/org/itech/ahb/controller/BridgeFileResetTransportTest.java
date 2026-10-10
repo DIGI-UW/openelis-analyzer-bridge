@@ -85,7 +85,7 @@ class BridgeFileResetTransportTest {
     entry.setTabularResultValueSelection(TabularResultValueSelection.resultOnly());
     registry.register(watched + "#connection-1", entry);
     HTTPForwardServerConfigurationProperties http = new HTTPForwardServerConfigurationProperties();
-    http.setUri(URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/analyzer"));
+    http.setUri(URI.create("http://127.0.0.1:" + server.getAddress().getPort()));
     http.setReadTimeoutSeconds(10);
     var outbox = org.itech.ahb.outbox.OutboxTestSupport.create(
       directory.resolve("outbox"),

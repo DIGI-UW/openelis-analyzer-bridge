@@ -319,7 +319,7 @@ class HttpForwardingRouterTest {
 
   private HTTPForwardServerConfigurationProperties minimalConfig() {
     HTTPForwardServerConfigurationProperties c = new HTTPForwardServerConfigurationProperties();
-    c.setUri(URI.create("http://localhost:" + port + "/analyzer"));
+    c.setUri(URI.create("http://localhost:" + port));
     c.setConnectTimeoutSeconds(2);
     c.setReadTimeoutSeconds(2);
     return c;
@@ -356,7 +356,7 @@ class HttpForwardingRouterTest {
   void aRenderThatThrowsIsHeldImmediately() {
     try (var store = new org.itech.ahb.outbox.SqliteOutboxStore(tmpDir.resolve("throwing.db"))) {
       var http = new HTTPForwardServerConfigurationProperties();
-      http.setUri(URI.create("http://127.0.0.1:" + port + "/analyzer"));
+      http.setUri(URI.create("http://127.0.0.1:" + port));
       var client = new org.itech.ahb.outbox.FhirDeliveryClient(http);
       NormalizedBundleRenderer throwing = new NormalizedBundleRenderer(new AnalyzerRuntimeRegistry()) {
         @Override

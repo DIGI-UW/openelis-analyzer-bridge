@@ -1,6 +1,5 @@
 package org.itech.ahb.health;
 
-import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -25,8 +24,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * Health indicator for the connection between this server and the HTTP server that ASTM messages should be forwarded to.
- * Useful for manually checking the health of the application/connections and for automatic monitoring.
+ * Health of the connection to OpenELIS: its {@code /health} under the same base URL results are sent
+ * to, so the check and the deliveries cannot point at different places. The details name the URL
+ * checked.
  * Enabled/disabled via configuration property.
  *
  * management:
@@ -70,73 +70,33 @@ public class HTTPForwardServerHealthIndicator implements HealthIndicator {
   }
 
   /**
-   * Warn when the health probe and the forwards point at different hosts.
-   *
-   * <p>That split is what made the Madagascar outage invisible: health was checked against one host
-   * and results were sent to another that did not resolve, so the bridge reported healthy while
-   * every delivery failed. A green probe has to mean the place the results actually go is up.
-   */
-  @PostConstruct
-  void warnIfHealthAndForwardTargetsDiffer() {
-    URI forward = properties.getUri();
-    URI health = properties.getHealthUri();
-    if (forward == null || health == null) {
-      return;
-    }
-    String forwardAuthority = forward.getHost() + ":" + forward.getPort();
-    String healthAuthority = health.getHost() + ":" + health.getPort();
-    if (!forwardAuthority.equals(healthAuthority)) {
-      log.error(
-        "Forwarding health is checked against {} but results are sent to {}. A healthy probe will not " +
-        "mean deliveries are reaching OpenELIS. Point both at the same host.",
-        healthAuthority,
-        forwardAuthority
-      );
-    }
-  }
-
-  /**
    * Checks the health of the HTTP forward server.
    *
    * @return the health status
    */
   @Override
   public Health health() {
-    if (properties.getHealthUri() == null) {
-      return Health.unknown().build();
-    }
-    log.debug("creating request to test forward http server at " + properties.getHealthUri().toString());
-    Builder requestBuilder = HttpRequest.newBuilder()
-      .method(properties.getHealthMethod().toString(), HttpRequest.BodyPublishers.ofString(properties.getHealthBody()))
-      .uri(properties.getHealthUri())
-      .timeout(Duration.ofSeconds(readTimeoutSeconds));
+    URI health = properties.resolve("/health");
+    Builder requestBuilder = HttpRequest.newBuilder().GET().uri(health).timeout(Duration.ofSeconds(readTimeoutSeconds));
     HttpClient client = pairedClient();
     if (client == null && !(properties.getUsername() == null || properties.getUsername().equals(""))) {
-      log.debug(
-        "using username '" +
-        properties.getUsername() +
-        "' to test forward http server at " +
-        properties.getUri().toString()
-      );
       addBasicAuth(requestBuilder, properties.getUsername(), properties.getPassword());
     }
-    HttpRequest request = requestBuilder.build();
-
     try {
-      log.debug("testing forward http server at " + properties.getHealthUri().toString());
       HttpResponse<String> response = (client == null ? httpClient : client).send(
-        request,
+        requestBuilder.build(),
         HttpResponse.BodyHandlers.ofString()
       );
       if (response.statusCode() == 200) {
-        log.debug("testing forward http server at " + properties.getHealthUri().toString() + " success");
-        return Health.up().build();
+        return Health.up().withDetail("probed", health.toString()).build();
       }
-    } catch (IOException | InterruptedException e) {
-      log.debug("error occurred communicating with http server at " + properties.getHealthUri().toString(), e);
+      log.debug("OpenELIS health at {} answered {}", health, response.statusCode());
+    } catch (IOException e) {
+      log.debug("OpenELIS health at {} could not be read", health, e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
-    log.debug("testing forward http server at " + properties.getHealthUri().toString() + " failure");
-    return Health.down().build();
+    return Health.down().withDetail("probed", health.toString()).build();
   }
 
   private synchronized HttpClient pairedClient() {

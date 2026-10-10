@@ -89,7 +89,7 @@ class AstmSavedConnectionTest {
     profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties forwarding = new HTTPForwardServerConfigurationProperties();
-    forwarding.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort() + "/analyzer"));
+    forwarding.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort()));
     outbox = OutboxTestSupport.create(directory.resolve("outbox"), forwarding, registry);
     listeners = new ManagedAstmConnectionListeners(
       outbox.normalizer(new AnalyzerIdentifier(registry), registry),

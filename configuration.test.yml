@@ -42,8 +42,7 @@ org:
         # By hostname, not by address: stopping the container removes the name from Docker's
         # embedded DNS, which is how a scenario reproduces the DNS failure that lost results in
         # production. An IP literal would only ever produce a refused connection.
-        uri: http://wiremock:8080/api/OpenELIS-Global/analyzer
-        healthUri: http://wiremock:8080/api/OpenELIS-Global/health
+        uri: http://wiremock:8080/api/OpenELIS-Global
         connectTimeoutSeconds: 5
         readTimeoutSeconds: 5
 

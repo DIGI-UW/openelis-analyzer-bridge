@@ -116,7 +116,7 @@ class UnifiedRoutingTest {
         // Wire the authoritative routing pipeline:
         // source registration -> AnalyzerIdentifier -> MessageNormalizer -> single forward router.
         HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-        httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global/analyzer"));
+        httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global"));
 
         AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
         outbox = OutboxTestSupport.createTemp(httpConfig, registry).startDispatcher();

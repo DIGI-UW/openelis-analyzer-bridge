@@ -49,7 +49,7 @@ class OutboxDispatcherTest {
 
     static ScriptedOpenElis create() {
       HTTPForwardServerConfigurationProperties config = new HTTPForwardServerConfigurationProperties();
-      config.setUri(URI.create("http://localhost:1/analyzer"));
+      config.setUri(URI.create("http://localhost:1"));
       config.setConnectTimeoutSeconds(1);
       config.setReadTimeoutSeconds(1);
       return new ScriptedOpenElis(config);
