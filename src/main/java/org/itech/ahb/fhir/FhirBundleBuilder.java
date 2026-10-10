@@ -295,14 +295,12 @@ public class FhirBundleBuilder {
         obs.getMeta().addTag("http://openelis-global.org/fhir/tags", "QC", "Quality Control");
       }
       // QC metadata for OE QCResultProcessingService.findMatchingControlLot:
-      //   - lot-number lets OE strict-match the qc_control_lot row
-      //     (sourced from ASTM Q-segment field 3 component 2)
-      //   - control-level lets OE level-match (testId, instrumentId, level)
-      //     when there's no canonical lot identifier on the wire
-      //     (sourced from ASTM Q-segment field 3 component 3, OR from
-      //     the matched FILE qcRule's operand for SPECIMEN_ID_PREFIX
-      //     rules like LPC/HPC/CNEG/CPOS)
-      // Both are optional; OE's resolver falls through tiers gracefully
+      //   - lot-number lets OE match the qc_control_lot row exactly
+      //     (set only by an ASTM Q record, field 3 component 2)
+      //   - control-level lets OE match on (testId, instrumentId, level)
+      //     when no lot is sent (the matched recognition rule's
+      //     controlLevel, or ASTM Q record field 3 component 3)
+      // Both are optional; OE falls through its other matching tiers
       // when either is absent.
       if (result.lotNumber() != null && !result.lotNumber().isEmpty()) {
         obs.addExtension(
@@ -511,15 +509,12 @@ public class FhirBundleBuilder {
   /**
    * A single test result from an analyzer, protocol-agnostic.
    *
-   * For QC samples, two additional metadata fields propagate end-to-end
-   * to OE so QCResultProcessingService can resolve to the correct lot
-   * without guessing:
-   *   - lotNumber: canonical lot identifier (from ASTM Q-segment field 3
-   *     component 2, or substring-extracted from FILE sample-name when
-   *     the operator embedded it)
-   *   - controlLevel: clinical level identifier (LPC/HPC/CNEG/CPOS/etc.)
-   *     — sourced from ASTM Q-segment field 3 component 3, or from the
-   *     FILE qcRule SPECIMEN_ID_PREFIX operand that matched
+   * For control results, OE's QCResultProcessingService uses two optional
+   * fields to find the control lot:
+   *   - lotNumber: set only by an ASTM Q record (field 3, component 2).
+   *     No parser reads a lot from a file or from a sample name.
+   *   - controlLevel: the matched recognition rule's controlLevel, or
+   *     field 3 component 3 of an ASTM Q record.
    */
   public record AnalyzerResult(
     String testCode,
