@@ -29,7 +29,7 @@
   "capabilities": {
     "inboundResults": true,
     "outboundOrders": false,
-    "connectionTest": false
+    "connectionTest": true
   },
   "default_test_mappings": [
     {
@@ -470,6 +470,6 @@
     "status": "ACTIVE",
     "publishedAt": "2026-10-10T00:00:00Z",
     "publishedBy": "distribution",
-    "revisionFingerprint": "sha256:5abbfbb7b4e7772240ecb78bf5328a4736b7c8dab329e3d5fef868581fbfa5e6"
+    "revisionFingerprint": "sha256:045924336ca75aa61ac6b6b44f37df59d1636ac4e78195757c5d94f0f96e8da8"
   }
 }
