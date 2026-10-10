@@ -1,0 +1,116 @@
+MSH|^~\&|BC-5380|Mindray|||20081120171602||ORU^R01|1|Q|2.3.1||||||UNICODE
+PID|1||6666666||||20080807235959
+OBR|1||6|00006^XR QCR^99MRC|||20080807142518|||||||||||||||||HM||||||||R&D Engineer
+OBX|1|IS|05001^Qc Level^99MRC||M||||||F
+OBX|2|IS|08001^Take Mode^99MRC||C||||||F
+OBX|3|IS|08002^Blood Mode^99MRC||W||||||F
+OBX|4|NM|6690-2^WBC^LN||0.00|10*9/L|||||F
+OBX|5|NM|704-7^BAS#^LN||***.**|10*9/L|||||F
+OBX|6|NM|706-2^BAS%^LN||**.*|%|||||F
+OBX|7|NM|751-8^NEU#^LN||***.**|10*9/L|||||F
+OBX|8|NM|770-8^NEU%^LN||**.*|%|||||F
+OBX|9|NM|711-2^EOS#^LN||***.**|10*9/L|||||F
+OBX|10|NM|713-8^EOS%^LN||**.*|%|||||F
+OBX|11|NM|731-0^LYM#^LN||***.**|10*9/L|||||F
+OBX|12|NM|736-9^LYM%^LN||**.*|%|||||F
+OBX|13|NM|742-7^MON#^LN||***.**|10*9/L|||||F
+OBX|14|NM|5905-5^MON%^LN||**.*|%|||||F
+OBX|15|NM|789-8^RBC^LN||0.02|10*12/L|||||F
+OBX|16|NM|718-7^HGB^LN||0|g/L|||||F
+OBX|17|NM|787-2^MCV^LN||***.*|fL|||||F
+OBX|18|NM|785-6^MCH^LN||***.*|pg|||||F
+OBX|19|NM|786-4^MCHC^LN||****|g/L|||||F
+OBX|20|NM|788-0^RDW-CV^LN||**.*|%|||||F
+OBX|21|NM|21000-5^RDW-SD^LN||***.*|fL|||||F
+OBX|22|NM|4544-3^HCT^LN||0.0|%|||||F
+OBX|23|NM|777-3^PLT^LN||4|10*9/L|||||F
+OBX|24|NM|32623-1^MPV^LN||**.*|fL|||||F
+OBX|25|NM|32207-3^PDW^LN||**.*||||||F
+OBX|26|NM|10002^PCT^99MRC||.***|%|||||F
+OBX|27|NM|10003^GRAN-X^99MRC||6||||||F
+OBX|28|NM|10004^GRAN-Y^99MRC||32||||||F
+OBX|29|NM|10005^GRAN-Y(W)^99MRC||20||||||F
+OBX|30|NM|10006^WBC-MCV^99MRC||83||||||F
+OBX|31|NM|15001^WBC Histogram. Left Line^99MRC||10||||||F
+OBX|32|NM|15002^WBC Histogram. Right Line^99MRC||72||||||F
+OBX|33|NM|15003^WBC Histogram. Middle Line^99MRC||37||||||F
+OBX|34|ED|15008^WBC Histogram. BMP^99MRC||^Image^BMP^Base64^……WBC histogram data……||||||F
+OBX|35|NM|15051^RBC Histogram. Left Line^99MRC||10||||||F
+OBX|36|NM|15052^RBC Histogram. Right Line^99MRC||250||||||F
+OBX|37|ED|15056^RBC Histogram. BMP^99MRC||^Image^BMP^Base64^……RBC histogram data……||||||F
+OBX|38|NM|15111^PLT Histogram. Left Line^99MRC||3||||||F
+OBX|39|NM|15112^PLT Histogram. Right Line^99MRC||24||||||F
+OBX|40|ED|15116^PLT Histogram. BMP^99MRC||^Image^BMP^Base64^……PLT histogram data……||||||F
+OBX|41|ED|15200^WBC DIFF Scattergram. BMP^99MRC||^Image^BMP^Base64^……DIFF scattergram data……||||||F
+PID|2||6666666||||20080807235959
+OBR|2||6|00006^XR QCR^99MRC|||20080807142640|||||||||||||||||HM||||||||R&D Engineer
+OBX|42|IS|05001^Qc Level^99MRC||M||||||F
+OBX|43|IS|08001^Take Mode^99MRC||C||||||F
+OBX|44|IS|08002^Blood Mode^99MRC||W||||||F
+OBX|45|NM|6690-2^WBC^LN||0.00|10*9/L|||||F
+OBX|46|NM|704-7^BAS#^LN||***.**|10*9/L|||||F
+OBX|47|NM|706-2^BAS%^LN||**.*|%|||||F
+OBX|48|NM|751-8^NEU#^LN||***.**|10*9/L|||||F
+OBX|49|NM|770-8^NEU%^LN||**.*|%|||||F
+OBX|50|NM|711-2^EOS#^LN||***.**|10*9/L|||||F
+OBX|51|NM|713-8^EOS%^LN||**.*|%|||||F
+OBX|52|NM|731-0^LYM#^LN||***.**|10*9/L|||||F
+OBX|53|NM|736-9^LYM%^LN||**.*|%|||||F
+OBX|54|NM|742-7^MON#^LN||***.**|10*9/L|||||F
+OBX|55|NM|5905-5^MON%^LN||**.*|%|||||F
+OBX|56|NM|789-8^RBC^LN||0.02|10*12/L|||||F
+OBX|57|NM|718-7^HGB^LN||0|g/L|||||F
+OBX|58|NM|787-2^MCV^LN||***.*|fL|||||F
+OBX|59|NM|785-6^MCH^LN||***.*|pg|||||F
+OBX|60|NM|786-4^MCHC^LN||****|g/L|||||F
+OBX|61|NM|788-0^RDW-CV^LN||**.*|%|||||F
+OBX|62|NM|21000-5^RDW-SD^LN||***.*|fL|||||F
+OBX|63|NM|4544-3^HCT^LN||0.0|%|||||F
+OBX|64|NM|777-3^PLT^LN||5|10*9/L|||||F
+OBX|65|NM|32623-1^MPV^LN||**.*|fL|||||F
+OBX|66|NM|32207-3^PDW^LN||**.*||||||F
+OBX|67|NM|10002^PCT^99MRC||.***|%|||||F
+OBX|68|NM|10003^GRAN-X^99MRC||28||||||F
+OBX|69|NM|10004^GRAN-Y^99MRC||19||||||F
+OBX|70|NM|10005^GRAN-Y(W)^99MRC||20||||||F
+OBX|71|NM|10006^WBC-MCV^99MRC||60||||||F
+OBX|72|NM|15001^WBC Histogram. Left Line^99MRC||10||||||F
+OBX|73|NM|15002^WBC Histogram. Right Line^99MRC||72||||||F
+OBX|74|NM|15003^WBC Histogram. Middle Line^99MRC||37||||||F
+OBX|75|ED|15008^WBC Histogram. BMP^99MRC||^Image^BMP^Base64^……WBC histogram data……||||||F
+OBX|76|NM|15051^RBC Histogram. Left Line^99MRC||10||||||F
+OBX|77|NM|15052^RBC Histogram. Right Line^99MRC||250||||||F
+OBX|78|ED|15056^RBC Histogram. BMP^99MRC||^Image^BMP^Base64^……RBC histogram data……||||||F
+OBX|79|NM|15111^PLT Histogram. Left Line^99MRC||3||||||F
+OBX|80|NM|15112^PLT Histogram. Right Line^99MRC||24||||||F
+OBX|81|ED|15116^PLT Histogram. BMP^99MRC||^Image^BMP^Base64^ ……PLT histogram data……||||||F
+OBX|82|ED|15200^WBC DIFF Scattergram. BMP^99MRC||^Image^BMP^Base64^ ……DIFF scattergram data……||||||F
+PID|3||6666666
+OBR|3||6|00008^XR QCR Mean^99MRC||||||||||||||||||||HM
+OBX|83|NM|6690-2^WBC^LN||0.00|10*9/L|||||F
+OBX|84|NM|704-7^BAS#^LN||***.**|10*9/L|||||F
+OBX|85|NM|706-2^BAS%^LN||**.*|%|||||F
+OBX|86|NM|751-8^NEU#^LN||***.**|10*9/L|||||F
+OBX|87|NM|770-8^NEU%^LN||**.*|%|||||F
+OBX|88|NM|711-2^EOS#^LN||***.**|10*9/L|||||F
+OBX|89|NM|713-8^EOS%^LN||**.*|%|||||F
+OBX|90|NM|731-0^LYM#^LN||***.**|10*9/L|||||F
+OBX|91|NM|736-9^LYM%^LN||**.*|%|||||F
+OBX|92|NM|742-7^MON#^LN||***.**|10*9/L|||||F
+OBX|93|NM|5905-5^MON%^LN||**.*|%|||||F
+OBX|94|NM|789-8^RBC^LN||0.02|10*12/L|||||F
+OBX|95|NM|718-7^HGB^LN||0|g/L|||||F
+OBX|96|NM|787-2^MCV^LN||***.*|fL|||||F
+OBX|97|NM|785-6^MCH^LN||***.*|pg|||||F
+OBX|98|NM|786-4^MCHC^LN||****|g/L|||||F
+OBX|99|NM|788-0^RDW-CV^LN||**.*|%|||||F
+OBX|100|NM|21000-5^RDW-SD^LN||***.*|fL|||||F
+OBX|101|NM|4544-3^HCT^LN||0.0|%|||||F
+OBX|102|NM|777-3^PLT^LN||5|10*9/L|||||F
+OBX|103|NM|32623-1^MPV^LN||**.*|fL|||||F
+OBX|104|NM|32207-3^PDW^LN||**.*||||||F
+OBX|105|NM|10002^PCT^99MRC||.***|%|||||F
+OBX|106|NM|10003^GRAN-X^99MRC||17||||||F
+OBX|107|NM|10004^GRAN-Y^99MRC||26||||||F
+OBX|108|NM|10005^GRAN-Y(W)^99MRC||20||||||F
+OBX|109|NM|10006^WBC-MCV^99MRC||72||||||F
