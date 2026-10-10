@@ -24,7 +24,6 @@ services:
     #   - /dev/ttyUSB0:/dev/ttyUSB0
     environment:
       LOGGING_LEVEL_ORG_ITECH: INFO
-      SPRING_PROFILES_ACTIVE: dev
       # Pair OpenELIS with this code; without it the Bridge logs a generated one at each start.
       # BRIDGE_PAIRING_CODE: ${BRIDGE_PAIRING_CODE}
     logging: *local-logging

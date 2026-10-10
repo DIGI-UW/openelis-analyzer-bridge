@@ -1,7 +1,9 @@
 ##
 # Build Stage
 #
-FROM maven:3.9.7-eclipse-temurin-21-jammy AS build
+# The jar is the same on every platform, so it is built once, natively, and only the run stage
+# is built per target platform.
+FROM --platform=$BUILDPLATFORM maven:3.9.7-eclipse-temurin-21-jammy AS build
 ##
 # Copy Source Code and Build Dependencies
 #
