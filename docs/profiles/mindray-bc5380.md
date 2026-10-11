@@ -78,16 +78,19 @@ it, so every result of a QC message is a control.
 
 ## Records that are not results
 
-The record selection leaves out the OBX segments Table 10 lists as "Other data", the histogram and
-scattergram data, and the microscope exam: take mode, blood mode and test mode (08001 to 08003), age
-(30525-0), remark (01001), reference group (01002), QC level (05001), the WBC, RBC, PLT and DIFF
-histogram and scattergram discriminators, lengths, adjustment marks and images (15000 to 15200),
-and the microscope exam data Table 10 lists under OBR-4 `00002` Manual Count (Table 9): blood type
-(882-1), WBC, RBC and PLT morphology (11156-7, 6742-1, 11125-2) and the 19 manual differential
-percentages (747-6 to 31112-6, 11000, 11001). A technician enters the microscope exam on the
-analyzer; the C.3.3 message sends every manual percentage as 0.0, which no counted differential
-is. A lab that counts on the analyzer maps these codes to its own manual differential tests through
-a profile revision.
+The record selection leaves out the OBX segments Table 10 lists as "Other data" and the histogram
+and scattergram data: take mode, blood mode and test mode (08001 to 08003), age (30525-0), remark
+(01001), reference group (01002), QC level (05001), and the WBC, RBC, PLT and DIFF histogram and
+scattergram discriminators, lengths, adjustment marks and images (15000 to 15200).
+
+## Microscope exam
+
+The microscope exam data Table 10 lists under OBR-4 `00002` Manual Count (Table 9) is what a
+technician enters on the analyzer: blood type (882-1), WBC, RBC and PLT morphology (11156-7,
+6742-1, 11125-2) and the 19 manual differential percentages (747-6 to 31112-6, 11000, 11001). The
+profile does not declare these codes, so they reach OpenELIS as results it holds until a lab maps
+them to its own manual differential tests or excludes them on the analyzer's mapping page. The
+C.3.3 message sends every manual percentage as 0.0, which no counted differential is.
 
 ## Alarms
 

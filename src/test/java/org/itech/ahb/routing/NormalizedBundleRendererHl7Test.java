@@ -13,9 +13,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.hl7.fhir.r4.model.Bundle;
@@ -66,7 +64,7 @@ class NormalizedBundleRendererHl7Test {
   }
 
   @Test
-  void theAlarmsItRaisedAreFlagsOnTheSampleAndItsMicroscopeExamIsNotSent() throws Exception {
+  void theAlarmsItRaisedAreFlagsOnTheSampleAndItsMicroscopeExamReachesTheLab() throws Exception {
     Map<String, Observation> observations = render();
 
     Observation anemia = observations.get("12014");
@@ -74,15 +72,9 @@ class NormalizedBundleRendererHl7Test {
     assertThat(anemia.getCode().getCodingFirstRep().getDisplay()).isEqualTo("Anemia");
     assertThat(anemia.getValueBooleanType().booleanValue()).isTrue();
     assertThat(classification(observations.get("15180-3"))).isEqualTo("SAMPLE_FLAG");
-    assertThat(observations).doesNotContainKeys("747-6", "769-0", "11000", "11001");
-    // Every other observation is a test the profile declares, so nothing waits for a mapping.
-    Set<String> declared = new HashSet<>();
-    profile().path("default_test_mappings").forEach(test -> declared.add(test.path("test_code").asText()));
-    observations.forEach((code, observation) -> {
-      if (!"SAMPLE_FLAG".equals(classification(observation))) {
-        assertThat(declared).as(code).contains(code);
-      }
-    });
+    // The microscope exam is results the profile does not declare, for each lab to map or exclude.
+    assertThat(classification(observations.get("747-6"))).isEqualTo("PATIENT");
+    assertThat(classification(observations.get("11001"))).isEqualTo("PATIENT");
   }
 
   private static String classification(Observation observation) {

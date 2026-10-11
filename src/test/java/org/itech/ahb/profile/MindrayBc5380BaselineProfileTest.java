@@ -29,6 +29,28 @@ import org.junit.jupiter.api.Test;
 class MindrayBc5380BaselineProfileTest {
 
   private static final Path EXAMPLES = Path.of("src", "test", "resources", "mindray-examples");
+  /** The manual differential the C.3.3 message sends in its microscope exam (OBR-4 00002). */
+  private static final List<String> MICROSCOPE_EXAM_SENT = List.of(
+    "747-6",
+    "783-1",
+    "749-2",
+    "740-1",
+    "764-1",
+    "769-0",
+    "714-6",
+    "707-0",
+    "33831-9",
+    "6746-2",
+    "737-7",
+    "29261-5",
+    "33840-0",
+    "13599-6",
+    "744-3",
+    "18309-5",
+    "31112-6",
+    "11000",
+    "11001"
+  );
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
@@ -82,9 +104,12 @@ class MindrayBc5380BaselineProfileTest {
   void theExampleArrivesAsTheDeclaredResultsAndTheAlarmsItRaised() throws Exception {
     ParsedResults parsed = replay("bc5380-c.3.3.hl7");
 
-    // Settings, histograms and the microscope exam are not results; the alarms travel with the
-    // sample, so every result the example sends is one the profile declares.
-    assertThat(parsed.results()).extracting(AnalyzerResult::testCode).allMatch(declaredTests()::containsKey);
+    // Settings and histograms are not results and the alarms travel with the sample. The microscope
+    // exam arrives as results the profile does not declare: each lab maps or excludes them.
+    Set<String> codes = new LinkedHashSet<>();
+    parsed.results().forEach(result -> codes.add(result.testCode()));
+    codes.removeAll(declaredTests().keySet());
+    assertThat(codes).containsExactlyInAnyOrderElementsOf(MICROSCOPE_EXAM_SENT);
     assertThat(parsed.sampleFlags()).containsExactly(
       new SampleFlag("12014", "Anemia", "T"),
       new SampleFlag("15180-3", "Hypochromia", "T")
@@ -92,7 +117,7 @@ class MindrayBc5380BaselineProfileTest {
   }
 
   @Test
-  void everyAlarmTable10ListsIsASampleFlagAndTheMicroscopeExamIsLeftOut() throws Exception {
+  void everyAlarmTable10ListsIsASampleFlagAndTheMicroscopeExamReachesTheLab() throws Exception {
     JsonNode overrides = profile().path("configDefaults").path("extractionOverrides");
     Set<String> flags = new LinkedHashSet<>();
     overrides.path("sampleFlags").path("codes").forEach(code -> flags.add(code.asText()));
@@ -118,7 +143,7 @@ class MindrayBc5380BaselineProfileTest {
       )
     );
     assertThat(flags).containsExactlyInAnyOrderElementsOf(alarms);
-    assertThat(notResults).containsAll(
+    assertThat(notResults).doesNotContainAnyElementsOf(
       List.of(
         "882-1",
         "11156-7",
