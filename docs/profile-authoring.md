@@ -106,6 +106,24 @@ the profile does not declare still reaches OpenELIS, which holds it for review.
 
 A profile without `resultParts` is read as before.
 
+## Warnings about the sample
+
+Some instruments send yes or no warnings about the sample as records of their own, such as a
+hematology analyzer's alarms (Anemia, Platelet Clump?). `configDefaults.extractionOverrides.sampleFlags`
+names them: the fields that hold a record's code, name and value, the value that means raised, and
+the codes. A record carrying one of these codes is never a result. A raised one goes in the bundle as
+an Observation classified `SAMPLE_FLAG`, under the code and name the instrument sent, and OpenELIS
+shows it with the sample's results; one not raised is dropped. ASTM fields are R record fields:
+
+```json
+"sampleFlags": {
+  "codeField": "OBX.3.1", "nameField": "OBX.3.2", "valueField": "OBX.5",
+  "raisedValue": "T", "codes": ["12014", "15180-3"]
+}
+```
+
+A profile without `sampleFlags` has no record that is a warning.
+
 ## Number format
 
 `configDefaults.numberFormat` is the decimal separator the instrument writes, `.` or `,`. A saved

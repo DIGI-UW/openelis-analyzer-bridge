@@ -66,8 +66,8 @@ public class FhirBundleBuilder {
 
   /**
    * Build the normalized bundle for a parsed message, with every part the instrument reported in
-   * its FHIR slot: the records' parts, the patient the instrument named and the specimen
-   * descriptor it sent.
+   * its FHIR slot: the records' parts, the warnings it raised about the sample, the patient the
+   * instrument named and the specimen descriptor it sent.
    */
   public static String buildNormalizedBundle(
     HL7ResultParser.ParsedResults parsed,
@@ -76,6 +76,7 @@ public class FhirBundleBuilder {
     String messageId
   ) {
     Bundle bundle = normalizedBundle(parsed.accessionNumber(), parsed.results(), context, codeToLoinc, messageId);
+    addSampleFlags(bundle, parsed.sampleFlags(), context);
     addInstrumentContext(bundle, parsed);
     return CTX.newJsonParser().setPrettyPrint(false).encodeResourceToString(bundle);
   }
@@ -151,6 +152,62 @@ public class FhirBundleBuilder {
       }
     }
     return bundle;
+  }
+
+  /**
+   * Each warning the instrument raised about the sample as an Observation of its own, classified
+   * {@code SAMPLE_FLAG}: present, under the code and name the instrument sent, and never a result.
+   */
+  private static void addSampleFlags(Bundle bundle, List<SampleFlag> flags, AnalyzerContext context) {
+    if (flags.isEmpty()) {
+      return;
+    }
+    String specimenUrl = fullUrlOf(bundle, Specimen.class);
+    String deviceUrl = fullUrlOf(bundle, Device.class);
+    DiagnosticReport report = bundle
+      .getEntry()
+      .stream()
+      .map(Bundle.BundleEntryComponent::getResource)
+      .filter(DiagnosticReport.class::isInstance)
+      .map(DiagnosticReport.class::cast)
+      .findFirst()
+      .orElseThrow(() -> new IllegalStateException("The bundle groups its observations in a report"));
+    for (SampleFlag flag : flags) {
+      Observation observation = new Observation();
+      observation.setStatus(Observation.ObservationStatus.UNKNOWN);
+      observation.addCategory(
+        new CodeableConcept()
+          .addCoding(
+            new Coding("http://terminology.hl7.org/CodeSystem/observation-category", "laboratory", "Laboratory")
+          )
+      );
+      observation.setCode(new CodeableConcept().addCoding(new Coding(RAW_CODE_SYSTEM, flag.code(), flag.name())));
+      observation.setValue(new org.hl7.fhir.r4.model.BooleanType(true));
+      observation.setSpecimen(new Reference(specimenUrl));
+      observation.setDevice(new Reference(deviceUrl));
+      observation.addExtension(EXTENSION_ROOT + "analyzer-raw-value", new StringType(flag.value()));
+      observation.addExtension(
+        EXTENSION_ROOT + "analyzer-source-transport",
+        new org.hl7.fhir.r4.model.CodeType(context.sourceTransport())
+      );
+      observation.addExtension(
+        EXTENSION_ROOT + "analyzer-result-classification",
+        new org.hl7.fhir.r4.model.CodeType("SAMPLE_FLAG")
+      );
+      String url = "urn:uuid:" + UUID.randomUUID();
+      addEntry(bundle, url, observation, "Observation");
+      report.addResult(new Reference(url));
+    }
+  }
+
+  private static String fullUrlOf(Bundle bundle, Class<? extends org.hl7.fhir.r4.model.Resource> type) {
+    return bundle
+      .getEntry()
+      .stream()
+      .filter(entry -> type.isInstance(entry.getResource()))
+      .map(Bundle.BundleEntryComponent::getFullUrl)
+      .findFirst()
+      .orElseThrow(() -> new IllegalStateException("The bundle has no " + type.getSimpleName()));
   }
 
   /** The patient the instrument named and its specimen descriptor, each as reported. */

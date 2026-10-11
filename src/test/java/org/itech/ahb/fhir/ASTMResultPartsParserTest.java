@@ -3,6 +3,7 @@ package org.itech.ahb.fhir;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.List;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
@@ -229,6 +230,32 @@ class ASTMResultPartsParserTest {
     );
 
     assertThat(parsed.patient()).isNull();
+  }
+
+  @Test
+  void aRaisedAlarmTheProfileNamesTravelsWithTheSampleAndIsNeverAResult() throws Exception {
+    ObjectNode profile = BaselineProfileFixtures.genexpertHivViralLoad(new ObjectMapper());
+    ObjectNode flags = profile.withObject("configDefaults").withObject("extractionOverrides").putObject("sampleFlags");
+    flags.put("codeField", "R.3.4");
+    flags.put("nameField", "R.3.5");
+    flags.put("valueField", "R.4");
+    flags.put("raisedValue", "T");
+    flags.putArray("codes").add("LIPEMIA").add("HEMOLYSIS");
+
+    ParsedResults parsed = ASTMResultParser.parseRaw(
+      header() +
+      "O|1|ACC-1||^^^HIVVL|R|20221115035816|||||||||ORH||||||||||F\r" +
+      main("NOT DETECTED^", "40.00 to 10000000.00", "A") +
+      "R|5|^^^LIPEMIA^Lipemic sample^^|T|\r" +
+      "R|6|^^^HEMOLYSIS^Hemolyzed sample^^|F|\r" +
+      "L|1|N\r",
+      ControlResultRecognition.none(),
+      AstmResultRecordSelection.all(),
+      ResultReading.fromProfile(profile)
+    );
+
+    assertThat(parsed.results()).extracting(AnalyzerResult::testCode).containsOnly("HIVVL");
+    assertThat(parsed.sampleFlags()).containsExactly(new SampleFlag("LIPEMIA", "Lipemic sample", "T"));
   }
 
   private static ParsedResults parse(String message) {

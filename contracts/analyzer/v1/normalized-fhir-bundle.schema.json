@@ -110,7 +110,7 @@
         "url": {
           "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
         },
-        "valueCode": { "enum": ["PATIENT", "CONTROL"] }
+        "valueCode": { "enum": ["PATIENT", "CONTROL", "SAMPLE_FLAG"] }
       }
     },
     "recognitionEvaluation": {
@@ -700,29 +700,102 @@
                         },
                         "minContains": 1,
                         "maxContains": 1
-                      },
-                      {
-                        "contains": {
-                          "$ref": "#/$defs/controlRecognitionExtension"
-                        },
-                        "maxContains": 1
-                      },
-                      {
-                        "contains": {
-                          "required": ["url"],
-                          "properties": {
-                            "url": {
-                              "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition"
-                            }
-                          }
-                        },
-                        "minContains": 1,
-                        "maxContains": 1
                       }
                     ]
                   }
                 },
                 "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "extension": {
+                          "contains": {
+                            "required": ["url", "valueCode"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+                              },
+                              "valueCode": { "enum": ["PATIENT", "CONTROL"] }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "extension": {
+                          "allOf": [
+                            {
+                              "contains": {
+                                "$ref": "#/$defs/controlRecognitionExtension"
+                              },
+                              "maxContains": 1
+                            },
+                            {
+                              "contains": {
+                                "required": ["url"],
+                                "properties": {
+                                  "url": {
+                                    "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition"
+                                  }
+                                }
+                              },
+                              "minContains": 1,
+                              "maxContains": 1
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "extension": {
+                          "contains": {
+                            "required": ["url", "valueCode"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
+                              },
+                              "valueCode": { "const": "SAMPLE_FLAG" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "description": "A warning the instrument raised about the sample, present; never a result, so it carries no control recognition and no QC tag.",
+                      "required": ["valueBoolean"],
+                      "properties": {
+                        "valueBoolean": { "const": true },
+                        "meta": {
+                          "properties": {
+                            "tag": {
+                              "not": {
+                                "contains": {
+                                  "required": ["code"],
+                                  "properties": { "code": { "const": "QC" } }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "extension": {
+                          "not": {
+                            "contains": {
+                              "required": ["url"],
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
                   {
                     "if": {
                       "properties": {
