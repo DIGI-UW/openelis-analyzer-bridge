@@ -81,9 +81,27 @@ it, so every result of a QC message is a control.
 The record selection leaves out the OBX segments Table 10 lists as "Other data" and the histogram
 and scattergram data: take mode, blood mode and test mode (08001 to 08003), age (30525-0), remark
 (01001), reference group (01002), QC level (05001), and the WBC, RBC, PLT and DIFF histogram and
-scattergram discriminators, lengths, adjustment marks and images (15000 to 15200). Every other OBX
-is a result, so the alarms and the microscope exam results below still reach OpenELIS, which holds
-them for review until a lab maps them.
+scattergram discriminators, lengths, adjustment marks and images (15000 to 15200).
+
+## Microscope exam
+
+The microscope exam data Table 10 lists under OBR-4 `00002` Manual Count (Table 9) is what a
+technician enters on the analyzer: blood type (882-1), WBC, RBC and PLT morphology (11156-7,
+6742-1, 11125-2) and the 19 manual differential percentages (747-6 to 31112-6, 11000, 11001). The
+profile does not declare these codes, so they reach OpenELIS as results it holds until a lab maps
+them to its own manual differential tests or excludes them on the analyzer's mapping page. The
+C.3.3 message sends every manual percentage as 0.0, which no counted differential is.
+
+## Alarms
+
+The sample flags are Table 10's "Abnormal alarm information": the Mindray codes 12000 to 12018 and
+the LOINC-coded alarms 17790-7 (Left Shift?), 34165-1 (Immature Granulocyte?), 15192-8
+(Abnormal/Atypical Lymphocyte?), 34525-6 (RBC Lyse Resist?), 15150-6 (Anisocytosis), 15198-5
+(Macrocytosis), 15199-3 (Microcytosis), 10379-6 (Dimorphologic), 15180-3 (Hypochromia) and 7796-6
+(PLT Clump?). Each is `IS`, `T` or `F` (C.5, enumeration values). A raised alarm travels with the
+sample's results under OBX-3.2, the name Mindray gives it; the C.3.3 message raises Anemia (12014)
+and Hypochromia (15180-3), beside its low HGB and MCHC. Every other OBX is a result, so a code the
+profile does not declare still reaches OpenELIS, which holds it for review until a lab maps it.
 
 ## Discrepancies in the vendor document
 
@@ -98,11 +116,8 @@ them for review until a lab maps them.
   LOINC has none for them.
 - The research parameters `10003` to `10006` (GRAN-X, GRAN-Y, GRAN-Y(W), WBC-MCV): Mindray gives
   no LOINC code, unit or definition.
-- The abnormal alarm information (12000 to 12018 and the LOINC-coded alarms such as 15180-3
-  Hypochromia): values `T` and `F`, flags about the sample rather than measured results; where they
-  belong in OpenELIS is not decided.
-- The microscope exam data (Table 10, OBR-4 `00002` Manual Count): blood type, morphology and the
-  manual differential a technician enters on the analyzer.
+- Whether the analyzer sends an empty microscope exam: the C.3.3 message sends one, and the manual
+  does not say.
 - The asterisk values the QC example shows (`***.**`, `**.*`, `****`, `.***`): the manual prints
   them without defining them, so they are not declared as run failures and OpenELIS holds them.
 - The patient's age, the remark and the histogram images as parts of the bundle.

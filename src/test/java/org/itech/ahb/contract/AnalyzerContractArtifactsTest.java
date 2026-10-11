@@ -137,7 +137,8 @@ class AnalyzerContractArtifactsTest {
       "normalized-qc.fhir.json",
       "normalized-nonmatch.fhir.json",
       "normalized-none.fhir.json",
-      "normalized-file.fhir.json"
+      "normalized-file.fhir.json",
+      "normalized-sample-flag.fhir.json"
     }) {
       assertConforms("normalized-fhir-bundle.schema.json", fixture);
       Bundle bundle = FHIR.newJsonParser()
@@ -168,7 +169,8 @@ class AnalyzerContractArtifactsTest {
       "normalized-qc.fhir.json",
       "normalized-nonmatch.fhir.json",
       "normalized-none.fhir.json",
-      "normalized-file.fhir.json"
+      "normalized-file.fhir.json",
+      "normalized-sample-flag.fhir.json"
     }) {
       JsonNode fixture = fixture(fixtureName);
       JsonNode device = firstResource(fixture, "Device");

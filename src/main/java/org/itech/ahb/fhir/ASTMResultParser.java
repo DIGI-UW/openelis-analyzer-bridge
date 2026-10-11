@@ -18,6 +18,7 @@ import org.itech.ahb.profile.ControlRecognitionRule;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.ControlResultRecognitionEvaluator;
 import org.itech.ahb.profile.ResultReading;
+import org.itech.ahb.profile.SampleFlags;
 
 /**
  * Extracts lab results from ASTM LIS2-A2 messages.
@@ -80,6 +81,7 @@ public class ASTMResultParser {
         String accession = null;
         ControlResultRecognitionEvaluator.Assessment recognitionAssessment = null;
         List<AnalyzerResult> results = new ArrayList<>();
+        List<SampleFlag> sampleFlags = new ArrayList<>();
         InstrumentPatient patient = null;
         String specimenDescriptor = null;
         // The result a following C record belongs to; null after a record that said nothing.
@@ -121,7 +123,14 @@ public class ASTMResultParser {
                 }
                 case "R" -> {
                     commentTarget = -1;
-                    if (accession != null) {
+                    SampleFlags.Reported flag = reading == null
+                            ? null
+                            : reading.sampleFlags().read(line.split(Pattern.quote(FIELD_DELIMITER), -1));
+                    if (flag != null) {
+                        if (flag.raised() && accession != null) {
+                            sampleFlags.add(new SampleFlag(flag.code(), flag.name(), flag.value()));
+                        }
+                    } else if (accession != null) {
                         AnalyzerResult result = parts == null
                                 ? parseResultRecord(line, resultRecordSelection)
                                 : parseResultRecord(line, resultRecordSelection, parts, reading);
@@ -169,7 +178,7 @@ public class ASTMResultParser {
 
         return results.isEmpty()
                 ? null
-                : new HL7ResultParser.ParsedResults(accession, results, patient, specimenDescriptor);
+                : new HL7ResultParser.ParsedResults(accession, results, patient, specimenDescriptor, sampleFlags);
     }
 
     /**

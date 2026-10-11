@@ -343,6 +343,43 @@
           "15200"
         ]
       },
+      "sampleFlags": {
+        "codeField": "OBX.3.1",
+        "nameField": "OBX.3.2",
+        "valueField": "OBX.5",
+        "raisedValue": "T",
+        "codes": [
+          "12000",
+          "12001",
+          "12002",
+          "12003",
+          "12004",
+          "12005",
+          "12006",
+          "12007",
+          "12008",
+          "12009",
+          "12010",
+          "12011",
+          "17790-7",
+          "34165-1",
+          "15192-8",
+          "34525-6",
+          "12012",
+          "12013",
+          "15150-6",
+          "15198-5",
+          "15199-3",
+          "10379-6",
+          "12014",
+          "15180-3",
+          "12015",
+          "12016",
+          "12017",
+          "12018",
+          "7796-6"
+        ]
+      },
       "resultParts": {
         "testCode": "OBX.3.1",
         "value": "OBX.5",
@@ -470,6 +507,6 @@
     "status": "ACTIVE",
     "publishedAt": "2026-10-10T00:00:00Z",
     "publishedBy": "distribution",
-    "revisionFingerprint": "sha256:045924336ca75aa61ac6b6b44f37df59d1636ac4e78195757c5d94f0f96e8da8"
+    "revisionFingerprint": "sha256:b1e182b5fdd68215e2e5c57aa988615968ff8eb1fed1fe58a9b0364c60a6c7a8"
   }
 }

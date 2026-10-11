@@ -19,6 +19,7 @@ import org.itech.ahb.profile.Hl7ResultParts;
 import org.itech.ahb.profile.Hl7ResultRecordSelection;
 import org.itech.ahb.profile.Hl7SpecimenPosition;
 import org.itech.ahb.profile.ResultReading;
+import org.itech.ahb.profile.SampleFlags;
 
 /**
  * Extracts lab results from HL7 v2 ORU^R01 messages.
@@ -89,6 +90,7 @@ public class HL7ResultParser {
     String accession = null;
     SegmentFields fieldValues = new SegmentFields();
     List<AnalyzerResult> results = new ArrayList<>();
+    List<SampleFlag> sampleFlags = new ArrayList<>();
     Delimiters delimiters = new Delimiters('|', '^', '~', '&');
     PendingObservation pending = null;
     InstrumentPatient patient = null;
@@ -142,7 +144,14 @@ public class HL7ResultParser {
         }
       }
 
-      if ("OBX".equals(segment) && resultRecordSelection.includes(fieldValues)) {
+      SampleFlags.Reported flag = "OBX".equals(segment) && reading != null
+        ? reading.sampleFlags().read(fieldValues)
+        : null;
+      if (flag != null) {
+        if (flag.raised()) {
+          sampleFlags.add(new SampleFlag(flag.code(), flag.name(), flag.value()));
+        }
+      } else if ("OBX".equals(segment) && resultRecordSelection.includes(fieldValues)) {
         AnalyzerResult result = parts == null
           ? parseObxSegment(line, delimiters)
           : readObservation(fieldValues, parts, reading, delimiters);
@@ -165,7 +174,7 @@ public class HL7ResultParser {
     // Recognition already used instrument evidence, never this display-only fallback.
     if (accession == null) accession = "HL7-UNKNOWN";
 
-    return results.isEmpty() ? null : new ParsedResults(accession, results, patient, specimenDescriptor);
+    return results.isEmpty() ? null : new ParsedResults(accession, results, patient, specimenDescriptor, sampleFlags);
   }
 
   private record PendingObservation(AnalyzerResult result, String specimenId, SegmentFields fields) {
@@ -443,15 +452,30 @@ public class HL7ResultParser {
   /**
    * @param patient the patient the instrument reported, when its profile says where to read one
    * @param specimenDescriptor the instrument's own description of the specimen, as sent
+   * @param sampleFlags the warnings the instrument raised about the sample, in the order sent
    */
   public record ParsedResults(
     String accessionNumber,
     List<AnalyzerResult> results,
     InstrumentPatient patient,
-    String specimenDescriptor
+    String specimenDescriptor,
+    List<SampleFlag> sampleFlags
   ) {
+    public ParsedResults {
+      sampleFlags = sampleFlags == null ? List.of() : List.copyOf(sampleFlags);
+    }
+
     public ParsedResults(String accessionNumber, List<AnalyzerResult> results) {
-      this(accessionNumber, results, null, null);
+      this(accessionNumber, results, null, null, List.of());
+    }
+
+    public ParsedResults(
+      String accessionNumber,
+      List<AnalyzerResult> results,
+      InstrumentPatient patient,
+      String specimenDescriptor
+    ) {
+      this(accessionNumber, results, patient, specimenDescriptor, List.of());
     }
 
     /** These results under the profile's own codes, where the connection sets other codes for its instrument. */
@@ -463,7 +487,8 @@ public class HL7ResultParser {
         accessionNumber,
         results.stream().map(result -> result.withTestCode(reading.profileCode(result.testCode()))).toList(),
         patient,
-        specimenDescriptor
+        specimenDescriptor,
+        sampleFlags
       );
     }
   }

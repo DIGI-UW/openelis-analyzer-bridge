@@ -19,6 +19,7 @@ import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.fhir.HL7ResultParser;
 import org.itech.ahb.fhir.HL7ResultParser.ParsedResults;
 import org.itech.ahb.fhir.InstrumentPatient;
+import org.itech.ahb.fhir.SampleFlag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -28,6 +29,28 @@ import org.junit.jupiter.api.Test;
 class MindrayBc5380BaselineProfileTest {
 
   private static final Path EXAMPLES = Path.of("src", "test", "resources", "mindray-examples");
+  /** The manual differential the C.3.3 message sends in its microscope exam (OBR-4 00002). */
+  private static final List<String> MICROSCOPE_EXAM_SENT = List.of(
+    "747-6",
+    "783-1",
+    "749-2",
+    "740-1",
+    "764-1",
+    "769-0",
+    "714-6",
+    "707-0",
+    "33831-9",
+    "6746-2",
+    "737-7",
+    "29261-5",
+    "33840-0",
+    "13599-6",
+    "744-3",
+    "18309-5",
+    "31112-6",
+    "11000",
+    "11001"
+  );
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
@@ -78,22 +101,75 @@ class MindrayBc5380BaselineProfileTest {
   }
 
   @Test
-  void theInstrumentsSettingsAndHistogramsAreNotResultsAndEverythingElseStillArrives() throws Exception {
+  void theExampleArrivesAsTheDeclaredResultsAndTheAlarmsItRaised() throws Exception {
     ParsedResults parsed = replay("bc5380-c.3.3.hl7");
+
+    // Settings and histograms are not results and the alarms travel with the sample. The microscope
+    // exam arrives as results the profile does not declare: each lab maps or excludes them.
     Set<String> codes = new LinkedHashSet<>();
     parsed.results().forEach(result -> codes.add(result.testCode()));
+    codes.removeAll(declaredTests().keySet());
+    assertThat(codes).containsExactlyInAnyOrderElementsOf(MICROSCOPE_EXAM_SENT);
+    assertThat(parsed.sampleFlags()).containsExactly(
+      new SampleFlag("12014", "Anemia", "T"),
+      new SampleFlag("15180-3", "Hypochromia", "T")
+    );
+  }
 
+  @Test
+  void everyAlarmTable10ListsIsASampleFlagAndTheMicroscopeExamReachesTheLab() throws Exception {
+    JsonNode overrides = profile().path("configDefaults").path("extractionOverrides");
+    Set<String> flags = new LinkedHashSet<>();
+    overrides.path("sampleFlags").path("codes").forEach(code -> flags.add(code.asText()));
     Set<String> notResults = new LinkedHashSet<>();
-    profile()
-      .path("configDefaults")
-      .path("extractionOverrides")
-      .path("resultRecordSelection")
-      .path("values")
-      .forEach(value -> notResults.add(value.asText()));
-    assertThat(codes).doesNotContainAnyElementsOf(notResults);
-    // The alarms and the microscope exam a technician enters are not declared, so OpenELIS holds
-    // them for review; they are never dropped.
-    assertThat(codes).contains("12014", "15180-3", "747-6", "11001");
+    overrides.path("resultRecordSelection").path("values").forEach(value -> notResults.add(value.asText()));
+
+    Set<String> alarms = new LinkedHashSet<>();
+    for (int code = 12000; code <= 12018; code++) {
+      alarms.add(String.valueOf(code));
+    }
+    alarms.addAll(
+      List.of(
+        "17790-7",
+        "34165-1",
+        "15192-8",
+        "34525-6",
+        "15150-6",
+        "15198-5",
+        "15199-3",
+        "10379-6",
+        "15180-3",
+        "7796-6"
+      )
+    );
+    assertThat(flags).containsExactlyInAnyOrderElementsOf(alarms);
+    assertThat(notResults).doesNotContainAnyElementsOf(
+      List.of(
+        "882-1",
+        "11156-7",
+        "6742-1",
+        "11125-2",
+        "747-6",
+        "783-1",
+        "749-2",
+        "740-1",
+        "764-1",
+        "769-0",
+        "714-6",
+        "707-0",
+        "33831-9",
+        "6746-2",
+        "737-7",
+        "29261-5",
+        "33840-0",
+        "13599-6",
+        "744-3",
+        "18309-5",
+        "31112-6",
+        "11000",
+        "11001"
+      )
+    );
   }
 
   @Test

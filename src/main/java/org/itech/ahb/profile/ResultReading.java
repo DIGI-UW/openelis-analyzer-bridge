@@ -8,7 +8,8 @@ import java.util.Set;
 
 /**
  * How the pinned profile reads a result: where each part of a record sits, which raw values mean
- * the run produced nothing, and how the instrument writes a number. It describes the instrument,
+ * the run produced nothing, which records are warnings about the sample rather than results, and
+ * how the instrument writes a number. It describes the instrument,
  * never a site; a connection may override the number format because an instrument runs in the
  * locale its lab set.
  */
@@ -17,10 +18,12 @@ public record ResultReading(
   Hl7ResultParts hl7Parts,
   char decimalSeparator,
   Map<String, Map<String, Set<String>>> runFailures,
-  Map<String, String> profileCodeByInstrumentCode
+  Map<String, String> profileCodeByInstrumentCode,
+  SampleFlags sampleFlags
 ) {
   public ResultReading {
     runFailures = runFailures == null ? Map.of() : runFailures;
+    sampleFlags = sampleFlags == null ? SampleFlags.none() : sampleFlags;
     profileCodeByInstrumentCode = profileCodeByInstrumentCode == null ? Map.of() : profileCodeByInstrumentCode;
   }
 
@@ -58,13 +61,15 @@ public record ResultReading(
       runFailures.put(mapping.path("test_code").asText(), bySubIdentity);
       mapping.path("aliases").forEach(alias -> runFailures.put(alias.asText(), bySubIdentity));
     }
-    boolean hl7 = "HL7".equals(profile.path("protocol").path("name").asText());
+    String protocol = profile.path("protocol").path("name").asText();
+    boolean hl7 = "HL7".equals(protocol);
     return new ResultReading(
       hl7 ? null : AstmResultParts.fromProfile(configDefaults),
       hl7 ? Hl7ResultParts.fromProfile(configDefaults) : null,
       configured.charAt(0),
       runFailures,
-      profileCodeByInstrumentCode
+      profileCodeByInstrumentCode,
+      SampleFlags.fromProfile(configDefaults, protocol)
     );
   }
 

@@ -591,6 +591,42 @@
         }
       ]
     },
+    "hl7SampleFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codeField", "valueField", "raisedValue", "codes"],
+      "description": "The codes the instrument sends as yes or no warnings about the sample, such as a hematology analyzer's alarms. An OBX carrying one is never a result: a raised one travels with the sample's results as a flag, and one not raised says nothing.",
+      "properties": {
+        "codeField": { "$ref": "#/$defs/hl7ObservationField" },
+        "nameField": { "$ref": "#/$defs/hl7ObservationField" },
+        "valueField": { "$ref": "#/$defs/hl7ObservationField" },
+        "raisedValue": { "type": "string", "minLength": 1 },
+        "codes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "astmSampleFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codeField", "valueField", "raisedValue", "codes"],
+      "description": "The codes the instrument sends as yes or no warnings about the sample. An R record carrying one is never a result: a raised one travels with the sample's results as a flag, and one not raised says nothing.",
+      "properties": {
+        "codeField": { "$ref": "#/$defs/astmResultField" },
+        "nameField": { "$ref": "#/$defs/astmResultField" },
+        "valueField": { "$ref": "#/$defs/astmResultField" },
+        "raisedValue": { "type": "string", "minLength": 1 },
+        "codes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "socketDefaults": {
       "type": "object",
       "additionalProperties": false,
@@ -623,7 +659,8 @@
               "properties": {
                 "specimenPosition": { "enum": ["PRECEDING", "FOLLOWING_OBX"] },
                 "resultRecordSelection": { "$ref": "#/$defs/hl7ResultRecordSelection" },
-                "resultParts": { "$ref": "#/$defs/hl7ResultParts" }
+                "resultParts": { "$ref": "#/$defs/hl7ResultParts" },
+                "sampleFlags": { "$ref": "#/$defs/hl7SampleFlags" }
               }
             }
           }
@@ -651,7 +688,8 @@
         "resultRecordSelection": {
           "$ref": "#/$defs/astmResultRecordSelection"
         },
-        "resultParts": { "$ref": "#/$defs/astmResultParts" }
+        "resultParts": { "$ref": "#/$defs/astmResultParts" },
+        "sampleFlags": { "$ref": "#/$defs/astmSampleFlags" }
       }
     },
     "astmResultRecordSelection": {

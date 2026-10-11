@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ca.uhn.fhir.context.FhirContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.networknt.schema.JsonSchema;
+import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SpecVersion;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +37,8 @@ import org.junit.jupiter.api.Test;
 class NormalizedBundleRendererHl7Test {
 
   private static final FhirContext FHIR = FhirContext.forR4();
+  private static final String CLASSIFICATION =
+    "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification";
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
@@ -58,11 +63,32 @@ class NormalizedBundleRendererHl7Test {
     assertThat(render()).doesNotContainKeys("08001", "08002", "08003", "01002", "30525-0", "15008", "15200");
   }
 
-  private Map<String, Observation> render() throws Exception {
-    ObjectNode profile;
+  @Test
+  void theAlarmsItRaisedAreFlagsOnTheSampleAndItsMicroscopeExamReachesTheLab() throws Exception {
+    Map<String, Observation> observations = render();
+
+    Observation anemia = observations.get("12014");
+    assertThat(classification(anemia)).isEqualTo("SAMPLE_FLAG");
+    assertThat(anemia.getCode().getCodingFirstRep().getDisplay()).isEqualTo("Anemia");
+    assertThat(anemia.getValueBooleanType().booleanValue()).isTrue();
+    assertThat(classification(observations.get("15180-3"))).isEqualTo("SAMPLE_FLAG");
+    // The microscope exam is results the profile does not declare, for each lab to map or exclude.
+    assertThat(classification(observations.get("747-6"))).isEqualTo("PATIENT");
+    assertThat(classification(observations.get("11001"))).isEqualTo("PATIENT");
+  }
+
+  private static String classification(Observation observation) {
+    return observation.getExtensionByUrl(CLASSIFICATION).getValue().primitiveValue();
+  }
+
+  private ObjectNode profile() throws Exception {
     try (InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/mindray-bc5380.json")) {
-      profile = (ObjectNode) objectMapper.readTree(input);
+      return (ObjectNode) objectMapper.readTree(input);
     }
+  }
+
+  private Map<String, Observation> render() throws Exception {
+    ObjectNode profile = profile();
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId("analyzer-1");
@@ -94,11 +120,12 @@ class NormalizedBundleRendererHl7Test {
     );
 
     assertThat(outcome).isInstanceOf(NormalizedBundleRenderer.Outcome.Rendered.class);
-    Bundle bundle = FHIR.newJsonParser()
-      .parseResource(
-        Bundle.class,
-        ((NormalizedBundleRenderer.Outcome.Rendered) outcome).deliveries().get(0).fhirJson()
-      );
+    String json = ((NormalizedBundleRenderer.Outcome.Rendered) outcome).deliveries().get(0).fhirJson();
+    JsonSchema contract = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012).getSchema(
+      objectMapper.readTree(Path.of("contracts", "analyzer", "v1", "normalized-fhir-bundle.schema.json").toFile())
+    );
+    assertThat(contract.validate(objectMapper.readTree(json))).isEmpty();
+    Bundle bundle = FHIR.newJsonParser().parseResource(Bundle.class, json);
     return bundle
       .getEntry()
       .stream()
