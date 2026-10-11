@@ -35,7 +35,6 @@ class FileResultParserOdsRecognitionTest {
       assertThat(results.accessionNumber()).isEqualTo("POS-CONTROL");
       assertThat(results.results()).singleElement().satisfies(result -> {
         assertThat(result.isControl()).isTrue();
-        assertThat(result.controlType()).isEqualTo("POSITIVE");
       });
     });
   }

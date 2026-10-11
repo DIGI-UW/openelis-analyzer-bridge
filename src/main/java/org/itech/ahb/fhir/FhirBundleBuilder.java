@@ -294,35 +294,14 @@ public class FhirBundleBuilder {
       if (result.isControl()) {
         obs.getMeta().addTag("http://openelis-global.org/fhir/tags", "QC", "Quality Control");
       }
-      // QC metadata for OE QCResultProcessingService.findMatchingControlLot:
-      //   - lot-number lets OE match the qc_control_lot row exactly
-      //     (set only by an ASTM Q record, field 3 component 2)
-      //   - control-level lets OE match on (testId, instrumentId, level)
-      //     when no lot is sent (the matched recognition rule's
-      //     controlLevel, or ASTM Q record field 3 component 3)
-      // Both are optional; OE falls through its other matching tiers
-      // when either is absent.
-      if (result.lotNumber() != null && !result.lotNumber().isEmpty()) {
-        obs.addExtension(
-          new org.hl7.fhir.r4.model.Extension(
-            "http://openelis-global.org/fhir/qc/lot-number",
-            new org.hl7.fhir.r4.model.StringType(result.lotNumber())
-          )
-        );
-      }
+      // control-level lets OE match a control lot by (testId, instrumentId,
+      // level) when the control's specimen ID names no lot. It is the
+      // matched recognition rule's optional controlLevel.
       if (result.controlLevel() != null && !result.controlLevel().isEmpty()) {
         obs.addExtension(
           new org.hl7.fhir.r4.model.Extension(
             "http://openelis-global.org/fhir/qc/control-level",
             new org.hl7.fhir.r4.model.StringType(result.controlLevel())
-          )
-        );
-      }
-      if (result.controlType() != null && !result.controlType().isEmpty()) {
-        obs.addExtension(
-          new org.hl7.fhir.r4.model.Extension(
-            "http://openelis-global.org/fhir/qc/control-type",
-            new org.hl7.fhir.r4.model.StringType(result.controlType())
           )
         );
       }
@@ -509,12 +488,9 @@ public class FhirBundleBuilder {
   /**
    * A single test result from an analyzer, protocol-agnostic.
    *
-   * For control results, OE's QCResultProcessingService uses two optional
-   * fields to find the control lot:
-   *   - lotNumber: set only by an ASTM Q record (field 3, component 2).
-   *     No parser reads a lot from a file or from a sample name.
-   *   - controlLevel: the matched recognition rule's controlLevel, or
-   *     field 3 component 3 of an ASTM Q record.
+   * For a control result, controlLevel is the matched recognition rule's
+   * optional controlLevel. OE's QCResultProcessingService uses it to match
+   * a control lot by level when the control's specimen ID names no lot.
    */
   public record AnalyzerResult(
     String testCode,
@@ -524,18 +500,16 @@ public class FhirBundleBuilder {
     boolean isNumeric,
     boolean isControl,
     String timestamp,
-    String lotNumber,
     String controlLevel,
-    String controlType,
     org.itech.ahb.profile.ControlResultRecognitionEvaluator.Assessment controlRecognitionAssessment,
     RecordParts parts
   ) {
     public static AnalyzerResult numeric(String testCode, String testName, String value, String units) {
-      return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null, null, null);
+      return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null);
     }
 
     public static AnalyzerResult text(String testCode, String testName, String value) {
-      return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null, null, null, null);
+      return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null, null);
     }
 
     public AnalyzerResult withControl(boolean control) {
@@ -547,9 +521,7 @@ public class FhirBundleBuilder {
         isNumeric,
         control,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         controlRecognitionAssessment,
         parts
       );
@@ -564,26 +536,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         ts,
-        lotNumber,
         controlLevel,
-        controlType,
-        controlRecognitionAssessment,
-        parts
-      );
-    }
-
-    public AnalyzerResult withLotNumber(String lot) {
-      return new AnalyzerResult(
-        testCode,
-        testName,
-        value,
-        units,
-        isNumeric,
-        isControl,
-        timestamp,
-        lot,
-        controlLevel,
-        controlType,
         controlRecognitionAssessment,
         parts
       );
@@ -598,26 +551,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         level,
-        controlType,
-        controlRecognitionAssessment,
-        parts
-      );
-    }
-
-    public AnalyzerResult withControlType(String type) {
-      return new AnalyzerResult(
-        testCode,
-        testName,
-        value,
-        units,
-        isNumeric,
-        isControl,
-        timestamp,
-        lotNumber,
-        controlLevel,
-        type,
         controlRecognitionAssessment,
         parts
       );
@@ -634,9 +568,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         assessment,
         parts
       );
@@ -652,9 +584,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         controlRecognitionAssessment,
         parts
       );
@@ -670,9 +600,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         controlRecognitionAssessment,
         recordParts
       );
