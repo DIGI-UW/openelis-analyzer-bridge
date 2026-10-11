@@ -282,13 +282,11 @@ class FhirBundleBuilderTest {
         }
 
         @Test
-        @DisplayName("Control metadata is emitted as explicit FHIR extensions")
-        void controlMetadataExtensionsAreEmitted() {
+        @DisplayName("A control's level is emitted as the control-level extension, and no lot or type is sent")
+        void controlLevelExtensionIsEmitted() {
             AnalyzerResult qcResult = AnalyzerResult.numeric("HIV-VL", "HIV-VL", "1687.5", "copies/mL")
                     .withControl(true)
-                    .withLotNumber("LOT-HIVVL-N")
-                    .withControlLevel("LPC")
-                    .withControlType("ASSAY_CONTROL");
+                    .withControlLevel("LPC");
 
             Bundle bundle = parseBundle(
                     buildBundle(List.of(qcResult)));
@@ -298,23 +296,17 @@ class FhirBundleBuilderTest {
                     .map(e -> (Observation) e.getResource())
                     .findFirst().orElseThrow();
 
-            var lot = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/lot-number");
             var level = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-level");
-            var type = obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-type");
-            assertNotNull(lot, "qc/lot-number extension must be present");
             assertNotNull(level, "qc/control-level extension must be present");
-            assertNotNull(type, "qc/control-type extension must be present");
-            assertEquals("LOT-HIVVL-N",
-                    ((org.hl7.fhir.r4.model.StringType) lot.getValue()).getValue());
             assertEquals("LPC",
                     ((org.hl7.fhir.r4.model.StringType) level.getValue()).getValue());
-            assertEquals("ASSAY_CONTROL",
-                    ((org.hl7.fhir.r4.model.StringType) type.getValue()).getValue());
+            assertNull(obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/lot-number"));
+            assertNull(obs.getExtensionByUrl("http://openelis-global.org/fhir/qc/control-type"));
         }
 
         @Test
-        @DisplayName("QC without lot/level -> qc extensions absent")
-        void qcExtensionsAbsentWhenLotAndLevelNull() {
+        @DisplayName("QC without a level -> qc extensions absent")
+        void qcExtensionsAbsentWhenLevelNull() {
             AnalyzerResult qcResult = AnalyzerResult.numeric("WBC", "WBC", "7.5", "10*3/uL")
                     .withControl(true);
 

@@ -177,7 +177,7 @@ public class HL7ResultParser {
     result = result.withControlRecognition(assessment);
     if (assessment.matchedRule().isPresent()) {
       ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
-      result = result.withControl(true).withControlLevel(rule.controlLevel()).withControlType(rule.controlType());
+      result = result.withControl(true).withControlLevel(rule.controlLevel());
     }
     return result;
   }

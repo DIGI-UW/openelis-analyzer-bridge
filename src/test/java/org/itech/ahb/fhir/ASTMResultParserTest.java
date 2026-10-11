@@ -305,6 +305,25 @@ class ASTMResultParserTest {
         }
 
         @Test
+        @DisplayName("A Q record is a host query (LIS2-A2) and leaves the preceding result unchanged")
+        void queryRecordDoesNotAnnotateResult() {
+            String message =
+                    "H|\\^&|||GENEXPERT^GeneXpert^4.6.0|||||||LIS2-A2|20260429181325\r"
+                    + "P|1\r"
+                    + "O|1|DEV01269800000000001|||||||||Q|||||||||||||\r"
+                    + "R|1|^^^HIV-VL|1687.5|copies/mL|20-10000000|N||F|20260429181325\r"
+                    + "Q|1|HIV-VL^LOT-HIVVL-N^N|1687.5|copies/mL|20260429181325\r"
+                    + "L|1|N\r";
+
+            ParsedResults parsed = parseWithActionCodeRecognition(message);
+
+            assertEquals(1, parsed.results().size());
+            assertTrue(parsed.results().get(0).isControl());
+            assertNull(parsed.results().get(0).controlLevel(),
+                    "A Q record must not set a control level on the result");
+        }
+
+        @Test
         @DisplayName("OE-fixture wire format (mindray-ba88a) Action Code at idx 11")
         void oeMindrayFixtureActionCodeAtCorrectIndex() {
             // Verbatim from src/test/resources/testdata/astm/mindray-ba88a-result.txt

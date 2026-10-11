@@ -294,37 +294,14 @@ public class FhirBundleBuilder {
       if (result.isControl()) {
         obs.getMeta().addTag("http://openelis-global.org/fhir/tags", "QC", "Quality Control");
       }
-      // QC metadata for OE QCResultProcessingService.findMatchingControlLot:
-      //   - lot-number lets OE strict-match the qc_control_lot row
-      //     (sourced from ASTM Q-segment field 3 component 2)
-      //   - control-level lets OE level-match (testId, instrumentId, level)
-      //     when there's no canonical lot identifier on the wire
-      //     (sourced from ASTM Q-segment field 3 component 3, OR from
-      //     the matched FILE qcRule's operand for SPECIMEN_ID_PREFIX
-      //     rules like LPC/HPC/CNEG/CPOS)
-      // Both are optional; OE's resolver falls through tiers gracefully
-      // when either is absent.
-      if (result.lotNumber() != null && !result.lotNumber().isEmpty()) {
-        obs.addExtension(
-          new org.hl7.fhir.r4.model.Extension(
-            "http://openelis-global.org/fhir/qc/lot-number",
-            new org.hl7.fhir.r4.model.StringType(result.lotNumber())
-          )
-        );
-      }
+      // control-level lets OE match a control lot by (testId, instrumentId,
+      // level) when the control's specimen ID names no lot. It is the
+      // matched recognition rule's optional controlLevel.
       if (result.controlLevel() != null && !result.controlLevel().isEmpty()) {
         obs.addExtension(
           new org.hl7.fhir.r4.model.Extension(
             "http://openelis-global.org/fhir/qc/control-level",
             new org.hl7.fhir.r4.model.StringType(result.controlLevel())
-          )
-        );
-      }
-      if (result.controlType() != null && !result.controlType().isEmpty()) {
-        obs.addExtension(
-          new org.hl7.fhir.r4.model.Extension(
-            "http://openelis-global.org/fhir/qc/control-type",
-            new org.hl7.fhir.r4.model.StringType(result.controlType())
           )
         );
       }
@@ -511,15 +488,9 @@ public class FhirBundleBuilder {
   /**
    * A single test result from an analyzer, protocol-agnostic.
    *
-   * For QC samples, two additional metadata fields propagate end-to-end
-   * to OE so QCResultProcessingService can resolve to the correct lot
-   * without guessing:
-   *   - lotNumber: canonical lot identifier (from ASTM Q-segment field 3
-   *     component 2, or substring-extracted from FILE sample-name when
-   *     the operator embedded it)
-   *   - controlLevel: clinical level identifier (LPC/HPC/CNEG/CPOS/etc.)
-   *     — sourced from ASTM Q-segment field 3 component 3, or from the
-   *     FILE qcRule SPECIMEN_ID_PREFIX operand that matched
+   * For a control result, controlLevel is the matched recognition rule's
+   * optional controlLevel. OE's QCResultProcessingService uses it to match
+   * a control lot by level when the control's specimen ID names no lot.
    */
   public record AnalyzerResult(
     String testCode,
@@ -529,18 +500,16 @@ public class FhirBundleBuilder {
     boolean isNumeric,
     boolean isControl,
     String timestamp,
-    String lotNumber,
     String controlLevel,
-    String controlType,
     org.itech.ahb.profile.ControlResultRecognitionEvaluator.Assessment controlRecognitionAssessment,
     RecordParts parts
   ) {
     public static AnalyzerResult numeric(String testCode, String testName, String value, String units) {
-      return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null, null, null);
+      return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null);
     }
 
     public static AnalyzerResult text(String testCode, String testName, String value) {
-      return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null, null, null, null);
+      return new AnalyzerResult(testCode, testName, value, null, false, false, null, null, null, null);
     }
 
     public AnalyzerResult withControl(boolean control) {
@@ -552,9 +521,7 @@ public class FhirBundleBuilder {
         isNumeric,
         control,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         controlRecognitionAssessment,
         parts
       );
@@ -569,26 +536,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         ts,
-        lotNumber,
         controlLevel,
-        controlType,
-        controlRecognitionAssessment,
-        parts
-      );
-    }
-
-    public AnalyzerResult withLotNumber(String lot) {
-      return new AnalyzerResult(
-        testCode,
-        testName,
-        value,
-        units,
-        isNumeric,
-        isControl,
-        timestamp,
-        lot,
-        controlLevel,
-        controlType,
         controlRecognitionAssessment,
         parts
       );
@@ -603,26 +551,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         level,
-        controlType,
-        controlRecognitionAssessment,
-        parts
-      );
-    }
-
-    public AnalyzerResult withControlType(String type) {
-      return new AnalyzerResult(
-        testCode,
-        testName,
-        value,
-        units,
-        isNumeric,
-        isControl,
-        timestamp,
-        lotNumber,
-        controlLevel,
-        type,
         controlRecognitionAssessment,
         parts
       );
@@ -639,9 +568,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         assessment,
         parts
       );
@@ -657,9 +584,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         controlRecognitionAssessment,
         parts
       );
@@ -675,9 +600,7 @@ public class FhirBundleBuilder {
         isNumeric,
         isControl,
         timestamp,
-        lotNumber,
         controlLevel,
-        controlType,
         controlRecognitionAssessment,
         recordParts
       );
