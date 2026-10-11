@@ -26,3 +26,17 @@ Revision 4 changes the contract only: each test now cites its source. The values
 - A Thermo Fisher document for the export format; the spec is built from real exports, which
   check a site's configuration and do not define a profile (rule 19).
 - LOINC 89578-3 is the standard code for internal control DNA; the spec does not give a LOINC.
+
+## Revision 2: control recognition
+
+`src/main/resources/analyzer-profiles/thermo-quantstudio-v2.json` changes only `controlResultRecognition`.
+
+| Rule                                                                         | Defined in                                                                                                                                    |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task `STANDARD` is a control                                                 | QuantStudio spec section 7.1 and 7.4                                                                                                          |
+| Task `NTC` is a control, whatever the well is named (`NC` or `NTC`)          | QuantStudio spec section 7.1 and 7.3                                                                                                          |
+| Sample Name `PC`, `pos`, `positive` or `controle positif` is a control       | QuantStudio spec section 7.2; a standard-curve run has no positive-control task (Thermo, MAN0010408 Rev B.0, p. 14), so a PC is an `UNKNOWN` well found by name |
+
+Revision 1's `CNEG`, `CPOS`, `PTC`, `LPC` and `HPC` name patterns are gone: no vendor document or
+site file uses them. The name match is whole and ignores case, so a patient ID such as `PCR-0042`
+stays a patient result.

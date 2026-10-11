@@ -30,3 +30,16 @@ specimen type hint (rule 1).
 - Other targets the template carries (MPox, VACV, IC, HBV and the LightMix assays): the spec
   describes them as examples, not a fixed menu, so a lab adds them as per-analyzer rows.
 - Any Bruker document defining the file: none exists, since the file is hand-prepared.
+
+## Revision 2: control recognition
+
+`src/main/resources/analyzer-profiles/hain-fluorocycler-xt-v2.json` changes only `controlResultRecognition`.
+
+- It keeps the `Type` rules (`Positive`, `Negative`, `Standard`). The Madagascar site file has a
+  `Type` column, with `Unknown` on patient rows (DIGI-UW/analyzer-mock-server commit 835261c, which
+  took the column shape from that file).
+- It drops revision 1's `C+` and `C-` Sample ID prefixes, which no document or site file uses.
+
+Not verified: the value a control row carries in `Type`. No file we have includes a control, and
+no Bruker document describes the export. One site run with a positive and a negative control
+settles it; until then the operands stay as revision 1 had them.
