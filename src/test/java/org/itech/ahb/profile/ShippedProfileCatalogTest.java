@@ -27,6 +27,15 @@ class ShippedProfileCatalogTest {
     "sha256:9b5a84ddbc724ee696823898105a4f49edd41160fb9400bc51c109cda5d91ce1"
   );
 
+  private static final Map<String, Integer> LATEST_REVISIONS = Map.of(
+    "cepheid-genexpert-astm",
+    1,
+    "hain-fluorocycler-xt",
+    2,
+    "thermo-quantstudio",
+    2
+  );
+
   @TempDir
   Path catalogDirectory;
 
@@ -120,10 +129,15 @@ class ShippedProfileCatalogTest {
       }
     });
 
+    // A published revision never changes, so each baseline revision 1 keeps its fingerprint.
     BASELINE_FINGERPRINTS.forEach((profileId, fingerprint) -> {
-      ObjectNode baseline = catalog.requireLatest(profileId).profile();
-      assertThat(baseline.path("catalog").path("revision").asInt()).as(profileId).isEqualTo(1);
+      ObjectNode baseline = catalog.require(profileId, 1).profile();
       assertThat(baseline.path("catalog").path("revisionFingerprint").asText()).as(profileId).isEqualTo(fingerprint);
     });
+    LATEST_REVISIONS.forEach((profileId, revision) ->
+      assertThat(catalog.requireLatest(profileId).profile().path("catalog").path("revision").asInt())
+        .as(profileId)
+        .isEqualTo(revision)
+    );
   }
 }
