@@ -164,8 +164,7 @@ public class FileResultParser {
                         .withControl(assessment.matchedRule().isPresent());
                 if (assessment.matchedRule().isPresent()) {
                     ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
-                    ar = ar.withControlLevel(rule.controlLevel())
-                            .withControlType(rule.controlType());
+                    ar = ar.withControlLevel(rule.controlLevel());
                 }
                 if (testDate != null && !testDate.isBlank()) {
                     ar = ar.withTimestamp(testDate);
@@ -290,8 +289,7 @@ public class FileResultParser {
                     .withControl(assessment.matchedRule().isPresent());
             if (assessment.matchedRule().isPresent()) {
                 ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
-                ar = ar.withControlLevel(rule.controlLevel())
-                        .withControlType(rule.controlType());
+                ar = ar.withControlLevel(rule.controlLevel());
             }
 
             resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
@@ -621,8 +619,7 @@ public class FileResultParser {
                             .withControl(assessment.matchedRule().isPresent());
                     if (assessment.matchedRule().isPresent()) {
                         ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
-                        ar = ar.withControlLevel(rule.controlLevel())
-                                .withControlType(rule.controlType());
+                        ar = ar.withControlLevel(rule.controlLevel());
                     }
 
                     if (testDate != null && !testDate.isBlank()) {

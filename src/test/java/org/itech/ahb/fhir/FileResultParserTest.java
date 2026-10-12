@@ -546,7 +546,6 @@ class FileResultParserTest {
             assertTrue(ar.isControl(), "Row should be flagged as control");
             assertEquals("LPC", ar.controlLevel(),
                     "Explicit profile metadata should propagate as controlLevel");
-            assertEquals("ASSAY_CONTROL", ar.controlType());
         }
 
         @Test

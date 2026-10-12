@@ -146,8 +146,7 @@ class FhirBundleBuilderLoincTest {
       .numeric("WBC", "White Blood Cell", "7.5", "10*3/uL")
       .withControlRecognition(assessment)
       .withControl(true)
-      .withControlLevel("NORMAL")
-      .withControlType("ASSAY_CONTROL");
+      .withControlLevel("NORMAL");
 
     String json = FhirBundleBuilder.buildNormalizedBundle(
       "QC-001",
