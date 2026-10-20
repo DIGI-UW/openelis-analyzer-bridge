@@ -295,7 +295,8 @@ public class NormalizedBundleRenderer {
       envelope.getTransport().name(),
       deviceInfo,
       analyzer.getControlResultRecognition(),
-      analyzer.getRecognitionFingerprint()
+      analyzer.getRecognitionFingerprint(),
+      analyzer.getProfileFingerprint()
     );
     ResultReading reading = analyzer.getResultReading();
     HL7ResultParser.ParsedResults sorted = parsed.underProfileCodes(reading);

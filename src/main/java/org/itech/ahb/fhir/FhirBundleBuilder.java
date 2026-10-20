@@ -113,6 +113,10 @@ public class FhirBundleBuilder {
       EXTENSION_ROOT + "analyzer-profile-revision",
       new org.hl7.fhir.r4.model.IntegerType(context.profileRevision())
     );
+    if (context.profileFingerprint() != null) {
+      // The content the message was read with, so OpenELIS can tell a type file changed under its revision.
+      device.addExtension(EXTENSION_ROOT + "analyzer-profile-fingerprint", new StringType(context.profileFingerprint()));
+    }
     device.addExtension(
       EXTENSION_ROOT + "analyzer-source-protocol",
       new org.hl7.fhir.r4.model.CodeType(context.sourceProtocol())
@@ -540,8 +544,35 @@ public class FhirBundleBuilder {
     String sourceTransport,
     DeviceInfo deviceInfo,
     ControlResultRecognition controlRecognition,
-    String recognitionFingerprint
+    String recognitionFingerprint,
+    String profileFingerprint
   ) {
+    /** A context whose profile content is not stated; the bundle then names no profile fingerprint. */
+    public AnalyzerContext(
+      String bridgeConnectionId,
+      String clientAnalyzerId,
+      String profileId,
+      int profileRevision,
+      String sourceProtocol,
+      String sourceTransport,
+      DeviceInfo deviceInfo,
+      ControlResultRecognition controlRecognition,
+      String recognitionFingerprint
+    ) {
+      this(
+        bridgeConnectionId,
+        clientAnalyzerId,
+        profileId,
+        profileRevision,
+        sourceProtocol,
+        sourceTransport,
+        deviceInfo,
+        controlRecognition,
+        recognitionFingerprint,
+        null
+      );
+    }
+
     public AnalyzerContext {
       requireNonBlank(bridgeConnectionId, "Bridge connection ID");
       requireNonBlank(clientAnalyzerId, "OpenELIS analyzer ID");
@@ -555,6 +586,9 @@ public class FhirBundleBuilder {
       Objects.requireNonNull(controlRecognition, "Control recognition is required");
       if (recognitionFingerprint == null || !recognitionFingerprint.matches("^sha256:[0-9a-f]{64}$")) {
         throw new IllegalArgumentException("Recognition fingerprint is required");
+      }
+      if (profileFingerprint != null && !profileFingerprint.matches("^sha256:[0-9a-f]{64}$")) {
+        throw new IllegalArgumentException("Profile fingerprint must be a sha256 fingerprint");
       }
     }
 

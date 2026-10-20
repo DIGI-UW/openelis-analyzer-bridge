@@ -133,7 +133,10 @@ Normalized FHIR preserves raw analyzer code/value and identifies the durable
 Bridge connection and pinned profile revision. OpenELIS resolves only
 `Device.identifier[system="https://openelis-global.org/fhir/analyzer-connection-id"]`;
 source addresses, sender tokens, names, and local analyzer IDs are context, not
-routing authority. Every Observation has exactly one patient/control
+routing authority. The Device's optional `analyzer-profile-fingerprint`
+extension is the fingerprint of the profile content the message was read with;
+OpenELIS uses it only to notice that a type file changed under its revision.
+Every Observation has exactly one patient/control
 classification and one control-recognition extension. A matching rule
 evaluation must carry its complete rule and source evidence; explicit `NONE`
 never invents an evaluation.

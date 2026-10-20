@@ -124,7 +124,8 @@ public final class FileResultRenderer {
       "FILE",
       FhirBundleBuilder.DeviceInfo.fromSenderToken(sourceFile, analyzerEntry.getName()),
       analyzerEntry.getControlResultRecognition(),
-      analyzerEntry.getRecognitionFingerprint()
+      analyzerEntry.getRecognitionFingerprint(),
+      analyzerEntry.getProfileFingerprint()
     );
     ResultReading reading = analyzerEntry.getResultReading();
     return FhirBundleBuilder.buildNormalizedBundle(
