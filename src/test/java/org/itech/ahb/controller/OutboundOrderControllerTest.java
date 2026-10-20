@@ -12,7 +12,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.itech.ahb.profile.ProfileFingerprintService;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.connection.AstmConnectionListeners;
@@ -142,10 +142,7 @@ class OutboundOrderControllerTest {
   @Test
   void dispatchesToEachDurableClientSharingTheSameHost() throws Exception {
     ObjectMapper mapper = new ObjectMapper();
-    ObjectNode profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(mapper, "cepheid-genexpert-astm");
     BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
       registry,
       null,
@@ -187,10 +184,7 @@ class OutboundOrderControllerTest {
   @ValueSource(strings = { "SERVER", "CLIENT" })
   void resultsOnlyConnectionCannotDispatchOrdersEvenWhenTheProfileSupportsThem(String role) throws Exception {
     ObjectMapper mapper = new ObjectMapper();
-    ObjectNode profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(mapper, "cepheid-genexpert-astm");
     ObjectNode connection = mapper
       .createObjectNode()
       .put("connectionId", "results-only")
@@ -219,10 +213,7 @@ class OutboundOrderControllerTest {
   @ValueSource(strings = { "outboundOrders", "supports_lis_initiated" })
   void profileCanForbidOrdersEvenWithAnOutboundEndpoint(String disabledCapability) throws Exception {
     ObjectMapper mapper = new ObjectMapper();
-    ObjectNode profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(mapper, "cepheid-genexpert-astm");
     profile
       .withObject(disabledCapability.equals("outboundOrders") ? "capabilities" : "communication")
       .put(disabledCapability, false);

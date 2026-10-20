@@ -1,10 +1,8 @@
 package org.itech.ahb.profile;
 
-import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.InputStream;
 
 /**
  * A GeneXpert profile written to the baseline contract, as far as the tests need: the HIV-1 viral
@@ -13,16 +11,12 @@ import java.io.InputStream;
  */
 public final class BaselineProfileFixtures {
 
-  private static final String ASTM_PROFILE = "analyzer-profiles/cepheid-genexpert-astm.json";
+  private static final String ASTM_PROFILE = "cepheid-genexpert-astm";
 
   private BaselineProfileFixtures() {}
 
   public static ObjectNode genexpertHivViralLoad(ObjectMapper objectMapper) throws Exception {
-    ObjectNode profile;
-    try (InputStream input = BaselineProfileFixtures.class.getClassLoader().getResourceAsStream(ASTM_PROFILE)) {
-      assertThat(input).as(ASTM_PROFILE).isNotNull();
-      profile = (ObjectNode) objectMapper.readTree(input);
-    }
+    ObjectNode profile = PackagedProfiles.load(objectMapper, ASTM_PROFILE);
     profile.put("schemaVersion", "2.0");
     ObjectNode extraction = profile.withObject("configDefaults").withObject("extractionOverrides");
     extraction.putObject("resultRecordSelection").put("mode", "ALL");

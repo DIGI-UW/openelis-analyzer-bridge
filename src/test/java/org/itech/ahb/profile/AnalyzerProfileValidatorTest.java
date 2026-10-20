@@ -5,13 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 
 class AnalyzerProfileValidatorTest {
 
-  private static final String FILE_PROFILE = "analyzer-profiles/hain-fluorocycler-xt.json";
-  private static final String ASTM_PROFILE = "analyzer-profiles/cepheid-genexpert-astm.json";
+  private static final String FILE_PROFILE = "hain-fluorocycler-xt";
+  private static final String ASTM_PROFILE = "cepheid-genexpert-astm";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
@@ -301,24 +300,14 @@ class AnalyzerProfileValidatorTest {
   }
 
   private ObjectNode fileProfile() throws Exception {
-    try (InputStream input = getClass().getClassLoader().getResourceAsStream(FILE_PROFILE)) {
-      assertThat(input).as(FILE_PROFILE).isNotNull();
-      ObjectNode profile = (ObjectNode) objectMapper.readTree(input);
-      new ProfileFingerprintService().stamp(profile);
-      return profile;
-    }
+    return profile(FILE_PROFILE);
   }
 
   private ObjectNode astmProfile() throws Exception {
     return profile(ASTM_PROFILE);
   }
 
-  private ObjectNode profile(String resource) throws Exception {
-    try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource)) {
-      assertThat(input).as(resource).isNotNull();
-      ObjectNode profile = (ObjectNode) objectMapper.readTree(input);
-      new ProfileFingerprintService().stamp(profile);
-      return profile;
-    }
+  private ObjectNode profile(String profileId) throws Exception {
+    return PackagedProfiles.load(objectMapper, profileId);
   }
 }

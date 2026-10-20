@@ -11,7 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
-import org.itech.ahb.profile.ProfileFingerprintService;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.file.FileWatcher;
@@ -36,10 +36,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode connection = baseConnection(profile, "Shared listener bench");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
     connection.withObject("values").remove("port");
@@ -62,10 +59,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode connection = baseConnection(profile, "Previously saved inbound port");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
     connection.withObject("values").put("port", 1200);
@@ -184,10 +178,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
   void fileAssaySelectionIsSavedExplicitlyAndMustBelongToThePinnedProfile() throws Exception {
     var registry = new AnalyzerRuntimeRegistry();
     var runtime = new BridgeAnalyzerConnectionRuntime(registry, mock(FileWatcher.class), null, null);
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "hain-fluorocycler-xt");
     profile.withArray("default_test_mappings").addObject().put("test_code", "SECOND-ASSAY").put("loinc", "94500-6");
     ObjectNode saved = connection(profile);
     saved.withObject("values").put("fileTestCode", "SECOND-ASSAY");
@@ -214,10 +205,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       astmListeners,
       serialListeners
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "hain-fluorocycler-xt");
     ObjectNode connection = connection(profile);
 
     runtime.activate(connection, profile);
@@ -263,10 +251,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "hain-fluorocycler-xt");
     Path originalDirectory = directory.resolve("original");
     Path replacementDirectory = directory.resolve("replacement");
     ObjectNode original = connection(profile);
@@ -293,10 +278,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "hain-fluorocycler-xt");
     Path originalDirectory = directory.resolve("original");
     Path replacementDirectory = directory.resolve("replacement");
     ObjectNode original = connection(profile);
@@ -331,10 +313,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       astmListeners,
       serialListeners
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode connection = baseConnection(profile, "GeneXpert bench 1");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     connection.withObject("values").put("port", 9_101);
@@ -371,10 +350,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode literal = baseConnection(profile, "GeneXpert bench 1");
     literal.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     literal.withObject("values").put("port", 12_001).put("host", " 2001:db8:0:0:0:0:0:21 ");
@@ -407,10 +383,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode first = sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A");
     ObjectNode second = sharedPortConnection(profile, "gx-b", "oe-b", "GeneXpert B");
     runtime.activate(first, profile);
@@ -442,10 +415,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
 
     runtime.restore(sharedPortConnection(profile, "gx-a", "oe-a", "GeneXpert A"), profile);
     runtime.restore(sharedPortConnection(profile, "gx-b", "oe-b", "GeneXpert B"), profile);
@@ -505,10 +475,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       astmListeners,
       serialListeners
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode connection = baseConnection(profile, "GeneXpert outbound bench");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     connection.withObject("values").put("connectionRole", "CLIENT").put("host", "gene-xpert.lab").put("port", 9_600);
@@ -534,10 +501,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode connection = clientConnection(profile, "fallback-client", "oe-fallback", 9100);
     connection.withObject("values").remove("port");
 
@@ -557,10 +521,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       mock(AstmConnectionListeners.class),
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     profile.withObject("transport_config").withObject("TCP/IP").put("default_port", 6001);
     ObjectNode connection = clientConnection(profile, "profile-client", "oe-profile", 9100);
     connection.withObject("values").remove("port");
@@ -583,10 +544,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       astmListeners,
       serialListeners
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode connection = baseConnection(profile, "GeneXpert serial bench");
     connection.withObject("values").put("transport", "RS-232").put("serialPort", "/dev/ttyUSB7");
 
@@ -619,10 +577,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       astmListeners,
       serialListeners
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      BridgeAnalyzerConnectionRuntimeTest.class.getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode connection = baseConnection(profile, "GeneXpert bench 1");
     connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     connection.withObject("values").put("port", 9_101);
@@ -657,10 +612,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       listeners,
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode first = clientConnection(profile, "connection-a", "oe-a", 9101);
     ObjectNode second = clientConnection(profile, "connection-b", "oe-b", 9102);
 
@@ -696,10 +648,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
       listeners,
       mock(SerialConnectionListeners.class)
     );
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode first = clientConnection(profile, "connection-a", "oe-a", 9101);
     ObjectNode second = clientConnection(profile, "connection-b", "oe-b", 9102);
     runtime.activate(first, profile);
@@ -734,10 +683,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
     var astm = mock(AstmConnectionListeners.class);
     var hl7 = mock(Hl7ConnectionListeners.class);
     var runtime = new BridgeAnalyzerConnectionRuntime(registry, null, astm, null, hl7);
-    ObjectNode profile = (ObjectNode) objectMapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
-    new ProfileFingerprintService().stamp(profile);
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "cepheid-genexpert-astm");
     ObjectNode saved = baseConnection(profile, "Unsupported ASTM transport");
     saved.withObject("values").setAll((ObjectNode) profile.path("configDefaults").deepCopy());
     saved.withObject("values").put("transport", "MLLP");

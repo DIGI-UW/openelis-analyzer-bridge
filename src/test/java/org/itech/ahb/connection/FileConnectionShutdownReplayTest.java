@@ -26,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.file.FileConfig;
 import org.itech.ahb.file.FileMessageHandler;
@@ -83,9 +84,7 @@ class FileConnectionShutdownReplayTest {
     receiver.start();
     var executor = Executors.newFixedThreadPool(2);
     try {
-      profile = (ObjectNode) json.readTree(
-        getClass().getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
-      );
+      profile = PackagedProfiles.load(json, "hain-fluorocycler-xt");
       profile.withObject("profileMeta").put("id", "test.file-shutdown");
       profile.withObject("protocol").put("format", "CSV");
       profile.putArray("supported_extensions").add(".csv");

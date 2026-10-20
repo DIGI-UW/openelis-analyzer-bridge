@@ -22,6 +22,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.connectivity.ConnectionProbeExecutor;
 import org.itech.ahb.controller.AnalyzerInputController;
@@ -77,9 +78,7 @@ class HttpCsvConnectionTest {
       exchange.close();
     });
     receiver.start();
-    profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
-    );
+    profile = PackagedProfiles.load(mapper, "hain-fluorocycler-xt");
     profile.withObject("profileMeta").put("id", "test.http-tabular");
     profile.withObject("protocol").put("format", "CSV");
     profile.putArray("supported_extensions").add(".csv");
