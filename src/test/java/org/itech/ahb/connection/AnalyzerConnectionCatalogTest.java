@@ -441,14 +441,63 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
-  void createRejectsAProfileFingerprintThatDoesNotIdentifyThePinnedRevision() {
+  void aPinIsTheProfileAndRevisionSoAFingerprintThatNoLongerMatchesTheFileIsNotRefused() {
     ObjectNode profile = profiles.require("thermo-quantstudio", 1).profile();
     ObjectNode request = createRequest(profile, "create-quantstudio-1", "oe-100");
     ((ObjectNode) request.path("profileRef")).put("fingerprint", "sha256:" + "0".repeat(64));
 
-    assertThatThrownBy(() -> catalog(UUID::randomUUID).create(request))
-      .isInstanceOf(AnalyzerConnectionException.class)
-      .hasMessageContaining("fingerprint");
+    ObjectNode created = catalog(UUID::randomUUID).create(request);
+
+    assertThat(created.path("profileRef").path("profileId").asText()).isEqualTo("thermo-quantstudio");
+    assertThat(created.path("profileRef").path("revision").asInt()).isEqualTo(1);
+  }
+
+  @Test
+  void anActiveConnectionRestoresOnItsTypeFileEditedUnderTheSameRevision() throws Exception {
+    ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
+    AnalyzerConnectionCatalog catalog = catalog(
+      () -> UUID.fromString("00000000-0000-0000-0000-000000000056"),
+      new RecordingRuntime()
+    );
+    ObjectNode create = createRequest(profile, "create-edited-1", "oe-56");
+    create.withObject("values").put("directory", temporaryDirectory.toString());
+    ObjectNode created = catalog.create(create);
+    catalog.applyRuntimeCommand(runtimeCommand(created, "activate-edited-1", "ACTIVATE"));
+
+    ObjectNode edited = profile.deepCopy();
+    edited.withObject("profileMeta").put("displayName", "FluoroCycler XT (edited)");
+    edited.withObject("catalog").remove(List.of("revisionFingerprint", "recognitionFingerprint"));
+    Resource[] shipped = new PathMatchingResourcePatternResolver().getResources(
+      new ProfileCatalogProperties().getShippedPattern()
+    );
+    List<Resource> editedSet = new ArrayList<>(
+      Arrays.stream(shipped).filter(resource -> !"hain-fluorocycler-xt.json".equals(resource.getFilename())).toList()
+    );
+    editedSet.add(new org.springframework.core.io.ByteArrayResource(objectMapper.writeValueAsBytes(edited)));
+    AnalyzerProfileCatalog editedProfiles = new AnalyzerProfileCatalog(
+      temporaryDirectory.resolve("profiles"),
+      editedSet,
+      objectMapper,
+      CLOCK
+    );
+    RecordingRuntime restartedRuntime = new RecordingRuntime();
+
+    AnalyzerConnectionCatalog reopened = new AnalyzerConnectionCatalog(
+      temporaryDirectory.resolve("connections"),
+      editedProfiles,
+      objectMapper,
+      CLOCK,
+      UUID::randomUUID,
+      restartedRuntime
+    );
+
+    ObjectNode restored = reopened.require(created.path("connectionId").asText());
+    assertThat(restored.path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
+    assertThat(restored.path("readiness").path("ready").asBoolean()).isTrue();
+    assertThat(restartedRuntime.restorations).containsExactly(created.path("connectionId").asText());
+    assertThat(restartedRuntime.restoredProfiles.get(0).path("profileMeta").path("displayName").asText()).isEqualTo(
+      "FluoroCycler XT (edited)"
+    );
   }
 
   @Test
@@ -860,6 +909,7 @@ class AnalyzerConnectionCatalogTest {
     private final List<String> activations = new ArrayList<>();
     private final List<String> deactivations = new ArrayList<>();
     private final List<String> restorations = new ArrayList<>();
+    private final List<ObjectNode> restoredProfiles = new ArrayList<>();
 
     @Override
     public void activate(ObjectNode connection, ObjectNode profile) {
@@ -874,6 +924,7 @@ class AnalyzerConnectionCatalogTest {
     @Override
     public void restore(ObjectNode connection, ObjectNode profile) {
       restorations.add(connection.path("connectionId").asText());
+      restoredProfiles.add(profile);
     }
   }
 

@@ -97,7 +97,9 @@ class BridgeStartupDegradesTest {
 
     assertThat(get("/api/connections/" + GOOD).getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(blockerKeys(connectionView(MISSING_REVISION))).contains("profile-unavailable");
-    assertThat(blockerKeys(connectionView(CHANGED_FINGERPRINT))).contains("profile-unavailable");
+    assertThat(blockerKeys(connectionView(CHANGED_FINGERPRINT)))
+      .as("a pin names its profile and revision whatever fingerprint it carries")
+      .doesNotContain("profile-unavailable");
 
     JsonNode unconfigured = connectionView(ACTIVE_WITHOUT_CONFIGURATION);
     assertThat(unconfigured.path("actualRuntimeState").asText()).isEqualTo("ERROR");

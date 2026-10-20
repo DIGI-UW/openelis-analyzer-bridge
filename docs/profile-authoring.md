@@ -180,11 +180,14 @@ A shipped profile is one file per revision. Beside the authored content it carri
 }
 ```
 
-Write no fingerprints: the Bridge derives `revisionFingerprint` and `recognitionFingerprint`
-from the file's content when it loads it, and a file that carries them must carry the right
-ones. A revision never changes once a Bridge has read it; a change is the next revision in a
-new file with `revision` one higher, and the earlier file stays so that connections pinned to
-it keep restoring.
+Write no fingerprints: the Bridge computes `revisionFingerprint` and `recognitionFingerprint`
+from the file's content when it loads it and replaces any the file carries. A file can be edited
+under its revision: after a restart its connections keep running on the edited content, and
+OpenELIS holds only the results whose reading changed (a code's unit, result type, parts,
+values or translations, or how the type reads every result) until a person confirms the change.
+A name, hint, coding or new assay holds nothing. Publish the next revision, in a new file with
+`revision` one higher, for a change each lab should adopt through OpenELIS's review screen, such
+as a renamed or split code; keep the earlier file so connections pinned to it keep restoring.
 
 To take a profile authored in the Bridge UI into a shipped set, copy the `profile` object out
 of its revision file in the profile catalog directory

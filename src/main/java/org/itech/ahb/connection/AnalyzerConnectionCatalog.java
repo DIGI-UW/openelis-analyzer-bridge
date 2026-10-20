@@ -471,21 +471,19 @@ public final class AnalyzerConnectionCatalog {
     return record;
   }
 
+  /**
+   * The profile a pin names. A pin is a profile and a revision; whatever fingerprint it carries is
+   * the content its client last saw, and a file edited under the same revision is still the one it
+   * names.
+   */
   private ObjectNode requirePinnedProfile(ObjectNode profileRef) {
     String profileId = requireText(profileRef, "profileId");
     int revision = requirePositiveInteger(profileRef, "revision");
-    String fingerprint = requireText(profileRef, "fingerprint");
-    ObjectNode profile;
     try {
-      profile = profiles.require(profileId, revision).profile();
+      return profiles.require(profileId, revision).profile();
     } catch (RuntimeException exception) {
       throw new AnalyzerConnectionException("Unknown pinned profile revision " + profileId + "@" + revision, exception);
     }
-    String actualFingerprint = profile.path("catalog").path("revisionFingerprint").asText();
-    if (!actualFingerprint.equals(fingerprint)) {
-      throw new AnalyzerConnectionException("Profile fingerprint does not identify " + profileId + "@" + revision);
-    }
-    return profile;
   }
 
   private ObjectNode effectiveValues(ObjectNode profile, ObjectNode suppliedValues) {

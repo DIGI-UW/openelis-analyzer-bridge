@@ -124,10 +124,12 @@ uses:
   removed leaves its connections inactive with the reason "did not restore" in the log and the
   connection view; nothing else is affected.
 
-A file carries no fingerprints: the Bridge derives `revisionFingerprint` and
-`recognitionFingerprint` from the content when it loads the file, and checks any the file does
-carry. Site profiles authored in the UI live in the `bridge-data` volume beside the shipped set
-and are never merged into it.
+A file carries no fingerprints: the Bridge computes `revisionFingerprint` and
+`recognitionFingerprint` from the content when it loads the file and replaces any the file
+carries. A connection is pinned to a profile and revision, never to a fingerprint, so a file
+edited under its revision is loaded as edited and its connections keep running after a restart;
+OpenELIS holds only the results whose reading the edit changed. Site profiles authored in the UI
+live in the `bridge-data` volume beside the shipped set and are never merged into it.
 
 ### Serial Devices
 

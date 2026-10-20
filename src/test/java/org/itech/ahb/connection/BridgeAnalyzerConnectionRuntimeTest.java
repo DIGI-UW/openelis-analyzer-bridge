@@ -591,6 +591,31 @@ class BridgeAnalyzerConnectionRuntimeTest {
     assertThat(registry.getRegisteredAnalyzers()).isEmpty();
   }
 
+  @Test
+  void resultsAreLabelledWithTheFingerprintOfTheFileTheBridgeLoadedNotTheOneStoredOnThePin() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      mock(FileWatcher.class),
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = PackagedProfiles.load(objectMapper, "hain-fluorocycler-xt");
+    ObjectNode connection = connection(profile);
+    connection.withObject("profileRef").put("fingerprint", "sha256:" + "0".repeat(64));
+
+    runtime.activate(connection, profile);
+
+    AnalyzerEntry entry = registry
+      .getRegisteredAnalyzers()
+      .values()
+      .stream()
+      .filter(candidate -> "oe-42".equals(candidate.getId()))
+      .findFirst()
+      .orElseThrow();
+    assertThat(entry.getProfileFingerprint()).isEqualTo(profile.path("catalog").path("revisionFingerprint").asText());
+  }
+
   private ObjectNode connection(ObjectNode profile) {
     ObjectNode connection = baseConnection(profile, "Fluoro bench 1");
     ObjectNode values = connection.withObject("values");

@@ -386,24 +386,27 @@ class AnalyzerProfileCatalogTest {
   }
 
   @Test
-  void validatesNestedRecognitionAndRevisionFingerprints() throws Exception {
-    ObjectNode tampered = publishedFixture("analyzer-profile-file.json");
-    ((ObjectNode) tampered.path("profileMeta")).put("displayName", "Changed after publication");
+  void aRevisionEditedAfterPublicationIsServedWithTheFingerprintOfItsContent() throws Exception {
+    ObjectNode published = publishedFixture("analyzer-profile-file.json");
+    ObjectNode edited = published.deepCopy();
+    ((ObjectNode) edited.path("profileMeta")).put("displayName", "Changed after publication");
 
     AnalyzerProfileCatalog loaded = new AnalyzerProfileCatalog(
       catalogDirectory,
-      List.of(resource(tampered, "tampered.json")),
+      List.of(resource(edited, "edited.json")),
       objectMapper,
       Clock.fixed(NOW, ZoneOffset.UTC)
     );
 
-    assertThat(loaded.latest()).as("a tampered revision is never served").isEmpty();
-    assertThat(loaded.issues())
-      .singleElement()
-      .satisfies(issue -> {
-        assertThat(issue.source()).isNotBlank();
-        assertThat(issue.reason()).contains("revision fingerprint mismatch");
-      });
+    assertThat(loaded.issues()).isEmpty();
+    ObjectNode served = loaded
+      .require(published.path("profileMeta").path("id").asText(), published.path("catalog").path("revision").asInt())
+      .profile();
+    assertThat(served.path("profileMeta").path("displayName").asText()).isEqualTo("Changed after publication");
+    String servedFingerprint = served.path("catalog").path("revisionFingerprint").asText();
+    assertThat(servedFingerprint)
+      .isEqualTo(new ProfileFingerprintService().revisionFingerprint(served))
+      .isNotEqualTo(published.path("catalog").path("revisionFingerprint").asText());
   }
 
   @Test
@@ -427,8 +430,9 @@ class AnalyzerProfileCatalogTest {
   }
 
   @Test
-  void aShippedProfileCarryingAWrongRecognitionFingerprintIsSetAside() throws Exception {
-    ObjectNode authored = publishedFixture("analyzer-profile-file.json");
+  void aShippedProfileCarryingAWrongRecognitionFingerprintLoadsWithTheComputedOne() throws Exception {
+    ObjectNode stamped = publishedFixture("analyzer-profile-file.json");
+    ObjectNode authored = stamped.deepCopy();
     ((ObjectNode) authored.path("catalog")).remove("revisionFingerprint");
     ((ObjectNode) authored.path("catalog")).put("recognitionFingerprint", "sha256:" + "0".repeat(64));
 
@@ -439,10 +443,12 @@ class AnalyzerProfileCatalogTest {
       Clock.fixed(NOW, ZoneOffset.UTC)
     );
 
-    assertThat(loaded.latest()).isEmpty();
-    assertThat(loaded.issues())
-      .singleElement()
-      .satisfies(issue -> assertThat(issue.reason()).contains("recognition fingerprint mismatch"));
+    assertThat(loaded.issues()).isEmpty();
+    assertThat(
+      loaded
+        .require(stamped.path("profileMeta").path("id").asText(), stamped.path("catalog").path("revision").asInt())
+        .profile()
+    ).isEqualTo(stamped);
   }
 
   @Test

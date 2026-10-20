@@ -413,8 +413,8 @@ public final class AnalyzerProfileCatalog {
         if (!"SHIPPED".equals(metadata.path("source").asText())) {
           throw new ProfileCatalogException("Shipped profile must declare source SHIPPED: " + resource.getFilename());
         }
-        deriveMissingFingerprints(profile);
-        validatePublished(profile, "Shipped profile " + resource.getFilename());
+        computeFingerprints(profile, "Shipped profile " + resource.getFilename());
+        validatePublished(profile);
         add(
           new ProfileRevision(
             profile,
@@ -432,21 +432,21 @@ public final class AnalyzerProfileCatalog {
   }
 
   /**
-   * A shipped file is authored without fingerprints, so the same content is the same revision wherever
-   * it is loaded from; one it does carry is checked like any other revision's.
+   * A revision's fingerprints are computed from its content as it loads, so a file edited under its
+   * revision is served as edited; a fingerprint it carries is only the content it once had.
    */
-  private void deriveMissingFingerprints(ObjectNode profile) {
-    if (!(profile.path("catalog") instanceof ObjectNode catalog)) {
-      return;
-    }
-    if (!catalog.has("recognitionFingerprint")) {
-      catalog.put(
-        "recognitionFingerprint",
-        fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"))
-      );
-    }
-    if (!catalog.has("revisionFingerprint")) {
-      catalog.put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
+  private void computeFingerprints(ObjectNode profile, String description) {
+    JsonNode catalog = profile.path("catalog");
+    String stampedRevision = catalog.path("revisionFingerprint").asText(null);
+    String stampedRecognition = catalog.path("recognitionFingerprint").asText(null);
+    fingerprints.stamp(profile);
+    String revision = profile.path("catalog").path("revisionFingerprint").asText();
+    String recognition = profile.path("catalog").path("recognitionFingerprint").asText();
+    if (
+      (stampedRevision != null && !stampedRevision.equals(revision)) ||
+      (stampedRecognition != null && !stampedRecognition.equals(recognition))
+    ) {
+      log.info("{} changed since its fingerprints were written; serving it as it reads now ({})", description, revision);
     }
   }
 
@@ -491,7 +491,8 @@ public final class AnalyzerProfileCatalog {
       parseInstant(publicationNode.path("markedAt").asText(null), path)
     );
     validatePersistedOrigin(profile, publication.action(), path);
-    validatePublished(profile, "Persisted profile " + path);
+    computeFingerprints(profile, "Persisted profile " + path);
+    validatePublished(profile);
     add(new ProfileRevision(profile, publication));
   }
 
@@ -530,17 +531,8 @@ public final class AnalyzerProfileCatalog {
     }
   }
 
-  private void validatePublished(ObjectNode profile, String description) {
+  private void validatePublished(ObjectNode profile) {
     validator.validate(profile);
-    JsonNode metadata = profile.path("catalog");
-    String expectedRecognition = fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"));
-    if (!expectedRecognition.equals(metadata.path("recognitionFingerprint").asText())) {
-      throw new ProfileCatalogException(description + " recognition fingerprint mismatch");
-    }
-    String expectedRevision = fingerprints.revisionFingerprint(profile);
-    if (!expectedRevision.equals(metadata.path("revisionFingerprint").asText())) {
-      throw new ProfileCatalogException(description + " revision fingerprint mismatch");
-    }
   }
 
   private static void validatePersistedOrigin(ObjectNode profile, ProfileAuditAction action, Path path) {
