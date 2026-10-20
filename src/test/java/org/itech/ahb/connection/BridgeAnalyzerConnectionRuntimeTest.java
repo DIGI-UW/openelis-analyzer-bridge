@@ -138,6 +138,46 @@ class BridgeAnalyzerConnectionRuntimeTest {
   }
 
   @Test
+  void aTestTakesItsLoincFromItsCodingsAndATestWithoutOneStillActivates() throws Exception {
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
+      registry,
+      null,
+      mock(AstmConnectionListeners.class),
+      mock(SerialConnectionListeners.class)
+    );
+    ObjectNode profile = org.itech.ahb.profile.BaselineProfileFixtures.genexpertHivViralLoad(objectMapper);
+    for (var node : profile.withArray("default_test_mappings")) {
+      ObjectNode mapping = (ObjectNode) node;
+      String code = mapping.path("test_code").asText();
+      if ("HIVVL".equals(code)) {
+        mapping
+          .putArray("codings")
+          .addObject()
+          .put("system", "http://loinc.org")
+          .put("code", mapping.path("loinc").asText());
+        mapping.remove("loinc");
+      } else if ("RIF".equals(code)) {
+        mapping.remove("loinc");
+        mapping.putArray("codings").addObject().put("system", "https://example.org/lab-concepts").put("code", "RIF");
+      }
+    }
+    ObjectNode connection = baseConnection(profile, "Coded tests");
+    connection.withObject("values").setAll((ObjectNode) profile.path("configDefaults"));
+    connection.withObject("values").remove("port");
+
+    runtime.activate(connection, profile);
+
+    AnalyzerEntry entry = registry
+      .findAnalyzerEntryByConnectionId(connection.path("connectionId").asText())
+      .orElseThrow();
+    assertThat(entry.getLoincForCode("HIVVL")).isEqualTo("20447-9");
+    assertThat(entry.getCodeForLoinc("20447-9")).isEqualTo("HIVVL");
+    assertThat(entry.getLoincForCode("RIF")).isNull();
+    assertThat(entry.getCodeForLoinc("89372-7")).isNull();
+  }
+
+  @Test
   void fileAssaySelectionIsSavedExplicitlyAndMustBelongToThePinnedProfile() throws Exception {
     var registry = new AnalyzerRuntimeRegistry();
     var runtime = new BridgeAnalyzerConnectionRuntime(registry, mock(FileWatcher.class), null, null);

@@ -38,6 +38,8 @@ final class AnalyzerProfileValidator {
     "https://openconceptlab.org/orgs/CIEL/sources/CIEL"
   );
 
+  private static final Pattern LOINC_CODE = Pattern.compile("^[0-9]{1,8}-[0-9]$");
+
   private final JsonSchema schema;
 
   AnalyzerProfileValidator(ObjectMapper objectMapper) {
@@ -328,9 +330,23 @@ final class AnalyzerProfileValidator {
           failures.add(path + " declares values on a quantitative test, so it needs a call_component");
         }
       }
+      validateTestCodings(path, mapping, failures);
       validateValueSet(path, mapping, failures);
       validateRunFailureValues(path, mapping, failures);
       validateComponents(path, mapping, failures);
+    }
+  }
+
+  /** A test names one LOINC code at most, whether as {@code loinc} or among its codings. */
+  private void validateTestCodings(String path, JsonNode mapping, List<String> failures) {
+    Set<String> loincCodes = TestCodings.loincCodes(mapping);
+    if (loincCodes.size() > 1) {
+      failures.add(path + " names more than one LOINC code");
+    }
+    for (String code : loincCodes) {
+      if (!LOINC_CODE.matcher(code).matches()) {
+        failures.add(path + ".codings cites a code that is not a LOINC code: " + code);
+      }
     }
   }
 

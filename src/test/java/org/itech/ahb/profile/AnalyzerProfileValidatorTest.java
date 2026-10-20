@@ -240,6 +240,57 @@ class AnalyzerProfileValidatorTest {
     );
   }
 
+  @Test
+  void aTestNamedOnlyByCodingsInAnySystemIsValid() throws Exception {
+    ObjectNode profile = astmProfile();
+    ObjectNode mapping = (ObjectNode) profile.withArray("default_test_mappings").path(0);
+    mapping.remove("loinc");
+    mapping.putArray("codings").addObject().put("system", "https://example.org/lab-concepts").put("code", "XPERT-VL");
+
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void aTestNamesItsTestByLoincOrByCodings() throws Exception {
+    ObjectNode profile = astmProfile();
+    ((ObjectNode) profile.withArray("default_test_mappings").path(0)).remove("loinc");
+
+    assertThat(validator.validationIssues(profile)).isNotEmpty();
+  }
+
+  @Test
+  void aTestNamesAtMostOneLoincCode() throws Exception {
+    ObjectNode profile = astmProfile();
+    ObjectNode mapping = (ObjectNode) profile.withArray("default_test_mappings").path(0);
+    String code = mapping.path("test_code").asText();
+    mapping.putArray("codings").addObject().put("system", "http://loinc.org").put("code", "94500-6");
+
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.default_test_mappings." + code + " names more than one LOINC code"
+    );
+
+    mapping.withArray("codings").removeAll();
+    mapping
+      .withArray("codings")
+      .addObject()
+      .put("system", "http://loinc.org")
+      .put("code", mapping.path("loinc").asText());
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void aLoincCodingIsALoincCode() throws Exception {
+    ObjectNode profile = astmProfile();
+    ObjectNode mapping = (ObjectNode) profile.withArray("default_test_mappings").path(0);
+    String code = mapping.path("test_code").asText();
+    mapping.remove("loinc");
+    mapping.putArray("codings").addObject().put("system", "http://loinc.org").put("code", "HIV-VL");
+
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.default_test_mappings." + code + ".codings cites a code that is not a LOINC code: HIV-VL"
+    );
+  }
+
   private static ObjectNode field(ObjectNode profile, String key) {
     for (var field : profile.path("connectionFields")) {
       if (key.equals(field.path("key").asText())) {
