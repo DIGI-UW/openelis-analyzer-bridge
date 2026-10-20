@@ -31,13 +31,6 @@ final class AnalyzerProfileValidator {
   /** The contract generation that bans site hints and requires the full result description. */
   private static final String BASELINE_SCHEMA_VERSION = "2.0";
 
-  /** The standard code systems a value may cite: LOINC, SNOMED CT and CIEL. */
-  private static final Set<String> STANDARD_CODE_SYSTEMS = Set.of(
-    "http://loinc.org",
-    "http://snomed.info/sct",
-    "https://openconceptlab.org/orgs/CIEL/sources/CIEL"
-  );
-
   private static final Pattern LOINC_CODE = Pattern.compile("^[0-9]{1,8}-[0-9]$");
 
   private final JsonSchema schema;
@@ -375,18 +368,6 @@ final class AnalyzerProfileValidator {
       .forEachRemaining(entry -> {
         if (!values.contains(entry.getKey())) {
           failures.add(path + ".value_codes names an undeclared value: " + entry.getKey());
-        }
-        for (JsonNode coding : entry.getValue()) {
-          String system = coding.path("system").asText();
-          if (!STANDARD_CODE_SYSTEMS.contains(system)) {
-            failures.add(
-              path +
-              ".value_codes." +
-              entry.getKey() +
-              " cites a system that is not LOINC, SNOMED CT or CIEL: " +
-              system
-            );
-          }
         }
       });
     Map<String, String> textOwners = new LinkedHashMap<>();

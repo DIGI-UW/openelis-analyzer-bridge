@@ -6,10 +6,14 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -31,6 +35,12 @@ class ShippedProfileCatalogTest {
     "sha256:b8c148e55f0907494058e7eb56603e157d818d103645668f91b585e5e0bf49e0"
   );
 
+  /** The systems a core-shipped profile cites; a distro's own profile may also cite its catalog's system. */
+  private static final Set<String> STANDARD_SYSTEMS = Set.of(
+    "http://loinc.org",
+    "http://snomed.info/sct",
+    "https://openconceptlab.org/orgs/CIEL/sources/CIEL"
+  );
 
   @TempDir
   Path catalogDirectory;
@@ -175,5 +185,27 @@ class ShippedProfileCatalogTest {
     BASELINE_FINGERPRINTS.keySet().forEach(profileId ->
       assertThat(catalog.history(profileId)).as(profileId).hasSize(1)
     );
+  }
+
+  @Test
+  void theShippedProfilesCiteOnlyStandardSystems() throws Exception {
+    ObjectMapper objectMapper = new ObjectMapper();
+    Resource[] resources = new PathMatchingResourcePatternResolver()
+      .getResources(new ProfileCatalogProperties().getShippedPattern());
+    assertSoftly(softly -> {
+      for (Resource resource : resources) {
+        try {
+          JsonNode tests = objectMapper.readTree(resource.getInputStream()).path("default_test_mappings");
+          List<JsonNode> codings = new ArrayList<>();
+          tests.findValues("codings").forEach(list -> list.forEach(codings::add));
+          tests.findValues("value_codes").forEach(byValue -> byValue.forEach(list -> list.forEach(codings::add)));
+          codings.forEach(coding ->
+            softly.assertThat(STANDARD_SYSTEMS).as(resource.getFilename()).contains(coding.path("system").asText())
+          );
+        } catch (IOException exception) {
+          throw new AssertionError("Cannot read " + resource.getDescription(), exception);
+        }
+      }
+    });
   }
 }

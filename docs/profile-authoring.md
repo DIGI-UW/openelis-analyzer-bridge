@@ -25,24 +25,30 @@ the value translations.
 
 ## Tests
 
-| Field                | Rule                                                                                                                                                                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_code`          | the code the vendor suggests; a connection may override it                                                                                                                                                            |
-| `loinc`              | the standard LOINC code of the test; shorthand for a `http://loinc.org` entry in `codings`                                                                                                                            |
-| `codings`            | the codes that name the OpenELIS test, as `{system, code}`, in any system, a distro's own included; a test has `loinc`, `codings` or both, and at most one LOINC code                                                 |
-| `result_type`        | `quantitative`, `qualitative` or `text`; required                                                                                                                                                                     |
-| `unit`               | the unit the instrument sends                                                                                                                                                                                         |
-| `values`             | the raw values of a categorical test, exactly as the instrument sends them                                                                                                                                            |
-| `value_codes`        | for each value, every standard coding the vendor gives it, as `{system, code}`; systems are LOINC `http://loinc.org`, SNOMED CT `http://snomed.info/sct` and CIEL `https://openconceptlab.org/orgs/CIEL/sources/CIEL` |
-| `translations`       | for each value, the vendor's translations, all bound to that value; one text may belong to only one value                                                                                                             |
-| `run_failure_values` | raw values that say the run produced no result (`ERROR`, `NO RESULT`); never answers, so a lab never maps them; may have translations                                                                                 |
-| `call_component`     | on a quantitative test with a call, the component that takes the main record's call                                                                                                                                   |
-| `components`         | the other records the instrument reports for the test                                                                                                                                                                 |
-| `assay`              | `{name, version}` as the instrument reports them                                                                                                                                                                      |
-| `source`             | `{document, section}`                                                                                                                                                                                                 |
+| Field                | Rule                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_code`          | the code the vendor suggests; a connection may override it                                                                                            |
+| `loinc`              | the standard LOINC code of the test; shorthand for a `http://loinc.org` entry in `codings`                                                            |
+| `codings`            | the codes that name the OpenELIS test, as `{system, code, display}`, in any system; a test has `loinc`, `codings` or both, and at most one LOINC code |
+| `result_type`        | `quantitative`, `qualitative` or `text`; required                                                                                                     |
+| `unit`               | the unit the instrument sends                                                                                                                         |
+| `values`             | the raw values of a categorical test, exactly as the instrument sends them                                                                            |
+| `value_codes`        | for each value, every coding the vendor gives it, as `{system, code, display}`                                                                        |
+| `translations`       | for each value, the vendor's translations, all bound to that value; one text may belong to only one value                                             |
+| `run_failure_values` | raw values that say the run produced no result (`ERROR`, `NO RESULT`); never answers, so a lab never maps them; may have translations                 |
+| `call_component`     | on a quantitative test with a call, the component that takes the main record's call                                                                   |
+| `components`         | the other records the instrument reports for the test                                                                                                 |
+| `assay`              | `{name, version}` as the instrument reports them                                                                                                      |
+| `source`             | `{document, section}`                                                                                                                                 |
 
 `specimen_type_hint` and `result_value_hints` are not part of the contract. A categorical test has
 `values`. A quantitative test may have `values` only when it names a `call_component`.
+
+A coding's `system` is a standard system's URI (LOINC `http://loinc.org`, SNOMED CT
+`http://snomed.info/sct`, CIEL `https://openconceptlab.org/orgs/CIEL/sources/CIEL`) or the
+identifier a distro catalog names its own concepts by. A profile shipped with the Bridge cites
+standard systems only; a distro's own profile may also cite its catalog's system. OpenELIS binds a
+coding to the test or answer that carries the same `(system, code)`.
 
 ### A quantitative result with a call
 

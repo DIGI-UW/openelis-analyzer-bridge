@@ -384,7 +384,10 @@
       "additionalProperties": false,
       "required": ["system", "code"],
       "properties": {
-        "system": { "type": "string", "format": "uri" },
+        "system": {
+          "$ref": "#/$defs/nonBlank",
+          "description": "The code system: a standard system's URI, or the identifier a distro catalog names its own concepts by."
+        },
         "code": { "$ref": "#/$defs/nonBlank" },
         "display": { "$ref": "#/$defs/nonBlank" }
       }
@@ -427,7 +430,6 @@
           "propertyNames": { "$ref": "#/$defs/nonBlank" },
           "additionalProperties": { "$ref": "#/$defs/nonBlank" }
         },
-        "normalized_coding": { "$ref": "#/$defs/coding" },
         "value_codes": { "$ref": "#/$defs/valueCodes" },
         "translations": { "$ref": "#/$defs/valueTranslations" },
         "call_component": { "$ref": "#/$defs/nonBlank" },
