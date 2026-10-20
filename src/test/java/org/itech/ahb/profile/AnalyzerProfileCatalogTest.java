@@ -407,6 +407,45 @@ class AnalyzerProfileCatalogTest {
   }
 
   @Test
+  void aShippedProfileAuthoredWithoutFingerprintsIsTheSameRevisionAsItsStampedCopy() throws Exception {
+    ObjectNode stamped = publishedFixture("analyzer-profile-file.json");
+    ObjectNode authored = stamped.deepCopy();
+    ((ObjectNode) authored.path("catalog")).remove("recognitionFingerprint");
+    ((ObjectNode) authored.path("catalog")).remove("revisionFingerprint");
+
+    AnalyzerProfileCatalog loaded = new AnalyzerProfileCatalog(
+      catalogDirectory,
+      List.of(resource(authored, "authored.json")),
+      objectMapper,
+      Clock.fixed(NOW, ZoneOffset.UTC)
+    );
+
+    assertThat(loaded.issues()).isEmpty();
+    String profileId = stamped.path("profileMeta").path("id").asText();
+    int revision = stamped.path("catalog").path("revision").asInt();
+    assertThat(loaded.require(profileId, revision).profile()).isEqualTo(stamped);
+  }
+
+  @Test
+  void aShippedProfileCarryingAWrongRecognitionFingerprintIsSetAside() throws Exception {
+    ObjectNode authored = publishedFixture("analyzer-profile-file.json");
+    ((ObjectNode) authored.path("catalog")).remove("revisionFingerprint");
+    ((ObjectNode) authored.path("catalog")).put("recognitionFingerprint", "sha256:" + "0".repeat(64));
+
+    AnalyzerProfileCatalog loaded = new AnalyzerProfileCatalog(
+      catalogDirectory,
+      List.of(resource(authored, "authored.json")),
+      objectMapper,
+      Clock.fixed(NOW, ZoneOffset.UTC)
+    );
+
+    assertThat(loaded.latest()).isEmpty();
+    assertThat(loaded.issues())
+      .singleElement()
+      .satisfies(issue -> assertThat(issue.reason()).contains("recognition fingerprint mismatch"));
+  }
+
+  @Test
   void catalogFingerprintIsDeterministicAcrossResourceOrderAndRestart() {
     AnalyzerProfileCatalog reverseOrder = new AnalyzerProfileCatalog(
       catalogDirectory,

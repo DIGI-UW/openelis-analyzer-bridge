@@ -303,7 +303,9 @@ class AnalyzerProfileValidatorTest {
   private ObjectNode fileProfile() throws Exception {
     try (InputStream input = getClass().getClassLoader().getResourceAsStream(FILE_PROFILE)) {
       assertThat(input).as(FILE_PROFILE).isNotNull();
-      return (ObjectNode) objectMapper.readTree(input);
+      ObjectNode profile = (ObjectNode) objectMapper.readTree(input);
+      new ProfileFingerprintService().stamp(profile);
+      return profile;
     }
   }
 
@@ -314,7 +316,9 @@ class AnalyzerProfileValidatorTest {
   private ObjectNode profile(String resource) throws Exception {
     try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource)) {
       assertThat(input).as(resource).isNotNull();
-      return (ObjectNode) objectMapper.readTree(input);
+      ObjectNode profile = (ObjectNode) objectMapper.readTree(input);
+      new ProfileFingerprintService().stamp(profile);
+      return profile;
     }
   }
 }

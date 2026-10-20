@@ -107,9 +107,7 @@ class HttpCsvConnectionTest {
       .put("inputKind", "TEXT")
       .put("required", true)
       .putArray("choices");
-    profile
-      .withObject("catalog")
-      .put("revisionFingerprint", new ProfileFingerprintService().revisionFingerprint(profile));
+    new ProfileFingerprintService().stamp(profile);
     assertThat(
       JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
         .getSchema(mapper.readTree(Path.of("contracts/analyzer/v1/analyzer-profile.schema.json").toFile()))
@@ -163,9 +161,7 @@ class HttpCsvConnectionTest {
     profile.withObject("protocol").put("format", "TSV");
     profile.putArray("supported_extensions").add(".tsv");
     profile.withObject("configDefaults").put("fileFormat", "TSV").put("filePattern", "*.tsv").put("delimiter", "\t");
-    profile
-      .withObject("catalog")
-      .put("revisionFingerprint", new ProfileFingerprintService().revisionFingerprint(profile));
+    new ProfileFingerprintService().stamp(profile);
     profiles = new AnalyzerProfileCatalog(
       directory.resolve("tsv-profiles"),
       List.of(new ByteArrayResource(mapper.writeValueAsBytes(profile))),

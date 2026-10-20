@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Observation;
+import org.itech.ahb.profile.ProfileFingerprintService;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.model.Protocol;
@@ -123,7 +124,9 @@ class NormalizedBundleRendererHl7Test {
 
   private ObjectNode profile() throws Exception {
     try (InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/mindray-bc5380.json")) {
-      return (ObjectNode) objectMapper.readTree(input);
+      ObjectNode profile = (ObjectNode) objectMapper.readTree(input);
+      new ProfileFingerprintService().stamp(profile);
+      return profile;
     }
   }
 

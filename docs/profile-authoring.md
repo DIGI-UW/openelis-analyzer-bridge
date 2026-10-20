@@ -164,6 +164,34 @@ profile test codes to instrument codes. Results arrive under the profile's code,
 orders use the connection's code. Each key must be a test the profile declares, and no two assays
 may share a code.
 
+## Ship a profile
+
+A shipped profile is one file per revision. Beside the authored content it carries
+`profileMeta.id`, a stable name in `[a-z0-9][a-z0-9._-]+` that is not a `site.` id, and a
+`catalog` block:
+
+```json
+"catalog": {
+  "revision": 1,
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "publishedAt": "2026-10-20T00:00:00Z",
+  "publishedBy": "distribution"
+}
+```
+
+Write no fingerprints: the Bridge derives `revisionFingerprint` and `recognitionFingerprint`
+from the file's content when it loads it, and a file that carries them must carry the right
+ones. A revision never changes once a Bridge has read it; a change is the next revision in a
+new file with `revision` one higher, and the earlier file stays so that connections pinned to
+it keep restoring.
+
+To take a profile authored in the Bridge UI into a shipped set, copy the `profile` object out
+of its revision file in the profile catalog directory
+(`<bridge-data>/profile-catalog/<profileId>/<revision>.json`), give it the stable id, replace
+its `catalog` block with the one above, and drop the two fingerprint fields. The copy is a new
+profile at revision 1; the site's `site.` profile and its connections are untouched.
+
 ## Checks
 
 `mvn test` validates every shipped profile against the schema and checks that each baseline test

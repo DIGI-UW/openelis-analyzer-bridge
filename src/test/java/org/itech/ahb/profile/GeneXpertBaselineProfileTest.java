@@ -183,7 +183,9 @@ class GeneXpertBaselineProfileTest {
         .getResourceAsStream("analyzer-profiles/cepheid-genexpert-astm.json")
     ) {
       assertThat(input).isNotNull();
-      return (ObjectNode) objectMapper.readTree(input);
+      ObjectNode profile = (ObjectNode) objectMapper.readTree(input);
+      new ProfileFingerprintService().stamp(profile);
+      return profile;
     }
   }
 }

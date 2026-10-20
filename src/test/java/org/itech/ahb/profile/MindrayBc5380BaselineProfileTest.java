@@ -239,7 +239,9 @@ class MindrayBc5380BaselineProfileTest {
   private ObjectNode profile() throws Exception {
     try (InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/mindray-bc5380.json")) {
       assertThat(input).isNotNull();
-      return (ObjectNode) objectMapper.readTree(input);
+      ObjectNode profile = (ObjectNode) objectMapper.readTree(input);
+      new ProfileFingerprintService().stamp(profile);
+      return profile;
     }
   }
 }

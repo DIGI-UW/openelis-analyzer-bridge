@@ -686,11 +686,9 @@
   },
   "catalog": {
     "revision": 1,
-    "recognitionFingerprint": "sha256:208945a9b47700fa3de269fe93495f2b13faf9ea6203bcb9028ba183b3919df9",
     "source": "SHIPPED",
     "status": "ACTIVE",
     "publishedAt": "2026-10-10T00:00:00Z",
-    "publishedBy": "distribution",
-    "revisionFingerprint": "sha256:97a478c4cc2d81b0e2bae8a967e047a2ec361e38a67f46e17bd7d9ab52ab4106"
+    "publishedBy": "distribution"
   }
 }

@@ -53,26 +53,14 @@ class ShippedProfileCatalogTest {
     assertThat(resources).isNotEmpty();
 
     ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
-    ProfileFingerprintService fingerprints = new ProfileFingerprintService();
+    // A shipped file is authored without fingerprints; the catalog derives them when it loads the file.
     assertSoftly(softly -> {
       for (Resource resource : resources) {
         try {
           ObjectNode profile = (ObjectNode) objectMapper.readTree(resource.getInputStream());
           String profileId = profile.path("profileMeta").path("id").asText();
-          String actualRecognitionFingerprint = profile.path("catalog").path("recognitionFingerprint").asText();
-          String actualRevisionFingerprint = profile.path("catalog").path("revisionFingerprint").asText();
-          String recognitionFingerprint = fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"));
-          ((ObjectNode) profile.path("catalog")).put("recognitionFingerprint", recognitionFingerprint);
-          String revisionFingerprint = fingerprints.revisionFingerprint(profile);
-
-          softly
-            .assertThat(actualRecognitionFingerprint)
-            .as("%s recognition fingerprint", profileId)
-            .isEqualTo(recognitionFingerprint);
-          softly
-            .assertThat(actualRevisionFingerprint)
-            .as("%s revision fingerprint", profileId)
-            .isEqualTo(revisionFingerprint);
+          softly.assertThat(profile.path("catalog").has("recognitionFingerprint")).as(profileId).isFalse();
+          softly.assertThat(profile.path("catalog").has("revisionFingerprint")).as(profileId).isFalse();
         } catch (Exception exception) {
           throw new AssertionError("Cannot inspect " + resource.getDescription(), exception);
         }

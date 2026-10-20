@@ -218,12 +218,8 @@ public final class AnalyzerProfileCatalog {
     if (!issues.isEmpty()) {
       throw new ProfileCatalogException("Profile draft cannot be published: " + String.join("; ", issues));
     }
-    ObjectNode catalog = requireObject(profile.path("catalog"), "catalog");
-    catalog.put(
-      "recognitionFingerprint",
-      fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"))
-    );
-    catalog.put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
+    requireObject(profile.path("catalog"), "catalog");
+    fingerprints.stamp(profile);
     validator.validate(profile);
 
     ProfileRevision revision = new ProfileRevision(
@@ -343,11 +339,7 @@ public final class AnalyzerProfileCatalog {
     catalog.put("status", targetStatus);
     catalog.put("publishedAt", markedAt.toString());
     catalog.put("publishedBy", normalizedActor);
-    catalog.put(
-      "recognitionFingerprint",
-      fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"))
-    );
-    catalog.put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
+    fingerprints.stamp(profile);
     validator.validate(profile);
 
     ProfileRevision statusRevision = new ProfileRevision(
@@ -421,6 +413,7 @@ public final class AnalyzerProfileCatalog {
         if (!"SHIPPED".equals(metadata.path("source").asText())) {
           throw new ProfileCatalogException("Shipped profile must declare source SHIPPED: " + resource.getFilename());
         }
+        deriveMissingFingerprints(profile);
         validatePublished(profile, "Shipped profile " + resource.getFilename());
         add(
           new ProfileRevision(
@@ -435,6 +428,25 @@ public final class AnalyzerProfileCatalog {
       } catch (IOException | IllegalArgumentException exception) {
         throw new ProfileCatalogException("Cannot load shipped profile " + resource.getDescription(), exception);
       }
+    }
+  }
+
+  /**
+   * A shipped file is authored without fingerprints, so the same content is the same revision wherever
+   * it is loaded from; one it does carry is checked like any other revision's.
+   */
+  private void deriveMissingFingerprints(ObjectNode profile) {
+    if (!(profile.path("catalog") instanceof ObjectNode catalog)) {
+      return;
+    }
+    if (!catalog.has("recognitionFingerprint")) {
+      catalog.put(
+        "recognitionFingerprint",
+        fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"))
+      );
+    }
+    if (!catalog.has("revisionFingerprint")) {
+      catalog.put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
     }
   }
 

@@ -104,6 +104,30 @@ java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configu
 | `./configuration.yml` | `/app/configuration.yml` | Runtime configuration |
 | Named volume `bridge-data` | `/data/openelis-analyzer-bridge` | Durable state: delivery outbox, FILE state, saved connections and profile revisions. Keep it across upgrades |
 | `/path/to/import` | `/data/analyzer-imports` | FILE connection directories (optional). FILE directories must lie under `bridge.file.import-roots` (`BRIDGE_FILE_IMPORT_ROOTS`, default `/data/analyzer-imports,/data/analyzer-drops`) |
+| `./analyzer-profiles` | `/app/analyzer-profiles` (read-only) | A distro's complete profile set (optional), selected with `BRIDGE_PROFILE_CATALOG_SHIPPED_PATTERN: "file:/app/analyzer-profiles/**/*.json"` |
+
+### A distro's profile set
+
+A Bridge reads one shipped set. By default it is the profiles packaged in the image. A distro
+that keeps its own set mounts a folder and points `BRIDGE_PROFILE_CATALOG_SHIPPED_PATTERN` at
+it; the image's profiles are then not read, so the folder must hold every profile the site
+uses:
+
+- Core's profiles the distro wants, copied byte for byte under core's ids. A copy is the same
+  revision as the original, so a saved connection pinned to it restores whichever set the
+  Bridge reads.
+- The distro's own profiles under ids of its own (never `site.`, which the Bridge gives
+  profiles authored in its UI). How to write one, and how to take a profile authored in the
+  UI into the set, is in [docs/profile-authoring.md](docs/profile-authoring.md#ship-a-profile).
+- Every revision a saved connection is pinned to. The folder layout is free and every `*.json`
+  under it is read, so earlier revisions can sit in a `history/` subfolder. A revision that is
+  removed leaves its connections inactive with the reason "did not restore" in the log and the
+  connection view; nothing else is affected.
+
+A file carries no fingerprints: the Bridge derives `revisionFingerprint` and
+`recognitionFingerprint` from the content when it loads the file, and checks any the file does
+carry. Site profiles authored in the UI live in the `bridge-data` volume beside the shipped set
+and are never merged into it.
 
 ### Serial Devices
 
@@ -167,7 +191,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.file.importRoots` | Directories FILE connections may use, with links resolved (`BRIDGE_FILE_IMPORT_ROOTS`) | `/data/analyzer-imports,/data/analyzer-drops` |
 | **Profile Catalog** | | |
 | `bridge.profile-catalog.directory` | Durable site-profile revision store | `/data/openelis-analyzer-bridge/profile-catalog` |
-| `bridge.profile-catalog.shipped-pattern` | Packaged profile resource pattern | `classpath*:/analyzer-profiles/**/*.json` |
+| `bridge.profile-catalog.shipped-pattern` | The shipped profile set: the image's profiles, or a distro's complete folder such as `file:/app/analyzer-profiles/**/*.json`, which replaces them (`BRIDGE_PROFILE_CATALOG_SHIPPED_PATTERN`; see [A distro's profile set](#a-distros-profile-set)) | `classpath*:/analyzer-profiles/**/*.json` |
 | **Connection Catalog** | | |
 | `bridge.connection-catalog.directory` | Durable analyzer connection store | `/data/openelis-analyzer-bridge/connections` |
 | **Connectivity** | | |

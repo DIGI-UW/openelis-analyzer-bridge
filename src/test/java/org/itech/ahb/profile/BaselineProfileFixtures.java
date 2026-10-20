@@ -49,6 +49,7 @@ public final class BaselineProfileFixtures {
       .put("specimenDescriptor", "O.16");
     profile.withObject("configDefaults").put("numberFormat", ".");
     profile.set("default_test_mappings", objectMapper.readTree(TESTS));
+    new ProfileFingerprintService().stamp(profile);
     return profile;
   }
 

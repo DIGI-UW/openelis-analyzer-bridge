@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.itech.ahb.profile.ProfileFingerprintService;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.connection.AstmConnectionListeners;
@@ -144,6 +145,7 @@ class OutboundOrderControllerTest {
     ObjectNode profile = (ObjectNode) mapper.readTree(
       getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
+    new ProfileFingerprintService().stamp(profile);
     BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
       registry,
       null,
@@ -188,6 +190,7 @@ class OutboundOrderControllerTest {
     ObjectNode profile = (ObjectNode) mapper.readTree(
       getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
+    new ProfileFingerprintService().stamp(profile);
     ObjectNode connection = mapper
       .createObjectNode()
       .put("connectionId", "results-only")
@@ -219,6 +222,7 @@ class OutboundOrderControllerTest {
     ObjectNode profile = (ObjectNode) mapper.readTree(
       getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
+    new ProfileFingerprintService().stamp(profile);
     profile
       .withObject(disabledCapability.equals("outboundOrders") ? "capabilities" : "communication")
       .put(disabledCapability, false);

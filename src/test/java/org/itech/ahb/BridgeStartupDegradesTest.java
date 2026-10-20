@@ -1,5 +1,6 @@
 package org.itech.ahb;
 
+import org.itech.ahb.profile.ProfileFingerprintService;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -60,6 +61,7 @@ class BridgeStartupDegradesTest {
     Files.writeString(catalog.resolve("broken-profile").resolve("1.json"), "{\"profile\":{}}");
 
     ObjectNode genexpert = (ObjectNode) JSON.readTree(shippedProfile("cepheid-genexpert-astm.json"));
+    new ProfileFingerprintService().stamp(genexpert);
     String fingerprint = genexpert.path("catalog").path("revisionFingerprint").asText();
     Path connections = Files.createDirectories(root.resolve("connections"));
     write(connections, connection(GOOD, "oe-good", 1, fingerprint, "INACTIVE"));

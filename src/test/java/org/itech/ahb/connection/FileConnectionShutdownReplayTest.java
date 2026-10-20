@@ -91,9 +91,7 @@ class FileConnectionShutdownReplayTest {
       profile.putArray("supported_extensions").add(".csv");
       profile.putArray("result_value_order").add("result").add("interpretation");
       profile.withObject("configDefaults").put("fileFormat", "CSV").put("filePattern", "*.csv").put("delimiter", ";");
-      profile
-        .withObject("catalog")
-        .put("revisionFingerprint", new ProfileFingerprintService().revisionFingerprint(profile));
+      new ProfileFingerprintService().stamp(profile);
       var schemas = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
       assertTrue(
         schemas

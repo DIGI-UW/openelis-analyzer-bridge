@@ -10,6 +10,7 @@ import java.net.Socket;
 import java.time.Clock;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.itech.ahb.profile.ProfileFingerprintService;
 import org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties;
 import org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties;
 import org.itech.ahb.connectivity.DefaultConnectionProbeExecutor;
@@ -46,6 +47,7 @@ class OutboundConnectionProbeTest {
     profile = (ObjectNode) mapper.readTree(
       getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
     );
+    new ProfileFingerprintService().stamp(profile);
     connection = mapper
       .createObjectNode()
       .put("connectionId", "outbound-probe")
