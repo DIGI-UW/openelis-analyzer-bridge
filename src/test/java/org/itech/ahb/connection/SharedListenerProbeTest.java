@@ -165,9 +165,21 @@ class SharedListenerProbeTest {
     return connection;
   }
 
+  /**
+   * A free port below every system's ephemeral range (macOS 49152, Linux 32768), so no outgoing
+   * connection on the machine can take it between this check and the probe's own bind.
+   */
   private static int availablePort() throws Exception {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
+    for (int attempt = 0; attempt < 200; attempt++) {
+      int port = 20000 + java.util.concurrent.ThreadLocalRandom.current().nextInt(10000);
+      try (ServerSocket socket = new ServerSocket()) {
+        socket.setReuseAddress(false);
+        socket.bind(new java.net.InetSocketAddress(port));
+        return port;
+      } catch (java.io.IOException taken) {
+        // in use by a listener on this machine; try another
+      }
     }
+    throw new IllegalStateException("No free port between 20000 and 29999");
   }
 }
