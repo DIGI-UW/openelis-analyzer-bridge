@@ -224,7 +224,8 @@ public class GeneralASTMCommunicator implements Communicator {
         );
       }
       if (receiptFactory != null) {
-        receiptObserver = receiptFactory.get();
+        AstmReceiptObserver created = receiptFactory.get();
+        receiptObserver = created == null ? AstmReceiptObserver.NONE : created;
       }
       switch (astmVersion) {
         case E1381_95:
