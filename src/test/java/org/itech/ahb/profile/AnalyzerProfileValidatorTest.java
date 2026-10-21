@@ -278,6 +278,22 @@ class AnalyzerProfileValidatorTest {
   }
 
   @Test
+  void aCodingIsWrittenWithoutSpaceAroundIt() throws Exception {
+    ObjectNode loinc = astmProfile();
+    ObjectNode loincMapping = (ObjectNode) loinc.withArray("default_test_mappings").path(0);
+    loincMapping.remove("loinc");
+    loincMapping.putArray("codings").addObject().put("system", "http://loinc.org").put("code", " 94500-6 ");
+    ObjectNode local = astmProfile();
+    ((ObjectNode) local.withArray("default_test_mappings").path(0)).putArray("codings")
+      .addObject()
+      .put("system", "CPHL")
+      .put("code", "VL-HIV ");
+
+    assertThat(validator.validationIssues(loinc)).isNotEmpty();
+    assertThat(validator.validationIssues(local)).isNotEmpty();
+  }
+
+  @Test
   void aLoincCodingIsALoincCode() throws Exception {
     ObjectNode profile = astmProfile();
     ObjectNode mapping = (ObjectNode) profile.withArray("default_test_mappings").path(0);

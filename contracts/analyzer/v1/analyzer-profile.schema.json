@@ -224,6 +224,11 @@
   ],
   "$defs": {
     "nonBlank": { "type": "string", "pattern": ".*\\S.*" },
+    "token": {
+      "type": "string",
+      "pattern": "^\\S(?:.*\\S)?$",
+      "description": "A non-blank value with no space at either end, so it is matched exactly as written."
+    },
     "jsonValue": {
       "type": ["string", "number", "boolean", "array", "object", "null"]
     },
@@ -385,10 +390,10 @@
       "required": ["system", "code"],
       "properties": {
         "system": {
-          "$ref": "#/$defs/nonBlank",
+          "$ref": "#/$defs/token",
           "description": "The code system: a standard system's URI, or the identifier a distro catalog names its own concepts by."
         },
-        "code": { "$ref": "#/$defs/nonBlank" },
+        "code": { "$ref": "#/$defs/token" },
         "display": { "$ref": "#/$defs/nonBlank" }
       }
     },
@@ -958,8 +963,6 @@
       "additionalProperties": false,
       "required": [
         "revision",
-        "revisionFingerprint",
-        "recognitionFingerprint",
         "source",
         "status",
         "publishedAt",
@@ -967,8 +970,14 @@
       ],
       "properties": {
         "revision": { "type": "integer", "minimum": 1 },
-        "revisionFingerprint": { "$ref": "#/$defs/fingerprint" },
-        "recognitionFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "revisionFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "Computed by the Bridge from the file's content as it loads; a file is authored without it, and the profile the Bridge serves always carries it."
+        },
+        "recognitionFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "Computed by the Bridge as it loads the file, like revisionFingerprint."
+        },
         "source": { "enum": ["SHIPPED", "SITE"] },
         "status": { "enum": ["ACTIVE", "INACTIVE"] },
         "publishedAt": { "type": "string", "format": "date-time" },

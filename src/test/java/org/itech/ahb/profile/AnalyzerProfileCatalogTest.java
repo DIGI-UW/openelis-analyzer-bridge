@@ -3,6 +3,7 @@ package org.itech.ahb.profile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
@@ -407,6 +408,34 @@ class AnalyzerProfileCatalogTest {
     assertThat(servedFingerprint)
       .isEqualTo(new ProfileFingerprintService().revisionFingerprint(served))
       .isNotEqualTo(published.path("catalog").path("revisionFingerprint").asText());
+  }
+
+  @Test
+  void aRevisionSavedWithTheRetiredNormalizedCodingLoadsWithItInCodings() throws Exception {
+    ObjectNode published = publishedFixture("analyzer-profile-file.json");
+    ObjectNode saved = published.deepCopy();
+    ObjectNode test = (ObjectNode) saved.path("default_test_mappings").get(0);
+    test
+      .putObject("normalized_coding")
+      .put("system", "https://lab.example.org/concepts")
+      .put("code", "hiv-vl")
+      .put("display", "HIV viral load");
+
+    AnalyzerProfileCatalog loaded = new AnalyzerProfileCatalog(
+      catalogDirectory,
+      List.of(resource(saved, "saved-under-1.0.json")),
+      objectMapper,
+      Clock.fixed(NOW, ZoneOffset.UTC)
+    );
+
+    assertThat(loaded.issues()).isEmpty();
+    JsonNode served = loaded
+      .require(published.path("profileMeta").path("id").asText(), published.path("catalog").path("revision").asInt())
+      .profile()
+      .path("default_test_mappings")
+      .get(0);
+    assertThat(served.has("normalized_coding")).isFalse();
+    assertThat(served.path("codings").toString()).contains("hiv-vl").contains("HIV viral load");
   }
 
   @Test

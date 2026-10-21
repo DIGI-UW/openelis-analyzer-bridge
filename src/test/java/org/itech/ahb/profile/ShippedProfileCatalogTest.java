@@ -53,7 +53,9 @@ class ShippedProfileCatalogTest {
     assertThat(resources).isNotEmpty();
 
     ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+    AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
     // A shipped file is authored without fingerprints; the catalog derives them when it loads the file.
+    // Tooling that checks a file against its schema before the Bridge loads it accepts it as written.
     assertSoftly(softly -> {
       for (Resource resource : resources) {
         try {
@@ -61,6 +63,7 @@ class ShippedProfileCatalogTest {
           String profileId = profile.path("profileMeta").path("id").asText();
           softly.assertThat(profile.path("catalog").has("recognitionFingerprint")).as(profileId).isFalse();
           softly.assertThat(profile.path("catalog").has("revisionFingerprint")).as(profileId).isFalse();
+          softly.assertThat(validator.validationIssues(profile)).as(profileId + " as written").isEmpty();
         } catch (Exception exception) {
           throw new AssertionError("Cannot inspect " + resource.getDescription(), exception);
         }

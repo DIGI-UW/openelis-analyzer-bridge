@@ -413,6 +413,7 @@ public final class AnalyzerProfileCatalog {
         if (!"SHIPPED".equals(metadata.path("source").asText())) {
           throw new ProfileCatalogException("Shipped profile must declare source SHIPPED: " + resource.getFilename());
         }
+        foldRetiredFields(profile, "Shipped profile " + resource.getFilename());
         computeFingerprints(profile, "Shipped profile " + resource.getFilename());
         validatePublished(profile);
         add(
@@ -491,6 +492,7 @@ public final class AnalyzerProfileCatalog {
       parseInstant(publicationNode.path("markedAt").asText(null), path)
     );
     validatePersistedOrigin(profile, publication.action(), path);
+    foldRetiredFields(profile, "Persisted profile " + path);
     computeFingerprints(profile, "Persisted profile " + path);
     validatePublished(profile);
     add(new ProfileRevision(profile, publication));
@@ -510,6 +512,7 @@ public final class AnalyzerProfileCatalog {
       if (profile.has("catalog")) {
         throw new ProfileCatalogException("Persisted draft cannot contain catalog metadata: " + path);
       }
+      foldRetiredFields(profile, "Persisted draft " + path);
       ProfileDraft draft = new ProfileDraft(
         draftId,
         ProfileDraftKind.valueOf(requireText(document.path("kind").asText(null), "draft kind")),
@@ -528,6 +531,13 @@ public final class AnalyzerProfileCatalog {
       }
     } catch (IllegalArgumentException exception) {
       throw new ProfileCatalogException("Cannot load persisted profile draft " + path, exception);
+    }
+  }
+
+  /** Rewrites what an earlier contract allowed and this one retires, as the file loads. */
+  private void foldRetiredFields(ObjectNode profile, String description) {
+    if (TestCodings.foldRetiredNormalizedCoding(profile)) {
+      log.info("{} named a test by normalized_coding; it loads with that coding in codings", description);
     }
   }
 
