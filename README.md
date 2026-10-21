@@ -338,8 +338,12 @@ When each value is needed:
 | Several analyzers without fixed addresses, or behind one address | optional | set on all but at most one |
 
 Activating a connection that no message could tell apart from an active one on
-the same listener (the same address, or neither has one, and no `senderId`
-separates them) is refused, and the refusal names the other connection. Restoring
+the same listener is refused, and the refusal names the other connection. That
+is the case when they share an address (or neither has one), no `senderId`
+separates them, and their profiles do not declare different
+`identifier_pattern`s: routing rules out a connection whose pattern a message's
+sender does not match, so two different instrument types behind one address can
+both be active, while two analyzers of one type need a `host` or `senderId`. Restoring
 connections at boot only logs a warning, so an existing pair cannot stop the
 bridge.
 

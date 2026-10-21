@@ -209,6 +209,25 @@ class SharedListenerResolutionTest {
       .isNull();
   }
 
+  @Test
+  void typesWithDifferentIdentifierPatternsOnOneAddressCanBothBeActivated() {
+    registerNamed("maldi", null, null, "MBT|Bruker|MALDI");
+
+    assertThat(registry.indistinguishableFrom(named("epicenter", null, null, "EPICENTER|EpiCenter")))
+      .as("each type's pattern rules the other's messages out, as routing does")
+      .isNull();
+  }
+
+  @Test
+  void theSameTypeTwiceOrATypeWithoutAPatternCannotBeToldApart() {
+    AnalyzerEntry first = registerNamed("gx-a", null, null, "GENEXPERT|CEPHEID");
+
+    assertThat(registry.indistinguishableFrom(named("gx-b", null, null, "GENEXPERT|CEPHEID"))).isSameAs(first);
+    assertThat(registry.indistinguishableFrom(named("any", null, null, null)))
+      .as("without a pattern a connection takes every message")
+      .isSameAs(first);
+  }
+
   private AnalyzerEntry registerNamed(String connectionId, String address, String senderId, String pattern) {
     AnalyzerEntry entry = named(connectionId, address, senderId, pattern);
     registry.register("connection:" + connectionId, entry);

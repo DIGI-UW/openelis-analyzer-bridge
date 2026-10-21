@@ -261,8 +261,10 @@ public class AnalyzerRuntimeRegistry {
 
   /**
    * Another active connection on the same listener that no message could be told apart from, or
-   * null. Two connections are indistinguishable when they share an address (or both have none) and
-   * their sender names do not separate them.
+   * null. Two connections are indistinguishable when they share an address (or both have none),
+   * their sender names do not separate them, and their types' identifier patterns do not either:
+   * routing rules a connection out when a message's sender does not match its pattern, so two
+   * different patterns separate them, while the same pattern or a missing one does not.
    */
   public synchronized AnalyzerEntry indistinguishableFrom(AnalyzerEntry candidate) {
     if (candidate.getListenerPort() == null) {
@@ -275,8 +277,14 @@ public class AnalyzerRuntimeRegistry {
       .filter(other -> !java.util.Objects.equals(other.getBridgeConnectionId(), candidate.getBridgeConnectionId()))
       .filter(other -> java.util.Objects.equals(other.getInboundAddress(), candidate.getInboundAddress()))
       .filter(other -> sameSender(other.getSenderId(), candidate.getSenderId()))
+      .filter(other -> samePattern(other.getIdentifierPattern(), candidate.getIdentifierPattern()))
       .findFirst()
       .orElse(null);
+  }
+
+  /** Either has no pattern, or both have the same one: a message's sender matches both. */
+  private static boolean samePattern(String left, String right) {
+    return left == null || left.isBlank() || right == null || right.isBlank() || left.equals(right);
   }
 
   /** Both unnamed, or both the same name: a message's sender cannot tell them apart. */
