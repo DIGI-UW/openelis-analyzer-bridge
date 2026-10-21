@@ -201,11 +201,17 @@ public class AnalyzerRuntimeRegistry {
         .filter(entry -> namesWholeField(entry.getSenderId(), sender))
         .toList();
       if (bySender.isEmpty()) {
-        // A senderId set before whole-field matching names component 1 only.
+        // A senderId set before whole-field matching names component 1 only, which is whatever a
+        // lab typed and other instruments can share, so it holds only for its type's kind.
         String first = senderName(sender);
         bySender = named
           .stream()
           .filter(entry -> entry.getSenderId() != null && entry.getSenderId().equalsIgnoreCase(first))
+          .filter(
+            entry ->
+              entry.getCompiledIdentifierPattern() == null ||
+              entry.getCompiledIdentifierPattern().matcher(sender).find()
+          )
           .toList();
       }
       if (bySender.size() == 1) {
@@ -314,9 +320,30 @@ public class AnalyzerRuntimeRegistry {
     return left == null || left.isBlank() || right == null || right.isBlank() || left.equals(right);
   }
 
-  /** Both unnamed, or both the same name: a message's sender cannot tell them apart. */
+  /**
+   * Both unnamed, or names some one sender field could match: a message's sender cannot tell them
+   * apart. Two patterns are taken to meet unless their fixed starts or ends differ.
+   */
   private static boolean sameSender(String left, String right) {
-    return left == null ? right == null : left.equalsIgnoreCase(right);
+    if (left == null || right == null) {
+      return left == right;
+    }
+    boolean leftPattern = left.contains("*");
+    boolean rightPattern = right.contains("*");
+    if (!leftPattern && !rightPattern) {
+      return left.equalsIgnoreCase(right);
+    }
+    if (!leftPattern || !rightPattern) {
+      return leftPattern ? namesWholeField(left, right) : namesWholeField(right, left);
+    }
+    String leftStart = left.substring(0, left.indexOf('*')).toLowerCase(java.util.Locale.ROOT);
+    String rightStart = right.substring(0, right.indexOf('*')).toLowerCase(java.util.Locale.ROOT);
+    String leftEnd = left.substring(left.lastIndexOf('*') + 1).toLowerCase(java.util.Locale.ROOT);
+    String rightEnd = right.substring(right.lastIndexOf('*') + 1).toLowerCase(java.util.Locale.ROOT);
+    return (
+      (leftStart.startsWith(rightStart) || rightStart.startsWith(leftStart)) &&
+      (leftEnd.endsWith(rightEnd) || rightEnd.endsWith(leftEnd))
+    );
   }
 
   /** Finds the active runtime projection for one durable Bridge connection. */

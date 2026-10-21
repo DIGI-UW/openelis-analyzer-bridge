@@ -219,6 +219,29 @@ class SharedListenerResolutionTest {
   }
 
   @Test
+  void aSenderIdNamingComponentOneOnlyClaimsMessagesItsTypeCouldSend() {
+    registerNamed("gx", null, "CPHL", "GENEXPERT|GeneXpert");
+
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "CPHL^GeneXpert^6.2"), "gx", "sender");
+    assertThat(registry.resolve(SHARED_PORT, "10.0.0.21", "CPHL^Sysmex^1.0"))
+      .as("another CPHL instrument is not the GeneXpert")
+      .isInstanceOf(Resolution.Unregistered.class);
+  }
+
+  @Test
+  void senderIdsThatCanNameTheSameSenderCannotBothBeActivated() {
+    AnalyzerEntry all = registerNamed("gx-all", null, "CPHL^GeneXpert^*", null);
+
+    assertThat(registry.indistinguishableFrom(named("gx-62", null, "CPHL^GeneXpert^6.2", null))).isSameAs(all);
+    assertThat(registry.indistinguishableFrom(named("any-sysmex", null, "*^Sysmex^*", null)))
+      .as("two patterns that could both match one sender")
+      .isSameAs(all);
+    assertThat(registry.indistinguishableFrom(named("sysmex", null, "CPHL^Sysmex^*", null)))
+      .as("patterns whose fixed starts differ never meet")
+      .isNull();
+  }
+
+  @Test
   void aWholeSenderFieldMatchesExactlyIgnoringCase() {
     registerNamed("gx", null, "cphl^genexpert^6.2", null);
     registerNamed("other", null, null, null);
