@@ -178,6 +178,52 @@ class OutboxAdminControllerTest {
   }
 
   @Test
+  @DisplayName("a serial message's sender is read from its header, not its configured analyzer")
+  void aSerialMessagesSenderIsItsHeadersSenderField() throws Exception {
+    String unique = java.util.UUID.randomUUID().toString();
+    String serial = "H|\\^&|||CPHL^GeneXpert^6.2\rP|1\rO|1|ACC-9\rR|1|^^^MTB|POS\rL|1|N\rC|1|" + unique + "\r";
+    String id = "astm-v1:serial-" + unique;
+    Receipt received = store.receive(
+      new ReceivedMessage(
+        "serial:/dev/ttyUSB0",
+        null,
+        Protocol.ASTM,
+        Transport.SERIAL,
+        "oe-analyzer-7",
+        serial,
+        null,
+        Instant.now()
+      )
+    );
+    store.markRendered(
+      received.id(),
+      List.of(
+        new RenderedDelivery(
+          id,
+          "ACC-9",
+          "{\"resourceType\":\"Bundle\"}",
+          "bridge-connection-serial",
+          "analyzer-7",
+          "genexpert-astm",
+          1,
+          "https://oe:8443/api/OpenELIS-Global/analyzer/fhir"
+        )
+      )
+    );
+    store.markRejected(id, FailureReason.RETRY_EXHAUSTED, null, "refused", null);
+
+    mockMvc
+      .perform(
+        get("/admin/outbox")
+          .param("state", "DMQ")
+          .param("connectionId", "bridge-connection-serial")
+          .with(httpBasic("testuser", "testpass"))
+      )
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.rows[0].sender").value("CPHL^GeneXpert^6.2"));
+  }
+
+  @Test
   @DisplayName("held results are not readable without credentials")
   void requiresAuthentication() throws Exception {
     mockMvc.perform(get("/admin/outbox")).andExpect(status().isUnauthorized());
