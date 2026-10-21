@@ -332,6 +332,8 @@ public class OutboxAdminController {
     row.put("id", entry.id());
     row.put("state", entry.state().name());
     row.put("sourceId", entry.sourceId());
+    // The header's sender field (ASTM H.5, HL7 MSH-3): what tells apart instruments behind one address.
+    row.put("sender", entry.protocolHint());
     row.put("listenerPort", entry.listenerPort());
     row.put("connectionId", entry.connectionId());
     row.put("analyzerId", entry.analyzerId());

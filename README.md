@@ -685,7 +685,8 @@ OpenELIS client certificate (`--cert`/`--key`), or the OpenELIS analyzer pages.
 # What is the bridge holding, and is anything stuck?
 curl -u "$USER:$PASS" https://bridge:8443/admin/outbox/stats
 
-# Everything waiting for a person, most recent first
+# Everything waiting for a person, most recent first. Each row names the peer
+# address (sourceId) and the header's sender field (sender: ASTM H.5, HL7 MSH-3).
 curl -u "$USER:$PASS" "https://bridge:8443/admin/outbox?state=DMQ"
 
 # One entry, with what OpenELIS said on each attempt

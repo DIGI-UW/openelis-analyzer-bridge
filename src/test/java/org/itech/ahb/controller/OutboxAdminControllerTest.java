@@ -202,6 +202,7 @@ class OutboxAdminControllerTest {
       .andExpect(jsonPath("$.rows[0].id").value(deadLetteredId))
       .andExpect(jsonPath("$.rows[0].failureReason").value("RETRY_EXHAUSTED"))
       .andExpect(jsonPath("$.rows[0].sourceId").value("10.0.0.1"))
+      .andExpect(jsonPath("$.rows[0].sender").value("GeneXpert"))
       .andExpect(jsonPath("$.rows[0].accession").value("ACC-1"))
       .andExpect(jsonPath("$.rows[0].ageSeconds").exists())
       .andExpect(jsonPath("$.rows[0].lastError").value("java.net.UnknownHostException: oe"))
