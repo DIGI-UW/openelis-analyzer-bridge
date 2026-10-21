@@ -356,7 +356,7 @@ final class AnalyzerProfileValidator {
       });
   }
 
-  /** The codes and translations a test or component gives its declared values. */
+  /** The codes, translations and defaults a test or component gives its declared values. */
   private void validateValueSet(String path, JsonNode owner, List<String> failures) {
     Set<String> values = new LinkedHashSet<>();
     owner.path("values").forEach(value -> values.add(value.asText()));
@@ -368,6 +368,14 @@ final class AnalyzerProfileValidator {
       .forEachRemaining(entry -> {
         if (!values.contains(entry.getKey())) {
           failures.add(path + ".value_codes names an undeclared value: " + entry.getKey());
+        }
+      });
+    owner
+      .path("value_defaults")
+      .fieldNames()
+      .forEachRemaining(value -> {
+        if (!values.contains(value)) {
+          failures.add(path + ".value_defaults names an undeclared value: " + value);
         }
       });
     Map<String, String> textOwners = new LinkedHashMap<>();

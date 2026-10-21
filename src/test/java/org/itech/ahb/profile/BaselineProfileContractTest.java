@@ -69,6 +69,41 @@ class BaselineProfileContractTest {
   }
 
   @Test
+  void aTestOrOneOfItsValuesMayBeExcludedByDefault() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0).put("default", "EXCLUDED");
+    ObjectNode withValues = null;
+    for (com.fasterxml.jackson.databind.JsonNode component : test(profile, 0).path("components")) {
+      if (component.path("values").size() > 0) {
+        withValues = (ObjectNode) component;
+        break;
+      }
+    }
+    assertThat(withValues).as("a part that declares values").isNotNull();
+    withValues.withObject("value_defaults").put(withValues.path("values").get(0).asText(), "EXCLUDED");
+
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void anExcludedByDefaultValueMustBeADeclaredValue() throws Exception {
+    ObjectNode undeclared = baseline();
+    test(undeclared, 0).withObject("value_defaults").put("SURPRISE", "EXCLUDED");
+
+    assertThat(validator.validationIssues(undeclared)).contains(
+      "$.default_test_mappings.HIVVL.value_defaults names an undeclared value: SURPRISE"
+    );
+  }
+
+  @Test
+  void aDefaultOtherThanExcludedIsRefused() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0).put("default", "BOUND");
+
+    assertThat(validator.validationIssues(profile)).isNotEmpty();
+  }
+
+  @Test
   void valueCodesMustNameADeclaredValue() throws Exception {
     ObjectNode undeclared = baseline();
     test(undeclared, 0)

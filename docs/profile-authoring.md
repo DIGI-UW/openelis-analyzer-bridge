@@ -35,6 +35,8 @@ the value translations.
 | `values`             | the raw values of a categorical test, exactly as the instrument sends them                                                                            |
 | `value_codes`        | for each value, every coding the vendor gives it, as `{system, code, display}`                                                                        |
 | `translations`       | for each value, the vendor's translations, all bound to that value; one text may belong to only one value                                             |
+| `default`            | `EXCLUDED`: a new analyzer starts with this test or component off, for a code a lab normally does not receive                                         |
+| `value_defaults`     | for each value a new analyzer should start without, `EXCLUDED`; a mapping suggestion, never part of how a result is read                              |
 | `run_failure_values` | raw values that say the run produced no result (`ERROR`, `NO RESULT`); never answers, so a lab never maps them; may have translations                 |
 | `call_component`     | on a quantitative test with a call, the component that takes the main record's call                                                                   |
 | `components`         | the other records the instrument reports for the test                                                                                                 |

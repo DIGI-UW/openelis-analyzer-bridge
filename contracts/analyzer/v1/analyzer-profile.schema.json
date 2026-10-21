@@ -431,6 +431,8 @@
           "additionalProperties": { "$ref": "#/$defs/nonBlank" }
         },
         "value_codes": { "$ref": "#/$defs/valueCodes" },
+        "default": { "$ref": "#/$defs/mappingDefault" },
+        "value_defaults": { "$ref": "#/$defs/valueDefaults" },
         "translations": { "$ref": "#/$defs/valueTranslations" },
         "call_component": { "$ref": "#/$defs/nonBlank" },
         "run_failure_values": { "$ref": "#/$defs/runFailureValues" },
@@ -460,6 +462,17 @@
           }
         }
       ]
+    },
+    "mappingDefault": {
+      "enum": ["EXCLUDED"],
+      "description": "How a new analyzer on this profile starts this row: EXCLUDED means the lab does not receive it until someone turns it on. A suggestion for the analyzer's mapping, never part of how a result is read."
+    },
+    "valueDefaults": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/nonBlank" },
+      "additionalProperties": { "$ref": "#/$defs/mappingDefault" },
+      "description": "For each declared value a new analyzer should start without, its default."
     },
     "valueCodes": {
       "type": "object",
@@ -501,6 +514,8 @@
           "items": { "$ref": "#/$defs/nonBlank" }
         },
         "value_codes": { "$ref": "#/$defs/valueCodes" },
+        "default": { "$ref": "#/$defs/mappingDefault" },
+        "value_defaults": { "$ref": "#/$defs/valueDefaults" },
         "translations": { "$ref": "#/$defs/valueTranslations" },
         "run_failure_values": { "$ref": "#/$defs/runFailureValues" }
       }
