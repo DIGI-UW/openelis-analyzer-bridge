@@ -30,7 +30,7 @@ class ShippedProfileCatalogTest {
     "hain-fluorocycler-xt-madagascar",
     "sha256:8c0d62edb064ef081883104d17b666be734c8c2723c8da80a3d5ec953825b775",
     "mindray-bc5380",
-    "sha256:97a478c4cc2d81b0e2bae8a967e047a2ec361e38a67f46e17bd7d9ab52ab4106",
+    "sha256:540edc728f0320c4439f8e06265aca4a5f83116d778104689a7ec0eb297dd2dc",
     "thermo-quantstudio",
     "sha256:b8c148e55f0907494058e7eb56603e157d818d103645668f91b585e5e0bf49e0"
   );

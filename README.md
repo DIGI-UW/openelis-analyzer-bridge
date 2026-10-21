@@ -223,9 +223,11 @@ the outbox until they can be attributed.
 
 A saved TCP/IP `SERVER` connection joins the deployment-configured shared
 listener for its protocol and lower layer. It has no per-analyzer incoming port.
-Historical saved SERVER `port` values do not select listeners or become outbound
-destinations, including when changing the connection role to CLIENT without an
-explicit new destination. Activation fails if the configured listener cannot be
+A SERVER connection stores no `port`: one saved by the per-analyzer listener
+setup is dropped the next time the connection is saved, and until then it neither
+selects a listener nor becomes an outbound destination, including when the role
+changes to CLIENT without an explicit new destination. A profile whose only role
+is SERVER does not declare `port`. Activation fails if the configured listener cannot be
 started. HL7 also accepts the `MLLP` transport label. Saved HL7 CLIENT
 connections support outbound order sessions when the profile permits LIS-initiated
 orders and the saved data flow allows them; activation otherwise fails. They do

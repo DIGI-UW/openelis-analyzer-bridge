@@ -134,6 +134,30 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
+  void aServerConnectionKeepsNoPortAndAnOldOneLosesItOnItsNextUpdate() throws Exception {
+    ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, new RecordingRuntime());
+    ObjectNode request = createRequest(profile, "server-port", "oe-server-port");
+    request.withObject("values").put("connectionRole", "SERVER").put("host", "192.0.2.10").put("port", 1200);
+    ObjectNode created = catalog.create(request);
+    String id = created.path("connectionId").asText();
+    Path saved = temporaryDirectory.resolve("connections").resolve(id + ".json");
+    assertThat(objectMapper.readTree(saved.toFile()).path("values").has("port")).isFalse();
+
+    // A record saved before, from the per-analyzer listener setup.
+    ObjectNode record = (ObjectNode) objectMapper.readTree(saved.toFile());
+    record.withObject("values").put("port", 1200);
+    objectMapper.writeValue(saved.toFile(), record);
+    AnalyzerConnectionCatalog restarted = catalog(UUID::randomUUID, new RecordingRuntime());
+    ObjectNode update = updateRequest(restarted.require(id), "rename");
+    update.put("displayName", "Renamed bench");
+    update.putObject("values");
+    restarted.update(update);
+
+    assertThat(objectMapper.readTree(saved.toFile()).path("values").has("port")).isFalse();
+  }
+
+  @Test
   void changingServerToClientDoesNotInheritAnOldIncomingPort() {
     ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();

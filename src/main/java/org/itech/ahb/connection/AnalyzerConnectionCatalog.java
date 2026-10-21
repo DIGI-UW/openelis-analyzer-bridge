@@ -512,6 +512,10 @@ public final class AnalyzerConnectionCatalog {
     ) {
       values.remove("port");
     }
+    // A SERVER connection joins the shared listener; a port kept from the per-analyzer setup is dropped.
+    if ("SERVER".equals(values.path("connectionRole").asText())) {
+      values.remove("port");
+    }
     return values;
   }
 

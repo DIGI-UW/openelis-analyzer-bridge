@@ -646,18 +646,6 @@
       }
     },
     {
-      "key": "port",
-      "labelKey": "analyzer.connection.field.port",
-      "inputKind": "NUMBER",
-      "required": true,
-      "choices": [],
-      "visibleWhen": {
-        "fieldKey": "transport",
-        "operator": "EQUALS",
-        "value": "TCP/IP"
-      }
-    },
-    {
       "key": "numberFormat",
       "labelKey": "analyzer.connection.field.numberFormat",
       "inputKind": "SELECT",
