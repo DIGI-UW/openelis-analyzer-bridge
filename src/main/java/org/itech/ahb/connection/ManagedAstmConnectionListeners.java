@@ -144,6 +144,7 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
     );
     listener.servlet = new ASTMServlet(handlers, interpreterFactory, port, version(lowerLayerVersion));
     listener.servlet.setAdmission(socket -> sources.admits(port, socket.getInetAddress()));
+    listener.servlet.setMaxSessions(sources.maxSessions());
     listener.servlet.setReceiptFactory(
       socket ->
         normalizer.astmReceipt(

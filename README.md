@@ -209,6 +209,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.http.max-input-bytes` | Largest HTTP input body | 20971520 |
 | `bridge.listeners.allowed-sources` | Comma-separated addresses and CIDR ranges the shared ASTM and MLLP listeners accept connections from, such as `10.20.0.0/16,192.0.2.5` (`BRIDGE_LISTENERS_ALLOWED_SOURCES`). An entry that is not an address or range is logged and ignored; a list with no usable entry admits no one | Empty: every source |
 | `bridge.listeners.admit-known-hosts-only` | Accept a connection only from an address that an active connection on that listener names as its host (`BRIDGE_LISTENERS_ADMIT_KNOWN_HOSTS_ONLY`) | `false` |
+| `bridge.listeners.max-sessions` | The most connections one shared ASTM listener holds open at once; an analyzer keeps its connection open between messages, and a peer connecting beyond this is closed (`BRIDGE_LISTENERS_MAX_SESSIONS`) | `64` |
 | **Server** | | |
 | `server.port` | HTTP server port | 8443 |
 

@@ -13,12 +13,16 @@ import org.springframework.stereotype.Component;
 /**
  * Which peers the shared analyzer listeners (ASTM and MLLP) accept a connection from. Address and
  * sender name attribute a message but do not authenticate it, so a listener reachable from the
- * internet can be limited to the addresses its analyzers connect from. A refused peer is closed
- * before anything is read from it.
+ * internet can be limited to the addresses its analyzers connect from. An ASTM session stays open
+ * on its own thread while its peer is connected, so each ASTM listener also holds at most
+ * {@code bridge.listeners.max-sessions} at once. A refused peer is closed before anything is read
+ * from it.
  */
 @Component
 @Slf4j
 public class ListenerSourcePolicy {
+
+  static final int DEFAULT_MAX_SESSIONS = 64;
 
   /** Admits every peer. */
   public static final ListenerSourcePolicy OPEN = new ListenerSourcePolicy("", false, null);
@@ -28,23 +32,34 @@ public class ListenerSourcePolicy {
   private final boolean knownHostsOnly;
   private final AnalyzerRuntimeRegistry registry;
   private final MetricsService metrics;
+  private final int maxSessions;
 
   public ListenerSourcePolicy(String allowedSources, boolean knownHostsOnly, AnalyzerRuntimeRegistry registry) {
-    this(allowedSources, knownHostsOnly, registry, null);
+    this(allowedSources, knownHostsOnly, DEFAULT_MAX_SESSIONS, registry, null);
   }
 
   @Autowired
   public ListenerSourcePolicy(
     @Value("${bridge.listeners.allowed-sources:}") String allowedSources,
     @Value("${bridge.listeners.admit-known-hosts-only:false}") boolean knownHostsOnly,
+    @Value("${bridge.listeners.max-sessions:" + DEFAULT_MAX_SESSIONS + "}") int maxSessions,
     AnalyzerRuntimeRegistry registry,
     MetricsService metrics
   ) {
     this.restricted = allowedSources != null && !allowedSources.isBlank();
     this.allowed = restricted ? parse(allowedSources) : List.of();
     this.knownHostsOnly = knownHostsOnly;
+    if (maxSessions < 1) {
+      log.error("bridge.listeners.max-sessions must be at least 1; using {}", DEFAULT_MAX_SESSIONS);
+    }
+    this.maxSessions = maxSessions < 1 ? DEFAULT_MAX_SESSIONS : maxSessions;
     this.registry = registry;
     this.metrics = metrics;
+  }
+
+  /** The most ASTM sessions one listener holds open at once. */
+  public int maxSessions() {
+    return maxSessions;
   }
 
   /** Whether {@code peer} may connect to the listener on {@code listenerPort}; a refusal is logged. */

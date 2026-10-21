@@ -53,6 +53,18 @@ public class ASTMServlet {
   private java.util.function.Function<Socket, org.itech.ahb.lib.astm.communication.AstmReceiptObserver> receiptFactory =
     socket -> org.itech.ahb.lib.astm.communication.AstmReceiptObserver.NONE;
   private final java.util.Map<Socket, Thread> sessions = new java.util.HashMap<>();
+  private volatile int maxSessions = Integer.MAX_VALUE;
+
+  /**
+   * The most sessions held open at once. A session stays open while its peer is connected, each on
+   * its own thread, so a peer that connects beyond this is closed rather than given another.
+   */
+  public void setMaxSessions(int maxSessions) {
+    if (maxSessions < 1) {
+      throw new IllegalArgumentException("maxSessions must be at least 1");
+    }
+    this.maxSessions = maxSessions;
+  }
 
   public void setReceiptFactory(
     java.util.function.Function<Socket, org.itech.ahb.lib.astm.communication.AstmReceiptObserver> factory
@@ -111,6 +123,19 @@ public class ASTMServlet {
           }
           synchronized (sessions) {
             if (!running.get()) {
+              s.close();
+              continue;
+            }
+            if (sessions.size() >= maxSessions) {
+              log.warn(
+                "Listener on port " +
+                listenPort +
+                " refused a connection from " +
+                s.getInetAddress().getHostAddress() +
+                ": it already holds " +
+                maxSessions +
+                " sessions"
+              );
               s.close();
               continue;
             }
