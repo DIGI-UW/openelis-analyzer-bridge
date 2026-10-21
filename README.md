@@ -207,6 +207,8 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.security.username` | HTTP Basic username, until pairing | bridge |
 | `bridge.security.password` | HTTP Basic password until pairing: plaintext or `{bcrypt}...`; empty means pairing only | Empty |
 | `bridge.http.max-input-bytes` | Largest HTTP input body | 20971520 |
+| `bridge.listeners.allowed-sources` | Comma-separated addresses and CIDR ranges the shared ASTM and MLLP listeners accept connections from, such as `10.20.0.0/16,192.0.2.5` (`BRIDGE_LISTENERS_ALLOWED_SOURCES`). An entry that is not an address or range is logged and ignored; a list with no usable entry admits no one | Empty: every source |
+| `bridge.listeners.admit-known-hosts-only` | Accept a connection only from an address that an active connection on that listener names as its host (`BRIDGE_LISTENERS_ADMIT_KNOWN_HOSTS_ONLY`) | `false` |
 | **Server** | | |
 | `server.port` | HTTP server port | 8443 |
 
@@ -231,7 +233,12 @@ not create an inbound listener or a persistent result-receive session.
 
 Attribution is not peer authentication: a message is attributed, not
 authorized, by its address and sender name. Use network access controls to
-restrict who can reach the analyzer ports.
+restrict who can reach the analyzer ports. Where a port has to be reachable
+from the internet, `bridge.listeners.allowed-sources` and
+`bridge.listeners.admit-known-hosts-only` limit the listeners to the addresses
+their analyzers connect from. A refused peer is closed before anything is read
+from it, logged at WARN with its address and the port, and counted in
+`bridge.listener.refused`; nothing reaches the outbox.
 
 Deactivating an HL7 connection removes its routing. A shared listener bound at
 boot keeps running. A listener that was not bound at boot stops when its last

@@ -1,5 +1,6 @@
 package org.itech.ahb.lib.astm.servlet;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -39,6 +40,23 @@ class ASTMServletTest {
 
       thread.join(Duration.ofSeconds(2));
       assertFalse(servlet.isRunning());
+    }
+  }
+
+  @Test
+  void closesARefusedPeerBeforeReadingAnything() throws Exception {
+    int port = availablePort();
+    ASTMServlet servlet = servlet(port);
+    servlet.setAdmission(socket -> false);
+    Thread thread = Thread.ofPlatform().start(servlet::listen);
+    servlet.awaitStarted(Duration.ofSeconds(2));
+    try (java.net.Socket peer = new java.net.Socket(java.net.InetAddress.getLoopbackAddress(), port)) {
+      peer.setSoTimeout(5000);
+
+      assertEquals(-1, peer.getInputStream().read(), "closed as soon as it connected");
+    } finally {
+      servlet.stop();
+      thread.join(Duration.ofSeconds(2));
     }
   }
 

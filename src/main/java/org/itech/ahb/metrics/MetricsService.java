@@ -39,6 +39,11 @@ public class MetricsService {
         ).increment();
     }
 
+    /** A shared listener closed a connection from a source it does not admit. */
+    public void recordListenerRefused(int listenerPort) {
+        registry.counter("bridge.listener.refused", "port", Integer.toString(listenerPort)).increment();
+    }
+
     public void recordRouted(Timer.Sample sample, String protocol, String transport, boolean success) {
         String result = success ? "success" : "failure";
 

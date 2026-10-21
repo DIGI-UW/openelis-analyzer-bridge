@@ -32,18 +32,24 @@ public final class ManagedHl7ConnectionListeners implements Hl7ConnectionListene
 
   private final MLLPConfig config;
   private final MessageRouter router;
+  private final ListenerSourcePolicy sources;
   private final Map<Integer, SharedListener> listenersByPort = new HashMap<>();
   private final Map<String, Integer> portByConnection = new HashMap<>();
   private boolean stopping;
 
   @Autowired
-  public ManagedHl7ConnectionListeners(MLLPConfig config, MessageNormalizer normalizer) {
-    this(config, (MessageRouter) normalizer);
+  public ManagedHl7ConnectionListeners(MLLPConfig config, MessageNormalizer normalizer, ListenerSourcePolicy sources) {
+    this(config, (MessageRouter) normalizer, sources);
   }
 
   public ManagedHl7ConnectionListeners(MLLPConfig config, MessageRouter router) {
+    this(config, router, ListenerSourcePolicy.OPEN);
+  }
+
+  public ManagedHl7ConnectionListeners(MLLPConfig config, MessageRouter router, ListenerSourcePolicy sources) {
     this.config = config;
     this.router = router;
+    this.sources = sources;
   }
 
   /** Binds the configured MLLP port at boot when the HL7 runtime is enabled. */
@@ -139,6 +145,7 @@ public final class ManagedHl7ConnectionListeners implements Hl7ConnectionListene
       return current;
     }
     HapiMLLPListener listener = new HapiMLLPListener(port, router, config.limits());
+    listener.setAdmission(peer -> sources.admits(port, peer));
     try {
       listener.start();
     } catch (RuntimeException failure) {

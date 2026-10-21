@@ -43,6 +43,13 @@ public class ASTMServlet {
   private final CountDownLatch startupAttempted = new CountDownLatch(1);
   private volatile ServerSocket serverSocket;
   private volatile Throwable startupFailure;
+  private java.util.function.Predicate<Socket> admission = socket -> true;
+
+  /** Decides, before anything is read, whether a peer that connected may send; a refused one is closed. */
+  public void setAdmission(java.util.function.Predicate<Socket> admission) {
+    this.admission = java.util.Objects.requireNonNull(admission);
+  }
+
   private java.util.function.Function<Socket, org.itech.ahb.lib.astm.communication.AstmReceiptObserver> receiptFactory =
     socket -> org.itech.ahb.lib.astm.communication.AstmReceiptObserver.NONE;
   private final java.util.Map<Socket, Thread> sessions = new java.util.HashMap<>();
@@ -98,6 +105,10 @@ public class ASTMServlet {
           Socket s = serverSocket.accept();
           s.setTcpNoDelay(true); // Disable Nagle — ASTM requires immediate ACK/NAK per frame
           s.setKeepAlive(true); // The link stays open between messages; notice a peer that vanished
+          if (!admission.test(s)) {
+            s.close();
+            continue;
+          }
           synchronized (sessions) {
             if (!running.get()) {
               s.close();

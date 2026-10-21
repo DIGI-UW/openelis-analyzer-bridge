@@ -149,6 +149,21 @@ public class AnalyzerRuntimeRegistry {
    * <p>Without a listener port (serial, file, HTTP, and messages stored before 3.2.0 under a
    * {@code connection:} key) the source identifier is looked up directly, as before.
    */
+  /** Whether an active connection on {@code listenerPort} names {@code address} as its host. */
+  public synchronized boolean hasHost(int listenerPort, String address) {
+    String peer = IpLiteral.canonicalize(address);
+    return (
+      peer != null &&
+      analyzers
+        .values()
+        .stream()
+        .anyMatch(
+          entry ->
+            Integer.valueOf(listenerPort).equals(entry.getListenerPort()) && peer.equals(entry.getInboundAddress())
+        )
+    );
+  }
+
   public synchronized Resolution resolve(Integer listenerPort, String sourceId, String senderHint) {
     if (listenerPort == null) {
       return findAnalyzerEntry(sourceId)

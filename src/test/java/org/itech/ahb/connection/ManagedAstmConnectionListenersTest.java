@@ -32,6 +32,48 @@ class ManagedAstmConnectionListenersTest {
   }
 
   @Test
+  void aPeerOutsideTheAllowedSourcesIsClosedBeforeItSendsAnything() throws Exception {
+    ManagedAstmConnectionListeners restricted = withSources("192.0.2.0/24");
+    int port = availablePort();
+    try {
+      restricted.start("bridge-7", "oe-7", port, "LIS01_A");
+
+      try (Socket peer = new Socket("127.0.0.1", port)) {
+        peer.setSoTimeout(5_000);
+        assertThat(peer.getInputStream().read()).isEqualTo(-1);
+      }
+    } finally {
+      restricted.stopAll();
+    }
+  }
+
+  @Test
+  void aPeerInTheAllowedSourcesIsAnswered() throws Exception {
+    ManagedAstmConnectionListeners restricted = withSources("127.0.0.0/8");
+    int port = availablePort();
+    try {
+      restricted.start("bridge-8", "oe-8", port, "LIS01_A");
+
+      try (Socket peer = new Socket("127.0.0.1", port)) {
+        peer.setSoTimeout(5_000);
+        peer.getOutputStream().write(0x05);
+        peer.getOutputStream().flush();
+        assertThat(peer.getInputStream().read()).as("ACK").isEqualTo(0x06);
+      }
+    } finally {
+      restricted.stopAll();
+    }
+  }
+
+  private static ManagedAstmConnectionListeners withSources(String allowedSources) {
+    return new ManagedAstmConnectionListeners(
+      mock(MessageNormalizer.class),
+      new DefaultASTMInterpreterFactory(),
+      new ListenerSourcePolicy(allowedSources, false, null)
+    );
+  }
+
+  @Test
   void bootListenerAcceptsSessionsBeforeAnyConnectionExists() throws Exception {
     int port = availablePort();
 
