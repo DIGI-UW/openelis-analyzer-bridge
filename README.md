@@ -570,6 +570,12 @@ concurrent connections, message size and message time
 deadlines and size limits; watched files over `bridge.file.max-file-size-bytes`
 are parked unread; FILE directories must lie under `bridge.file.import-roots`.
 
+An ASTM TCP connection stays open between messages until the analyzer closes it,
+as LIS01-A instruments such as the GeneXpert expect. A host query (a message with
+a `Q` record and no results) from an active connection is answered on that
+connection at once with no orders (`L|1|I`): the Bridge holds no orders. A query
+whose `Q.13` is `A` is the analyzer cancelling its last request and gets no answer.
+
 Active connections have distinct runtime registrations even when they share an
 analyzer host. A host-only inbound lookup is accepted only when it identifies one
 active connection; shared hosts require a connection-specific source binding.

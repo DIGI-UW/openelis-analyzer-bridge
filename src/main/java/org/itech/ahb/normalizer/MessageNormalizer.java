@@ -248,14 +248,10 @@ public class MessageNormalizer implements MessageRouter {
           return false;
         }
 
-        // Skip ASTM Q-only messages (queries with no R-records) — they don't carry
-        // results to forward. Until bidirectional order-response is implemented
-        // (OGC-335/336), log INFO and ack as success. Without this, the result
-        // parser logs ERROR for every Q-record and clutters operational telemetry.
+        // A host query carries no results; the ASTM adapter answers it with no orders.
         if (queryOnly) {
-            log.info("ASTM query message from source '{}' (no R-records) — protocolHint='{}'. "
-                + "Skipping result-parser path; bidirectional order-response not implemented.",
-                envelope.getSourceId(), protocolHint);
+            log.info("ASTM host query from source '{}' on Bridge connection '{}' is answered with no orders",
+                envelope.getSourceId(), registryEntry == null ? null : registryEntry.getBridgeConnectionId());
             if (metricsService != null) {
                 metricsService.recordRouted(sample, protocol, transport, true);
             }

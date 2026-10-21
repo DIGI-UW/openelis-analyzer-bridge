@@ -76,7 +76,7 @@ public class ASTMServlet {
   /**
    * Starts the servlet to listen for ASTM messages on the specified port.
    *
-   * Will spawn a new thread for every incoming connection.
+   * Will spawn a new thread for every incoming connection, which receives on it until the sender closes it.
    */
   public void listen() {
     if (!starting.compareAndSet(false, true)) {
@@ -97,13 +97,14 @@ public class ASTMServlet {
           // Waiting for socket connection
           Socket s = serverSocket.accept();
           s.setTcpNoDelay(true); // Disable Nagle — ASTM requires immediate ACK/NAK per frame
+          s.setKeepAlive(true); // The link stays open between messages; notice a peer that vanished
           synchronized (sessions) {
             if (!running.get()) {
               s.close();
               continue;
             }
             GeneralASTMCommunicator communicator = new GeneralASTMCommunicator(astmInterpreterFactory, s, astmVersion);
-            communicator.setReceiptObserver(receiptFactory.apply(s));
+            communicator.setReceiptFactory(() -> receiptFactory.apply(s));
             ASTMReceiveThread receiver = new ASTMReceiveThread(communicator, s, astmHandlerService);
             Thread worker = Thread.ofPlatform()
               .unstarted(() -> {

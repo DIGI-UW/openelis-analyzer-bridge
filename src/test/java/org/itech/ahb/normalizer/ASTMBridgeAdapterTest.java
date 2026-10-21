@@ -52,6 +52,72 @@ class ASTMBridgeAdapterTest {
     }
 
     @Nested
+    @DisplayName("Host queries")
+    class HostQueries {
+
+        private static final String HOST_QUERY = "H|@^\\|q-1||SITE^GeneXpert^6.2|||||LIS||P|1394-97|20261020101500\r"
+            + "Q|1|^S-1||||||||||O@N\r"
+            + "L|1|N";
+
+        private ASTMHandlerResponse handle(String raw) {
+            return adapter.handle(new DefaultASTMMessage(java.util.List.of(raw.split("\r")).stream()
+                .<org.itech.ahb.lib.astm.concept.ASTMRecord>map(org.itech.ahb.lib.astm.concept.DefaultASTMRecord::new)
+                .toList()), "10.0.0.5");
+        }
+
+        @Test
+        @DisplayName("a host query is answered with no orders, addressed back to the instrument")
+        void aHostQueryIsAnsweredWithNoOrders() {
+            ASTMHandlerResponse response = handle(HOST_QUERY);
+
+            assertEquals(HandleStatus.SUCCESS, response.getStatus());
+            assertTrue(response.getCommunicateResponse());
+            String[] records = response.getResponse().split("\r");
+            assertEquals(2, records.length, response.getResponse());
+            String[] header = records[0].split("\\|", -1);
+            assertEquals("H", header[0]);
+            assertEquals("@^\\", header[1]);
+            assertEquals("LIS", header[4]);
+            assertEquals("SITE^GeneXpert^6.2", header[9]);
+            assertEquals("P", header[11]);
+            assertEquals("1394-97", header[12]);
+            assertEquals("L|1|I", records[1]);
+        }
+
+        @Test
+        @DisplayName("a cancelled host query gets no reply")
+        void aCancelledQueryGetsNoReply() {
+            ASTMHandlerResponse response = handle(
+                "H|@^\\|q-2||SITE^GeneXpert^6.2|||||LIS||P|1394-97|20261020101500\r"
+                    + "Q|1|||||||||||A\r"
+                    + "C|1|I|timeout^last request has been cancelled|I\r"
+                    + "L|1|N");
+
+            assertEquals(HandleStatus.SUCCESS, response.getStatus());
+            assertFalse(response.getCommunicateResponse());
+        }
+
+        @Test
+        @DisplayName("a host query the Bridge could not route gets no reply")
+        void anUnroutedQueryGetsNoReply() {
+            when(mockNormalizer.process(any(MessageEnvelope.class))).thenReturn(false);
+
+            ASTMHandlerResponse response = handle(HOST_QUERY);
+
+            assertEquals(HandleStatus.FORWARD_FAIL_ERROR, response.getStatus());
+            assertFalse(response.getCommunicateResponse());
+        }
+
+        @Test
+        @DisplayName("a result message gets no reply")
+        void aResultGetsNoReply() {
+            ASTMHandlerResponse response = handle(SAMPLE_ASTM_MESSAGE);
+
+            assertFalse(response.getCommunicateResponse());
+        }
+    }
+
+    @Nested
     @DisplayName("Handler Identification Tests")
     class HandlerIdentificationTests {
 

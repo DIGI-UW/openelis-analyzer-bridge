@@ -153,12 +153,18 @@ public class GeneralASTMCommunicator implements Communicator {
   private ASTMVersion astmVersion;
   private Boolean receiveEstablished = false;
   private AstmReceiptObserver receiptObserver = AstmReceiptObserver.NONE;
+  private java.util.function.Supplier<AstmReceiptObserver> receiptFactory;
   private byte[] previousReceivedFrame;
   private Duration frameDeadline = Duration.ofSeconds(RECIEVE_FRAME_TIMEOUT);
   private Duration nonCompliantMessageDeadline = Duration.ofSeconds(NON_COMPLIANT_RECEIVE_TIMEOUT);
 
   public void setReceiptObserver(AstmReceiptObserver observer) {
     receiptObserver = java.util.Objects.requireNonNull(observer);
+  }
+
+  /** Gives each message received on this connection its own receipt, created when its sender takes the line. */
+  public void setReceiptFactory(java.util.function.Supplier<AstmReceiptObserver> factory) {
+    receiptFactory = java.util.Objects.requireNonNull(factory);
   }
 
   /**
@@ -204,23 +210,21 @@ public class GeneralASTMCommunicator implements Communicator {
     throws FrameParsingException, ASTMCommunicationException, IOException, InterruptedException {
     log.trace("starting receive protocol for ASTM message");
     if (astmVersion == ASTMVersion.LIS01_A || astmVersion == ASTMVersion.E1381_95) {
+      receiveEstablished = false;
       try {
         receiveEstablished = establishmentReceive();
       } catch (SocketTimeoutException e) {
-        log.warn(
-          "waited " +
-          ESTABLISHMENT_SOCKET_TIMEOUT +
-          " " +
-          TimeUnit.SECONDS +
-          " for the sender to send anything but nothing was received"
-        );
-        //TODO should we assume that the sender wants to receive data if it doesn't even send a single character?
+        // An open link with nothing to send is in its neutral state, so this is not an error.
+        log.debug("nothing received for " + ESTABLISHMENT_SOCKET_TIMEOUT + " seconds on an idle connection");
         throw e;
       }
       if (!receiveEstablished) {
         throw new ASTMCommunicationException(
           "something went wrong in the establishment phase of the receive protocol, possibly the wrong start character was received"
         );
+      }
+      if (receiptFactory != null) {
+        receiptObserver = receiptFactory.get();
       }
       switch (astmVersion) {
         case E1381_95:
