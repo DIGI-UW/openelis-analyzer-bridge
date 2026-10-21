@@ -201,6 +201,9 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Security** | | |
 | `bridge.pairing.code` | One-time code OpenELIS pairs with (`BRIDGE_PAIRING_CODE`); without one, a generated code is logged | Generated |
 | `bridge.identity.directory` | Generated key pair and pairing record (`BRIDGE_IDENTITY_DIRECTORY`) | `/data/openelis-analyzer-bridge/identity` |
+| `bridge.truststore.path` | Trust store that also trusts OpenELIS when its certificate is not the pinned one, such as after OpenELIS regenerates it (`BRIDGE_TRUSTSTORE_PATH`). Not set, the JVM's own trust store is used. Do not pass `-Djavax.net.ssl.trustStorePassword` in `JDK_JAVA_OPTIONS`: the JVM prints that variable at startup | Not set |
+| `bridge.truststore.password` | Its password (`BRIDGE_TRUSTSTORE_PASSWORD`) | Empty |
+| `bridge.truststore.type` | Its type (`BRIDGE_TRUSTSTORE_TYPE`) | `PKCS12` |
 | `bridge.security.username` | HTTP Basic username, until pairing | bridge |
 | `bridge.security.password` | HTTP Basic password until pairing: plaintext or `{bcrypt}...`; empty means pairing only | Empty |
 | `bridge.http.max-input-bytes` | Largest HTTP input body | 20971520 |
@@ -535,8 +538,9 @@ the certificate OpenELIS serves (the client certificate's, when
 `serverCertificateSha256` is omitted), and answers with its own certificate and
 fingerprint for OpenELIS to pin. From then on only that client certificate
 authenticates, and result delivery and the OpenELIS health probe present the
-Bridge certificate and trust OpenELIS by its pinned fingerprint, or by the system
-trust store for its host.
+Bridge certificate and trust OpenELIS by its pinned fingerprint, or by the trust
+store `bridge.truststore.path` names (the JVM's own when it is not set) for its
+host.
 
 The code comes from `BRIDGE_PAIRING_CODE`. Without one, an unpaired Bridge logs a
 generated code at each start. A code pairs once; ten wrong codes close pairing
