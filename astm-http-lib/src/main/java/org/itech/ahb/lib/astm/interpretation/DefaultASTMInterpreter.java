@@ -78,7 +78,11 @@ public class DefaultASTMInterpreter implements ASTMInterpreter {
   private List<ASTMFrame> interpretASTMRecordsToFrames(ASTMRecord record, int recordNumber) {
     log.debug("interpreting astm record as frames...");
     List<ASTMFrame> frames = new ArrayList<>();
-    String[] frameTexts = record.getRecord().split("(?<=\\G.{" + GeneralASTMCommunicator.MAX_TEXT_SIZE + "})");
+    // A record ends with a carriage return; the receiver splits records on it.
+    String text = record.getRecord().endsWith(RECORD_SEPERATOR)
+      ? record.getRecord()
+      : record.getRecord() + RECORD_SEPERATOR;
+    String[] frameTexts = text.split("(?<=\\G.{" + GeneralASTMCommunicator.MAX_TEXT_SIZE + "})");
     log.trace("astm record: " + record);
     for (int i = 0; i < frameTexts.length; i++) {
       ASTMFrame curFrame = new DefaultASTMFrame();

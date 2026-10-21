@@ -69,7 +69,9 @@ class ASTMReceiveThreadTest {
       out.write(ACK);
       out.flush();
       String reply = receiveFrames(in, out);
-      assertTrue(reply.contains("L|1|I"), reply);
+      // Each record ends with a carriage return inside its frame, as the receiving instrument requires.
+      assertTrue(reply.contains("20261020101500\r" + (char) ETX), reply);
+      assertTrue(reply.contains("L|1|I\r" + (char) ETX), reply);
 
       send(in, out, RESULT);
     }
