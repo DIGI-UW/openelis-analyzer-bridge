@@ -158,6 +158,18 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
+  void aClientStillSendingTheMindrayPortIsAcceptedAndThePortIsDropped() throws Exception {
+    ObjectNode profile = profiles.require("mindray-bc5380", 1).profile();
+    ObjectNode request = createRequest(profile, "mindray-old-port", "oe-mindray-port");
+    request.withObject("values").put("port", 1200);
+
+    ObjectNode created = catalog(UUID::randomUUID, new RecordingRuntime()).create(request);
+
+    Path saved = temporaryDirectory.resolve("connections").resolve(created.path("connectionId").asText() + ".json");
+    assertThat(objectMapper.readTree(saved.toFile()).path("values").has("port")).isFalse();
+  }
+
+  @Test
   void changingServerToClientDoesNotInheritAnOldIncomingPort() {
     ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
@@ -474,6 +486,26 @@ class AnalyzerConnectionCatalogTest {
 
     assertThat(created.path("profileRef").path("profileId").asText()).isEqualTo("thermo-quantstudio");
     assertThat(created.path("profileRef").path("revision").asInt()).isEqualTo(1);
+  }
+
+  @Test
+  void aNewerFingerprintForTheSamePinIsTheSameConfiguration() {
+    ObjectNode profile = profiles.require("thermo-quantstudio", 1).profile();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID);
+    ObjectNode create = createRequest(profile, "create-quantstudio-fp", "oe-101");
+    ObjectNode created = catalog.create(create);
+    String refreshed = "sha256:" + "e".repeat(64);
+
+    ObjectNode update = updateRequest(created, "update-quantstudio-fp");
+    ((ObjectNode) update.path("profileRef")).put("fingerprint", refreshed);
+    update.set("values", create.path("values").deepCopy());
+    ObjectNode unchanged = catalog.update(update);
+    ObjectNode again = create.deepCopy().put("requestId", "create-quantstudio-fp-again");
+    ((ObjectNode) again.path("profileRef")).put("fingerprint", refreshed);
+
+    assertThat(unchanged.path("configRevision").asInt()).isEqualTo(1);
+    assertThat(unchanged.path("configFingerprint").asText()).isEqualTo(created.path("configFingerprint").asText());
+    assertThat(catalog.create(again).path("connectionId").asText()).isEqualTo(created.path("connectionId").asText());
   }
 
   @Test
