@@ -5,7 +5,6 @@ import ca.uhn.hl7v2.model.Message;
 import ca.uhn.hl7v2.parser.PipeParser;
 import ca.uhn.hl7v2.protocol.ReceivingApplication;
 import ca.uhn.hl7v2.protocol.ReceivingApplicationException;
-import ca.uhn.hl7v2.util.Terser;
 import java.time.Instant;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -256,8 +255,7 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
   /**
    * Extracts the analyzer identifier from the HL7 message.
    * <p>
-   * Uses HAPI Terser for MSH segment parsing.
-   * Uses MSH-3 component 1 (Sending Application), matching the saved senderId contract.
+   * Uses the whole Sending Application field (MSH-3), which a connection's senderId is matched against.
    * </p>
    *
    * @param message the parsed HAPI message
@@ -265,14 +263,7 @@ public class HapiReceivingApplication implements ReceivingApplication<Message> {
    */
   String extractAnalyzerId(Message message) {
     try {
-      Terser terser = new Terser(message);
-
-      // MSH-3: Sending Application
-      String sendingApp = terser.get("/MSH-3");
-
-      if (sendingApp != null && !sendingApp.isEmpty()) {
-        return sendingApp;
-      }
+      return org.itech.ahb.fhir.HL7ResultParser.sendingApplication(message.encode());
     } catch (HL7Exception e) {
       log.debug("Could not extract analyzer ID from MSH segment", e);
     }

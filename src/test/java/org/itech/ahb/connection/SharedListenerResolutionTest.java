@@ -210,6 +210,24 @@ class SharedListenerResolutionTest {
   }
 
   @Test
+  void aSenderIdNamingTheWholeSenderFieldTellsApartInstrumentsThatShareComponentOne() {
+    registerNamed("gx", null, "CPHL^GeneXpert^*", null);
+    registerNamed("other", null, "CPHL", null);
+
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "CPHL^GeneXpert^6.2"), "gx", "sender");
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "CPHL^Sysmex^1.0"), "other", "sender");
+  }
+
+  @Test
+  void aWholeSenderFieldMatchesExactlyIgnoringCase() {
+    registerNamed("gx", null, "cphl^genexpert^6.2", null);
+    registerNamed("other", null, null, null);
+
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "CPHL^GeneXpert^6.2"), "gx", "sender");
+    assertResolved(registry.resolve(SHARED_PORT, "10.0.0.21", "CPHL^GeneXpert^6.3"), "other", "uniqueness");
+  }
+
+  @Test
   void typesWithDifferentIdentifierPatternsOnOneAddressCanBothBeActivated() {
     registerNamed("maldi", null, null, "MBT|Bruker|MALDI");
 

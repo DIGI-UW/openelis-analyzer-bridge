@@ -191,14 +191,23 @@ public class AnalyzerRuntimeRegistry {
       ? onListener.stream().filter(entry -> entry.getInboundAddress() == null).toList()
       : byAddress;
 
-    String sender = senderName(senderHint);
+    String sender = senderHint == null || senderHint.isBlank() ? null : senderHint.trim();
     if (sender == null) {
       candidates = candidates.stream().filter(entry -> entry.getSenderId() == null).toList();
     } else {
-      List<AnalyzerEntry> bySender = candidates
+      List<AnalyzerEntry> named = candidates;
+      List<AnalyzerEntry> bySender = named
         .stream()
-        .filter(entry -> entry.getSenderId() != null && entry.getSenderId().equalsIgnoreCase(sender))
+        .filter(entry -> namesWholeField(entry.getSenderId(), sender))
         .toList();
+      if (bySender.isEmpty()) {
+        // A senderId set before whole-field matching names component 1 only.
+        String first = senderName(sender);
+        bySender = named
+          .stream()
+          .filter(entry -> entry.getSenderId() != null && entry.getSenderId().equalsIgnoreCase(first))
+          .toList();
+      }
       if (bySender.size() == 1) {
         return new Resolution.Resolved(bySender.get(0), "sender");
       }
@@ -248,8 +257,26 @@ public class AnalyzerRuntimeRegistry {
   }
 
   /**
-   * The instrument's own name from a sender field: component 1 of ASTM H.5 or HL7 MSH-3, which a
-   * GeneXpert fills with the System Name from its configuration.
+   * Whether {@code senderId} names the whole sender field (ASTM H.5 or HL7 MSH-3): equal to it
+   * ignoring case, or matching it where {@code *} stands for any characters.
+   */
+  static boolean namesWholeField(String senderId, String senderField) {
+    if (senderId == null || senderId.isBlank()) {
+      return false;
+    }
+    String id = senderId.trim();
+    if (!id.contains("*")) {
+      return id.equalsIgnoreCase(senderField);
+    }
+    String pattern = java.util.Arrays.stream(id.split("\\*", -1))
+      .map(Pattern::quote)
+      .collect(java.util.stream.Collectors.joining(".*"));
+    return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(senderField).matches();
+  }
+
+  /**
+   * Component 1 of a sender field, the one a GeneXpert fills with the System Name from its
+   * configuration.
    */
   static String senderName(String senderHint) {
     if (senderHint == null) {

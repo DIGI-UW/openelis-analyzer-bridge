@@ -314,8 +314,12 @@ connections that declare that listener, in this order:
 
 1. **Address.** Use connections matching the peer address when any exist.
    Otherwise, consider only connections without an address restriction.
-2. **Sender name.** The one connection whose `senderId` matches the sender name,
-   ignoring case.
+2. **Sender.** The one connection whose `senderId` matches the whole sender
+   field (ASTM H.5, or HL7 MSH-3 with its components joined by `^`), ignoring
+   case; `*` in a `senderId` stands for any characters, as in
+   `CPHL^GeneXpert^*`. When no `senderId` matches the whole field, one equal to
+   its first component matches, as a `senderId` set before whole-field matching
+   does.
 3. **Profile pattern.** The pinned profile's `identifier_pattern` rules out
    connections for another kind of analyzer. It is type-level
    (`GENEXPERT|CEPHEID`), so it never chooses between two of the same kind.
@@ -350,7 +354,10 @@ bridge.
 `host` must be a literal IP address to match: a hostname is kept as entered and
 never resolved, because sender identity is numeric. Each GeneXpert needs a
 unique System Name (Cepheid LIS Interface Protocol Specification 302-2261,
-Table 10-1); where two share a listener, enter that name as `senderId`. GeneXpert
+Table 10-1); where two share a listener, enter that name as `senderId`. Where the
+first component does not identify one instrument, as when a lab enters its own
+name as the System Name (`CPHL^GeneXpert^6.2`) and another instrument sends
+`CPHL` too, enter the whole field or a pattern such as `CPHL^GeneXpert^*`. GeneXpert
 profile revision 5 offers both fields for SERVER connections. Earlier revisions
 keep working and resolve by uniqueness.
 
