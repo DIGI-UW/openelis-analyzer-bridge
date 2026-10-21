@@ -350,12 +350,17 @@ public class MessageNormalizer implements MessageRouter {
      */
     public static boolean isQueryOnlyAstmMessage(String rawMessage) {
         if (rawMessage == null || rawMessage.isBlank()) return false;
+        // The header record declares the field delimiter as its second character.
+        String header = rawMessage.stripLeading();
+        char delimiter = header.length() > 1 && header.charAt(0) == 'H' ? header.charAt(1) : '|';
         boolean hasQ = false;
         boolean hasR = false;
         for (String segment : rawMessage.split("\r")) {
             String trimmed = segment.trim();
-            if (trimmed.startsWith("Q|")) hasQ = true;
-            if (trimmed.startsWith("R|")) hasR = true;
+            if (trimmed.length() > 1 && trimmed.charAt(1) == delimiter) {
+                if (trimmed.charAt(0) == 'Q') hasQ = true;
+                if (trimmed.charAt(0) == 'R') hasR = true;
+            }
         }
         return hasQ && !hasR;
     }

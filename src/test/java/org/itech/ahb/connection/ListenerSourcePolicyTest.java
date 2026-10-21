@@ -53,6 +53,15 @@ class ListenerSourcePolicyTest {
   }
 
   @Test
+  void aLinkLocalPeerIsKnownByItsAddressWhateverItsScope() throws Exception {
+    register("gx", 12001, "fe80::1");
+    ListenerSourcePolicy policy = new ListenerSourcePolicy("", true, registry);
+    byte[] address = java.net.InetAddress.getByName("fe80::1").getAddress();
+
+    assertThat(policy.admits(12001, java.net.Inet6Address.getByAddress(null, address, 2))).isTrue();
+  }
+
+  @Test
   void bothSettingsMustAdmitAPeer() throws Exception {
     register("gx", 12001, "10.20.31.4");
     ListenerSourcePolicy policy = new ListenerSourcePolicy("192.0.2.0/24", true, registry);

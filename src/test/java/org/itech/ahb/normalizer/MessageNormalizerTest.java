@@ -548,6 +548,16 @@ class MessageNormalizerTest {
         }
 
         @Test
+        @DisplayName("Recognises a query written with the field delimiter its header declares")
+        void aQueryIsRecognisedByTheHeadersFieldDelimiter() {
+            assertTrue(MessageNormalizer.isQueryOnlyAstmMessage("H;@^\\;;;GeneXpert\rQ;1;ALL\rL;1;N\r"));
+            assertFalse(MessageNormalizer.isQueryOnlyAstmMessage("H;@^\\;;;GeneXpert\rQ;1;ALL\rR;1;HIV;POS\rL;1;N\r"));
+            assertFalse(
+                MessageNormalizer.isQueryOnlyAstmMessage("H;@^\\;;;GeneXpert\rQ|1|ALL\rL;1;N\r"),
+                "a record is read with the declared delimiter, not the usual one");
+        }
+
+        @Test
         @DisplayName("Drops ASTM Q-only messages (queries) without calling parser or DLQ")
         void shouldSkipAstmQueryOnlyMessages() {
             // Real GeneXpert query format: H|...|Q|...|L|

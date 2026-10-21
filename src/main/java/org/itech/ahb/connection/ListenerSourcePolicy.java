@@ -52,7 +52,7 @@ public class ListenerSourcePolicy {
     String reason = null;
     if (restricted && allowed.stream().noneMatch(range -> range.contains(peer))) {
       reason = "it is not in bridge.listeners.allowed-sources";
-    } else if (knownHostsOnly && (registry == null || !registry.hasHost(listenerPort, peer.getHostAddress()))) {
+    } else if (knownHostsOnly && (registry == null || !registry.hasHost(listenerPort, numericAddress(peer)))) {
       reason = "no active connection on this listener has it as its host";
     }
     if (reason == null) {
@@ -61,6 +61,15 @@ public class ListenerSourcePolicy {
     log.warn("Listener on port {} refused a connection from {}: {}", listenerPort, peer.getHostAddress(), reason);
     if (metrics != null) metrics.recordListenerRefused(listenerPort);
     return false;
+  }
+
+  /** The peer's address without an IPv6 scope such as {@code %2}, as a connection's host is written. */
+  private static String numericAddress(InetAddress peer) {
+    try {
+      return InetAddress.getByAddress(peer.getAddress()).getHostAddress();
+    } catch (java.net.UnknownHostException exception) {
+      return peer.getHostAddress();
+    }
   }
 
   private static List<Range> parse(String allowedSources) {
