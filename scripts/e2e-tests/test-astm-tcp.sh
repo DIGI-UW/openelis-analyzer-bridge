@@ -34,3 +34,25 @@ fi
 # Cepheid times the test's own records (R.12, R.13); its analyte and control records carry no
 # time, and none is invented for them.
 echo "GeneXpert result carries the instrument's completion time (${expected_time})."
+
+# The mock keeps both queries on one socket. Requiring both replies exercises the
+# Bridge receive loop as well as its no-orders reply; a closed connection or a
+# cancelled query must not pass as a successful exchange.
+echo "Sending two GeneXpert host queries on one connection..."
+query_reply="$(curl --silent --show-error --fail-with-body \
+    --request POST \
+    --header 'Content-Type: application/json' \
+    --data '{"destination":"tcp://openelis-analyzer-bridge:12001","specimen_ids":["HOST-QUERY-1","HOST-QUERY-2"],"sender_id":"ACCEPTANCE","reply_timeout_seconds":10}' \
+    "${ANALYZER_MOCK_URL}/simulate/host-query/genexpert_astm")"
+if ! jq --exit-status '
+    .status == "completed" and .error == null
+    and ([.results[].specimen_id] == ["HOST-QUERY-1", "HOST-QUERY-2"])
+    and all(.results[];
+        .no_orders == true and .orders == []
+        and (.reply | length == 2)
+        and (.reply[0] | split("|") | .[0] == "H" and .[9] == "ACCEPTANCE^GeneXpert^6.2")
+        and .reply[1] == "L|1|I")' <<<"${query_reply}" >/dev/null; then
+    echo "FAIL: expected both host queries to receive addressed no-orders replies: ${query_reply}" >&2
+    exit 1
+fi
+echo "Both GeneXpert host queries received addressed no-orders replies on the same connection."
