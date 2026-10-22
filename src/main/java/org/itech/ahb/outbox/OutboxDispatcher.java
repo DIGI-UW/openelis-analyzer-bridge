@@ -399,8 +399,8 @@ public class OutboxDispatcher {
 
   /**
    * Render an entry that was persisted on receipt but never rendered, because the bridge stopped in
-   * between. The message is intact, so it is rendered now against current configuration rather than
-   * asking the analyzer to send it again.
+   * between. Rendering uses the decoding context retained with that receipt. An unresolved or legacy
+   * receipt needs an explicit audited retry before acquiring a new decoding context.
    */
   private void renderRecovered(OutboxEntry entry) {
     if (entry.transport() == org.itech.ahb.model.Transport.FILE) {
@@ -443,7 +443,14 @@ public class OutboxDispatcher {
       .protocolAnalyzerHint(entry.protocolHint())
       .listenerPort(entry.listenerPort())
       .build();
-    NormalizedBundleRenderer.Outcome outcome = renderer.render(envelope, client.targetUri().toString());
+    String context = store.interpretationContext(entry.id()).orElse(null);
+    if (
+      org.itech.ahb.routing.ReceivedInterpretation.read(context).analyzer() == null && entry.retryRequestedBy() != null
+    ) {
+      context = renderer.capture(envelope);
+      store.resolveInterpretation(entry.id(), context);
+    }
+    NormalizedBundleRenderer.Outcome outcome = renderer.render(envelope, client.targetUri().toString(), context);
     if (outcome instanceof NormalizedBundleRenderer.Outcome.Failed failed) {
       store.markDeadLettered(entry.id(), failed.reason(), failed.message());
       log.error(

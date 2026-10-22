@@ -320,7 +320,7 @@ class SerialSavedRecoveryTest {
       .toList();
     assertEquals(1, observations.size());
     JsonNode observation = observations.get(0);
-    assertEquals("NOT DETECTED", observation.path("valueString").asText());
+    assertEquals("NOT DETECTED", observation.path("valueCodeableConcept").path("text").asText());
     assertTrue(
       java.util.stream.StreamSupport.stream(observation.path("code").path("coding").spliterator(), false).anyMatch(
         coding ->

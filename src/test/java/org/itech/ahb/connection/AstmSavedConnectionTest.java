@@ -50,6 +50,7 @@ class AstmSavedConnectionTest {
   private AnalyzerConnectionCatalog catalog;
   private AnalyzerProfileCatalog profiles;
   private ObjectNode profile;
+  private AnalyzerRuntimeRegistry registry;
 
   @BeforeEach
   void start() throws Exception {
@@ -87,7 +88,7 @@ class AstmSavedConnectionTest {
       Clock.systemUTC()
     );
     profile = profiles.require("cepheid-genexpert-astm", 1).profile();
-    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    registry = new AnalyzerRuntimeRegistry();
     HTTPForwardServerConfigurationProperties forwarding = new HTTPForwardServerConfigurationProperties();
     forwarding.setUri(URI.create("http://127.0.0.1:" + receiver.getAddress().getPort()));
     outbox = OutboxTestSupport.create(directory.resolve("outbox"), forwarding, registry);
@@ -120,20 +121,18 @@ class AstmSavedConnectionTest {
     outbox.dispatcher.stop();
     String payload =
       "H|@^\\|GXM-04567890||GX-BENCH^GeneXpert^6.2|||||geneexpert||P|1394-97|20260414120000\rP|1\rO|1|RECOVERED-NAMED||^^^MTBRif\rR|1|^MTBRif^^MTB-RIF^Xpert MTB/RIF Ultra^3^MTB-RIF^|NOT DETECTED^||||||20260414120000\rL|1\r";
-    var receipt = new org.itech.ahb.outbox.DurableAstmReceipt(
-      outbox.store,
-      new org.itech.ahb.outbox.ReceivedMessage(
-        "127.0.0.1",
-        50000,
-        org.itech.ahb.model.Protocol.ASTM,
-        org.itech.ahb.model.Transport.TCP,
-        null,
-        null,
-        null,
-        java.time.Instant.now(),
-        inbound.getPort()
-      )
-    );
+    var receipt = outbox
+      .normalizer(new org.itech.ahb.normalizer.AnalyzerIdentifier(registry), registry)
+      .astmReceipt(
+        org.itech.ahb.normalizer.MessageEnvelope.builder()
+          .sourceId("127.0.0.1")
+          .sourcePort(50000)
+          .protocol(org.itech.ahb.model.Protocol.ASTM)
+          .transport(org.itech.ahb.model.Transport.TCP)
+          .listenerPort(inbound.getPort())
+          .receivedAt(java.time.Instant.now())
+          .build()
+      );
     receipt.frame(payload.getBytes(StandardCharsets.ISO_8859_1));
     receipt.complete(payload);
     boot();

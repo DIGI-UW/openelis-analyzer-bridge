@@ -135,7 +135,7 @@ Bridge connection and pinned profile revision. OpenELIS resolves only
 source addresses, sender tokens, names, and local analyzer IDs are context, not
 routing authority. The Device's optional `analyzer-profile-fingerprint`
 extension is the fingerprint of the profile content the message was read with;
-OpenELIS uses it only to notice that a type file changed under its revision.
+OpenELIS preserves it as provenance; it is not an import or mapping-approval gate.
 Every Observation has exactly one patient/control
 classification and one control-recognition extension. A matching rule
 evaluation must carry its complete rule and source evidence; explicit `NONE`
@@ -260,3 +260,40 @@ qualified IU/mL assay profile; installations must select a profile matching
 their assay/export. The specimen hint supplies a local binding default, not
 specimen evidence from the message. Synthetic workbook compatibility is not
 physical instrument or assay qualification.
+
+### Normalized result version 1.1: interpret once
+
+The Device advertises `analyzer-contract-version: 1.1`. Bridge resolves sender,
+profile aliases, connection code overrides, decimal format, qualitative translations,
+record parts and control recognition using the context retained with raw receipt.
+Non-FILE receipts persist that resolved context atomically with raw data; FILE receipts
+retain their parser context including answer definitions. Restart and delivery retry
+reuse it. Already rendered payloads are never reinterpreted on retry.
+
+`Observation.valueQuantity` is a decimal with its original comparator and unit.
+A qualitative answer is `valueCodeableConcept` when declared standard codings exist,
+otherwise `valueString`. Its canonical profile identity is also carried in
+`analyzer-canonical-answer`; `analyzer-raw-value` retains the original spelling.
+A number plus a call uses `interpretation` with `analyzer-result-part: call`;
+informational flags use `analyzer-result-part: flag`. The role extension uses
+`valueCode`. Components retain their explicit sub-identity. Failed runs use
+`dataAbsentReason` with the standard `error` code and no result value. Declared
+clinical codings accompany the test and answer; undeclared input is not assigned
+invented terminology. A conflicting vendor translation is held in Bridge.
+
+OpenELIS validates the delivered contract, maps canonical identities to approved
+local test/component/answer targets, and handles placement, operational QC, review,
+receipts and audit. It does not fetch a current or historical Bridge profile to
+approve a completed result. Local target changes still require local approval.
+A contradictory saved mapping for an older vendor spelling is held for an explicit
+local mapping decision; OpenELIS does not translate it again.
+
+Upgrade OpenELIS before enabling a 1.1 producer: older readers can ignore the new
+role marker and mistake an unfamiliar call next to a quantity for a flag. The new
+reader accepts retained 1.0 bundles using their original standard interpretation
+codes; it never guesses missing qualitative translations. Unknown older answers
+remain held for local mapping. Unsupported contract versions are rejected.
+Legacy unrendered raw receipts without decoding context stay in the existing
+outbox review flow. An explicit Retry can resolve an as-yet unresolved receipt
+against the configured connection; once resolved, its interpretation is immutable.
+This is not a bulk reprocessor and never changes accepted OpenELIS results.

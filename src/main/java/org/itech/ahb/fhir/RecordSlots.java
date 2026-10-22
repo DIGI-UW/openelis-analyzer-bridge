@@ -145,6 +145,7 @@ final class RecordSlots {
   /** The call as an interpretation, with the instrument's own wording as its text. */
   private static CodeableConcept call(String text) {
     CodeableConcept concept = new CodeableConcept().setText(text);
+    concept.addExtension(NormalizedAnswer.ROLE, new org.hl7.fhir.r4.model.CodeType("call"));
     String[] code = CALLS.get(text.trim().toUpperCase());
     if (code != null) {
       concept.addCoding(new Coding(CALL_SYSTEM, code[0], code[1]));
@@ -154,6 +155,8 @@ final class RecordSlots {
 
   /** A flag as sent: an interpretation that states no call, which OpenELIS shows and does not interpret. */
   private static CodeableConcept flag(String flag) {
-    return new CodeableConcept().addCoding(new Coding(FLAG_SYSTEM, flag, flag)).setText(flag);
+    CodeableConcept concept = new CodeableConcept().addCoding(new Coding(FLAG_SYSTEM, flag, flag)).setText(flag);
+    concept.addExtension(NormalizedAnswer.ROLE, new org.hl7.fhir.r4.model.CodeType("flag"));
+    return concept;
   }
 }

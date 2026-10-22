@@ -360,7 +360,7 @@ class HttpForwardingRouterTest {
       var client = new org.itech.ahb.outbox.FhirDeliveryClient(http);
       NormalizedBundleRenderer throwing = new NormalizedBundleRenderer(new AnalyzerRuntimeRegistry()) {
         @Override
-        public Outcome render(MessageEnvelope envelope, String targetUri) {
+        public Outcome render(MessageEnvelope envelope, String targetUri, String retainedContext) {
           throw new ArrayIndexOutOfBoundsException("Index 0 out of bounds for length 0");
         }
       };

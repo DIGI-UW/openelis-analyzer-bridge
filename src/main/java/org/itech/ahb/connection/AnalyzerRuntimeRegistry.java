@@ -595,7 +595,20 @@ public class AnalyzerRuntimeRegistry {
 
     /** The LOINC of a result already under the profile's code; the table is keyed by the codes the instrument sends. */
     public String getLoincForProfileCode(String profileCode) {
-      return getLoincForCode(resultReading == null ? profileCode : resultReading.instrumentCode(profileCode));
+      if (resultReading == null) return getLoincForCode(profileCode);
+      String declared = resultReading.definition(profileCode, "").path("loinc").asText(null);
+      if (declared != null) return declared;
+      String direct = getLoincForCode(profileCode);
+      if (direct != null) return direct;
+      return resultReading
+        .profileCodeByInstrumentCode()
+        .entrySet()
+        .stream()
+        .filter(entry -> profileCode.equals(entry.getValue()))
+        .map(entry -> getLoincForCode(entry.getKey()))
+        .filter(java.util.Objects::nonNull)
+        .findFirst()
+        .orElse(null);
     }
 
     /** Resolve an analyzer test code to its LOINC (inbound). Null if unmapped. */

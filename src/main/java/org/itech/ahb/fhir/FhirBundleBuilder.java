@@ -107,15 +107,18 @@ public class FhirBundleBuilder {
       .orElseThrow(() -> new IllegalStateException("Analyzer source context is required"));
     device.addIdentifier().setSystem(CONNECTION_ID_SYSTEM).setValue(context.bridgeConnectionId());
     device.addIdentifier().setSystem(ANALYZER_ID_SYSTEM).setValue(context.clientAnalyzerId());
-    device.addExtension(EXTENSION_ROOT + "analyzer-contract-version", new StringType("1.0"));
+    device.addExtension(EXTENSION_ROOT + "analyzer-contract-version", new StringType("1.1"));
     device.addExtension(EXTENSION_ROOT + "analyzer-profile-id", new StringType(context.profileId()));
     device.addExtension(
       EXTENSION_ROOT + "analyzer-profile-revision",
       new org.hl7.fhir.r4.model.IntegerType(context.profileRevision())
     );
     if (context.profileFingerprint() != null) {
-      // The content the message was read with, so OpenELIS can tell a type file changed under its revision.
-      device.addExtension(EXTENSION_ROOT + "analyzer-profile-fingerprint", new StringType(context.profileFingerprint()));
+      // Provenance only: consumers do not reconstruct parsing from this fingerprint.
+      device.addExtension(
+        EXTENSION_ROOT + "analyzer-profile-fingerprint",
+        new StringType(context.profileFingerprint())
+      );
     }
     device.addExtension(
       EXTENSION_ROOT + "analyzer-source-protocol",
@@ -154,6 +157,7 @@ public class FhirBundleBuilder {
       if (result.parts() != null) {
         RecordSlots.apply(observation, result);
       }
+      NormalizedAnswer.apply(observation, result, context.reading());
     }
     return bundle;
   }
@@ -545,8 +549,36 @@ public class FhirBundleBuilder {
     DeviceInfo deviceInfo,
     ControlResultRecognition controlRecognition,
     String recognitionFingerprint,
-    String profileFingerprint
+    String profileFingerprint,
+    org.itech.ahb.profile.ResultReading reading
   ) {
+    public AnalyzerContext(
+      String connection,
+      String analyzer,
+      String profile,
+      int revision,
+      String protocol,
+      String transport,
+      DeviceInfo device,
+      ControlResultRecognition recognition,
+      String recognitionFingerprint,
+      String profileFingerprint
+    ) {
+      this(
+        connection,
+        analyzer,
+        profile,
+        revision,
+        protocol,
+        transport,
+        device,
+        recognition,
+        recognitionFingerprint,
+        profileFingerprint,
+        null
+      );
+    }
+
     /** A context whose profile content is not stated; the bundle then names no profile fingerprint. */
     public AnalyzerContext(
       String bridgeConnectionId,

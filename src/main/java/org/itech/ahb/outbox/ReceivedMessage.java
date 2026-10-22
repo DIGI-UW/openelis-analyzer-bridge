@@ -19,8 +19,38 @@ public record ReceivedMessage(
   String rawText,
   String rawCharset,
   Instant receivedAt,
-  Integer listenerPort
+  Integer listenerPort,
+  String interpretationContext
 ) {
+  public ReceivedMessage(
+    String sourceId,
+    Integer sourcePort,
+    Protocol protocol,
+    Transport transport,
+    String protocolHint,
+    String rawText,
+    String rawCharset,
+    Instant receivedAt,
+    Integer listenerPort
+  ) {
+    this(sourceId, sourcePort, protocol, transport, protocolHint, rawText, rawCharset, receivedAt, listenerPort, null);
+  }
+
+  public ReceivedMessage withInterpretation(String context) {
+    return new ReceivedMessage(
+      sourceId,
+      sourcePort,
+      protocol,
+      transport,
+      protocolHint,
+      rawText,
+      rawCharset,
+      receivedAt,
+      listenerPort,
+      context
+    );
+  }
+
   /** A message that did not arrive on a shared network listener. */
   public ReceivedMessage(
     String sourceId,

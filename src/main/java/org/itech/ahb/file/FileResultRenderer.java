@@ -81,7 +81,15 @@ public final class FileResultRenderer {
       snapshot.setRecognitionFingerprint(context.recognitionFingerprint());
       snapshot.setCodeToLoinc(context.codeToLoinc());
       snapshot.setResultReading(
-        new ResultReading(null, null, '.', Map.of(), context.profileCodeByInstrumentCode(), context.sampleFlags())
+        new ResultReading(
+          null,
+          null,
+          '.',
+          Map.of(),
+          context.profileCodeByInstrumentCode(),
+          context.sampleFlags(),
+          context.resultDefinitions()
+        )
       );
       List<RenderedDelivery> deliveries = new ArrayList<>();
       for (var accession : parsed) {
@@ -125,7 +133,8 @@ public final class FileResultRenderer {
       FhirBundleBuilder.DeviceInfo.fromSenderToken(sourceFile, analyzerEntry.getName()),
       analyzerEntry.getControlResultRecognition(),
       analyzerEntry.getRecognitionFingerprint(),
-      analyzerEntry.getProfileFingerprint()
+      analyzerEntry.getProfileFingerprint(),
+      analyzerEntry.getResultReading()
     );
     ResultReading reading = analyzerEntry.getResultReading();
     return FhirBundleBuilder.buildNormalizedBundle(

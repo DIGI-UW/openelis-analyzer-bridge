@@ -20,17 +20,20 @@ public final class OutboxTestSupport implements AutoCloseable {
   public final OutboxProperties properties;
   public final OutboxDispatcher dispatcher;
   public final HttpForwardingRouter router;
+  private final AnalyzerRuntimeRegistry registry;
 
   private OutboxTestSupport(
     SqliteOutboxStore store,
     OutboxProperties properties,
     OutboxDispatcher dispatcher,
-    HttpForwardingRouter router
+    HttpForwardingRouter router,
+    AnalyzerRuntimeRegistry registry
   ) {
     this.store = store;
     this.properties = properties;
     this.dispatcher = dispatcher;
     this.router = router;
+    this.registry = registry;
   }
 
   public org.itech.ahb.file.FileMessageHandler fileHandler(AnalyzerRuntimeRegistry registry) {
@@ -59,7 +62,12 @@ public final class OutboxTestSupport implements AutoCloseable {
     org.itech.ahb.normalizer.AnalyzerIdentifier identifier,
     AnalyzerRuntimeRegistry registry
   ) {
-    return new org.itech.ahb.normalizer.MessageNormalizer(router, identifier, store, registry, null);
+    return new org.itech.ahb.normalizer.MessageNormalizer(
+      router,
+      store,
+      registry == null ? this.registry : registry,
+      null
+    );
   }
 
   public static OutboxTestSupport create(
@@ -77,7 +85,7 @@ public final class OutboxTestSupport implements AutoCloseable {
     NormalizedBundleRenderer renderer = new NormalizedBundleRenderer(registry);
     OutboxDispatcher dispatcher = new OutboxDispatcher(store, client, renderer, properties);
     HttpForwardingRouter router = new HttpForwardingRouter(store, dispatcher, client, renderer);
-    return new OutboxTestSupport(store, properties, dispatcher, router);
+    return new OutboxTestSupport(store, properties, dispatcher, router, registry);
   }
 
   /**
@@ -110,7 +118,8 @@ public final class OutboxTestSupport implements AutoCloseable {
         envelope.getRawMessage(),
         null,
         envelope.getReceivedAt(),
-        envelope.getListenerPort()
+        envelope.getListenerPort(),
+        org.itech.ahb.routing.ReceivedInterpretation.capture(registry, envelope)
       )
     );
     return router.route(withReceipt(envelope, receipt.id()));

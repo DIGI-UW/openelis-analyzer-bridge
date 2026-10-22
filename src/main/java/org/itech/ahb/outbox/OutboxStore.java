@@ -36,6 +36,12 @@ public interface OutboxStore extends AutoCloseable {
   /** Receipt-time FILE parser context. Contains clinical metadata; callers must audit access. */
   Optional<String> fileContext(String id);
 
+  /** Receipt-time decoding context. Payload access requires the same audit as raw input. */
+  Optional<String> interpretationContext(String id);
+
+  /** Resolve previously unrenderable input only after an explicitly audited retry. */
+  void resolveInterpretation(String id, String context);
+
   /** Exact received bytes. Binary FILE input is never decoded as text. Callers must audit access. */
   Optional<byte[]> rawBytes(String id);
 
