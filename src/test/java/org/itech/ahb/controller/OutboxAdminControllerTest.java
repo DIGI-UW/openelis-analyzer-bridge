@@ -24,6 +24,8 @@ import org.itech.ahb.outbox.RenderedDelivery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -177,18 +179,21 @@ class OutboxAdminControllerTest {
     );
   }
 
-  @Test
-  @DisplayName("a serial message's sender is read from its header, not its configured analyzer")
-  void aSerialMessagesSenderIsItsHeadersSenderField() throws Exception {
+  @ParameterizedTest
+  @CsvSource({ "SERIAL,|", "SERIAL,;", "HTTP,|", "HTTP,;", "HTTP,$" })
+  @DisplayName("serial and HTTP senders use the header's declared delimiter")
+  void aMessagesSenderIsItsHeadersSenderField(Transport transport, char delimiter) throws Exception {
     String unique = java.util.UUID.randomUUID().toString();
     String serial = "H|\\^&|||CPHL^GeneXpert^6.2\rP|1\rO|1|ACC-9\rR|1|^^^MTB|POS\rL|1|N\rC|1|" + unique + "\r";
+    serial = serial.replace('|', delimiter);
+    String connection = "bridge-connection-" + unique;
     String id = "astm-v1:serial-" + unique;
     Receipt received = store.receive(
       new ReceivedMessage(
         "serial:/dev/ttyUSB0",
         null,
         Protocol.ASTM,
-        Transport.SERIAL,
+        transport,
         "oe-analyzer-7",
         serial,
         null,
@@ -202,7 +207,7 @@ class OutboxAdminControllerTest {
           id,
           "ACC-9",
           "{\"resourceType\":\"Bundle\"}",
-          "bridge-connection-serial",
+          connection,
           "analyzer-7",
           "genexpert-astm",
           1,
@@ -216,7 +221,7 @@ class OutboxAdminControllerTest {
       .perform(
         get("/admin/outbox")
           .param("state", "DMQ")
-          .param("connectionId", "bridge-connection-serial")
+          .param("connectionId", connection)
           .with(httpBasic("testuser", "testpass"))
       )
       .andExpect(status().isOk())

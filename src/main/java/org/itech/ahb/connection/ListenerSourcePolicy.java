@@ -74,8 +74,13 @@ public class ListenerSourcePolicy {
       return true;
     }
     log.warn("Listener on port {} refused a connection from {}: {}", listenerPort, peer.getHostAddress(), reason);
-    if (metrics != null) metrics.recordListenerRefused(listenerPort);
+    recordRefusal(listenerPort);
     return false;
+  }
+
+  /** Records a peer refused by source policy or because the listener has reached capacity. */
+  public void recordRefusal(int listenerPort) {
+    if (metrics != null) metrics.recordListenerRefused(listenerPort);
   }
 
   /** The peer's address without an IPv6 scope such as {@code %2}, as a connection's host is written. */

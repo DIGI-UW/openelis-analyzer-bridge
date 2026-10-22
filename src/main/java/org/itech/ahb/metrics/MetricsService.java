@@ -39,7 +39,7 @@ public class MetricsService {
         ).increment();
     }
 
-    /** A shared listener closed a connection from a source it does not admit. */
+    /** A shared listener refused a connection because of source policy or its session limit. */
     public void recordListenerRefused(int listenerPort) {
         registry.counter("bridge.listener.refused", "port", Integer.toString(listenerPort)).increment();
     }

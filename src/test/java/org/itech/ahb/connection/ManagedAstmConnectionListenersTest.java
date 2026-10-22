@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -11,6 +12,7 @@ import java.net.Socket;
 import java.time.Duration;
 import org.itech.ahb.lib.astm.interpretation.DefaultASTMInterpreterFactory;
 import org.itech.ahb.lib.astm.servlet.ASTMServlet;
+import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.normalizer.MessageNormalizer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +64,35 @@ class ManagedAstmConnectionListenersTest {
       }
     } finally {
       restricted.stopAll();
+    }
+  }
+
+  @Test
+  void sessionLimitRefusalsAreCountedOnceAndAdmittedPeersAreNotCounted() throws Exception {
+    int port = availablePort();
+    SimpleMeterRegistry meters = new SimpleMeterRegistry();
+    var refused = meters.counter("bridge.listener.refused", "port", Integer.toString(port));
+    ManagedAstmConnectionListeners limited = new ManagedAstmConnectionListeners(
+      mock(MessageNormalizer.class),
+      new DefaultASTMInterpreterFactory(),
+      new ListenerSourcePolicy("", false, 1, null, new MetricsService(meters))
+    );
+    try {
+      limited.start("bridge-limited", "oe-limited", port, "LIS01_A");
+      try (Socket first = new Socket("127.0.0.1", port)) {
+        first.setSoTimeout(5000);
+        first.getOutputStream().write(0x05);
+        first.getOutputStream().flush();
+        assertThat(first.getInputStream().read()).as("admitted peer is answered").isEqualTo(0x06);
+        assertThat(refused.count()).isZero();
+        try (Socket second = new Socket("127.0.0.1", port)) {
+          second.setSoTimeout(5000);
+          assertThat(second.getInputStream().read()).isEqualTo(-1);
+          assertThat(refused.count()).isEqualTo(1);
+        }
+      }
+    } finally {
+      limited.stopAll();
     }
   }
 
@@ -184,14 +215,7 @@ class ManagedAstmConnectionListenersTest {
   @Test
   void rejectsActivationWhenTheSavedPortCannotBeBound() throws Exception {
     try (ServerSocket occupied = new ServerSocket(0)) {
-      assertThatThrownBy(() ->
-        listeners.start(
-          "bridge-42",
-          "oe-42",
-          occupied.getLocalPort(),
-          "LIS01_A"
-        )
-      )
+      assertThatThrownBy(() -> listeners.start("bridge-42", "oe-42", occupied.getLocalPort(), "LIS01_A"))
         .isInstanceOf(AnalyzerConnectionException.class)
         .hasMessageContaining("Cannot activate ASTM listener");
       assertThat(listeners.isRunning("bridge-42")).isFalse();

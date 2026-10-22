@@ -54,6 +54,12 @@ public class ASTMServlet {
     socket -> org.itech.ahb.lib.astm.communication.AstmReceiptObserver.NONE;
   private final java.util.Map<Socket, Thread> sessions = new java.util.HashMap<>();
   private volatile int maxSessions = Integer.MAX_VALUE;
+  private Runnable sessionLimitRefused = () -> {};
+
+  /** Called once for a peer refused because the listener already holds its maximum sessions. */
+  public void setSessionLimitRefused(Runnable callback) {
+    sessionLimitRefused = java.util.Objects.requireNonNull(callback);
+  }
 
   /**
    * The most sessions held open at once. A session stays open while its peer is connected, each on
@@ -127,6 +133,7 @@ public class ASTMServlet {
               continue;
             }
             if (sessions.size() >= maxSessions) {
+              sessionLimitRefused.run();
               log.warn(
                 "Listener on port " +
                 listenPort +

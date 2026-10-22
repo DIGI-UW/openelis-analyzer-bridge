@@ -164,9 +164,10 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      */
     public static String extractSenderFromHRecord(String rawMessage) {
         if (rawMessage == null) return null;
-        for (String line : rawMessage.split("\r")) {
-            if (line.startsWith("H|")) {
-                String[] fields = line.split("\\|", -1);
+        for (String record : rawMessage.split("\r\n|\r|\n")) {
+            String line = record.trim();
+            if (line.length() > 1 && line.charAt(0) == 'H' && !Character.isLetterOrDigit(line.charAt(1))) {
+                String[] fields = line.split(java.util.regex.Pattern.quote(line.substring(1, 2)), -1);
                 if (fields.length > 4 && fields[4] != null && !fields[4].isBlank()) {
                     String sender = fields[4].trim();
                     if (!sender.isEmpty()) {
