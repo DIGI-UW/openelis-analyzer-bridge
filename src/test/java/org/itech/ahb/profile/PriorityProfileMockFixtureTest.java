@@ -73,7 +73,11 @@ class PriorityProfileMockFixtureTest {
       );
       int rowCount = parsed.stream().mapToInt(results -> results.results().size()).sum();
       SampleFlags flags = SampleFlags.fromProfile(profile);
-      parsed = parsed.stream().map(results -> results.withFileSampleFlags(flags)).toList();
+      ResultReading reading = ResultReading.fromProfile(profile);
+      parsed = parsed
+        .stream()
+        .map(results -> results.underProfileCodes(reading).withFileSampleFlags(flags).withTabularReading(reading))
+        .toList();
       parsedResultCount = parsed.stream().mapToInt(results -> results.results().size()).sum();
       flagRowCount = rowCount - parsedResultCount;
       raisedFlagCount = parsed.stream().mapToInt(results -> results.sampleFlags().size()).sum();
@@ -85,7 +89,7 @@ class PriorityProfileMockFixtureTest {
             Set<String> values = declaredValues.get(result.testCode());
             if (values == null) {
               unresolved.add(results.accessionNumber() + " " + result.testCode() + ": test not declared");
-            } else if (!result.isNumeric() && !values.contains(result.value())) {
+            } else if (result.parts().number() == null && !values.contains(result.parts().call())) {
               unresolved.add(results.accessionNumber() + " " + result.testCode() + ": value " + result.value());
             }
           }));
