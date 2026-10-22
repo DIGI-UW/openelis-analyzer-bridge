@@ -84,8 +84,8 @@ public final class FileResultRenderer {
         new ResultReading(
           null,
           null,
-          '.',
-          Map.of(),
+          context.decimalSeparator() == null ? '.' : context.decimalSeparator(),
+          context.runFailures(),
           context.profileCodeByInstrumentCode(),
           context.sampleFlags(),
           context.resultDefinitions()
@@ -138,7 +138,10 @@ public final class FileResultRenderer {
     );
     ResultReading reading = analyzerEntry.getResultReading();
     return FhirBundleBuilder.buildNormalizedBundle(
-      parsed.underProfileCodes(reading).withFileSampleFlags(reading == null ? null : reading.sampleFlags()),
+      parsed
+        .underProfileCodes(reading)
+        .withFileSampleFlags(reading == null ? null : reading.sampleFlags())
+        .withTabularReading(reading),
       context,
       analyzerEntry::getLoincForProfileCode,
       FileDeliveryIdentity.forAccession(analyzerEntry.getBridgeConnectionId(), contentHash, parsed.accessionNumber())

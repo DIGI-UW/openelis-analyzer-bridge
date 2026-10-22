@@ -293,7 +293,7 @@ public class NormalizedBundleRenderer {
     HL7ResultParser.ParsedResults sorted = parsed.underProfileCodes(reading);
     if (envelope.getProtocol() == Protocol.CSV && reading != null) {
       // A socket parser sorts flag records out as it reads; a tabular file's rows are sorted here.
-      sorted = sorted.withFileSampleFlags(reading.sampleFlags());
+      sorted = sorted.withFileSampleFlags(reading.sampleFlags()).withTabularReading(reading);
     }
     try {
       String fhirJson = FhirBundleBuilder.buildNormalizedBundle(

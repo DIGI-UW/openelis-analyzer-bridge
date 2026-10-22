@@ -39,6 +39,59 @@ class FileMessageHandlerLoincTest {
   }
 
   @Test
+  void tabularValuesUseTheCapturedDecimalAndFailureRules() throws Exception {
+    var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    var profile = mapper.readTree(
+      """
+      {"configDefaults":{"numberFormat":","},"default_test_mappings":[
+        {"test_code":"COUNT","run_failure_values":["ERROR"],
+         "translations":{"ERROR":["ECHEC"]}}]}
+      """
+    );
+    AnalyzerEntry entry = new AnalyzerEntry();
+    entry.setId("43");
+    entry.setName("File instrument");
+    entry.setBridgeConnectionId("file-connection");
+    entry.setProfileId("site.file");
+    entry.setProfileRevision(1);
+    entry.setProfileFingerprint("sha256:" + "1".repeat(64));
+    entry.setControlResultRecognition(ControlResultRecognition.none());
+    entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+    entry.setResultReading(org.itech.ahb.profile.ResultReading.fromProfile(profile));
+    var captured = FileReceiptContext.capture(java.nio.file.Path.of("results.csv"), entry, "COUNT");
+    var retained = mapper.readValue(mapper.writeValueAsString(captured), FileReceiptContext.class);
+    assertEquals(',', retained.decimalSeparator());
+    assertTrue(retained.runFailures().get("COUNT").get("").contains("ECHEC"));
+
+    var number = firstObservation(
+      FileResultRenderer.buildFileFhirBundle(
+        entry,
+        new ParsedResults("ACC", List.of(AnalyzerResult.text("COUNT", "Count", "1,23"))),
+        "results.csv",
+        "1".repeat(64)
+      )
+    );
+    assertEquals(new java.math.BigDecimal("1.23"), number.getValueQuantity().getValue());
+    assertEquals(
+      "1,23",
+      number
+        .getExtensionByUrl("https://openelis-global.org/fhir/StructureDefinition/analyzer-raw-value")
+        .getValue()
+        .primitiveValue()
+    );
+    var failure = firstObservation(
+      FileResultRenderer.buildFileFhirBundle(
+        entry,
+        new ParsedResults("ACC", List.of(AnalyzerResult.text("COUNT", "Count", "ECHEC"))),
+        "results.csv",
+        "2".repeat(64)
+      )
+    );
+    assertTrue(failure.hasDataAbsentReason());
+    org.junit.jupiter.api.Assertions.assertFalse(failure.hasValue());
+  }
+
+  @Test
   @DisplayName("FILE traffic carries exact connection context, raw code, and optional LOINC")
   void fileInboundUsesNormalizedContract() {
     AnalyzerEntry entry = new AnalyzerEntry();

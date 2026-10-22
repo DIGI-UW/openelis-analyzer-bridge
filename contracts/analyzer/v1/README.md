@@ -285,8 +285,9 @@ OpenELIS validates the delivered contract, maps canonical identities to approved
 local test/component/answer targets, and handles placement, operational QC, review,
 receipts and audit. It does not fetch a current or historical Bridge profile to
 approve a completed result. Local target changes still require local approval.
-A contradictory saved mapping for an older vendor spelling is held for an explicit
-local mapping decision; OpenELIS does not translate it again.
+Raw vendor text is audit evidence only. It cannot override a canonical answer,
+exclude a typed number, or choose a local answer mapping. Obsolete vendor-spelling
+mapping rows may be removed through the local editor.
 
 Upgrade OpenELIS before enabling a 1.1 producer: older readers can ignore the new
 role marker and mistake an unfamiliar call next to a quantity for a flag. The new
@@ -297,3 +298,27 @@ Legacy unrendered raw receipts without decoding context stay in the existing
 outbox review flow. An explicit Retry can resolve an as-yet unresolved receipt
 against the configured connection; once resolved, its interpretation is immutable.
 This is not a bulk reprocessor and never changes accepted OpenELIS results.
+
+#### Canonical source identity and quantities
+
+Within a profile, `(profileId, test code, sub-identity, canonical answer)` names a
+stable reported meaning. Parser revisions do not change that identity. A genuinely
+different test or answer must receive a different identity; do not reuse a code
+for an unrelated meaning. OpenELIS applies the approved local mapping for that
+scope. A result from another profile is retained as unresolved local work rather
+than rejected merely because the instrument now uses another profile.
+
+A quantity is already a FHIR decimal, with its reported unit and comparator.
+Bridge owns number-format interpretation for ASTM, HL7, FILE and HTTP tabular
+input. FILE receipts retain the decimal setting and failure rules, so restart
+cannot reinterpret them using today's connection. Tabular extraction does not
+assign numeric meaning before those settings are applied. No implicit unit
+conversion is performed. The lab approves the declared quantity meaning and
+local target during mapping; display-label equality is not clinical equivalence.
+
+Version 1.1 requires explicit `call`/`flag` roles and supported typed values;
+missing roles never fall back to the 1.0 vocabulary. Recovery uses the accepted
+bundle's version as well. Recognition hashes are optional provenance in the
+result payload; explicit classification and consistent recognition evidence remain
+required. Receipt identity prevents replay; separate messages remain reviewable
+even if their results have equal values or timestamps.

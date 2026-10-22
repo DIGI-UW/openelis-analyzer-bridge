@@ -36,7 +36,9 @@ public record FileReceiptContext(
   @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> profileCodeByInstrumentCode,
   @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> testCodeValues,
   @JsonInclude(JsonInclude.Include.NON_NULL) SampleFlags sampleFlags,
-  @JsonInclude(JsonInclude.Include.NON_NULL) com.fasterxml.jackson.databind.JsonNode resultDefinitions
+  @JsonInclude(JsonInclude.Include.NON_NULL) com.fasterxml.jackson.databind.JsonNode resultDefinitions,
+  Character decimalSeparator,
+  Map<String, Map<String, java.util.Set<String>>> runFailures
 ) {
   public FileReceiptContext {
     if (version != 1) throw new IllegalArgumentException("Unsupported FILE receipt context version: " + version);
@@ -82,7 +84,9 @@ public record FileReceiptContext(
       entry.getResultReading() == null ? Map.of() : entry.getResultReading().profileCodeByInstrumentCode(),
       entry.getTestCodeValues(),
       flagsOf(entry.getResultReading()),
-      entry.getResultReading() == null ? null : entry.getResultReading().definitions()
+      entry.getResultReading() == null ? null : entry.getResultReading().definitions(),
+      entry.getResultReading() == null ? '.' : entry.getResultReading().decimalSeparator(),
+      entry.getResultReading() == null ? Map.of() : entry.getResultReading().runFailures()
     );
   }
 

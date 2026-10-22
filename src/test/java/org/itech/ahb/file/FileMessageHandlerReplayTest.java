@@ -86,6 +86,45 @@ class FileMessageHandlerReplayTest {
   }
 
   @Test
+  void receiptBeforeRestartKeepsCommaDecimalsAndFailureRules() throws Exception {
+    entry.setDelimiter(";");
+    entry.setResultReading(
+      ResultReading.fromProfile(
+        json.readTree(
+          """
+          {"configDefaults":{"numberFormat":","},"default_test_mappings":[
+           {"test_code":"T1","run_failure_values":["ERROR"],"translations":{"ERROR":["ECHEC"]}}]}
+          """
+        )
+      )
+    );
+    Path file = directory.resolve("captured.csv");
+    Files.writeString(file, "Sample;Test;Result\nPATIENT-1;T1;1,23\nPATIENT-2;T1;ECHEC\n");
+    handler().processFile(file, "oe-1");
+    entry.setResultReading(new ResultReading(null, null, '.', Map.of(), Map.of(), null));
+    Files.delete(file);
+    reopen();
+    outbox.dispatcher.dispatchDue();
+    assertEquals(2, deliveries.size());
+    List<JsonNode> observations = deliveries
+      .stream()
+      .flatMap(bundle -> {
+        List<JsonNode> found = new ArrayList<>();
+        bundle
+          .path("entry")
+          .forEach(item -> {
+            if ("Observation".equals(item.path("resource").path("resourceType").asText())) found.add(
+              item.path("resource")
+            );
+          });
+        return found.stream();
+      })
+      .toList();
+    assertTrue(observations.stream().anyMatch(row -> row.path("valueQuantity").path("value").asText().equals("1.23")));
+    assertTrue(observations.stream().anyMatch(row -> row.has("dataAbsentReason") && !row.has("valueString")));
+  }
+
+  @Test
   void partialDeliverySurvivesSourceDeletionAndOnlyUndeliveredAccessionRetries() throws Exception {
     Path file = csv("results.csv", "PATIENT-1,T1,2\nQC-1,T1,3\n");
     byte[] original = Files.readAllBytes(file);

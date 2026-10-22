@@ -658,6 +658,11 @@ public class FhirBundleBuilder {
     org.itech.ahb.profile.ControlResultRecognitionEvaluator.Assessment controlRecognitionAssessment,
     RecordParts parts
   ) {
+    /** Selected tabular fields; value interpretation happens after receipt settings are applied. */
+    public static AnalyzerResult tabular(String testCode, String value, String units) {
+      return new AnalyzerResult(testCode, testCode, value, units, false, false, null, null, null, null, null, null);
+    }
+
     public static AnalyzerResult numeric(String testCode, String testName, String value, String units) {
       return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null, null, null);
     }

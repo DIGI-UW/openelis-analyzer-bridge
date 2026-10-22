@@ -154,10 +154,7 @@ public class FileResultParser {
                         field -> getCellValue(row, fieldIndexes.get(field), formatter));
                 if (value == null || value.isBlank()) continue;
 
-                boolean isNumeric = isNumericValue(value);
-                AnalyzerResult ar = isNumeric
-                        ? AnalyzerResult.numeric(testCode, testCode, value, units)
-                        : AnalyzerResult.text(testCode, testCode, value);
+                AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units);
                 ControlResultRecognitionEvaluator.Assessment assessment =
                         evaluateControl(sampleId, qcTask, recognition);
                 ar = ar.withControlRecognition(assessment)
@@ -280,10 +277,7 @@ public class FileResultParser {
                     field -> getRowValue(row, fieldIndexes.get(field)));
             if (value == null || value.isBlank()) continue;
 
-            boolean isNumeric = isNumericValue(value);
-            AnalyzerResult ar = isNumeric
-                    ? AnalyzerResult.numeric(testCode, testCode, value, units)
-                    : AnalyzerResult.text(testCode, testCode, value);
+            AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units);
             ControlResultRecognitionEvaluator.Assessment assessment =
                     evaluateControl(sampleId, qcTask, recognition);
             ar = ar.withControlRecognition(assessment)
@@ -611,10 +605,7 @@ public class FileResultParser {
                             field -> getMappedValue(record, columnMappings, field));
                     if (value == null || value.isBlank()) continue;
 
-                    boolean isNumeric = isNumericValue(value);
-                    AnalyzerResult ar = isNumeric
-                            ? AnalyzerResult.numeric(testCode, testCode, value, units)
-                            : AnalyzerResult.text(testCode, testCode, value);
+                    AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units);
                     ControlResultRecognitionEvaluator.Assessment assessment =
                             evaluateControl(sampleId, qcTask, recognition);
                     ar = ar.withControlRecognition(assessment)
@@ -776,10 +767,6 @@ public class FileResultParser {
             if (semanticFields.contains(semanticField)) headers.add(header);
         });
         return headers;
-    }
-
-    private static boolean isNumericValue(String value) {
-        return NumericValue.isBoundedDecimal(value);
     }
 
     static boolean isControlRow(

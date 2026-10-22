@@ -217,7 +217,7 @@ class FileResultParserTest {
 
             AnalyzerResult numericResult = group.results().stream()
                     .filter(r -> "WBC".equals(r.testCode())).findFirst().orElseThrow();
-            assertTrue(numericResult.isNumeric());
+            assertFalse(numericResult.isNumeric()); // Extraction preserves fields; receipt rendering assigns the type.
 
             AnalyzerResult textResult = group.results().stream()
                     .filter(r -> "INTERP".equals(r.testCode())).findFirst().orElseThrow();
@@ -650,7 +650,7 @@ class FileResultParserTest {
             assertNotNull(results);
             ParsedResults s1 = results.stream()
                     .filter(r -> "S001".equals(r.accessionNumber())).findFirst().orElseThrow();
-            // <2 is treated as text (not numeric) — isNumericValue() returns false for comparison operators
+            // Extraction retains the comparator for receipt-time interpretation.
             assertEquals("<2", s1.results().get(0).value());
 
             ParsedResults s2 = results.stream()

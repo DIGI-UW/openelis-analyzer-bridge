@@ -570,6 +570,42 @@ public class HL7ResultParser {
       return new ParsedResults(accessionNumber, kept, patient, specimenDescriptor, raised);
     }
 
+    /** Interpret selected tabular values once with the retained receipt settings. */
+    public ParsedResults withTabularReading(ResultReading reading) {
+      ResultReading effective = reading == null
+        ? new ResultReading(null, null, '.', Map.of(), Map.of(), null)
+        : reading;
+      List<AnalyzerResult> interpreted = results
+        .stream()
+        .map(result -> {
+          String raw = result.value();
+          String canonical = effective.canonicalNumber(raw);
+          boolean failed = effective.isRunFailure(result.testCode(), "", raw);
+          String number = !failed && NumericValue.isBoundedDecimal(canonical) ? canonical : null;
+          String call = failed || number != null ? null : raw;
+          return result.withParts(
+            new RecordParts(
+              "",
+              call,
+              number,
+              null,
+              null,
+              null,
+              List.of(),
+              null,
+              null,
+              null,
+              null,
+              null,
+              failed,
+              List.of()
+            )
+          );
+        })
+        .toList();
+      return new ParsedResults(accessionNumber, interpreted, patient, specimenDescriptor, sampleFlags);
+    }
+
     /** These results under the profile's own codes, where the connection sets other codes for its instrument. */
     public ParsedResults underProfileCodes(org.itech.ahb.profile.ResultReading reading) {
       if (reading == null || reading.profileCodeByInstrumentCode().isEmpty()) {
