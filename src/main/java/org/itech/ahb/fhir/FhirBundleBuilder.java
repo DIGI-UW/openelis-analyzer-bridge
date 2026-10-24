@@ -107,12 +107,19 @@ public class FhirBundleBuilder {
       .orElseThrow(() -> new IllegalStateException("Analyzer source context is required"));
     device.addIdentifier().setSystem(CONNECTION_ID_SYSTEM).setValue(context.bridgeConnectionId());
     device.addIdentifier().setSystem(ANALYZER_ID_SYSTEM).setValue(context.clientAnalyzerId());
-    device.addExtension(EXTENSION_ROOT + "analyzer-contract-version", new StringType("1.0"));
+    device.addExtension(EXTENSION_ROOT + "analyzer-contract-version", new StringType("1.1"));
     device.addExtension(EXTENSION_ROOT + "analyzer-profile-id", new StringType(context.profileId()));
     device.addExtension(
       EXTENSION_ROOT + "analyzer-profile-revision",
       new org.hl7.fhir.r4.model.IntegerType(context.profileRevision())
     );
+    if (context.profileFingerprint() != null) {
+      // Provenance only: consumers do not reconstruct parsing from this fingerprint.
+      device.addExtension(
+        EXTENSION_ROOT + "analyzer-profile-fingerprint",
+        new StringType(context.profileFingerprint())
+      );
+    }
     device.addExtension(
       EXTENSION_ROOT + "analyzer-source-protocol",
       new org.hl7.fhir.r4.model.CodeType(context.sourceProtocol())
@@ -150,6 +157,7 @@ public class FhirBundleBuilder {
       if (result.parts() != null) {
         RecordSlots.apply(observation, result);
       }
+      NormalizedAnswer.apply(observation, result, context.reading());
     }
     return bundle;
   }
@@ -517,8 +525,63 @@ public class FhirBundleBuilder {
     String sourceTransport,
     DeviceInfo deviceInfo,
     ControlResultRecognition controlRecognition,
-    String recognitionFingerprint
+    String recognitionFingerprint,
+    String profileFingerprint,
+    org.itech.ahb.profile.ResultReading reading
   ) {
+    public AnalyzerContext(
+      String connection,
+      String analyzer,
+      String profile,
+      int revision,
+      String protocol,
+      String transport,
+      DeviceInfo device,
+      ControlResultRecognition recognition,
+      String recognitionFingerprint,
+      String profileFingerprint
+    ) {
+      this(
+        connection,
+        analyzer,
+        profile,
+        revision,
+        protocol,
+        transport,
+        device,
+        recognition,
+        recognitionFingerprint,
+        profileFingerprint,
+        null
+      );
+    }
+
+    /** A context whose profile content is not stated; the bundle then names no profile fingerprint. */
+    public AnalyzerContext(
+      String bridgeConnectionId,
+      String clientAnalyzerId,
+      String profileId,
+      int profileRevision,
+      String sourceProtocol,
+      String sourceTransport,
+      DeviceInfo deviceInfo,
+      ControlResultRecognition controlRecognition,
+      String recognitionFingerprint
+    ) {
+      this(
+        bridgeConnectionId,
+        clientAnalyzerId,
+        profileId,
+        profileRevision,
+        sourceProtocol,
+        sourceTransport,
+        deviceInfo,
+        controlRecognition,
+        recognitionFingerprint,
+        null
+      );
+    }
+
     public AnalyzerContext {
       requireNonBlank(bridgeConnectionId, "Bridge connection ID");
       requireNonBlank(clientAnalyzerId, "OpenELIS analyzer ID");
@@ -532,6 +595,9 @@ public class FhirBundleBuilder {
       Objects.requireNonNull(controlRecognition, "Control recognition is required");
       if (recognitionFingerprint == null || !recognitionFingerprint.matches("^sha256:[0-9a-f]{64}$")) {
         throw new IllegalArgumentException("Recognition fingerprint is required");
+      }
+      if (profileFingerprint != null && !profileFingerprint.matches("^sha256:[0-9a-f]{64}$")) {
+        throw new IllegalArgumentException("Profile fingerprint must be a sha256 fingerprint");
       }
     }
 
@@ -561,6 +627,11 @@ public class FhirBundleBuilder {
     org.itech.ahb.profile.ControlResultRecognitionEvaluator.Assessment controlRecognitionAssessment,
     RecordParts parts
   ) {
+    /** Selected tabular fields; value interpretation happens after receipt settings are applied. */
+    public static AnalyzerResult tabular(String testCode, String value, String units) {
+      return new AnalyzerResult(testCode, testCode, value, units, false, false, null, null, null, null, null, null);
+    }
+
     public static AnalyzerResult numeric(String testCode, String testName, String value, String units) {
       return new AnalyzerResult(testCode, testName, value, units, true, false, null, null, null, null);
     }

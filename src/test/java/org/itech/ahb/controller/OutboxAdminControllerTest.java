@@ -24,6 +24,8 @@ import org.itech.ahb.outbox.RenderedDelivery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -177,6 +179,55 @@ class OutboxAdminControllerTest {
     );
   }
 
+  @ParameterizedTest
+  @CsvSource({ "SERIAL,|", "SERIAL,;", "HTTP,|", "HTTP,;", "HTTP,$" })
+  @DisplayName("serial and HTTP senders use the header's declared delimiter")
+  void aMessagesSenderIsItsHeadersSenderField(Transport transport, char delimiter) throws Exception {
+    String unique = java.util.UUID.randomUUID().toString();
+    String serial = "H|\\^&|||CPHL^GeneXpert^6.2\rP|1\rO|1|ACC-9\rR|1|^^^MTB|POS\rL|1|N\rC|1|" + unique + "\r";
+    serial = serial.replace('|', delimiter);
+    String connection = "bridge-connection-" + unique;
+    String id = "astm-v1:serial-" + unique;
+    Receipt received = store.receive(
+      new ReceivedMessage(
+        "serial:/dev/ttyUSB0",
+        null,
+        Protocol.ASTM,
+        transport,
+        "oe-analyzer-7",
+        serial,
+        null,
+        Instant.now()
+      )
+    );
+    store.markRendered(
+      received.id(),
+      List.of(
+        new RenderedDelivery(
+          id,
+          "ACC-9",
+          "{\"resourceType\":\"Bundle\"}",
+          connection,
+          "analyzer-7",
+          "genexpert-astm",
+          1,
+          "https://oe:8443/api/OpenELIS-Global/analyzer/fhir"
+        )
+      )
+    );
+    store.markRejected(id, FailureReason.RETRY_EXHAUSTED, null, "refused", null);
+
+    mockMvc
+      .perform(
+        get("/admin/outbox")
+          .param("state", "DMQ")
+          .param("connectionId", connection)
+          .with(httpBasic("testuser", "testpass"))
+      )
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.rows[0].sender").value("CPHL^GeneXpert^6.2"));
+  }
+
   @Test
   @DisplayName("held results are not readable without credentials")
   void requiresAuthentication() throws Exception {
@@ -202,6 +253,7 @@ class OutboxAdminControllerTest {
       .andExpect(jsonPath("$.rows[0].id").value(deadLetteredId))
       .andExpect(jsonPath("$.rows[0].failureReason").value("RETRY_EXHAUSTED"))
       .andExpect(jsonPath("$.rows[0].sourceId").value("10.0.0.1"))
+      .andExpect(jsonPath("$.rows[0].sender").value("GeneXpert"))
       .andExpect(jsonPath("$.rows[0].accession").value("ACC-1"))
       .andExpect(jsonPath("$.rows[0].ageSeconds").exists())
       .andExpect(jsonPath("$.rows[0].lastError").value("java.net.UnknownHostException: oe"))

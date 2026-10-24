@@ -132,6 +132,7 @@ class AnalyzerContractArtifactsTest {
   void normalizedTrafficFixturesConform() throws IOException {
     for (String fixture : new String[] {
       "normalized-known-test.fhir.json",
+      "normalized-explicit-parts.fhir.json",
       "normalized-unknown-test.fhir.json",
       "normalized-unknown-value.fhir.json",
       "normalized-qc.fhir.json",

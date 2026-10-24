@@ -35,15 +35,18 @@ import org.itech.ahb.profile.SampleFlags;
 @Slf4j
 public class HL7ResultParser {
 
-  /** Sending Application component 1, using the separators declared by the retained message. */
+  /**
+   * The whole Sending Application field (MSH-3), read with the separators the message declares and
+   * its components joined by {@code ^}, as an ASTM sender field is.
+   */
   public static String sendingApplication(String rawMessage) {
     if (rawMessage == null) return null;
     String header = rawMessage.stripLeading().split("[\\r\\n]", 2)[0];
     if (!header.startsWith("MSH") || header.length() < 8) return null;
-    Delimiters delimiters = new Delimiters(header.charAt(3), header.charAt(4), header.charAt(5), header.charAt(7));
-    Map<String, String> fields = extractRecognitionFields(header, "MSH", delimiters);
-    String sender = fields.get("MSH.3.1");
-    return sender == null || sender.isBlank() ? null : sender;
+    String[] fields = header.split(java.util.regex.Pattern.quote(String.valueOf(header.charAt(3))), -1);
+    if (fields.length < 3) return null;
+    String sender = fields[2].replace(header.charAt(4), '^');
+    return sender.isBlank() ? null : sender;
   }
 
   /**
@@ -565,6 +568,42 @@ public class HL7ResultParser {
         }
       }
       return new ParsedResults(accessionNumber, kept, patient, specimenDescriptor, raised);
+    }
+
+    /** Interpret selected tabular values once with the retained receipt settings. */
+    public ParsedResults withTabularReading(ResultReading reading) {
+      ResultReading effective = reading == null
+        ? new ResultReading(null, null, '.', Map.of(), Map.of(), null)
+        : reading;
+      List<AnalyzerResult> interpreted = results
+        .stream()
+        .map(result -> {
+          String raw = result.value();
+          String canonical = effective.canonicalNumber(raw);
+          boolean failed = effective.isRunFailure(result.testCode(), "", raw);
+          String number = !failed && NumericValue.isBoundedDecimal(canonical) ? canonical : null;
+          String call = failed || number != null ? null : raw;
+          return result.withParts(
+            new RecordParts(
+              "",
+              call,
+              number,
+              null,
+              null,
+              null,
+              List.of(),
+              null,
+              null,
+              null,
+              null,
+              null,
+              failed,
+              List.of()
+            )
+          );
+        })
+        .toList();
+      return new ParsedResults(accessionNumber, interpreted, patient, specimenDescriptor, sampleFlags);
     }
 
     /** These results under the profile's own codes, where the connection sets other codes for its instrument. */

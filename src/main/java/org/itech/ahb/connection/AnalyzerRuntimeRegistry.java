@@ -149,6 +149,21 @@ public class AnalyzerRuntimeRegistry {
    * <p>Without a listener port (serial, file, HTTP, and messages stored before 3.2.0 under a
    * {@code connection:} key) the source identifier is looked up directly, as before.
    */
+  /** Whether an active connection on {@code listenerPort} names {@code address} as its host. */
+  public synchronized boolean hasHost(int listenerPort, String address) {
+    String peer = IpLiteral.canonicalize(address);
+    return (
+      peer != null &&
+      analyzers
+        .values()
+        .stream()
+        .anyMatch(
+          entry ->
+            Integer.valueOf(listenerPort).equals(entry.getListenerPort()) && peer.equals(entry.getInboundAddress())
+        )
+    );
+  }
+
   public synchronized Resolution resolve(Integer listenerPort, String sourceId, String senderHint) {
     if (listenerPort == null) {
       return findAnalyzerEntry(sourceId)
@@ -176,14 +191,29 @@ public class AnalyzerRuntimeRegistry {
       ? onListener.stream().filter(entry -> entry.getInboundAddress() == null).toList()
       : byAddress;
 
-    String sender = senderName(senderHint);
+    String sender = senderHint == null || senderHint.isBlank() ? null : senderHint.trim();
     if (sender == null) {
       candidates = candidates.stream().filter(entry -> entry.getSenderId() == null).toList();
     } else {
-      List<AnalyzerEntry> bySender = candidates
+      List<AnalyzerEntry> named = candidates;
+      List<AnalyzerEntry> bySender = named
         .stream()
-        .filter(entry -> entry.getSenderId() != null && entry.getSenderId().equalsIgnoreCase(sender))
+        .filter(entry -> namesWholeField(entry.getSenderId(), sender))
         .toList();
+      if (bySender.isEmpty()) {
+        // A senderId set before whole-field matching names component 1 only, which is whatever a
+        // lab typed and other instruments can share, so it holds only for its type's kind.
+        String first = senderName(sender);
+        bySender = named
+          .stream()
+          .filter(entry -> entry.getSenderId() != null && entry.getSenderId().equalsIgnoreCase(first))
+          .filter(
+            entry ->
+              entry.getCompiledIdentifierPattern() == null ||
+              entry.getCompiledIdentifierPattern().matcher(sender).find()
+          )
+          .toList();
+      }
       if (bySender.size() == 1) {
         return new Resolution.Resolved(bySender.get(0), "sender");
       }
@@ -233,8 +263,26 @@ public class AnalyzerRuntimeRegistry {
   }
 
   /**
-   * The instrument's own name from a sender field: component 1 of ASTM H.5 or HL7 MSH-3, which a
-   * GeneXpert fills with the System Name from its configuration.
+   * Whether {@code senderId} names the whole sender field (ASTM H.5 or HL7 MSH-3): equal to it
+   * ignoring case, or matching it where {@code *} stands for any characters.
+   */
+  static boolean namesWholeField(String senderId, String senderField) {
+    if (senderId == null || senderId.isBlank()) {
+      return false;
+    }
+    String id = senderId.trim();
+    if (!id.contains("*")) {
+      return id.equalsIgnoreCase(senderField);
+    }
+    String pattern = java.util.Arrays.stream(id.split("\\*", -1))
+      .map(Pattern::quote)
+      .collect(java.util.stream.Collectors.joining(".*"));
+    return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(senderField).matches();
+  }
+
+  /**
+   * Component 1 of a sender field, the one a GeneXpert fills with the System Name from its
+   * configuration.
    */
   static String senderName(String senderHint) {
     if (senderHint == null) {
@@ -246,8 +294,10 @@ public class AnalyzerRuntimeRegistry {
 
   /**
    * Another active connection on the same listener that no message could be told apart from, or
-   * null. Two connections are indistinguishable when they share an address (or both have none) and
-   * their sender names do not separate them.
+   * null. Two connections are indistinguishable when they share an address (or both have none),
+   * their sender names do not separate them, and their types' identifier patterns do not either:
+   * routing rules a connection out when a message's sender does not match its pattern, so two
+   * different patterns separate them, while the same pattern or a missing one does not.
    */
   public synchronized AnalyzerEntry indistinguishableFrom(AnalyzerEntry candidate) {
     if (candidate.getListenerPort() == null) {
@@ -260,13 +310,40 @@ public class AnalyzerRuntimeRegistry {
       .filter(other -> !java.util.Objects.equals(other.getBridgeConnectionId(), candidate.getBridgeConnectionId()))
       .filter(other -> java.util.Objects.equals(other.getInboundAddress(), candidate.getInboundAddress()))
       .filter(other -> sameSender(other.getSenderId(), candidate.getSenderId()))
+      .filter(other -> samePattern(other.getIdentifierPattern(), candidate.getIdentifierPattern()))
       .findFirst()
       .orElse(null);
   }
 
-  /** Both unnamed, or both the same name: a message's sender cannot tell them apart. */
+  /** Either has no pattern, or both have the same one: a message's sender matches both. */
+  private static boolean samePattern(String left, String right) {
+    return left == null || left.isBlank() || right == null || right.isBlank() || left.equals(right);
+  }
+
+  /**
+   * Both unnamed, or names some one sender field could match: a message's sender cannot tell them
+   * apart. Two patterns are taken to meet unless their fixed starts or ends differ.
+   */
   private static boolean sameSender(String left, String right) {
-    return left == null ? right == null : left.equalsIgnoreCase(right);
+    if (left == null || right == null) {
+      return left == right;
+    }
+    boolean leftPattern = left.contains("*");
+    boolean rightPattern = right.contains("*");
+    if (!leftPattern && !rightPattern) {
+      return left.equalsIgnoreCase(right);
+    }
+    if (!leftPattern || !rightPattern) {
+      return leftPattern ? namesWholeField(left, right) : namesWholeField(right, left);
+    }
+    String leftStart = left.substring(0, left.indexOf('*')).toLowerCase(java.util.Locale.ROOT);
+    String rightStart = right.substring(0, right.indexOf('*')).toLowerCase(java.util.Locale.ROOT);
+    String leftEnd = left.substring(left.lastIndexOf('*') + 1).toLowerCase(java.util.Locale.ROOT);
+    String rightEnd = right.substring(right.lastIndexOf('*') + 1).toLowerCase(java.util.Locale.ROOT);
+    return (
+      (leftStart.startsWith(rightStart) || rightStart.startsWith(leftStart)) &&
+      (leftEnd.endsWith(rightEnd) || rightEnd.endsWith(leftEnd))
+    );
   }
 
   /** Finds the active runtime projection for one durable Bridge connection. */
@@ -518,7 +595,20 @@ public class AnalyzerRuntimeRegistry {
 
     /** The LOINC of a result already under the profile's code; the table is keyed by the codes the instrument sends. */
     public String getLoincForProfileCode(String profileCode) {
-      return getLoincForCode(resultReading == null ? profileCode : resultReading.instrumentCode(profileCode));
+      if (resultReading == null) return getLoincForCode(profileCode);
+      String declared = resultReading.definition(profileCode, "").path("loinc").asText(null);
+      if (declared != null) return declared;
+      String direct = getLoincForCode(profileCode);
+      if (direct != null) return direct;
+      return resultReading
+        .profileCodeByInstrumentCode()
+        .entrySet()
+        .stream()
+        .filter(entry -> profileCode.equals(entry.getValue()))
+        .map(entry -> getLoincForCode(entry.getKey()))
+        .filter(java.util.Objects::nonNull)
+        .findFirst()
+        .orElse(null);
     }
 
     /** Resolve an analyzer test code to its LOINC (inbound). Null if unmapped. */

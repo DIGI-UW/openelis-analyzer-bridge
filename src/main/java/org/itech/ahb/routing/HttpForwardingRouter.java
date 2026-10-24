@@ -105,7 +105,11 @@ public class HttpForwardingRouter implements MessageRouter {
     }
     NormalizedBundleRenderer.Outcome outcome;
     try {
-      outcome = renderer.render(envelope, deliveryClient.targetUri().toString());
+      outcome = renderer.render(
+        envelope,
+        deliveryClient.targetUri().toString(),
+        outbox.interpretationContext(receiptId).orElse(null)
+      );
     } catch (RuntimeException | StackOverflowError | OutOfMemoryError e) {
       // A parser defect or a hostile message must not escape onto the transport thread, where the
       // entry would sit leased and unrendered.
@@ -118,9 +122,13 @@ public class HttpForwardingRouter implements MessageRouter {
     if (outcome instanceof NormalizedBundleRenderer.Outcome.Failed failed) {
       log.error("{} for analyzer source {}", failed.message(), envelope.getSourceId());
       outbox.markDeadLettered(receiptId, failed.reason(), failed.message());
-      // The message is held with its complete payload, so the transport can report a clean receipt:
-      // there is nothing the analyzer could usefully resend.
-      return true;
+      // Preserve the transport's refusal of an unrecognized or incompatible sender, while
+      // retaining the raw receipt for an operator to resolve. Parsing failures are durable receipts.
+      return (
+        failed.reason() != org.itech.ahb.outbox.FailureReason.UNREGISTERED_SOURCE &&
+        failed.reason() != org.itech.ahb.outbox.FailureReason.AMBIGUOUS_SOURCE &&
+        failed.reason() != org.itech.ahb.outbox.FailureReason.CONNECTION_TRANSPORT_MISMATCH
+      );
     }
     List<RenderedDelivery> deliveries = ((NormalizedBundleRenderer.Outcome.Rendered) outcome).deliveries();
     outbox.markRendered(receiptId, deliveries);

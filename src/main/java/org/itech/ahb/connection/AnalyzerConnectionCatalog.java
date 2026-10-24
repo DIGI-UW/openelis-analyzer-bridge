@@ -363,7 +363,7 @@ public final class AnalyzerConnectionCatalog {
     JsonNode active = record.path("activeRuntimeRef");
     return (
       active.isObject() &&
-      active.path("profileRef").equals(record.path("profileRef")) &&
+      samePin(active.path("profileRef"), record.path("profileRef")) &&
       active.path("configRevision").asInt() == record.path("configRevision").asInt() &&
       active.path("configFingerprint").asText().equals(record.path("configFingerprint").asText())
     );
@@ -471,21 +471,34 @@ public final class AnalyzerConnectionCatalog {
     return record;
   }
 
+  /**
+   * A pin is the profile and its revision. The fingerprint a client sends with it is the content it
+   * last saw, so it is kept but never compared.
+   */
+  private ObjectNode pinIdentity(JsonNode profileRef) {
+    ObjectNode pin = objectMapper.createObjectNode();
+    pin.set("profileId", profileRef.path("profileId").deepCopy());
+    pin.set("revision", profileRef.path("revision").deepCopy());
+    return pin;
+  }
+
+  private boolean samePin(JsonNode left, JsonNode right) {
+    return pinIdentity(left).equals(pinIdentity(right));
+  }
+
+  /**
+   * The profile a pin names. A pin is a profile and a revision; whatever fingerprint it carries is
+   * the content its client last saw, and a file edited under the same revision is still the one it
+   * names.
+   */
   private ObjectNode requirePinnedProfile(ObjectNode profileRef) {
     String profileId = requireText(profileRef, "profileId");
     int revision = requirePositiveInteger(profileRef, "revision");
-    String fingerprint = requireText(profileRef, "fingerprint");
-    ObjectNode profile;
     try {
-      profile = profiles.require(profileId, revision).profile();
+      return profiles.require(profileId, revision).profile();
     } catch (RuntimeException exception) {
       throw new AnalyzerConnectionException("Unknown pinned profile revision " + profileId + "@" + revision, exception);
     }
-    String actualFingerprint = profile.path("catalog").path("revisionFingerprint").asText();
-    if (!actualFingerprint.equals(fingerprint)) {
-      throw new AnalyzerConnectionException("Profile fingerprint does not identify " + profileId + "@" + revision);
-    }
-    return profile;
   }
 
   private ObjectNode effectiveValues(ObjectNode profile, ObjectNode suppliedValues) {
@@ -514,6 +527,11 @@ public final class AnalyzerConnectionCatalog {
     ) {
       values.remove("port");
     }
+    // A SERVER connection joins the shared listener; a port kept from the per-analyzer setup is dropped,
+    // as is one the profile no longer declares.
+    if ("SERVER".equals(values.path("connectionRole").asText()) || !fieldDescriptors(profile).containsKey("port")) {
+      values.remove("port");
+    }
     return values;
   }
 
@@ -529,7 +547,7 @@ public final class AnalyzerConnectionCatalog {
 
   private boolean sameConfiguration(ObjectNode record, ObjectNode profileRef, String displayName, ObjectNode values) {
     return (
-      record.path("profileRef").equals(profileRef) &&
+      samePin(record.path("profileRef"), profileRef) &&
       displayName.equals(record.path("displayName").asText()) &&
       record.path("values").equals(values)
     );
@@ -537,7 +555,7 @@ public final class AnalyzerConnectionCatalog {
 
   private String configurationFingerprint(ObjectNode profileRef, String displayName, ObjectNode values) {
     ObjectNode configuration = objectMapper.createObjectNode();
-    configuration.set("profileRef", profileRef.deepCopy());
+    configuration.set("profileRef", pinIdentity(profileRef));
     configuration.put("displayName", displayName);
     configuration.set("values", values.deepCopy());
     return fingerprints.canonicalFingerprint(configuration);
@@ -741,6 +759,11 @@ public final class AnalyzerConnectionCatalog {
         continue;
       }
       JsonNode descriptor = descriptors.get(key);
+      if (descriptor == null && "port".equals(key)) {
+        // A port kept from the per-analyzer listener setup by a client or a migration; it is
+        // dropped with the other values the profile does not declare.
+        continue;
+      }
       if (descriptor == null) {
         throw new AnalyzerConnectionException("Connection value is not declared by the pinned profile: " + key);
       }

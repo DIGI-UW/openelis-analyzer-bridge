@@ -104,6 +104,32 @@ java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configu
 | `./configuration.yml` | `/app/configuration.yml` | Runtime configuration |
 | Named volume `bridge-data` | `/data/openelis-analyzer-bridge` | Durable state: delivery outbox, FILE state, saved connections and profile revisions. Keep it across upgrades |
 | `/path/to/import` | `/data/analyzer-imports` | FILE connection directories (optional). FILE directories must lie under `bridge.file.import-roots` (`BRIDGE_FILE_IMPORT_ROOTS`, default `/data/analyzer-imports,/data/analyzer-drops`) |
+| `./analyzer-profiles` | `/app/analyzer-profiles` (read-only) | A distro's complete profile set (optional), selected with `BRIDGE_PROFILE_CATALOG_SHIPPED_PATTERN: "file:/app/analyzer-profiles/**/*.json"` |
+
+### A distro's profile set
+
+A Bridge reads one shipped set. By default it is the profiles packaged in the image. A distro
+that keeps its own set mounts a folder and points `BRIDGE_PROFILE_CATALOG_SHIPPED_PATTERN` at
+it; the image's profiles are then not read, so the folder must hold every profile the site
+uses:
+
+- Core's profiles the distro wants, copied byte for byte under core's ids. A copy is the same
+  revision as the original, so a saved connection pinned to it restores whichever set the
+  Bridge reads.
+- The distro's own profiles under ids of its own (never `site.`, which the Bridge gives
+  profiles authored in its UI). How to write one, and how to take a profile authored in the
+  UI into the set, is in [docs/profile-authoring.md](docs/profile-authoring.md#ship-a-profile).
+- Every revision a saved connection is pinned to. The folder layout is free and every `*.json`
+  under it is read, so earlier revisions can sit in a `history/` subfolder. A revision that is
+  removed leaves its connections inactive with the reason "did not restore" in the log and the
+  connection view; nothing else is affected.
+
+A file carries no fingerprints: the Bridge computes `revisionFingerprint` and
+`recognitionFingerprint` from the content when it loads the file and replaces any the file
+carries. A connection is pinned to a profile and revision, never to a fingerprint, so a file
+edited under its revision is loaded as edited and its connections keep running after a restart;
+OpenELIS holds only the results whose reading the edit changed. Site profiles authored in the UI
+live in the `bridge-data` volume beside the shipped set and are never merged into it.
 
 ### Serial Devices
 
@@ -167,7 +193,7 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | `bridge.file.importRoots` | Directories FILE connections may use, with links resolved (`BRIDGE_FILE_IMPORT_ROOTS`) | `/data/analyzer-imports,/data/analyzer-drops` |
 | **Profile Catalog** | | |
 | `bridge.profile-catalog.directory` | Durable site-profile revision store | `/data/openelis-analyzer-bridge/profile-catalog` |
-| `bridge.profile-catalog.shipped-pattern` | Packaged profile resource pattern | `classpath*:/analyzer-profiles/**/*.json` |
+| `bridge.profile-catalog.shipped-pattern` | The shipped profile set: the image's profiles, or a distro's complete folder such as `file:/app/analyzer-profiles/**/*.json`, which replaces them (`BRIDGE_PROFILE_CATALOG_SHIPPED_PATTERN`; see [A distro's profile set](#a-distros-profile-set)) | `classpath*:/analyzer-profiles/**/*.json` |
 | **Connection Catalog** | | |
 | `bridge.connection-catalog.directory` | Durable analyzer connection store | `/data/openelis-analyzer-bridge/connections` |
 | **Connectivity** | | |
@@ -175,9 +201,15 @@ Runtime configuration is read from `configuration.yml` (mounted into container a
 | **Security** | | |
 | `bridge.pairing.code` | One-time code OpenELIS pairs with (`BRIDGE_PAIRING_CODE`); without one, a generated code is logged | Generated |
 | `bridge.identity.directory` | Generated key pair and pairing record (`BRIDGE_IDENTITY_DIRECTORY`) | `/data/openelis-analyzer-bridge/identity` |
+| `bridge.truststore.path` | Trust store that also trusts OpenELIS when its certificate is not the pinned one, such as after OpenELIS regenerates it (`BRIDGE_TRUSTSTORE_PATH`). Not set, the JVM's own trust store is used. Do not pass `-Djavax.net.ssl.trustStorePassword` in `JDK_JAVA_OPTIONS`: the JVM prints that variable at startup | Not set |
+| `bridge.truststore.password` | Its password (`BRIDGE_TRUSTSTORE_PASSWORD`) | Empty |
+| `bridge.truststore.type` | Its type (`BRIDGE_TRUSTSTORE_TYPE`) | `PKCS12` |
 | `bridge.security.username` | HTTP Basic username, until pairing | bridge |
 | `bridge.security.password` | HTTP Basic password until pairing: plaintext or `{bcrypt}...`; empty means pairing only | Empty |
 | `bridge.http.max-input-bytes` | Largest HTTP input body | 20971520 |
+| `bridge.listeners.allowed-sources` | Comma-separated addresses and CIDR ranges the shared ASTM and MLLP listeners accept connections from, such as `10.20.0.0/16,192.0.2.5` (`BRIDGE_LISTENERS_ALLOWED_SOURCES`). An entry that is not an address or range is logged and ignored; a list with no usable entry admits no one | Empty: every source |
+| `bridge.listeners.admit-known-hosts-only` | Accept a connection only from an address that an active connection on that listener names as its host (`BRIDGE_LISTENERS_ADMIT_KNOWN_HOSTS_ONLY`) | `false` |
+| `bridge.listeners.max-sessions` | The most connections one shared ASTM listener holds open at once; an analyzer keeps its connection open between messages, and a peer connecting beyond this is closed (`BRIDGE_LISTENERS_MAX_SESSIONS`) | `64` |
 | **Server** | | |
 | `server.port` | HTTP server port | 8443 |
 
@@ -192,9 +224,11 @@ the outbox until they can be attributed.
 
 A saved TCP/IP `SERVER` connection joins the deployment-configured shared
 listener for its protocol and lower layer. It has no per-analyzer incoming port.
-Historical saved SERVER `port` values do not select listeners or become outbound
-destinations, including when changing the connection role to CLIENT without an
-explicit new destination. Activation fails if the configured listener cannot be
+A SERVER connection stores no `port`: one saved by the per-analyzer listener
+setup is dropped the next time the connection is saved, and until then it neither
+selects a listener nor becomes an outbound destination, including when the role
+changes to CLIENT without an explicit new destination. A profile whose only role
+is SERVER does not declare `port`. Activation fails if the configured listener cannot be
 started. HL7 also accepts the `MLLP` transport label. Saved HL7 CLIENT
 connections support outbound order sessions when the profile permits LIS-initiated
 orders and the saved data flow allows them; activation otherwise fails. They do
@@ -202,7 +236,12 @@ not create an inbound listener or a persistent result-receive session.
 
 Attribution is not peer authentication: a message is attributed, not
 authorized, by its address and sender name. Use network access controls to
-restrict who can reach the analyzer ports.
+restrict who can reach the analyzer ports. Where a port has to be reachable
+from the internet, `bridge.listeners.allowed-sources` and
+`bridge.listeners.admit-known-hosts-only` limit the listeners to the addresses
+their analyzers connect from. A refused peer is closed before anything is read
+from it, logged at WARN with its address and the port, and counted in
+`bridge.listener.refused`; nothing reaches the outbox.
 
 Deactivating an HL7 connection removes its routing. A shared listener bound at
 boot keeps running. A listener that was not bound at boot stops when its last
@@ -278,8 +317,12 @@ connections that declare that listener, in this order:
 
 1. **Address.** Use connections matching the peer address when any exist.
    Otherwise, consider only connections without an address restriction.
-2. **Sender name.** The one connection whose `senderId` matches the sender name,
-   ignoring case.
+2. **Sender.** The one connection whose `senderId` matches the whole sender
+   field (ASTM H.5, or HL7 MSH-3 with its components joined by `^`), ignoring
+   case; `*` in a `senderId` stands for any characters, as in
+   `CPHL^GeneXpert^*`. When no `senderId` matches the whole field, one equal to
+   its first component matches, as a `senderId` set before whole-field matching
+   does.
 3. **Profile pattern.** The pinned profile's `identifier_pattern` rules out
    connections for another kind of analyzer. It is type-level
    (`GENEXPERT|CEPHEID`), so it never chooses between two of the same kind.
@@ -302,15 +345,22 @@ When each value is needed:
 | Several analyzers without fixed addresses, or behind one address | optional | set on all but at most one |
 
 Activating a connection that no message could tell apart from an active one on
-the same listener (the same address, or neither has one, and no `senderId`
-separates them) is refused, and the refusal names the other connection. Restoring
+the same listener is refused, and the refusal names the other connection. That
+is the case when they share an address (or neither has one), no `senderId`
+separates them, and their profiles do not declare different
+`identifier_pattern`s: routing rules out a connection whose pattern a message's
+sender does not match, so two different instrument types behind one address can
+both be active, while two analyzers of one type need a `host` or `senderId`. Restoring
 connections at boot only logs a warning, so an existing pair cannot stop the
 bridge.
 
 `host` must be a literal IP address to match: a hostname is kept as entered and
 never resolved, because sender identity is numeric. Each GeneXpert needs a
 unique System Name (Cepheid LIS Interface Protocol Specification 302-2261,
-Table 10-1); where two share a listener, enter that name as `senderId`. GeneXpert
+Table 10-1); where two share a listener, enter that name as `senderId`. Where the
+first component does not identify one instrument, as when a lab enters its own
+name as the System Name (`CPHL^GeneXpert^6.2`) and another instrument sends
+`CPHL` too, enter the whole field or a pattern such as `CPHL^GeneXpert^*`. GeneXpert
 profile revision 5 offers both fields for SERVER connections. Earlier revisions
 keep working and resolve by uniqueness.
 
@@ -509,8 +559,9 @@ the certificate OpenELIS serves (the client certificate's, when
 `serverCertificateSha256` is omitted), and answers with its own certificate and
 fingerprint for OpenELIS to pin. From then on only that client certificate
 authenticates, and result delivery and the OpenELIS health probe present the
-Bridge certificate and trust OpenELIS by its pinned fingerprint, or by the system
-trust store for its host.
+Bridge certificate and trust OpenELIS by its pinned fingerprint, or by the trust
+store `bridge.truststore.path` names (the JVM's own when it is not set) for its
+host.
 
 The code comes from `BRIDGE_PAIRING_CODE`. Without one, an unpaired Bridge logs a
 generated code at each start. A code pairs once; ten wrong codes close pairing
@@ -539,6 +590,12 @@ concurrent connections, message size and message time
 `message-timeout-seconds`); ASTM receipts have per-frame and per-message
 deadlines and size limits; watched files over `bridge.file.max-file-size-bytes`
 are parked unread; FILE directories must lie under `bridge.file.import-roots`.
+
+An ASTM TCP connection stays open between messages until the analyzer closes it,
+as LIS01-A instruments such as the GeneXpert expect. A host query (a message with
+a `Q` record and no results) from an active connection is answered on that
+connection at once with no orders (`L|1|I`): the Bridge holds no orders. A query
+whose `Q.13` is `A` is the analyzer cancelling its last request and gets no answer.
 
 Active connections have distinct runtime registrations even when they share an
 analyzer host. A host-only inbound lookup is accepted only when it identifies one
@@ -631,7 +688,8 @@ OpenELIS client certificate (`--cert`/`--key`), or the OpenELIS analyzer pages.
 # What is the bridge holding, and is anything stuck?
 curl -u "$USER:$PASS" https://bridge:8443/admin/outbox/stats
 
-# Everything waiting for a person, most recent first
+# Everything waiting for a person, most recent first. Each row names the peer
+# address (sourceId) and the header's sender field (sender: ASTM H.5, HL7 MSH-3).
 curl -u "$USER:$PASS" "https://bridge:8443/admin/outbox?state=DMQ"
 
 # One entry, with what OpenELIS said on each attempt

@@ -224,8 +224,8 @@ public class SqliteOutboxStore implements OutboxStore {
     try (
       PreparedStatement entry = conn.prepareStatement(
         "INSERT INTO outbox (id, state, raw_hash, source_id, source_port, protocol, transport, protocol_hint, " +
-        "received_at, lease_until, lease_owner, updated_at, listener_port) " +
-        "VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+        "received_at, lease_until, lease_owner, updated_at, listener_port, interpretation_context) " +
+        "VALUES (?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
       )
     ) {
       entry.setString(1, id);
@@ -243,6 +243,7 @@ public class SqliteOutboxStore implements OutboxStore {
       entry.setString(10, RECEIVE_OWNER);
       entry.setString(11, now);
       setNullableInt(entry, 12, message.listenerPort());
+      entry.setString(13, message.interpretationContext());
       inserted = entry.executeUpdate();
     }
     return new Receipt(id, rawHash, inserted == 0);
@@ -347,8 +348,8 @@ public class SqliteOutboxStore implements OutboxStore {
           PreparedStatement insert = conn.prepareStatement(
             "INSERT INTO outbox (id, state, raw_hash, fhir_json, fhir_hash, connection_id, analyzer_id, source_id, " +
             "source_port, protocol, transport, protocol_hint, profile_id, profile_revision, accession, target_uri, " +
-            "received_at, rendered_at, updated_at, listener_port, retry_requested_by, retry_requested_at, file_context, file_interpretation_hash) " +
-            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
+            "received_at, rendered_at, updated_at, listener_port, retry_requested_by, retry_requested_at, file_context, file_interpretation_hash, interpretation_context) " +
+            "VALUES (?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING"
           )
         ) {
           insert.setString(1, delivery.deliveryId());
@@ -374,6 +375,7 @@ public class SqliteOutboxStore implements OutboxStore {
           insert.setString(21, ts(receipt.retryRequestedAt()));
           insert.setString(22, fileContext);
           insert.setString(23, interpretation);
+          insert.setString(24, interpretationContext(receiptId).orElse(null));
           if (insert.executeUpdate() == 0) {
             // Same content, same accession, same connection: the analyzer retransmitted, or the
             // bridge restarted between rendering and deleting the receipt. Keeping the first row is
@@ -835,6 +837,31 @@ public class SqliteOutboxStore implements OutboxStore {
           ? java.util.Base64.getDecoder().decode(raw)
           : raw.getBytes(StandardCharsets.UTF_8)
     );
+  }
+
+  @Override
+  public synchronized Optional<String> interpretationContext(String id) {
+    return textColumn(id, "SELECT interpretation_context FROM outbox WHERE id = ?");
+  }
+
+  @Override
+  public synchronized void resolveInterpretation(String id, String context) {
+    // Only unresolved raw input can acquire a decoding decision. A rendered or already resolved
+    // receipt is immutable, including across operator retries.
+    var existing = org.itech.ahb.routing.ReceivedInterpretation.read(interpretationContext(id).orElse(null));
+    if (existing.analyzer() != null) throw new IllegalStateException("Receipt already has its interpretation");
+    inTransaction(() -> {
+      try (
+        PreparedStatement st = conn.prepareStatement(
+          "UPDATE outbox SET interpretation_context=? WHERE id=? AND fhir_json IS NULL AND retry_requested_by IS NOT NULL"
+        )
+      ) {
+        st.setString(1, context);
+        st.setString(2, id);
+        if (st.executeUpdate() != 1) throw new IllegalStateException("Explicit unresolved-input retry required");
+      }
+      return null;
+    });
   }
 
   @Override

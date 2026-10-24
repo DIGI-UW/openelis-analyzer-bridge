@@ -74,6 +74,37 @@ class FhirBundleBuilderTest {
     class BundleStructure {
 
         @Test
+        @DisplayName("The device names the fingerprint of the profile content the message was read with")
+        void theDeviceCarriesTheProfileFingerprint() {
+            String fingerprint = "sha256:" + "a".repeat(64);
+            AnalyzerContext context = new AnalyzerContext(
+                    "bridge-connection-test",
+                    "oe-analyzer-test",
+                    "site.test-profile",
+                    1,
+                    "ASTM",
+                    "TCP",
+                    DeviceInfo.fromSenderToken("127.0.0.1", "TEST"),
+                    ControlResultRecognition.none(),
+                    "sha256:" + "0".repeat(64),
+                    fingerprint);
+
+            Bundle bundle = parseBundle(FhirBundleBuilder.buildNormalizedBundle(ACCESSION,
+                    List.of(AnalyzerResult.numeric("WBC", "WBC", "7.5", "10*3/uL")), context, code -> null,
+                    DELIVERY_ID));
+
+            org.hl7.fhir.r4.model.Device device = bundle.getEntry().stream()
+                    .map(Bundle.BundleEntryComponent::getResource)
+                    .filter(org.hl7.fhir.r4.model.Device.class::isInstance)
+                    .map(org.hl7.fhir.r4.model.Device.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(fingerprint, device.getExtensionByUrl(
+                    "https://openelis-global.org/fhir/StructureDefinition/analyzer-profile-fingerprint")
+                    .getValue().primitiveValue());
+        }
+
+        @Test
         @DisplayName("Should produce valid JSON parseable by HAPI FhirContext")
         void shouldProduceValidJson() {
             List<AnalyzerResult> results = List.of(

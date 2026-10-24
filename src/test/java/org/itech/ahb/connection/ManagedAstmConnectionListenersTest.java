@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -11,6 +12,7 @@ import java.net.Socket;
 import java.time.Duration;
 import org.itech.ahb.lib.astm.interpretation.DefaultASTMInterpreterFactory;
 import org.itech.ahb.lib.astm.servlet.ASTMServlet;
+import org.itech.ahb.metrics.MetricsService;
 import org.itech.ahb.normalizer.MessageNormalizer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,77 @@ class ManagedAstmConnectionListenersTest {
   @AfterEach
   void stopListeners() {
     listeners.stopAll();
+  }
+
+  @Test
+  void aPeerOutsideTheAllowedSourcesIsClosedBeforeItSendsAnything() throws Exception {
+    ManagedAstmConnectionListeners restricted = withSources("192.0.2.0/24");
+    int port = availablePort();
+    try {
+      restricted.start("bridge-7", "oe-7", port, "LIS01_A");
+
+      try (Socket peer = new Socket("127.0.0.1", port)) {
+        peer.setSoTimeout(5_000);
+        assertThat(peer.getInputStream().read()).isEqualTo(-1);
+      }
+    } finally {
+      restricted.stopAll();
+    }
+  }
+
+  @Test
+  void aPeerInTheAllowedSourcesIsAnswered() throws Exception {
+    ManagedAstmConnectionListeners restricted = withSources("127.0.0.0/8");
+    int port = availablePort();
+    try {
+      restricted.start("bridge-8", "oe-8", port, "LIS01_A");
+
+      try (Socket peer = new Socket("127.0.0.1", port)) {
+        peer.setSoTimeout(5_000);
+        peer.getOutputStream().write(0x05);
+        peer.getOutputStream().flush();
+        assertThat(peer.getInputStream().read()).as("ACK").isEqualTo(0x06);
+      }
+    } finally {
+      restricted.stopAll();
+    }
+  }
+
+  @Test
+  void sessionLimitRefusalsAreCountedOnceAndAdmittedPeersAreNotCounted() throws Exception {
+    int port = availablePort();
+    SimpleMeterRegistry meters = new SimpleMeterRegistry();
+    var refused = meters.counter("bridge.listener.refused", "port", Integer.toString(port));
+    ManagedAstmConnectionListeners limited = new ManagedAstmConnectionListeners(
+      mock(MessageNormalizer.class),
+      new DefaultASTMInterpreterFactory(),
+      new ListenerSourcePolicy("", false, 1, null, new MetricsService(meters))
+    );
+    try {
+      limited.start("bridge-limited", "oe-limited", port, "LIS01_A");
+      try (Socket first = new Socket("127.0.0.1", port)) {
+        first.setSoTimeout(5000);
+        first.getOutputStream().write(0x05);
+        first.getOutputStream().flush();
+        assertThat(first.getInputStream().read()).as("admitted peer is answered").isEqualTo(0x06);
+        assertThat(refused.count()).isZero();
+        try (Socket second = new Socket("127.0.0.1", port)) {
+          second.setSoTimeout(5000);
+          assertThat(second.getInputStream().read()).isEqualTo(-1);
+          assertThat(refused.count()).isEqualTo(1);
+        }
+      }
+    } finally {
+      limited.stopAll();
+    }
+  }
+
+  private static ManagedAstmConnectionListeners withSources(String allowedSources) {
+    return new ManagedAstmConnectionListeners(
+      mock(MessageNormalizer.class),
+      new DefaultASTMInterpreterFactory(),
+      new ListenerSourcePolicy(allowedSources, false, null)
+    );
   }
 
   @Test
@@ -142,14 +215,7 @@ class ManagedAstmConnectionListenersTest {
   @Test
   void rejectsActivationWhenTheSavedPortCannotBeBound() throws Exception {
     try (ServerSocket occupied = new ServerSocket(0)) {
-      assertThatThrownBy(() ->
-        listeners.start(
-          "bridge-42",
-          "oe-42",
-          occupied.getLocalPort(),
-          "LIS01_A"
-        )
-      )
+      assertThatThrownBy(() -> listeners.start("bridge-42", "oe-42", occupied.getLocalPort(), "LIS01_A"))
         .isInstanceOf(AnalyzerConnectionException.class)
         .hasMessageContaining("Cannot activate ASTM listener");
       assertThat(listeners.isRunning("bridge-42")).isFalse();

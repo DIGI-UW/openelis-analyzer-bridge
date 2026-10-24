@@ -133,7 +133,10 @@ Normalized FHIR preserves raw analyzer code/value and identifies the durable
 Bridge connection and pinned profile revision. OpenELIS resolves only
 `Device.identifier[system="https://openelis-global.org/fhir/analyzer-connection-id"]`;
 source addresses, sender tokens, names, and local analyzer IDs are context, not
-routing authority. Every Observation has exactly one patient/control
+routing authority. The Device's optional `analyzer-profile-fingerprint`
+extension is the fingerprint of the profile content the message was read with;
+OpenELIS preserves it as provenance; it is not an import or mapping-approval gate.
+Every Observation has exactly one patient/control
 classification and one control-recognition extension. A matching rule
 evaluation must carry its complete rule and source evidence; explicit `NONE`
 never invents an evaluation.
@@ -257,3 +260,65 @@ qualified IU/mL assay profile; installations must select a profile matching
 their assay/export. The specimen hint supplies a local binding default, not
 specimen evidence from the message. Synthetic workbook compatibility is not
 physical instrument or assay qualification.
+
+### Normalized result version 1.1: interpret once
+
+The Device advertises `analyzer-contract-version: 1.1`. Bridge resolves sender,
+profile aliases, connection code overrides, decimal format, qualitative translations,
+record parts and control recognition using the context retained with raw receipt.
+Non-FILE receipts persist that resolved context atomically with raw data; FILE receipts
+retain their parser context including answer definitions. Restart and delivery retry
+reuse it. Already rendered payloads are never reinterpreted on retry.
+
+`Observation.valueQuantity` is a decimal with its original comparator and unit.
+A qualitative answer is `valueCodeableConcept` when declared standard codings exist,
+otherwise `valueString`. Its canonical profile identity is also carried in
+`analyzer-canonical-answer`; `analyzer-raw-value` retains the original spelling.
+A number plus a call uses `interpretation` with `analyzer-result-part: call`;
+informational flags use `analyzer-result-part: flag`. The role extension uses
+`valueCode`. Components retain their explicit sub-identity. Failed runs use
+`dataAbsentReason` with the standard `error` code and no result value. Declared
+clinical codings accompany the test and answer; undeclared input is not assigned
+invented terminology. A conflicting vendor translation is held in Bridge.
+
+OpenELIS validates the delivered contract, maps canonical identities to approved
+local test/component/answer targets, and handles placement, operational QC, review,
+receipts and audit. It does not fetch a current or historical Bridge profile to
+approve a completed result. Local target changes still require local approval.
+Raw vendor text is audit evidence only. It cannot override a canonical answer,
+exclude a typed number, or choose a local answer mapping. Obsolete vendor-spelling
+mapping rows may be removed through the local editor.
+
+Upgrade OpenELIS before enabling a 1.1 producer: older readers can ignore the new
+role marker and mistake an unfamiliar call next to a quantity for a flag. The new
+reader accepts retained 1.0 bundles using their original standard interpretation
+codes; it never guesses missing qualitative translations. Unknown older answers
+remain held for local mapping. Unsupported contract versions are rejected.
+Legacy unrendered raw receipts without decoding context stay in the existing
+outbox review flow. An explicit Retry can resolve an as-yet unresolved receipt
+against the configured connection; once resolved, its interpretation is immutable.
+This is not a bulk reprocessor and never changes accepted OpenELIS results.
+
+#### Canonical source identity and quantities
+
+Within a profile, `(profileId, test code, sub-identity, canonical answer)` names a
+stable reported meaning. Parser revisions do not change that identity. A genuinely
+different test or answer must receive a different identity; do not reuse a code
+for an unrelated meaning. OpenELIS applies the approved local mapping for that
+scope. A result from another profile is retained as unresolved local work rather
+than rejected merely because the instrument now uses another profile.
+
+A quantity is already a FHIR decimal, with its reported unit and comparator.
+Bridge owns number-format interpretation for ASTM, HL7, FILE and HTTP tabular
+input. FILE receipts retain the decimal setting and failure rules, so restart
+cannot reinterpret them using today's connection. Tabular extraction does not
+assign numeric meaning before those settings are applied. No implicit unit
+conversion is performed. The lab approves the declared quantity meaning and
+local target during mapping; display-label equality is not clinical equivalence.
+
+Version 1.1 requires explicit `call`/`flag` roles and supported typed values;
+missing roles never fall back to the 1.0 vocabulary. Recovery uses the accepted
+bundle's version as well. Recognition hashes are optional provenance in the
+result payload; explicit classification and consistent recognition evidence remain
+required. Receipt identity prevents replay; separate messages remain reviewable
+even if their results have equal values or timestamps.

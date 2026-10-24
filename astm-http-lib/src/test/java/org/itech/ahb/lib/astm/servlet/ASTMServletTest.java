@@ -1,5 +1,6 @@
 package org.itech.ahb.lib.astm.servlet;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -39,6 +40,44 @@ class ASTMServletTest {
 
       thread.join(Duration.ofSeconds(2));
       assertFalse(servlet.isRunning());
+    }
+  }
+
+  @Test
+  void closesARefusedPeerBeforeReadingAnything() throws Exception {
+    int port = availablePort();
+    ASTMServlet servlet = servlet(port);
+    servlet.setAdmission(socket -> false);
+    Thread thread = Thread.ofPlatform().start(servlet::listen);
+    servlet.awaitStarted(Duration.ofSeconds(2));
+    try (java.net.Socket peer = new java.net.Socket(java.net.InetAddress.getLoopbackAddress(), port)) {
+      peer.setSoTimeout(5000);
+
+      assertEquals(-1, peer.getInputStream().read(), "closed as soon as it connected");
+    } finally {
+      servlet.stop();
+      thread.join(Duration.ofSeconds(2));
+    }
+  }
+
+  @Test
+  void aPeerBeyondTheSessionLimitIsClosedWhileTheOpenSessionStays() throws Exception {
+    int port = availablePort();
+    ASTMServlet servlet = servlet(port);
+    servlet.setMaxSessions(1);
+    Thread thread = Thread.ofPlatform().start(servlet::listen);
+    servlet.awaitStarted(Duration.ofSeconds(2));
+    try (java.net.Socket first = new java.net.Socket(java.net.InetAddress.getLoopbackAddress(), port)) {
+      first.setSoTimeout(500);
+      assertThrows(java.net.SocketTimeoutException.class, () -> first.getInputStream().read(), "still open");
+      try (java.net.Socket second = new java.net.Socket(java.net.InetAddress.getLoopbackAddress(), port)) {
+        second.setSoTimeout(5000);
+
+        assertEquals(-1, second.getInputStream().read(), "closed as soon as it connected");
+      }
+    } finally {
+      servlet.stop();
+      thread.join(Duration.ofSeconds(2));
     }
   }
 

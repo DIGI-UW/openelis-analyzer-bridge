@@ -1,10 +1,10 @@
 package org.itech.ahb.outbox;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
@@ -119,18 +119,7 @@ class OutboxDispatcherTest {
     String id = "astm-v1:" + "a".repeat(64);
     store.markRendered(
       receipt.id(),
-      List.of(
-        new RenderedDelivery(
-          id,
-          "ACC-1",
-          fhirJson,
-          "conn-1",
-          "analyzer-1",
-          "profile",
-          1,
-          "http://oe/fhir"
-        )
-      )
+      List.of(new RenderedDelivery(id, "ACC-1", fhirJson, "conn-1", "analyzer-1", "profile", 1, "http://oe/fhir"))
     );
     return id;
   }
@@ -369,7 +358,7 @@ class OutboxDispatcherTest {
     }
 
     @Override
-    public Outcome render(org.itech.ahb.normalizer.MessageEnvelope envelope, String targetUri) {
+    public Outcome render(org.itech.ahb.normalizer.MessageEnvelope envelope, String targetUri, String retainedContext) {
       throw new OutOfMemoryError("Java heap space");
     }
   }

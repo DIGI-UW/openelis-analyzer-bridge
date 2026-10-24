@@ -5,13 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 
 class AnalyzerProfileValidatorTest {
 
-  private static final String FILE_PROFILE = "analyzer-profiles/hain-fluorocycler-xt.json";
-  private static final String ASTM_PROFILE = "analyzer-profiles/cepheid-genexpert-astm.json";
+  private static final String FILE_PROFILE = "hain-fluorocycler-xt";
+  private static final String ASTM_PROFILE = "cepheid-genexpert-astm";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
@@ -240,6 +239,73 @@ class AnalyzerProfileValidatorTest {
     );
   }
 
+  @Test
+  void aTestNamedOnlyByCodingsInAnySystemIsValid() throws Exception {
+    ObjectNode profile = astmProfile();
+    ObjectNode mapping = (ObjectNode) profile.withArray("default_test_mappings").path(0);
+    mapping.remove("loinc");
+    mapping.putArray("codings").addObject().put("system", "https://example.org/lab-concepts").put("code", "XPERT-VL");
+
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void aTestNamesItsTestByLoincOrByCodings() throws Exception {
+    ObjectNode profile = astmProfile();
+    ((ObjectNode) profile.withArray("default_test_mappings").path(0)).remove("loinc");
+
+    assertThat(validator.validationIssues(profile)).isNotEmpty();
+  }
+
+  @Test
+  void aTestNamesAtMostOneLoincCode() throws Exception {
+    ObjectNode profile = astmProfile();
+    ObjectNode mapping = (ObjectNode) profile.withArray("default_test_mappings").path(0);
+    String code = mapping.path("test_code").asText();
+    mapping.putArray("codings").addObject().put("system", "http://loinc.org").put("code", "94500-6");
+
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.default_test_mappings." + code + " names more than one LOINC code"
+    );
+
+    mapping.withArray("codings").removeAll();
+    mapping
+      .withArray("codings")
+      .addObject()
+      .put("system", "http://loinc.org")
+      .put("code", mapping.path("loinc").asText());
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void aCodingIsWrittenWithoutSpaceAroundIt() throws Exception {
+    ObjectNode loinc = astmProfile();
+    ObjectNode loincMapping = (ObjectNode) loinc.withArray("default_test_mappings").path(0);
+    loincMapping.remove("loinc");
+    loincMapping.putArray("codings").addObject().put("system", "http://loinc.org").put("code", " 94500-6 ");
+    ObjectNode local = astmProfile();
+    ((ObjectNode) local.withArray("default_test_mappings").path(0)).putArray("codings")
+      .addObject()
+      .put("system", "CPHL")
+      .put("code", "VL-HIV ");
+
+    assertThat(validator.validationIssues(loinc)).isNotEmpty();
+    assertThat(validator.validationIssues(local)).isNotEmpty();
+  }
+
+  @Test
+  void aLoincCodingIsALoincCode() throws Exception {
+    ObjectNode profile = astmProfile();
+    ObjectNode mapping = (ObjectNode) profile.withArray("default_test_mappings").path(0);
+    String code = mapping.path("test_code").asText();
+    mapping.remove("loinc");
+    mapping.putArray("codings").addObject().put("system", "http://loinc.org").put("code", "HIV-VL");
+
+    assertThat(validator.validationIssues(profile)).contains(
+      "$.default_test_mappings." + code + ".codings cites a code that is not a LOINC code: HIV-VL"
+    );
+  }
+
   private static ObjectNode field(ObjectNode profile, String key) {
     for (var field : profile.path("connectionFields")) {
       if (key.equals(field.path("key").asText())) {
@@ -250,20 +316,14 @@ class AnalyzerProfileValidatorTest {
   }
 
   private ObjectNode fileProfile() throws Exception {
-    try (InputStream input = getClass().getClassLoader().getResourceAsStream(FILE_PROFILE)) {
-      assertThat(input).as(FILE_PROFILE).isNotNull();
-      return (ObjectNode) objectMapper.readTree(input);
-    }
+    return profile(FILE_PROFILE);
   }
 
   private ObjectNode astmProfile() throws Exception {
     return profile(ASTM_PROFILE);
   }
 
-  private ObjectNode profile(String resource) throws Exception {
-    try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource)) {
-      assertThat(input).as(resource).isNotNull();
-      return (ObjectNode) objectMapper.readTree(input);
-    }
+  private ObjectNode profile(String profileId) throws Exception {
+    return PackagedProfiles.load(objectMapper, profileId);
   }
 }

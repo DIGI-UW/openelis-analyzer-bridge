@@ -81,7 +81,15 @@ public final class FileResultRenderer {
       snapshot.setRecognitionFingerprint(context.recognitionFingerprint());
       snapshot.setCodeToLoinc(context.codeToLoinc());
       snapshot.setResultReading(
-        new ResultReading(null, null, '.', Map.of(), context.profileCodeByInstrumentCode(), context.sampleFlags())
+        new ResultReading(
+          null,
+          null,
+          context.decimalSeparator() == null ? '.' : context.decimalSeparator(),
+          context.runFailures(),
+          context.profileCodeByInstrumentCode(),
+          context.sampleFlags(),
+          context.resultDefinitions()
+        )
       );
       List<RenderedDelivery> deliveries = new ArrayList<>();
       for (var accession : parsed) {
@@ -124,11 +132,16 @@ public final class FileResultRenderer {
       "FILE",
       FhirBundleBuilder.DeviceInfo.fromSenderToken(sourceFile, analyzerEntry.getName()),
       analyzerEntry.getControlResultRecognition(),
-      analyzerEntry.getRecognitionFingerprint()
+      analyzerEntry.getRecognitionFingerprint(),
+      analyzerEntry.getProfileFingerprint(),
+      analyzerEntry.getResultReading()
     );
     ResultReading reading = analyzerEntry.getResultReading();
     return FhirBundleBuilder.buildNormalizedBundle(
-      parsed.underProfileCodes(reading).withFileSampleFlags(reading == null ? null : reading.sampleFlags()),
+      parsed
+        .underProfileCodes(reading)
+        .withFileSampleFlags(reading == null ? null : reading.sampleFlags())
+        .withTabularReading(reading),
       context,
       analyzerEntry::getLoincForProfileCode,
       FileDeliveryIdentity.forAccession(analyzerEntry.getBridgeConnectionId(), contentHash, parsed.accessionNumber())

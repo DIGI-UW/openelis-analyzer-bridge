@@ -12,7 +12,25 @@ final class OutboxSchema {
   private OutboxSchema() {}
 
   static List<SqliteSupport.Migration> migrations() {
-    return List.of(v1(), v2(), v3(), v4());
+    return List.of(v1(), v2(), v3(), v4(), v5());
+  }
+
+  private static SqliteSupport.Migration v5() {
+    return new SqliteSupport.Migration() {
+      public int version() {
+        return 5;
+      }
+
+      public String name() {
+        return "retain-receipt-interpretation";
+      }
+
+      public void apply(Connection connection) throws SQLException {
+        try (Statement st = connection.createStatement()) {
+          st.execute("ALTER TABLE outbox ADD COLUMN interpretation_context TEXT");
+        }
+      }
+    };
   }
 
   private static SqliteSupport.Migration v4() {

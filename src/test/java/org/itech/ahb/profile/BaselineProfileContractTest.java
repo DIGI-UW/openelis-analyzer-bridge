@@ -69,7 +69,42 @@ class BaselineProfileContractTest {
   }
 
   @Test
-  void valueCodesMustNameADeclaredValueAndAStandardSystem() throws Exception {
+  void aTestOrOneOfItsValuesMayBeExcludedByDefault() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0).put("default", "EXCLUDED");
+    ObjectNode withValues = null;
+    for (com.fasterxml.jackson.databind.JsonNode component : test(profile, 0).path("components")) {
+      if (component.path("values").size() > 0) {
+        withValues = (ObjectNode) component;
+        break;
+      }
+    }
+    assertThat(withValues).as("a part that declares values").isNotNull();
+    withValues.withObject("value_defaults").put(withValues.path("values").get(0).asText(), "EXCLUDED");
+
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void anExcludedByDefaultValueMustBeADeclaredValue() throws Exception {
+    ObjectNode undeclared = baseline();
+    test(undeclared, 0).withObject("value_defaults").put("SURPRISE", "EXCLUDED");
+
+    assertThat(validator.validationIssues(undeclared)).contains(
+      "$.default_test_mappings.HIVVL.value_defaults names an undeclared value: SURPRISE"
+    );
+  }
+
+  @Test
+  void aDefaultOtherThanExcludedIsRefused() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0).put("default", "BOUND");
+
+    assertThat(validator.validationIssues(profile)).isNotEmpty();
+  }
+
+  @Test
+  void valueCodesMustNameADeclaredValue() throws Exception {
     ObjectNode undeclared = baseline();
     test(undeclared, 0)
       .withObject("value_codes")
@@ -80,17 +115,27 @@ class BaselineProfileContractTest {
     assertThat(validator.validationIssues(undeclared)).contains(
       "$.default_test_mappings.HIVVL.value_codes names an undeclared value: SURPRISE"
     );
+  }
 
-    ObjectNode foreignSystem = baseline();
-    test(foreignSystem, 0)
+  @Test
+  void aValueMayBeCodedInAnySystemADistroCatalogUses() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0)
       .withObject("value_codes")
       .withArray("DETECTED")
       .addObject()
-      .put("system", "https://example.org/codes")
-      .put("code", "42");
-    assertThat(validator.validationIssues(foreignSystem)).contains(
-      "$.default_test_mappings.HIVVL.value_codes.DETECTED cites a system that is not LOINC, SNOMED CT or CIEL: https://example.org/codes"
-    );
+      .put("system", "CPHL")
+      .put("code", "DET");
+
+    assertThat(validator.validationIssues(profile)).isEmpty();
+  }
+
+  @Test
+  void aTestNoLongerCarriesANormalizedCoding() throws Exception {
+    ObjectNode profile = baseline();
+    test(profile, 0).putObject("normalized_coding").put("system", "http://loinc.org").put("code", "LA1-1");
+
+    assertThat(validator.validationIssues(profile)).anyMatch(issue -> issue.contains("normalized_coding"));
   }
 
   @Test

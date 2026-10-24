@@ -6,10 +6,14 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,11 +30,17 @@ class ShippedProfileCatalogTest {
     "hain-fluorocycler-xt-madagascar",
     "sha256:8c0d62edb064ef081883104d17b666be734c8c2723c8da80a3d5ec953825b775",
     "mindray-bc5380",
-    "sha256:97a478c4cc2d81b0e2bae8a967e047a2ec361e38a67f46e17bd7d9ab52ab4106",
+    "sha256:540edc728f0320c4439f8e06265aca4a5f83116d778104689a7ec0eb297dd2dc",
     "thermo-quantstudio",
     "sha256:b8c148e55f0907494058e7eb56603e157d818d103645668f91b585e5e0bf49e0"
   );
 
+  /** The systems a core-shipped profile cites; a distro's own profile may also cite its catalog's system. */
+  private static final Set<String> STANDARD_SYSTEMS = Set.of(
+    "http://loinc.org",
+    "http://snomed.info/sct",
+    "https://openconceptlab.org/orgs/CIEL/sources/CIEL"
+  );
 
   @TempDir
   Path catalogDirectory;
@@ -43,26 +53,17 @@ class ShippedProfileCatalogTest {
     assertThat(resources).isNotEmpty();
 
     ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
-    ProfileFingerprintService fingerprints = new ProfileFingerprintService();
+    AnalyzerProfileValidator validator = new AnalyzerProfileValidator(objectMapper);
+    // A shipped file is authored without fingerprints; the catalog derives them when it loads the file.
+    // Tooling that checks a file against its schema before the Bridge loads it accepts it as written.
     assertSoftly(softly -> {
       for (Resource resource : resources) {
         try {
           ObjectNode profile = (ObjectNode) objectMapper.readTree(resource.getInputStream());
           String profileId = profile.path("profileMeta").path("id").asText();
-          String actualRecognitionFingerprint = profile.path("catalog").path("recognitionFingerprint").asText();
-          String actualRevisionFingerprint = profile.path("catalog").path("revisionFingerprint").asText();
-          String recognitionFingerprint = fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"));
-          ((ObjectNode) profile.path("catalog")).put("recognitionFingerprint", recognitionFingerprint);
-          String revisionFingerprint = fingerprints.revisionFingerprint(profile);
-
-          softly
-            .assertThat(actualRecognitionFingerprint)
-            .as("%s recognition fingerprint", profileId)
-            .isEqualTo(recognitionFingerprint);
-          softly
-            .assertThat(actualRevisionFingerprint)
-            .as("%s revision fingerprint", profileId)
-            .isEqualTo(revisionFingerprint);
+          softly.assertThat(profile.path("catalog").has("recognitionFingerprint")).as(profileId).isFalse();
+          softly.assertThat(profile.path("catalog").has("revisionFingerprint")).as(profileId).isFalse();
+          softly.assertThat(validator.validationIssues(profile)).as(profileId + " as written").isEmpty();
         } catch (Exception exception) {
           throw new AssertionError("Cannot inspect " + resource.getDescription(), exception);
         }
@@ -175,5 +176,27 @@ class ShippedProfileCatalogTest {
     BASELINE_FINGERPRINTS.keySet().forEach(profileId ->
       assertThat(catalog.history(profileId)).as(profileId).hasSize(1)
     );
+  }
+
+  @Test
+  void theShippedProfilesCiteOnlyStandardSystems() throws Exception {
+    ObjectMapper objectMapper = new ObjectMapper();
+    Resource[] resources = new PathMatchingResourcePatternResolver()
+      .getResources(new ProfileCatalogProperties().getShippedPattern());
+    assertSoftly(softly -> {
+      for (Resource resource : resources) {
+        try {
+          JsonNode tests = objectMapper.readTree(resource.getInputStream()).path("default_test_mappings");
+          List<JsonNode> codings = new ArrayList<>();
+          tests.findValues("codings").forEach(list -> list.forEach(codings::add));
+          tests.findValues("value_codes").forEach(byValue -> byValue.forEach(list -> list.forEach(codings::add)));
+          codings.forEach(coding ->
+            softly.assertThat(STANDARD_SYSTEMS).as(resource.getFilename()).contains(coding.path("system").asText())
+          );
+        } catch (IOException exception) {
+          throw new AssertionError("Cannot read " + resource.getDescription(), exception);
+        }
+      }
+    });
   }
 }

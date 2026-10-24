@@ -33,6 +33,7 @@ import org.itech.ahb.outbox.OutboxQuery;
 import org.itech.ahb.outbox.OutboxState;
 import org.itech.ahb.outbox.OutboxTestSupport;
 import org.itech.ahb.profile.AnalyzerProfileCatalog;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.profile.ProfileFingerprintService;
 import org.itech.ahb.routing.HttpForwardingRouter;
 import org.junit.jupiter.api.AfterEach;
@@ -77,9 +78,7 @@ class HttpCsvConnectionTest {
       exchange.close();
     });
     receiver.start();
-    profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/hain-fluorocycler-xt.json")
-    );
+    profile = PackagedProfiles.load(mapper, "hain-fluorocycler-xt");
     profile.withObject("profileMeta").put("id", "test.http-tabular");
     profile.withObject("protocol").put("format", "CSV");
     profile.putArray("supported_extensions").add(".csv");
@@ -107,9 +106,7 @@ class HttpCsvConnectionTest {
       .put("inputKind", "TEXT")
       .put("required", true)
       .putArray("choices");
-    profile
-      .withObject("catalog")
-      .put("revisionFingerprint", new ProfileFingerprintService().revisionFingerprint(profile));
+    new ProfileFingerprintService().stamp(profile);
     assertThat(
       JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
         .getSchema(mapper.readTree(Path.of("contracts/analyzer/v1/analyzer-profile.schema.json").toFile()))
@@ -163,9 +160,7 @@ class HttpCsvConnectionTest {
     profile.withObject("protocol").put("format", "TSV");
     profile.putArray("supported_extensions").add(".tsv");
     profile.withObject("configDefaults").put("fileFormat", "TSV").put("filePattern", "*.tsv").put("delimiter", "\t");
-    profile
-      .withObject("catalog")
-      .put("revisionFingerprint", new ProfileFingerprintService().revisionFingerprint(profile));
+    new ProfileFingerprintService().stamp(profile);
     profiles = new AnalyzerProfileCatalog(
       directory.resolve("tsv-profiles"),
       List.of(new ByteArrayResource(mapper.writeValueAsBytes(profile))),
@@ -267,14 +262,21 @@ class HttpCsvConnectionTest {
   }
 
   @Test
-  void rejectsUnknownAndAmbiguousSendersAndRestoresPeerAfterDeactivation() {
+  void unresolvedReceiptCanBeExplicitlyRetriedAfterItsPeerIsDisambiguated() {
     activate("oe-http-a", "192.0.2.25");
     assertThat(send("192.0.2.99", "192.0.2.25")).isNotEqualTo(200);
     ObjectNode peer = activate("oe-http-b", "192.0.2.25");
     assertThat(send("192.0.2.25", null)).isNotEqualTo(200);
     assertThat(received).isEmpty();
     connections.applyRuntimeCommand(command(peer, "DEACTIVATE"));
-    assertThat(send("192.0.2.25", null)).isEqualTo(200);
+    var unresolved = outbox.store
+      .list(OutboxQuery.inState(OutboxState.DMQ, 10))
+      .stream()
+      .filter(entry -> "192.0.2.25".equals(entry.sourceId()))
+      .findFirst()
+      .orElseThrow();
+    outbox.store.requestRetry(unresolved.id(), "operator-after-disambiguation", Instant.now());
+    outbox.dispatcher.dispatchDue();
     assertThat(received).hasSize(2);
     verifyNoInteractions(watcher);
   }
@@ -582,8 +584,8 @@ class HttpCsvConnectionTest {
   }
 
   private void assertNothingStored(String raw) {
-    assertThat(outbox.store.list(OutboxQuery.all(50))).noneSatisfy(entry ->
-      assertThat(outbox.store.rawPayload(entry.id())).contains(raw)
+    assertThat(outbox.store.list(OutboxQuery.all(50))).noneSatisfy(
+      entry -> assertThat(outbox.store.rawPayload(entry.id())).contains(raw)
     );
   }
 

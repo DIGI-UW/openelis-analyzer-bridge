@@ -10,6 +10,7 @@ import java.net.Socket;
 import java.time.Clock;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties;
 import org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties;
 import org.itech.ahb.connectivity.DefaultConnectionProbeExecutor;
@@ -43,9 +44,7 @@ class OutboundConnectionProbeTest {
       inbound.setPort(available.getLocalPort());
     }
     listeners.start("inbound", "oe-probe", inbound.getPort(), "LIS01_A");
-    profile = (ObjectNode) mapper.readTree(
-      getClass().getResourceAsStream("/analyzer-profiles/cepheid-genexpert-astm.json")
-    );
+    profile = PackagedProfiles.load(mapper, "cepheid-genexpert-astm");
     connection = mapper
       .createObjectNode()
       .put("connectionId", "outbound-probe")

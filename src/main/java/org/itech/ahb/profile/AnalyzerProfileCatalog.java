@@ -218,12 +218,8 @@ public final class AnalyzerProfileCatalog {
     if (!issues.isEmpty()) {
       throw new ProfileCatalogException("Profile draft cannot be published: " + String.join("; ", issues));
     }
-    ObjectNode catalog = requireObject(profile.path("catalog"), "catalog");
-    catalog.put(
-      "recognitionFingerprint",
-      fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"))
-    );
-    catalog.put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
+    requireObject(profile.path("catalog"), "catalog");
+    fingerprints.stamp(profile);
     validator.validate(profile);
 
     ProfileRevision revision = new ProfileRevision(
@@ -343,11 +339,7 @@ public final class AnalyzerProfileCatalog {
     catalog.put("status", targetStatus);
     catalog.put("publishedAt", markedAt.toString());
     catalog.put("publishedBy", normalizedActor);
-    catalog.put(
-      "recognitionFingerprint",
-      fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"))
-    );
-    catalog.put("revisionFingerprint", fingerprints.revisionFingerprint(profile));
+    fingerprints.stamp(profile);
     validator.validate(profile);
 
     ProfileRevision statusRevision = new ProfileRevision(
@@ -421,7 +413,9 @@ public final class AnalyzerProfileCatalog {
         if (!"SHIPPED".equals(metadata.path("source").asText())) {
           throw new ProfileCatalogException("Shipped profile must declare source SHIPPED: " + resource.getFilename());
         }
-        validatePublished(profile, "Shipped profile " + resource.getFilename());
+        foldRetiredFields(profile, "Shipped profile " + resource.getFilename());
+        computeFingerprints(profile, "Shipped profile " + resource.getFilename());
+        validatePublished(profile);
         add(
           new ProfileRevision(
             profile,
@@ -435,6 +429,25 @@ public final class AnalyzerProfileCatalog {
       } catch (IOException | IllegalArgumentException exception) {
         throw new ProfileCatalogException("Cannot load shipped profile " + resource.getDescription(), exception);
       }
+    }
+  }
+
+  /**
+   * A revision's fingerprints are computed from its content as it loads, so a file edited under its
+   * revision is served as edited; a fingerprint it carries is only the content it once had.
+   */
+  private void computeFingerprints(ObjectNode profile, String description) {
+    JsonNode catalog = profile.path("catalog");
+    String stampedRevision = catalog.path("revisionFingerprint").asText(null);
+    String stampedRecognition = catalog.path("recognitionFingerprint").asText(null);
+    fingerprints.stamp(profile);
+    String revision = profile.path("catalog").path("revisionFingerprint").asText();
+    String recognition = profile.path("catalog").path("recognitionFingerprint").asText();
+    if (
+      (stampedRevision != null && !stampedRevision.equals(revision)) ||
+      (stampedRecognition != null && !stampedRecognition.equals(recognition))
+    ) {
+      log.info("{} changed since its fingerprints were written; serving it as it reads now ({})", description, revision);
     }
   }
 
@@ -479,7 +492,9 @@ public final class AnalyzerProfileCatalog {
       parseInstant(publicationNode.path("markedAt").asText(null), path)
     );
     validatePersistedOrigin(profile, publication.action(), path);
-    validatePublished(profile, "Persisted profile " + path);
+    foldRetiredFields(profile, "Persisted profile " + path);
+    computeFingerprints(profile, "Persisted profile " + path);
+    validatePublished(profile);
     add(new ProfileRevision(profile, publication));
   }
 
@@ -497,6 +512,7 @@ public final class AnalyzerProfileCatalog {
       if (profile.has("catalog")) {
         throw new ProfileCatalogException("Persisted draft cannot contain catalog metadata: " + path);
       }
+      foldRetiredFields(profile, "Persisted draft " + path);
       ProfileDraft draft = new ProfileDraft(
         draftId,
         ProfileDraftKind.valueOf(requireText(document.path("kind").asText(null), "draft kind")),
@@ -518,17 +534,15 @@ public final class AnalyzerProfileCatalog {
     }
   }
 
-  private void validatePublished(ObjectNode profile, String description) {
+  /** Rewrites what an earlier contract allowed and this one retires, as the file loads. */
+  private void foldRetiredFields(ObjectNode profile, String description) {
+    if (TestCodings.foldRetiredNormalizedCoding(profile)) {
+      log.info("{} named a test by normalized_coding; it loads with that coding in codings", description);
+    }
+  }
+
+  private void validatePublished(ObjectNode profile) {
     validator.validate(profile);
-    JsonNode metadata = profile.path("catalog");
-    String expectedRecognition = fingerprints.recognitionFingerprint(profile.path("controlResultRecognition"));
-    if (!expectedRecognition.equals(metadata.path("recognitionFingerprint").asText())) {
-      throw new ProfileCatalogException(description + " recognition fingerprint mismatch");
-    }
-    String expectedRevision = fingerprints.revisionFingerprint(profile);
-    if (!expectedRevision.equals(metadata.path("revisionFingerprint").asText())) {
-      throw new ProfileCatalogException(description + " revision fingerprint mismatch");
-    }
   }
 
   private static void validatePersistedOrigin(ObjectNode profile, ProfileAuditAction action, Path path) {

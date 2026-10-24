@@ -107,6 +107,62 @@ class NormalizedBundleRendererReadingTest {
     assertThat(raw.getValue().primitiveValue()).isEqualTo("40,00");
   }
 
+  @Test
+  void httpTabularValuesUseTheSameDecimalAndFailureInterpretation() throws Exception {
+    var profile = objectMapper.readTree(
+      """
+      {"configDefaults":{"numberFormat":","},"default_test_mappings":[
+        {"test_code":"COUNT","run_failure_values":["ERROR"],"translations":{"ERROR":["ECHEC"]}}]}
+      """
+    );
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerEntry entry = new AnalyzerEntry();
+    entry.setId("analyzer-1");
+    entry.setName("HTTP tabular");
+    entry.setBridgeConnectionId("bridge-connection-7f3c");
+    entry.setProfileId("site.tabular");
+    entry.setProfileRevision(1);
+    entry.setProfileFingerprint("sha256:" + "1".repeat(64));
+    entry.setExpectedProtocol("FILE");
+    entry.setInboundTransport("HTTP");
+    entry.setFileFormat("CSV");
+    entry.setDelimiter(";");
+    entry.setColumnMappings(Map.of("Sample", "sampleId", "Test", "testCode", "Result", "result", "Unit", "units"));
+    entry.setTabularResultValueSelection(org.itech.ahb.profile.TabularResultValueSelection.resultOnly());
+    entry.setControlResultRecognition(ControlResultRecognition.none());
+    entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
+    entry.setResultReading(ResultReading.fromProfile(profile));
+    registry.register("10.0.0.7", entry);
+    var outcome = new NormalizedBundleRenderer(registry).render(
+      MessageEnvelope.builder()
+        .protocol(Protocol.CSV)
+        .transport(Transport.HTTP)
+        .sourceId("10.0.0.7")
+        .resolvedAnalyzerId("analyzer-1")
+        .rawMessage("Sample;Test;Result;Unit\nACC-1;COUNT;1,23;mg/L\nACC-2;COUNT;ECHEC;mg/L\n")
+        .build(),
+      "http://localhost/analyzer"
+    );
+    assertThat(outcome).isInstanceOf(NormalizedBundleRenderer.Outcome.Rendered.class);
+    var deliveries = ((NormalizedBundleRenderer.Outcome.Rendered) outcome).deliveries();
+    assertThat(deliveries).hasSize(2);
+    var observations = deliveries
+      .stream()
+      .flatMap(delivery -> FHIR.newJsonParser().parseResource(Bundle.class, delivery.fhirJson()).getEntry().stream())
+      .map(Bundle.BundleEntryComponent::getResource)
+      .filter(Observation.class::isInstance)
+      .map(Observation.class::cast)
+      .toList();
+    assertThat(observations).anySatisfy(o -> {
+      assertThat(o.getValueQuantity().getValue()).isEqualByComparingTo("1.23");
+      assertThat(o.getValueQuantity().getUnit()).isEqualTo("mg/L");
+    });
+    assertThat(observations).anySatisfy(o -> {
+      assertThat(o.hasDataAbsentReason()).isTrue();
+      assertThat(o.hasValue()).isFalse();
+    });
+  }
+
   private Observation render(ObjectNode connectionValues, String codeSent, String data) throws Exception {
     return render(connectionValues, Map.of(), codeSent, data);
   }

@@ -7,12 +7,22 @@ import org.itech.ahb.lib.astm.communication.AstmReceiptObserver;
 /** One transport session: exact acknowledged frames held until atomic complete-message handoff. */
 public final class DurableAstmReceipt implements AstmReceiptObserver {
 
+  private final java.util.function.UnaryOperator<ReceivedMessage> capture;
   private final OutboxStore store;
   private final ReceivedMessage source;
   private final String sessionId = "astm-session:" + UUID.randomUUID();
   private final ByteArrayOutputStream frames = new ByteArrayOutputStream();
 
   public DurableAstmReceipt(OutboxStore store, ReceivedMessage source) {
+    this(store, source, java.util.function.UnaryOperator.identity());
+  }
+
+  public DurableAstmReceipt(
+    OutboxStore store,
+    ReceivedMessage source,
+    java.util.function.UnaryOperator<ReceivedMessage> capture
+  ) {
+    this.capture = capture;
     this.store = store;
     this.source = source;
   }
@@ -30,18 +40,20 @@ public final class DurableAstmReceipt implements AstmReceiptObserver {
   public void complete(String message) {
     store.completeAstmSession(
       sessionId,
-      new ReceivedMessage(
-        source.sourceId(),
-        source.sourcePort(),
-        source.protocol(),
-        source.transport(),
-        source.transport() == org.itech.ahb.model.Transport.TCP
-          ? org.itech.ahb.normalizer.ASTMBridgeAdapter.extractSenderFromHRecord(message)
-          : source.protocolHint(),
-        message,
-        null,
-        source.receivedAt(),
-        source.listenerPort()
+      capture.apply(
+        new ReceivedMessage(
+          source.sourceId(),
+          source.sourcePort(),
+          source.protocol(),
+          source.transport(),
+          source.transport() == org.itech.ahb.model.Transport.TCP
+            ? org.itech.ahb.normalizer.ASTMBridgeAdapter.extractSenderFromHRecord(message)
+            : source.protocolHint(),
+          message,
+          null,
+          source.receivedAt(),
+          source.listenerPort()
+        )
       ),
       org.itech.ahb.normalizer.MessageNormalizer.isQueryOnlyAstmMessage(message)
     );

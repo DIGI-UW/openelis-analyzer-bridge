@@ -8,7 +8,9 @@ import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.concurrent.atomic.AtomicReference;
@@ -39,7 +41,11 @@ class PairedDeliveryTest {
   private BridgeIdentity startOpenElis() throws Exception {
     BridgeIdentity server = PairingTestClients.newIdentity(directory.resolve("openelis-server"));
     SSLContext context = SSLContext.getInstance("TLS");
-    context.init(server.keyManagers(), new TrustManager[] { new AnyClientCertificateTrustManager() }, new SecureRandom());
+    context.init(
+      server.keyManagers(),
+      new TrustManager[] { new AnyClientCertificateTrustManager() },
+      new SecureRandom()
+    );
     openElis = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     openElis.setHttpsConfigurator(
       new HttpsConfigurator(context) {
@@ -66,13 +72,28 @@ class PairedDeliveryTest {
   }
 
   private FhirDeliveryClient client(PairingState pairing, BridgeIdentity bridge) {
+    return client(new OpenElisClients(pairing, () -> bridge));
+  }
+
+  private FhirDeliveryClient client(OpenElisClients clients) {
     HTTPForwardServerConfigurationProperties config = new HTTPForwardServerConfigurationProperties();
     config.setUri(URI.create("https://localhost:" + openElis.getAddress().getPort()));
     config.setUsername("legacy");
     config.setPassword("testpass".toCharArray());
     config.setConnectTimeoutSeconds(2);
     config.setReadTimeoutSeconds(5);
-    return new FhirDeliveryClient(config, new OpenElisClients(pairing, () -> bridge));
+    return new FhirDeliveryClient(config, clients);
+  }
+
+  private Path trustStoreWith(X509Certificate certificate, char[] password) throws Exception {
+    KeyStore store = KeyStore.getInstance("PKCS12");
+    store.load(null, null);
+    store.setCertificateEntry("openelis", certificate);
+    Path file = directory.resolve("truststore.p12");
+    try (var out = Files.newOutputStream(file)) {
+      store.store(out, password);
+    }
+    return file;
   }
 
   @Test
@@ -100,6 +121,39 @@ class PairedDeliveryTest {
 
     assertThat(outcome.reachedOpenElis()).isFalse();
     assertThat(presented.get()).isNull();
+  }
+
+  @Test
+  void anOpenElisWithANewCertificateInTheConfiguredTrustStoreIsStillTrusted() throws Exception {
+    BridgeIdentity server = startOpenElis();
+    char[] password = "trust-pass".toCharArray();
+    Path store = trustStoreWith(server.certificate(), password);
+    BridgeIdentity bridge = PairingTestClients.newIdentity(directory.resolve("bridge"));
+    PairingState pairing = new PairingState(directory.resolve("pairing"), "code-for-delivery");
+    pairing.pair("code-for-delivery", "c".repeat(64), "d".repeat(64));
+
+    DeliveryOutcome outcome = client(
+      new OpenElisClients(pairing, () -> bridge, new OpenElisClients.TrustStore(store, "PKCS12", password))
+    ).deliver("{}");
+
+    assertThat(outcome.httpStatus()).as(String.valueOf(outcome.describeFailure())).isEqualTo(200);
+  }
+
+  @Test
+  void anUnreadableTrustStoreStillDeliversToThePinnedOpenElis() throws Exception {
+    BridgeIdentity server = startOpenElis();
+    BridgeIdentity bridge = PairingTestClients.newIdentity(directory.resolve("bridge"));
+    PairingState pairing = new PairingState(directory.resolve("pairing"), "code-for-delivery");
+    pairing.pair("code-for-delivery", "c".repeat(64), server.fingerprint());
+    OpenElisClients.TrustStore missing = new OpenElisClients.TrustStore(
+      directory.resolve("no-such-truststore"),
+      "PKCS12",
+      "trust-pass".toCharArray()
+    );
+
+    DeliveryOutcome outcome = client(new OpenElisClients(pairing, () -> bridge, missing)).deliver("{}");
+
+    assertThat(outcome.httpStatus()).as(String.valueOf(outcome.describeFailure())).isEqualTo(200);
   }
 
   @Test

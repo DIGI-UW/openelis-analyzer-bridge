@@ -25,23 +25,32 @@ the value translations.
 
 ## Tests
 
-| Field                | Rule                                                                                                                                                                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_code`          | the code the vendor suggests; a connection may override it                                                                                                                                                            |
-| `loinc`              | the standard LOINC code of the test                                                                                                                                                                                   |
-| `result_type`        | `quantitative`, `qualitative` or `text`; required                                                                                                                                                                     |
-| `unit`               | the unit the instrument sends                                                                                                                                                                                         |
-| `values`             | the raw values of a categorical test, exactly as the instrument sends them                                                                                                                                            |
-| `value_codes`        | for each value, every standard coding the vendor gives it, as `{system, code}`; systems are LOINC `http://loinc.org`, SNOMED CT `http://snomed.info/sct` and CIEL `https://openconceptlab.org/orgs/CIEL/sources/CIEL` |
-| `translations`       | for each value, the vendor's translations, all bound to that value; one text may belong to only one value                                                                                                             |
-| `run_failure_values` | raw values that say the run produced no result (`ERROR`, `NO RESULT`); never answers, so a lab never maps them; may have translations                                                                                 |
-| `call_component`     | on a quantitative test with a call, the component that takes the main record's call                                                                                                                                   |
-| `components`         | the other records the instrument reports for the test                                                                                                                                                                 |
-| `assay`              | `{name, version}` as the instrument reports them                                                                                                                                                                      |
-| `source`             | `{document, section}`                                                                                                                                                                                                 |
+| Field                | Rule                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_code`          | the code the vendor suggests; a connection may override it                                                                                            |
+| `loinc`              | the standard LOINC code of the test; shorthand for a `http://loinc.org` entry in `codings`                                                            |
+| `codings`            | the codes that name the OpenELIS test, as `{system, code, display}`, in any system; a test has `loinc`, `codings` or both, and at most one LOINC code |
+| `result_type`        | `quantitative`, `qualitative` or `text`; required                                                                                                     |
+| `unit`               | the unit the instrument sends                                                                                                                         |
+| `values`             | the raw values of a categorical test, exactly as the instrument sends them                                                                            |
+| `value_codes`        | for each value, every coding the vendor gives it, as `{system, code, display}`                                                                        |
+| `translations`       | for each value, the vendor's translations, all bound to that value; one text may belong to only one value                                             |
+| `default`            | `EXCLUDED`: a new analyzer starts with this test or component off, for a code a lab normally does not receive                                         |
+| `value_defaults`     | for each value a new analyzer should start without, `EXCLUDED`; a mapping suggestion, never part of how a result is read                              |
+| `run_failure_values` | raw values that say the run produced no result (`ERROR`, `NO RESULT`); never answers, so a lab never maps them; may have translations                 |
+| `call_component`     | on a quantitative test with a call, the component that takes the main record's call                                                                   |
+| `components`         | the other records the instrument reports for the test                                                                                                 |
+| `assay`              | `{name, version}` as the instrument reports them                                                                                                      |
+| `source`             | `{document, section}`                                                                                                                                 |
 
 `specimen_type_hint` and `result_value_hints` are not part of the contract. A categorical test has
 `values`. A quantitative test may have `values` only when it names a `call_component`.
+
+A coding's `system` is a standard system's URI (LOINC `http://loinc.org`, SNOMED CT
+`http://snomed.info/sct`, CIEL `https://openconceptlab.org/orgs/CIEL/sources/CIEL`) or the
+identifier a distro catalog names its own concepts by. A profile shipped with the Bridge cites
+standard systems only; a distro's own profile may also cite its catalog's system. OpenELIS binds a
+coding to the test or answer that carries the same `(system, code)`.
 
 ### A quantitative result with a call
 
@@ -156,6 +165,37 @@ A saved connection may set the code its instrument uses for an assay: `values.co
 profile test codes to instrument codes. Results arrive under the profile's code, and outbound
 orders use the connection's code. Each key must be a test the profile declares, and no two assays
 may share a code.
+
+## Ship a profile
+
+A shipped profile is one file per revision. Beside the authored content it carries
+`profileMeta.id`, a stable name in `[a-z0-9][a-z0-9._-]+` that is not a `site.` id, and a
+`catalog` block:
+
+```json
+"catalog": {
+  "revision": 1,
+  "source": "SHIPPED",
+  "status": "ACTIVE",
+  "publishedAt": "2026-10-20T00:00:00Z",
+  "publishedBy": "distribution"
+}
+```
+
+Write no fingerprints: the Bridge computes `revisionFingerprint` and `recognitionFingerprint`
+from the file's content when it loads it and replaces any the file carries. A file can be edited
+under its revision: after a restart its connections keep running on the edited content, and
+OpenELIS holds only the results whose reading changed (a code's unit, result type, parts,
+values or translations, or how the type reads every result) until a person confirms the change.
+A name, hint, coding or new assay holds nothing. Publish the next revision, in a new file with
+`revision` one higher, for a change each lab should adopt through OpenELIS's review screen, such
+as a renamed or split code; keep the earlier file so connections pinned to it keep restoring.
+
+To take a profile authored in the Bridge UI into a shipped set, copy the `profile` object out
+of its revision file in the profile catalog directory
+(`<bridge-data>/profile-catalog/<profileId>/<revision>.json`), give it the stable id, replace
+its `catalog` block with the one above, and drop the two fingerprint fields. The copy is a new
+profile at revision 1; the site's `site.` profile and its connections are untouched.
 
 ## Checks
 

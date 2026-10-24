@@ -5,7 +5,9 @@
   "type": "object",
   "required": ["resourceType", "meta", "identifier", "type", "entry"],
   "properties": {
-    "resourceType": { "const": "Bundle" },
+    "resourceType": {
+      "const": "Bundle"
+    },
     "meta": {
       "type": "object",
       "required": ["profile"],
@@ -25,10 +27,15 @@
         "system": {
           "const": "https://openelis-global.org/fhir/analyzer-message-id"
         },
-        "value": { "type": "string", "minLength": 1 }
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
-    "type": { "const": "transaction" },
+    "type": {
+      "const": "transaction"
+    },
     "entry": {
       "type": "array",
       "minItems": 4,
@@ -36,7 +43,10 @@
         "type": "object",
         "required": ["fullUrl", "resource", "request"],
         "properties": {
-          "fullUrl": { "type": "string", "minLength": 1 },
+          "fullUrl": {
+            "type": "string",
+            "minLength": 1
+          },
           "resource": {
             "type": "object",
             "required": ["resourceType"],
@@ -52,7 +62,11 @@
               }
             },
             "if": {
-              "properties": { "resourceType": { "const": "Patient" } }
+              "properties": {
+                "resourceType": {
+                  "const": "Patient"
+                }
+              }
             },
             "then": {
               "required": ["extension"],
@@ -64,18 +78,97 @@
                       "url": {
                         "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-patient-source"
                       },
-                      "valueCode": { "const": "instrument" }
+                      "valueCode": {
+                        "const": "instrument"
+                      }
                     }
                   }
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "properties": {
+                  "extension": {
+                    "items": {
+                      "allOf": [
+                        {
+                          "if": {
+                            "required": ["url"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-contract-version"
+                              }
+                            }
+                          },
+                          "then": {
+                            "required": ["valueString"],
+                            "properties": {
+                              "valueString": {
+                                "enum": ["1.0", "1.1"]
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "if": {
+                            "required": ["url"],
+                            "properties": {
+                              "url": {
+                                "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-canonical-answer"
+                              }
+                            }
+                          },
+                          "then": {
+                            "required": ["valueString"],
+                            "properties": {
+                              "valueString": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "interpretation": {
+                    "items": {
+                      "properties": {
+                        "extension": {
+                          "items": {
+                            "if": {
+                              "required": ["url"],
+                              "properties": {
+                                "url": {
+                                  "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-part"
+                                }
+                              }
+                            },
+                            "then": {
+                              "required": ["valueCode"],
+                              "properties": {
+                                "valueCode": {
+                                  "enum": ["call", "flag"]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
           },
           "request": {
             "type": "object",
             "required": ["method", "url"],
             "properties": {
-              "method": { "const": "POST" },
+              "method": {
+                "const": "POST"
+              },
               "url": {
                 "enum": [
                   "Device",
@@ -92,11 +185,21 @@
     }
   },
   "allOf": [
-    { "$ref": "#/$defs/containsDevice" },
-    { "$ref": "#/$defs/containsSpecimen" },
-    { "$ref": "#/$defs/containsObservation" },
-    { "$ref": "#/$defs/everyObservation" },
-    { "$ref": "#/$defs/containsDiagnosticReport" }
+    {
+      "$ref": "#/$defs/containsDevice"
+    },
+    {
+      "$ref": "#/$defs/containsSpecimen"
+    },
+    {
+      "$ref": "#/$defs/containsObservation"
+    },
+    {
+      "$ref": "#/$defs/everyObservation"
+    },
+    {
+      "$ref": "#/$defs/containsDiagnosticReport"
+    }
   ],
   "$defs": {
     "extensionWithUrl": {
@@ -110,35 +213,51 @@
         "url": {
           "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
         },
-        "valueCode": { "enum": ["PATIENT", "CONTROL", "SAMPLE_FLAG"] }
+        "valueCode": {
+          "enum": ["PATIENT", "CONTROL", "SAMPLE_FLAG"]
+        }
       }
     },
     "recognitionEvaluation": {
       "type": "object",
       "required": ["url", "extension"],
       "properties": {
-        "url": { "const": "evaluation" },
+        "url": {
+          "const": "evaluation"
+        },
         "extension": {
           "type": "array",
           "allOf": [
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "ruleKey" } }
+                "properties": {
+                  "url": {
+                    "const": "ruleKey"
+                  }
+                }
               },
               "maxContains": 1
             },
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "sourceField" } }
+                "properties": {
+                  "url": {
+                    "const": "sourceField"
+                  }
+                }
               },
               "maxContains": 1
             },
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "rawValue" } }
+                "properties": {
+                  "url": {
+                    "const": "rawValue"
+                  }
+                }
               },
               "minContains": 0,
               "maxContains": 1
@@ -146,25 +265,10 @@
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "matched" } }
-              },
-              "maxContains": 1
-            },
-            {
-              "contains": {
-                "required": ["url", "valueString"],
                 "properties": {
-                  "url": { "const": "ruleKey" },
-                  "valueString": { "type": "string", "minLength": 1 }
-                }
-              }
-            },
-            {
-              "contains": {
-                "required": ["url", "valueBoolean"],
-                "properties": {
-                  "url": { "const": "matched" },
-                  "valueBoolean": { "type": "boolean" }
+                  "url": {
+                    "const": "matched"
+                  }
                 }
               },
               "maxContains": 1
@@ -173,8 +277,13 @@
               "contains": {
                 "required": ["url", "valueString"],
                 "properties": {
-                  "url": { "const": "sourceField" },
-                  "valueString": { "type": "string", "minLength": 1 }
+                  "url": {
+                    "const": "ruleKey"
+                  },
+                  "valueString": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               }
             },
@@ -182,8 +291,40 @@
               "contains": {
                 "required": ["url", "valueBoolean"],
                 "properties": {
-                  "url": { "const": "sourcePresent" },
-                  "valueBoolean": { "type": "boolean" }
+                  "url": {
+                    "const": "matched"
+                  },
+                  "valueBoolean": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "required": ["url", "valueString"],
+                "properties": {
+                  "url": {
+                    "const": "sourceField"
+                  },
+                  "valueString": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "required": ["url", "valueBoolean"],
+                "properties": {
+                  "url": {
+                    "const": "sourcePresent"
+                  },
+                  "valueBoolean": {
+                    "type": "boolean"
+                  }
                 }
               },
               "maxContains": 1
@@ -191,7 +332,11 @@
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "sourcePresent" } }
+                "properties": {
+                  "url": {
+                    "const": "sourcePresent"
+                  }
+                }
               },
               "minContains": 1,
               "maxContains": 1
@@ -207,8 +352,12 @@
                 "contains": {
                   "required": ["url", "valueBoolean"],
                   "properties": {
-                    "url": { "const": "sourcePresent" },
-                    "valueBoolean": { "const": true }
+                    "url": {
+                      "const": "sourcePresent"
+                    },
+                    "valueBoolean": {
+                      "const": true
+                    }
                   }
                 }
               }
@@ -220,8 +369,13 @@
                 "contains": {
                   "required": ["url", "valueString"],
                   "properties": {
-                    "url": { "const": "rawValue" },
-                    "valueString": { "type": "string", "minLength": 1 }
+                    "url": {
+                      "const": "rawValue"
+                    },
+                    "valueString": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   }
                 }
               }
@@ -233,7 +387,11 @@
                 "not": {
                   "contains": {
                     "required": ["url"],
-                    "properties": { "url": { "const": "rawValue" } }
+                    "properties": {
+                      "url": {
+                        "const": "rawValue"
+                      }
+                    }
                   }
                 }
               }
@@ -244,15 +402,21 @@
     },
     "matchedRecognitionEvaluation": {
       "allOf": [
-        { "$ref": "#/$defs/recognitionEvaluation" },
+        {
+          "$ref": "#/$defs/recognitionEvaluation"
+        },
         {
           "properties": {
             "extension": {
               "contains": {
                 "required": ["url", "valueBoolean"],
                 "properties": {
-                  "url": { "const": "matched" },
-                  "valueBoolean": { "const": true }
+                  "url": {
+                    "const": "matched"
+                  },
+                  "valueBoolean": {
+                    "const": true
+                  }
                 }
               }
             }
@@ -273,7 +437,11 @@
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "mode" } }
+                "properties": {
+                  "url": {
+                    "const": "mode"
+                  }
+                }
               },
               "minContains": 1,
               "maxContains": 1
@@ -281,7 +449,11 @@
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "outcome" } }
+                "properties": {
+                  "url": {
+                    "const": "outcome"
+                  }
+                }
               },
               "minContains": 1,
               "maxContains": 1
@@ -289,7 +461,11 @@
             {
               "contains": {
                 "required": ["url"],
-                "properties": { "url": { "const": "recognitionFingerprint" } }
+                "properties": {
+                  "url": {
+                    "const": "recognitionFingerprint"
+                  }
+                }
               },
               "minContains": 1,
               "maxContains": 1
@@ -298,8 +474,12 @@
               "contains": {
                 "required": ["url", "valueCode"],
                 "properties": {
-                  "url": { "const": "mode" },
-                  "valueCode": { "enum": ["RULES", "NONE"] }
+                  "url": {
+                    "const": "mode"
+                  },
+                  "valueCode": {
+                    "enum": ["RULES", "NONE"]
+                  }
                 }
               },
               "maxContains": 1
@@ -308,7 +488,9 @@
               "contains": {
                 "required": ["url", "valueCode"],
                 "properties": {
-                  "url": { "const": "outcome" },
+                  "url": {
+                    "const": "outcome"
+                  },
                   "valueCode": {
                     "enum": ["MATCH", "NO_MATCH", "NOT_EVALUATED"]
                   }
@@ -320,7 +502,9 @@
               "contains": {
                 "required": ["url", "valueString"],
                 "properties": {
-                  "url": { "const": "recognitionFingerprint" },
+                  "url": {
+                    "const": "recognitionFingerprint"
+                  },
                   "valueString": {
                     "type": "string",
                     "pattern": "^sha256:[0-9a-f]{64}$"
@@ -340,8 +524,12 @@
                 "contains": {
                   "required": ["url", "valueCode"],
                   "properties": {
-                    "url": { "const": "mode" },
-                    "valueCode": { "const": "RULES" }
+                    "url": {
+                      "const": "mode"
+                    },
+                    "valueCode": {
+                      "const": "RULES"
+                    }
                   }
                 }
               }
@@ -352,15 +540,21 @@
               "extension": {
                 "allOf": [
                   {
-                    "contains": { "$ref": "#/$defs/recognitionEvaluation" }
+                    "contains": {
+                      "$ref": "#/$defs/recognitionEvaluation"
+                    }
                   },
                   {
                     "not": {
                       "contains": {
                         "required": ["url", "valueCode"],
                         "properties": {
-                          "url": { "const": "outcome" },
-                          "valueCode": { "const": "NOT_EVALUATED" }
+                          "url": {
+                            "const": "outcome"
+                          },
+                          "valueCode": {
+                            "const": "NOT_EVALUATED"
+                          }
                         }
                       }
                     }
@@ -370,8 +564,12 @@
                       "contains": {
                         "required": ["url", "valueCode"],
                         "properties": {
-                          "url": { "const": "outcome" },
-                          "valueCode": { "const": "MATCH" }
+                          "url": {
+                            "const": "outcome"
+                          },
+                          "valueCode": {
+                            "const": "MATCH"
+                          }
                         }
                       }
                     },
@@ -386,8 +584,12 @@
                       "contains": {
                         "required": ["url", "valueCode"],
                         "properties": {
-                          "url": { "const": "outcome" },
-                          "valueCode": { "const": "NO_MATCH" }
+                          "url": {
+                            "const": "outcome"
+                          },
+                          "valueCode": {
+                            "const": "NO_MATCH"
+                          }
                         }
                       }
                     },
@@ -411,8 +613,12 @@
                 "contains": {
                   "required": ["url", "valueCode"],
                   "properties": {
-                    "url": { "const": "mode" },
-                    "valueCode": { "const": "NONE" }
+                    "url": {
+                      "const": "mode"
+                    },
+                    "valueCode": {
+                      "const": "NONE"
+                    }
                   }
                 }
               }
@@ -426,15 +632,23 @@
                     "contains": {
                       "required": ["url", "valueCode"],
                       "properties": {
-                        "url": { "const": "outcome" },
-                        "valueCode": { "const": "NOT_EVALUATED" }
+                        "url": {
+                          "const": "outcome"
+                        },
+                        "valueCode": {
+                          "const": "NOT_EVALUATED"
+                        }
                       }
                     }
                   },
                   {
                     "not": {
                       "contains": {
-                        "properties": { "url": { "const": "evaluation" } },
+                        "properties": {
+                          "url": {
+                            "const": "evaluation"
+                          }
+                        },
                         "required": ["url"]
                       }
                     }
@@ -456,7 +670,11 @@
                 "properties": {
                   "resource": {
                     "required": ["resourceType"],
-                    "properties": { "resourceType": { "const": "Device" } }
+                    "properties": {
+                      "resourceType": {
+                        "const": "Device"
+                      }
+                    }
                   }
                 }
               },
@@ -470,7 +688,9 @@
                 "type": "object",
                 "required": ["resourceType", "identifier", "extension"],
                 "properties": {
-                  "resourceType": { "const": "Device" },
+                  "resourceType": {
+                    "const": "Device"
+                  },
                   "identifier": {
                     "type": "array",
                     "minItems": 1,
@@ -495,7 +715,10 @@
                         "system": {
                           "const": "https://openelis-global.org/fhir/analyzer-connection-id"
                         },
-                        "value": { "type": "string", "minLength": 1 }
+                        "value": {
+                          "type": "string",
+                          "minLength": 1
+                        }
                       }
                     }
                   },
@@ -505,7 +728,9 @@
                       {
                         "contains": {
                           "allOf": [
-                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "$ref": "#/$defs/extensionWithUrl"
+                            },
                             {
                               "properties": {
                                 "url": {
@@ -519,7 +744,9 @@
                       {
                         "contains": {
                           "allOf": [
-                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "$ref": "#/$defs/extensionWithUrl"
+                            },
                             {
                               "properties": {
                                 "url": {
@@ -533,7 +760,9 @@
                       {
                         "contains": {
                           "allOf": [
-                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "$ref": "#/$defs/extensionWithUrl"
+                            },
                             {
                               "properties": {
                                 "url": {
@@ -547,7 +776,9 @@
                       {
                         "contains": {
                           "allOf": [
-                            { "$ref": "#/$defs/extensionWithUrl" },
+                            {
+                              "$ref": "#/$defs/extensionWithUrl"
+                            },
                             {
                               "properties": {
                                 "url": {
@@ -573,7 +804,11 @@
           "contains": {
             "properties": {
               "resource": {
-                "properties": { "resourceType": { "const": "Specimen" } }
+                "properties": {
+                  "resourceType": {
+                    "const": "Specimen"
+                  }
+                }
               }
             }
           }
@@ -590,7 +825,9 @@
                 "resource": {
                   "required": ["resourceType"],
                   "properties": {
-                    "resourceType": { "const": "Observation" }
+                    "resourceType": {
+                      "const": "Observation"
+                    }
                   }
                 }
               }
@@ -617,7 +854,9 @@
                   "device"
                 ],
                 "properties": {
-                  "resourceType": { "const": "Observation" },
+                  "resourceType": {
+                    "const": "Observation"
+                  },
                   "code": {
                     "type": "object",
                     "required": ["coding"],
@@ -631,7 +870,10 @@
                             "system": {
                               "const": "https://openelis-global.org/fhir/CodeSystem/analyzer-raw-code"
                             },
-                            "code": { "type": "string", "minLength": 1 }
+                            "code": {
+                              "type": "string",
+                              "minLength": 1
+                            }
                           }
                         }
                       }
@@ -715,7 +957,9 @@
                               "url": {
                                 "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
                               },
-                              "valueCode": { "enum": ["PATIENT", "CONTROL"] }
+                              "valueCode": {
+                                "enum": ["PATIENT", "CONTROL"]
+                              }
                             }
                           }
                         }
@@ -758,7 +1002,9 @@
                               "url": {
                                 "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
                               },
-                              "valueCode": { "const": "SAMPLE_FLAG" }
+                              "valueCode": {
+                                "const": "SAMPLE_FLAG"
+                              }
                             }
                           }
                         }
@@ -768,14 +1014,20 @@
                       "description": "A warning the instrument raised about the sample, present; never a result, so it carries no control recognition and no QC tag.",
                       "required": ["valueBoolean"],
                       "properties": {
-                        "valueBoolean": { "const": true },
+                        "valueBoolean": {
+                          "const": true
+                        },
                         "meta": {
                           "properties": {
                             "tag": {
                               "not": {
                                 "contains": {
                                   "required": ["code"],
-                                  "properties": { "code": { "const": "QC" } }
+                                  "properties": {
+                                    "code": {
+                                      "const": "QC"
+                                    }
+                                  }
                                 }
                               }
                             }
@@ -806,7 +1058,9 @@
                               "url": {
                                 "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
                               },
-                              "valueCode": { "const": "CONTROL" }
+                              "valueCode": {
+                                "const": "CONTROL"
+                              }
                             }
                           }
                         }
@@ -820,7 +1074,11 @@
                             "tag": {
                               "contains": {
                                 "required": ["code"],
-                                "properties": { "code": { "const": "QC" } }
+                                "properties": {
+                                  "code": {
+                                    "const": "QC"
+                                  }
+                                }
                               }
                             }
                           },
@@ -829,15 +1087,21 @@
                         "extension": {
                           "contains": {
                             "allOf": [
-                              { "$ref": "#/$defs/controlRecognitionExtension" },
+                              {
+                                "$ref": "#/$defs/controlRecognitionExtension"
+                              },
                               {
                                 "properties": {
                                   "extension": {
                                     "contains": {
                                       "required": ["url", "valueCode"],
                                       "properties": {
-                                        "url": { "const": "outcome" },
-                                        "valueCode": { "const": "MATCH" }
+                                        "url": {
+                                          "const": "outcome"
+                                        },
+                                        "valueCode": {
+                                          "const": "MATCH"
+                                        }
                                       }
                                     }
                                   }
@@ -859,7 +1123,9 @@
                               "url": {
                                 "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-result-classification"
                               },
-                              "valueCode": { "const": "PATIENT" }
+                              "valueCode": {
+                                "const": "PATIENT"
+                              }
                             }
                           }
                         }
@@ -873,7 +1139,11 @@
                               "not": {
                                 "contains": {
                                   "required": ["code"],
-                                  "properties": { "code": { "const": "QC" } }
+                                  "properties": {
+                                    "code": {
+                                      "const": "QC"
+                                    }
+                                  }
                                 }
                               }
                             }
@@ -882,14 +1152,18 @@
                         "extension": {
                           "contains": {
                             "allOf": [
-                              { "$ref": "#/$defs/controlRecognitionExtension" },
+                              {
+                                "$ref": "#/$defs/controlRecognitionExtension"
+                              },
                               {
                                 "properties": {
                                   "extension": {
                                     "contains": {
                                       "required": ["url", "valueCode"],
                                       "properties": {
-                                        "url": { "const": "outcome" },
+                                        "url": {
+                                          "const": "outcome"
+                                        },
                                         "valueCode": {
                                           "enum": ["NO_MATCH", "NOT_EVALUATED"]
                                         }
@@ -918,7 +1192,9 @@
             "properties": {
               "resource": {
                 "properties": {
-                  "resourceType": { "const": "DiagnosticReport" }
+                  "resourceType": {
+                    "const": "DiagnosticReport"
+                  }
                 }
               }
             }

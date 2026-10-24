@@ -17,6 +17,7 @@ import org.itech.ahb.file.FileWatcher;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.TabularResultValueSelection;
+import org.itech.ahb.profile.TestCodings;
 import org.itech.ahb.util.IpLiteral;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -356,7 +357,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setBridgeConnectionId(requiredText(connection, "connectionId", "Connection ID"));
     entry.setProfileId(requiredText(connection.path("profileRef"), "profileId", "Profile ID"));
     entry.setProfileRevision(requiredRevision(connection.path("profileRef"), "revision", "Profile revision"));
-    entry.setProfileFingerprint(requiredText(connection.path("profileRef"), "fingerprint", "Profile fingerprint"));
+    entry.setProfileFingerprint(requiredText(profile.path("catalog"), "revisionFingerprint", "Profile fingerprint"));
     entry.setName(requiredText(connection, "displayName", "Connection name"));
     entry.setExpectedProtocol(requiredText(profile.path("protocol"), "name", "Profile protocol"));
     entry.setInboundTransport(nullableText(values, "transport"));
@@ -425,13 +426,15 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     Map<String, String> codeToLoinc = new LinkedHashMap<>();
     for (JsonNode mapping : profile.path("default_test_mappings")) {
       String code = requiredText(mapping, "test_code", "Profile test code");
-      String loinc = requiredText(mapping, "loinc", "Profile test LOINC");
+      String loinc = TestCodings.loinc(mapping);
       primaryCodes.add(code);
       List<String> aliases = new ArrayList<>();
       // The instrument sends the code this connection set for the assay, else the profile's.
       aliases.add(codeOverrides.getOrDefault(code, code));
       mapping.path("aliases").forEach(alias -> aliases.add(alias.asText()));
-      aliases.forEach(alias -> codeToLoinc.put(alias, loinc));
+      if (loinc != null) {
+        aliases.forEach(alias -> codeToLoinc.put(alias, loinc));
+      }
     }
     entry.setCodeToLoinc(codeToLoinc);
     entry.setFileTestCode(

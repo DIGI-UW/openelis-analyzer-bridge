@@ -32,12 +32,23 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
 
   private final MessageNormalizer normalizer;
   private final ASTMInterpreterFactory interpreterFactory;
+  private final ListenerSourcePolicy sources;
   private final Map<Integer, SharedListener> listenersByPort = new HashMap<>();
   private final Map<String, Integer> portByConnection = new HashMap<>();
 
   public ManagedAstmConnectionListeners(MessageNormalizer normalizer, ASTMInterpreterFactory interpreterFactory) {
+    this(normalizer, interpreterFactory, ListenerSourcePolicy.OPEN);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public ManagedAstmConnectionListeners(
+    MessageNormalizer normalizer,
+    ASTMInterpreterFactory interpreterFactory,
+    ListenerSourcePolicy sources
+  ) {
     this.normalizer = normalizer;
     this.interpreterFactory = interpreterFactory;
+    this.sources = sources;
   }
 
   /**
@@ -132,6 +143,9 @@ public final class ManagedAstmConnectionListeners implements AstmConnectionListe
       Mode.FIRST
     );
     listener.servlet = new ASTMServlet(handlers, interpreterFactory, port, version(lowerLayerVersion));
+    listener.servlet.setAdmission(socket -> sources.admits(port, socket.getInetAddress()));
+    listener.servlet.setMaxSessions(sources.maxSessions());
+    listener.servlet.setSessionLimitRefused(() -> sources.recordRefusal(port));
     listener.servlet.setReceiptFactory(
       socket ->
         normalizer.astmReceipt(

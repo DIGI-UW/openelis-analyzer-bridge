@@ -33,6 +33,7 @@ public final class HapiMLLPListener {
   private volatile ServerSocket socket;
   private volatile boolean stopping;
   private SimpleServer server;
+  private volatile java.util.function.Predicate<java.net.InetAddress> admission = peer -> true;
   private DefaultHapiContext context;
   private ExecutorService executor;
   private HapiReceivingApplication application;
@@ -73,6 +74,11 @@ public final class HapiMLLPListener {
     this.limits = java.util.Objects.requireNonNull(limits);
   }
 
+  /** Decides, before anything is read, whether a peer may connect; a refused one is closed. */
+  public void setAdmission(java.util.function.Predicate<java.net.InetAddress> admission) {
+    this.admission = java.util.Objects.requireNonNull(admission);
+  }
+
   public synchronized void start() {
     if (stopping) throw new IllegalStateException("Cannot restart a stopped HL7 listener instance");
     if (isRunning()) return;
@@ -91,6 +97,10 @@ public final class HapiMLLPListener {
                 while (true) {
                   LimitedMllpSocket accepted = new LimitedMllpSocket(limits, openConnections);
                   implAccept(accepted);
+                  if (!admission.test(accepted.getInetAddress())) {
+                    accepted.close();
+                    continue;
+                  }
                   if (accepted.admit()) return accepted;
                   log.warn(
                     "MLLP port {} refused a connection from {}: {} connections are already open",

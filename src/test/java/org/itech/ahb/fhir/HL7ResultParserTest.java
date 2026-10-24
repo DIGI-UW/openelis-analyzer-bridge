@@ -21,10 +21,10 @@ import org.junit.jupiter.api.Test;
 class HL7ResultParserTest {
 
   @Test
-  void sendingApplicationUsesHeaderSeparatorsAndDoesNotAppendFacility() {
-    assertEquals("APP", HL7ResultParser.sendingApplication("MSH|^~\\&|APP^OID|FACILITY|OE|LAB\rPID|1\r"));
+  void sendingApplicationIsTheWholeFieldWithComponentsJoinedByCaretsAndWithoutTheFacility() {
+    assertEquals("APP^OID", HL7ResultParser.sendingApplication("MSH|^~\\&|APP^OID|FACILITY|OE|LAB\rPID|1\r"));
     assertEquals(
-      "APP-WITH-HYPHEN",
+      "APP-WITH-HYPHEN^OID",
       HL7ResultParser.sendingApplication("MSH*$%!@*APP-WITH-HYPHEN$OID*FACILITY*OE*LAB\r")
     );
     assertNull(HL7ResultParser.sendingApplication("MSH|^~\\&||FACILITY|OE|LAB\r"));

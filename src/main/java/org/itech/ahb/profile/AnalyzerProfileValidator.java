@@ -31,12 +31,7 @@ final class AnalyzerProfileValidator {
   /** The contract generation that bans site hints and requires the full result description. */
   private static final String BASELINE_SCHEMA_VERSION = "2.0";
 
-  /** The standard code systems a value may cite: LOINC, SNOMED CT and CIEL. */
-  private static final Set<String> STANDARD_CODE_SYSTEMS = Set.of(
-    "http://loinc.org",
-    "http://snomed.info/sct",
-    "https://openconceptlab.org/orgs/CIEL/sources/CIEL"
-  );
+  private static final Pattern LOINC_CODE = Pattern.compile("^[0-9]{1,8}-[0-9]$");
 
   private final JsonSchema schema;
 
@@ -328,9 +323,23 @@ final class AnalyzerProfileValidator {
           failures.add(path + " declares values on a quantitative test, so it needs a call_component");
         }
       }
+      validateTestCodings(path, mapping, failures);
       validateValueSet(path, mapping, failures);
       validateRunFailureValues(path, mapping, failures);
       validateComponents(path, mapping, failures);
+    }
+  }
+
+  /** A test names one LOINC code at most, whether as {@code loinc} or among its codings. */
+  private void validateTestCodings(String path, JsonNode mapping, List<String> failures) {
+    Set<String> loincCodes = TestCodings.loincCodes(mapping);
+    if (loincCodes.size() > 1) {
+      failures.add(path + " names more than one LOINC code");
+    }
+    for (String code : loincCodes) {
+      if (!LOINC_CODE.matcher(code).matches()) {
+        failures.add(path + ".codings cites a code that is not a LOINC code: " + code);
+      }
     }
   }
 
@@ -347,7 +356,7 @@ final class AnalyzerProfileValidator {
       });
   }
 
-  /** The codes and translations a test or component gives its declared values. */
+  /** The codes, translations and defaults a test or component gives its declared values. */
   private void validateValueSet(String path, JsonNode owner, List<String> failures) {
     Set<String> values = new LinkedHashSet<>();
     owner.path("values").forEach(value -> values.add(value.asText()));
@@ -360,17 +369,13 @@ final class AnalyzerProfileValidator {
         if (!values.contains(entry.getKey())) {
           failures.add(path + ".value_codes names an undeclared value: " + entry.getKey());
         }
-        for (JsonNode coding : entry.getValue()) {
-          String system = coding.path("system").asText();
-          if (!STANDARD_CODE_SYSTEMS.contains(system)) {
-            failures.add(
-              path +
-              ".value_codes." +
-              entry.getKey() +
-              " cites a system that is not LOINC, SNOMED CT or CIEL: " +
-              system
-            );
-          }
+      });
+    owner
+      .path("value_defaults")
+      .fieldNames()
+      .forEachRemaining(value -> {
+        if (!values.contains(value)) {
+          failures.add(path + ".value_defaults names an undeclared value: " + value);
         }
       });
     Map<String, String> textOwners = new LinkedHashMap<>();

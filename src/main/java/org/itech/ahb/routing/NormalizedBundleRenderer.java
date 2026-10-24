@@ -60,27 +60,17 @@ public class NormalizedBundleRenderer {
    *     delivery so an operator can see where a stored delivery was aimed
    */
   public Outcome render(MessageEnvelope envelope, String targetUri) {
-    // The retained message is authoritative when re-rendering; stored hints remain audit evidence.
-    String senderHint = envelope.getProtocol() == Protocol.HL7
-      ? HL7ResultParser.sendingApplication(envelope.getRawMessage())
-      : envelope.getProtocolAnalyzerHint();
-    AnalyzerRuntimeRegistry.Resolution resolution = registry == null || envelope.getSourceId() == null
-      ? null
-      : registry.resolve(envelope.getListenerPort(), envelope.getSourceId(), senderHint);
-    if (resolution instanceof AnalyzerRuntimeRegistry.Resolution.Ambiguous ambiguous) {
-      return new Outcome.Failed(FailureReason.AMBIGUOUS_SOURCE, ambiguous.detail());
-    }
-    Optional<AnalyzerRuntimeRegistry.AnalyzerEntry> registered = resolution instanceof
-      AnalyzerRuntimeRegistry.Resolution.Resolved resolved
-      ? Optional.of(resolved.entry())
-      : Optional.empty();
-    if (registered.isEmpty()) {
-      return new Outcome.Failed(
-        FailureReason.UNREGISTERED_SOURCE,
-        "FHIR routing requires control-result recognition from a pinned profile"
-      );
-    }
-    AnalyzerRuntimeRegistry.AnalyzerEntry analyzer = registered.get();
+    return render(envelope, targetUri, capture(envelope));
+  }
+
+  public String capture(MessageEnvelope envelope) {
+    return ReceivedInterpretation.capture(registry, envelope);
+  }
+
+  public Outcome render(MessageEnvelope envelope, String targetUri, String retainedContext) {
+    ReceivedInterpretation context = ReceivedInterpretation.read(retainedContext);
+    if (context.analyzer() == null) return new Outcome.Failed(context.reason(), context.detail());
+    AnalyzerRuntimeRegistry.AnalyzerEntry analyzer = context.analyzer();
     if (
       !org.itech.ahb.connection.AnalyzerInboundTransport.matches(
         envelope.getProtocol(),
@@ -295,13 +285,15 @@ public class NormalizedBundleRenderer {
       envelope.getTransport().name(),
       deviceInfo,
       analyzer.getControlResultRecognition(),
-      analyzer.getRecognitionFingerprint()
+      analyzer.getRecognitionFingerprint(),
+      analyzer.getProfileFingerprint(),
+      analyzer.getResultReading()
     );
     ResultReading reading = analyzer.getResultReading();
     HL7ResultParser.ParsedResults sorted = parsed.underProfileCodes(reading);
     if (envelope.getProtocol() == Protocol.CSV && reading != null) {
       // A socket parser sorts flag records out as it reads; a tabular file's rows are sorted here.
-      sorted = sorted.withFileSampleFlags(reading.sampleFlags());
+      sorted = sorted.withFileSampleFlags(reading.sampleFlags()).withTabularReading(reading);
     }
     try {
       String fhirJson = FhirBundleBuilder.buildNormalizedBundle(

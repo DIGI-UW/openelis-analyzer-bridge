@@ -224,6 +224,11 @@
   ],
   "$defs": {
     "nonBlank": { "type": "string", "pattern": ".*\\S.*" },
+    "token": {
+      "type": "string",
+      "pattern": "^\\S(?:.*\\S)?$",
+      "description": "A non-blank value with no space at either end, so it is matched exactly as written."
+    },
     "jsonValue": {
       "type": ["string", "number", "boolean", "array", "object", "null"]
     },
@@ -384,15 +389,19 @@
       "additionalProperties": false,
       "required": ["system", "code"],
       "properties": {
-        "system": { "type": "string", "format": "uri" },
-        "code": { "$ref": "#/$defs/nonBlank" },
+        "system": {
+          "$ref": "#/$defs/token",
+          "description": "The code system: a standard system's URI, or the identifier a distro catalog names its own concepts by."
+        },
+        "code": { "$ref": "#/$defs/token" },
         "display": { "$ref": "#/$defs/nonBlank" }
       }
     },
     "testMapping": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["test_code", "loinc"],
+      "required": ["test_code"],
+      "anyOf": [{ "required": ["loinc"] }, { "required": ["codings"] }],
       "properties": {
         "test_code": { "$ref": "#/$defs/nonBlank" },
         "aliases": {
@@ -403,6 +412,13 @@
         "test_name_hint": { "$ref": "#/$defs/nonBlank" },
         "specimen_type_hint": { "$ref": "#/$defs/nonBlank" },
         "loinc": { "type": "string", "pattern": "^[0-9]{1,8}-[0-9]$" },
+        "codings": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/coding" },
+          "description": "The codes that name the OpenELIS test, in any system, a distro's own included; loinc is shorthand for a http://loinc.org entry."
+        },
         "unit": { "type": "string" },
         "result_type": {
           "enum": ["quantitative", "qualitative", "text"]
@@ -419,8 +435,9 @@
           "propertyNames": { "$ref": "#/$defs/nonBlank" },
           "additionalProperties": { "$ref": "#/$defs/nonBlank" }
         },
-        "normalized_coding": { "$ref": "#/$defs/coding" },
         "value_codes": { "$ref": "#/$defs/valueCodes" },
+        "default": { "$ref": "#/$defs/mappingDefault" },
+        "value_defaults": { "$ref": "#/$defs/valueDefaults" },
         "translations": { "$ref": "#/$defs/valueTranslations" },
         "call_component": { "$ref": "#/$defs/nonBlank" },
         "run_failure_values": { "$ref": "#/$defs/runFailureValues" },
@@ -450,6 +467,17 @@
           }
         }
       ]
+    },
+    "mappingDefault": {
+      "enum": ["EXCLUDED"],
+      "description": "How a new analyzer on this profile starts this row: EXCLUDED means the lab does not receive it until someone turns it on. A suggestion for the analyzer's mapping, never part of how a result is read."
+    },
+    "valueDefaults": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/nonBlank" },
+      "additionalProperties": { "$ref": "#/$defs/mappingDefault" },
+      "description": "For each declared value a new analyzer should start without, its default."
     },
     "valueCodes": {
       "type": "object",
@@ -491,6 +519,8 @@
           "items": { "$ref": "#/$defs/nonBlank" }
         },
         "value_codes": { "$ref": "#/$defs/valueCodes" },
+        "default": { "$ref": "#/$defs/mappingDefault" },
+        "value_defaults": { "$ref": "#/$defs/valueDefaults" },
         "translations": { "$ref": "#/$defs/valueTranslations" },
         "run_failure_values": { "$ref": "#/$defs/runFailureValues" }
       }
@@ -933,8 +963,6 @@
       "additionalProperties": false,
       "required": [
         "revision",
-        "revisionFingerprint",
-        "recognitionFingerprint",
         "source",
         "status",
         "publishedAt",
@@ -942,8 +970,14 @@
       ],
       "properties": {
         "revision": { "type": "integer", "minimum": 1 },
-        "revisionFingerprint": { "$ref": "#/$defs/fingerprint" },
-        "recognitionFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "revisionFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "Computed by the Bridge from the file's content as it loads; a file is authored without it, and the profile the Bridge serves always carries it."
+        },
+        "recognitionFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "Computed by the Bridge as it loads the file, like revisionFingerprint."
+        },
         "source": { "enum": ["SHIPPED", "SITE"] },
         "status": { "enum": ["ACTIVE", "INACTIVE"] },
         "publishedAt": { "type": "string", "format": "date-time" },

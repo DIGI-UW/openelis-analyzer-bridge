@@ -23,6 +23,13 @@ public final class ProfileFingerprintService {
     return canonicalFingerprint(input);
   }
 
+  /** Writes both fingerprints onto the profile's catalog block, computed from what it now says. */
+  public void stamp(ObjectNode profile) {
+    ObjectNode catalog = profile.withObject("catalog");
+    catalog.put("recognitionFingerprint", recognitionFingerprint(profile.path("controlResultRecognition")));
+    catalog.put("revisionFingerprint", revisionFingerprint(profile));
+  }
+
   public String recognitionFingerprint(JsonNode recognition) {
     return fingerprintWithout(recognition, "recognitionFingerprint");
   }

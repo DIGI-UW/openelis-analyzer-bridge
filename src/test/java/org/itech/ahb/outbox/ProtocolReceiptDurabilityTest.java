@@ -215,7 +215,7 @@ class ProtocolReceiptDurabilityTest {
   void serialReceiptsCommitBeforeAstmAndHl7Acknowledgements() throws Exception {
     Path db = directory.resolve("outbox.db");
     try (var store = new SqliteOutboxStore(db)) {
-      var normalizer = new MessageNormalizer(null, null, store, null, null);
+      var normalizer = new MessageNormalizer(null, store, null, null);
       var handler = new SerialMessageHandler(normalizer);
       var astm = handler.frameBuffer("connection:serial", "analyzer", Protocol.ASTM);
       assertThat(astm.appendData(new byte[] { 5 }).getFirst()).isEqualTo(new byte[] { 6 });
@@ -251,7 +251,7 @@ class ProtocolReceiptDurabilityTest {
   @Test
   void etbOnlySerialTransmissionIsRetainedAndNeverReturnedAsACompleteMessage() {
     try (var store = new SqliteOutboxStore(directory.resolve("outbox.db"))) {
-      var buffer = new SerialMessageHandler(new MessageNormalizer(null, null, store, null, null)).frameBuffer(
+      var buffer = new SerialMessageHandler(new MessageNormalizer(null, store, null, null)).frameBuffer(
         "serial",
         "a",
         Protocol.ASTM

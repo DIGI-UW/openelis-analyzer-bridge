@@ -19,9 +19,24 @@ public record ResultReading(
   char decimalSeparator,
   Map<String, Map<String, Set<String>>> runFailures,
   Map<String, String> profileCodeByInstrumentCode,
-  SampleFlags sampleFlags
+  SampleFlags sampleFlags,
+  JsonNode definitions
 ) {
+  public ResultReading(
+    AstmResultParts astmParts,
+    Hl7ResultParts hl7Parts,
+    char decimalSeparator,
+    Map<String, Map<String, Set<String>>> runFailures,
+    Map<String, String> profileCodeByInstrumentCode,
+    SampleFlags sampleFlags
+  ) {
+    this(astmParts, hl7Parts, decimalSeparator, runFailures, profileCodeByInstrumentCode, sampleFlags, null);
+  }
+
   public ResultReading {
+    definitions = definitions == null
+      ? com.fasterxml.jackson.databind.node.MissingNode.getInstance()
+      : definitions.deepCopy();
     runFailures = runFailures == null ? Map.of() : runFailures;
     sampleFlags = sampleFlags == null ? SampleFlags.none() : sampleFlags;
     profileCodeByInstrumentCode = profileCodeByInstrumentCode == null ? Map.of() : profileCodeByInstrumentCode;
@@ -39,6 +54,11 @@ public record ResultReading(
     JsonNode configDefaults = profile.path("configDefaults");
     String configured = configDefaults.path("numberFormat").asText(".");
     Map<String, String> profileCodeByInstrumentCode = new HashMap<>();
+    for (JsonNode test : profile.path("default_test_mappings")) {
+      test
+        .path("aliases")
+        .forEach(alias -> profileCodeByInstrumentCode.put(alias.asText(), test.path("test_code").asText()));
+    }
     if (connectionValues != null) {
       if (connectionValues.path("numberFormat").isTextual()) {
         configured = connectionValues.path("numberFormat").asText();
@@ -69,7 +89,8 @@ public record ResultReading(
       configured.charAt(0),
       runFailures,
       profileCodeByInstrumentCode,
-      SampleFlags.fromProfile(profile)
+      SampleFlags.fromProfile(profile),
+      profile.path("default_test_mappings")
     );
   }
 
@@ -78,20 +99,44 @@ public record ResultReading(
     return profileCodeByInstrumentCode.getOrDefault(instrumentCode, instrumentCode);
   }
 
-  /** The code the instrument sends for a profile code: the connection's own code where it overrides it. */
-  public String instrumentCode(String profileCode) {
-    return profileCodeByInstrumentCode
-      .entrySet()
-      .stream()
-      .filter(entry -> entry.getValue().equals(profileCode))
-      .map(Map.Entry::getKey)
-      .findFirst()
-      .orElse(profileCode);
-  }
-
   /** A number as the instrument wrote it, in the plain decimal form a FHIR decimal takes. */
   public String canonicalNumber(String text) {
     return decimalSeparator == '.' ? text : text.replace(decimalSeparator, '.');
+  }
+
+  /** The declared meaning of a parsed record, not the recipe used to extract it. */
+  public JsonNode definition(String code, String subIdentity) {
+    for (JsonNode test : definitions) {
+      if (!test.path("test_code").asText().equals(profileCode(code))) continue;
+      if (subIdentity == null || subIdentity.isEmpty()) return test;
+      for (JsonNode part : test.path("components")) {
+        if (subIdentity.equals(part.path("sub_identity").asText())) return part;
+      }
+    }
+    return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+  }
+
+  /** Resolve a declared spelling once. Unknown answers remain explicit unmapped text. */
+  public String canonicalAnswer(String code, String subIdentity, String text) {
+    if (text == null) return null;
+    JsonNode definition = definition(code, subIdentity);
+    String answer = null;
+    for (JsonNode value : definition.path("values")) {
+      if (text.equals(value.asText())) answer = value.asText();
+    }
+    var translations = definition.path("translations").fields();
+    while (translations.hasNext()) {
+      var entry = translations.next();
+      for (JsonNode spelling : entry.getValue()) {
+        if (text.equals(spelling.asText())) {
+          if (answer != null && !answer.equals(entry.getKey())) throw new IllegalArgumentException(
+            "Ambiguous result spelling"
+          );
+          answer = entry.getKey();
+        }
+      }
+    }
+    return answer == null ? text : answer;
   }
 
   /** Whether this raw value, on this record, says the run produced no result. */

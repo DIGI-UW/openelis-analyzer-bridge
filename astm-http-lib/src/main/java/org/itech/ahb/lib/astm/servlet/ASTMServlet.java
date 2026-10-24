@@ -43,9 +43,34 @@ public class ASTMServlet {
   private final CountDownLatch startupAttempted = new CountDownLatch(1);
   private volatile ServerSocket serverSocket;
   private volatile Throwable startupFailure;
+  private java.util.function.Predicate<Socket> admission = socket -> true;
+
+  /** Decides, before anything is read, whether a peer that connected may send; a refused one is closed. */
+  public void setAdmission(java.util.function.Predicate<Socket> admission) {
+    this.admission = java.util.Objects.requireNonNull(admission);
+  }
+
   private java.util.function.Function<Socket, org.itech.ahb.lib.astm.communication.AstmReceiptObserver> receiptFactory =
     socket -> org.itech.ahb.lib.astm.communication.AstmReceiptObserver.NONE;
   private final java.util.Map<Socket, Thread> sessions = new java.util.HashMap<>();
+  private volatile int maxSessions = Integer.MAX_VALUE;
+  private Runnable sessionLimitRefused = () -> {};
+
+  /** Called once for a peer refused because the listener already holds its maximum sessions. */
+  public void setSessionLimitRefused(Runnable callback) {
+    sessionLimitRefused = java.util.Objects.requireNonNull(callback);
+  }
+
+  /**
+   * The most sessions held open at once. A session stays open while its peer is connected, each on
+   * its own thread, so a peer that connects beyond this is closed rather than given another.
+   */
+  public void setMaxSessions(int maxSessions) {
+    if (maxSessions < 1) {
+      throw new IllegalArgumentException("maxSessions must be at least 1");
+    }
+    this.maxSessions = maxSessions;
+  }
 
   public void setReceiptFactory(
     java.util.function.Function<Socket, org.itech.ahb.lib.astm.communication.AstmReceiptObserver> factory
@@ -76,7 +101,7 @@ public class ASTMServlet {
   /**
    * Starts the servlet to listen for ASTM messages on the specified port.
    *
-   * Will spawn a new thread for every incoming connection.
+   * Will spawn a new thread for every incoming connection, which receives on it until the sender closes it.
    */
   public void listen() {
     if (!starting.compareAndSet(false, true)) {
@@ -97,13 +122,32 @@ public class ASTMServlet {
           // Waiting for socket connection
           Socket s = serverSocket.accept();
           s.setTcpNoDelay(true); // Disable Nagle — ASTM requires immediate ACK/NAK per frame
+          s.setKeepAlive(true); // The link stays open between messages; notice a peer that vanished
+          if (!admission.test(s)) {
+            s.close();
+            continue;
+          }
           synchronized (sessions) {
             if (!running.get()) {
               s.close();
               continue;
             }
+            if (sessions.size() >= maxSessions) {
+              sessionLimitRefused.run();
+              log.warn(
+                "Listener on port " +
+                listenPort +
+                " refused a connection from " +
+                s.getInetAddress().getHostAddress() +
+                ": it already holds " +
+                maxSessions +
+                " sessions"
+              );
+              s.close();
+              continue;
+            }
             GeneralASTMCommunicator communicator = new GeneralASTMCommunicator(astmInterpreterFactory, s, astmVersion);
-            communicator.setReceiptObserver(receiptFactory.apply(s));
+            communicator.setReceiptFactory(() -> receiptFactory.apply(s));
             ASTMReceiveThread receiver = new ASTMReceiveThread(communicator, s, astmHandlerService);
             Thread worker = Thread.ofPlatform()
               .unstarted(() -> {

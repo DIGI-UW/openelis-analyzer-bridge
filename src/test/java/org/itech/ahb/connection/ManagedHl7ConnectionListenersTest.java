@@ -35,6 +35,26 @@ class ManagedHl7ConnectionListenersTest {
   }
 
   @Test
+  void aPeerOutsideTheAllowedSourcesIsClosedBeforeItSendsAnything() throws Exception {
+    int port = availablePort();
+    MLLPConfig config = new MLLPConfig();
+    config.setEnabled(true);
+    config.setPort(availablePort());
+    listeners = new ManagedHl7ConnectionListeners(
+      config,
+      mock(MessageRouter.class),
+      new ListenerSourcePolicy("192.0.2.0/24", false, null)
+    );
+
+    listeners.start("hl7-a", port);
+
+    try (Socket peer = new Socket("127.0.0.1", port)) {
+      peer.setSoTimeout(5_000);
+      assertThat(peer.getInputStream().read()).isEqualTo(-1);
+    }
+  }
+
+  @Test
   void disabledRuntimeBindsNothingAtBoot() throws Exception {
     int port = availablePort();
     listeners = listeners(false, port);

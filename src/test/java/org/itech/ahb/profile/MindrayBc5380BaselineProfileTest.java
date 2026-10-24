@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -237,9 +236,6 @@ class MindrayBc5380BaselineProfileTest {
   }
 
   private ObjectNode profile() throws Exception {
-    try (InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/mindray-bc5380.json")) {
-      assertThat(input).isNotNull();
-      return (ObjectNode) objectMapper.readTree(input);
-    }
+    return PackagedProfiles.load(objectMapper, "mindray-bc5380");
   }
 }

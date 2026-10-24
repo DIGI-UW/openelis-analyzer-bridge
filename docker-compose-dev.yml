@@ -46,9 +46,8 @@ services:
       LOGGING_LEVEL_ORG_ITECH: DEBUG
       JAVA_OPTS: |
         -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:8000
-      #   -Djavax.net.ssl.trustStore=/etc/truststore
-      #   -Djavax.net.ssl.trustStorePassword=[%truststore-pass}
-      #   -Djavax.net.ssl.trustStoreType=PKCS12
+      # BRIDGE_TRUSTSTORE_PATH: /etc/truststore
+      # BRIDGE_TRUSTSTORE_PASSWORD: [%truststore-pass}
     logging: *local-logging
     healthcheck:
       test: ["CMD", "/app/healthcheck.sh"]

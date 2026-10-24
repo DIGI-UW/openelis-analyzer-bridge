@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.itech.ahb.model.Transport;
 import org.itech.ahb.outbox.FailureReason;
 import org.itech.ahb.outbox.OutboxAttempt;
 import org.itech.ahb.outbox.OutboxDispatcher;
@@ -327,11 +328,30 @@ public class OutboxAdminController {
     return new RetryOutcome(200, null);
   }
 
+  /**
+   * The header's sender field. A TCP or MLLP delivery records it as its hint; a serial delivery's
+   * hint is the analyzer configured on its port and an HTTP one has none, so theirs is read from the
+   * message.
+   */
+  private String sender(OutboxEntry entry) {
+    if (entry.transport() != Transport.SERIAL && entry.transport() != Transport.HTTP) {
+      return entry.protocolHint();
+    }
+    String raw = store.rawPayload(entry.id()).orElse(null);
+    return switch (entry.protocol()) {
+      case ASTM -> org.itech.ahb.normalizer.ASTMBridgeAdapter.extractSenderFromHRecord(raw);
+      case HL7 -> org.itech.ahb.fhir.HL7ResultParser.sendingApplication(raw);
+      default -> null;
+    };
+  }
+
   private Map<String, Object> summary(OutboxEntry entry, Instant now) {
     Map<String, Object> row = new LinkedHashMap<>();
     row.put("id", entry.id());
     row.put("state", entry.state().name());
     row.put("sourceId", entry.sourceId());
+    // The header's sender field (ASTM H.5, HL7 MSH-3): what tells apart instruments behind one address.
+    row.put("sender", sender(entry));
     row.put("listenerPort", entry.listenerPort());
     row.put("connectionId", entry.connectionId());
     row.put("analyzerId", entry.analyzerId());

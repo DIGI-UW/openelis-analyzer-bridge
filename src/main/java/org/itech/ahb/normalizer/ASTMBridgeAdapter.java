@@ -1,5 +1,7 @@
 package org.itech.ahb.normalizer;
 
+import java.time.LocalDateTime;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.itech.ahb.lib.astm.concept.ASTMMessage;
 import org.itech.ahb.lib.astm.concept.DefaultASTMMessage;
@@ -130,15 +132,13 @@ public class ASTMBridgeAdapter implements ASTMHandler {
         // Route via normalizer
         boolean success = normalizer.process(envelope);
 
-        // Return appropriate response
         HandleStatus status = success ? HandleStatus.SUCCESS : HandleStatus.FORWARD_FAIL_ERROR;
+        Optional<String> reply = success && MessageNormalizer.isQueryOnlyAstmMessage(rawMessage)
+            ? AstmHostQuery.noOrdersReply(rawMessage, LocalDateTime.now())
+            : Optional.empty();
 
-        return new ASTMHandlerResponse(
-            "",  // Empty response string (not used by ASTM protocol ACK)
-            status,
-            false,  // Don't communicate response back to analyzer
-            this
-        );
+        // The library sends a reply on the instrument's connection; everything else gets none.
+        return new ASTMHandlerResponse(reply.orElse(""), status, reply.isPresent(), this);
     }
 
     /**
@@ -164,9 +164,10 @@ public class ASTMBridgeAdapter implements ASTMHandler {
      */
     public static String extractSenderFromHRecord(String rawMessage) {
         if (rawMessage == null) return null;
-        for (String line : rawMessage.split("\r")) {
-            if (line.startsWith("H|")) {
-                String[] fields = line.split("\\|", -1);
+        for (String record : rawMessage.split("\r\n|\r|\n")) {
+            String line = record.trim();
+            if (line.length() > 1 && line.charAt(0) == 'H' && !Character.isLetterOrDigit(line.charAt(1))) {
+                String[] fields = line.split(java.util.regex.Pattern.quote(line.substring(1, 2)), -1);
                 if (fields.length > 4 && fields[4] != null && !fields[4].isBlank()) {
                     String sender = fields[4].trim();
                     if (!sender.isEmpty()) {

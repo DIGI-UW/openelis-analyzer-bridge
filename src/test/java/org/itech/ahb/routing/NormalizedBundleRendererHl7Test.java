@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,6 +18,7 @@ import java.util.stream.Collectors;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Observation;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.model.Protocol;
@@ -122,9 +122,7 @@ class NormalizedBundleRendererHl7Test {
   }
 
   private ObjectNode profile() throws Exception {
-    try (InputStream input = getClass().getClassLoader().getResourceAsStream("analyzer-profiles/mindray-bc5380.json")) {
-      return (ObjectNode) objectMapper.readTree(input);
-    }
+    return PackagedProfiles.load(objectMapper, "mindray-bc5380");
   }
 
   private Map<String, Observation> render() throws Exception {
