@@ -114,10 +114,6 @@
             "valueCode": "TCP"
           },
           {
-            "url": "http://openelis-global.org/fhir/qc/lot-number",
-            "valueString": "LOT-WBC-2026-08"
-          },
-          {
             "url": "http://openelis-global.org/fhir/qc/control-level",
             "valueString": "NORMAL"
           }
