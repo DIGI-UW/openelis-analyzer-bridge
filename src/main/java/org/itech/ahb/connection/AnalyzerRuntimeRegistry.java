@@ -434,6 +434,9 @@ public class AnalyzerRuntimeRegistry {
     /** Durable Bridge connection identity used for all result and order routing. */
     private String bridgeConnectionId;
 
+    /** Retained with receipt interpretation; later activation cannot change old deliveries. */
+    private String receptionPurpose = "ROUTINE";
+
     /** Exact pinned profile identity materialized from the saved connection. */
     private String profileId;
 

@@ -354,6 +354,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
   private AnalyzerEntry materialize(String analyzerId, ObjectNode connection, ObjectNode profile, ObjectNode values) {
     AnalyzerEntry entry = new AnalyzerEntry();
     entry.setId(analyzerId);
+    entry.setReceptionPurpose(connection.path("receptionPurpose").asText("ROUTINE"));
     entry.setBridgeConnectionId(requiredText(connection, "connectionId", "Connection ID"));
     entry.setProfileId(requiredText(connection.path("profileRef"), "profileId", "Profile ID"));
     entry.setProfileRevision(requiredRevision(connection.path("profileRef"), "revision", "Profile revision"));

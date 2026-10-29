@@ -11,10 +11,23 @@
     "expectedConfigRevision"
   ],
   "properties": {
-    "schemaVersion": { "const": "1.0" },
-    "commandId": { "type": "string", "minLength": 1 },
-    "connectionId": { "type": "string", "minLength": 1 },
-    "action": { "enum": ["ACTIVATE", "DEACTIVATE"] },
-    "expectedConfigRevision": { "type": "integer", "minimum": 1 }
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "commandId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "connectionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action": {
+      "enum": ["ACTIVATE", "START_SETUP", "DEACTIVATE"]
+    },
+    "expectedConfigRevision": {
+      "type": "integer",
+      "minimum": 1
+    }
   }
 }

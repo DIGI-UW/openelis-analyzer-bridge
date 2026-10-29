@@ -300,7 +300,8 @@ public class NormalizedBundleRenderer {
         sorted,
         analyzerContext,
         analyzer::getLoincForProfileCode,
-        messageId
+        messageId,
+        analyzer.getReceptionPurpose()
       );
       return new Outcome.Rendered(
         List.of(

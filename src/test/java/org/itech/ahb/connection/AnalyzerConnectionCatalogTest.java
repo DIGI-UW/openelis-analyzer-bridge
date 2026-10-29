@@ -53,6 +53,34 @@ class AnalyzerConnectionCatalogTest {
     );
   }
 
+  @Test
+  void setupPurposeSurvivesRestartAndRoutineActivationChangesTheRuntime() {
+    ObjectNode profile = profiles.require("hain-fluorocycler-xt", 1).profile();
+    RecordingRuntime first = new RecordingRuntime();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, first);
+    ObjectNode request = createRequest(profile, "setup-reception", "oe-setup");
+    request.withObject("values").put("directory", temporaryDirectory.toString());
+    ObjectNode connection = catalog.create(request);
+    ObjectNode setup = catalog.applyRuntimeCommand(runtimeCommand(connection, "setup-1", "START_SETUP"));
+    assertThat(setup.path("receptionPurpose").asText()).isEqualTo("SETUP");
+    assertThat(setup.path("actualRuntimeState").asText()).isEqualTo("ACTIVE");
+    assertThat(
+      catalog.applyRuntimeCommand(runtimeCommand(connection, "setup-2", "START_SETUP")).path("outcome").asText()
+    ).isEqualTo("ALREADY_APPLIED");
+    assertThat(first.activationPurposes).containsExactly("SETUP");
+
+    RecordingRuntime restarted = new RecordingRuntime();
+    AnalyzerConnectionCatalog reopened = catalog(UUID::randomUUID, restarted);
+    assertThat(restarted.restoredPurposes).containsExactly("SETUP");
+    ObjectNode routine = reopened.applyRuntimeCommand(runtimeCommand(connection, "routine-1", "ACTIVATE"));
+    assertThat(routine.path("receptionPurpose").asText()).isEqualTo("ROUTINE");
+    assertThat(routine.path("runtimeFingerprint")).isNotEqualTo(setup.path("runtimeFingerprint"));
+    assertThat(restarted.activationPurposes).containsExactly("ROUTINE");
+    RecordingRuntime routineRestart = new RecordingRuntime();
+    catalog(UUID::randomUUID, routineRestart);
+    assertThat(routineRestart.restoredPurposes).containsExactly("ROUTINE");
+  }
+
   /** Guards saved-connection readiness and immutable profile content; socket delivery is tested separately. */
   @Test
   void publishedInboundProfileDoesNotRequireAnAnalyzerListenerPort() {
@@ -523,9 +551,8 @@ class AnalyzerConnectionCatalogTest {
     ObjectNode edited = profile.deepCopy();
     edited.withObject("profileMeta").put("displayName", "FluoroCycler XT (edited)");
     edited.withObject("catalog").remove(List.of("revisionFingerprint", "recognitionFingerprint"));
-    Resource[] shipped = new PathMatchingResourcePatternResolver().getResources(
-      new ProfileCatalogProperties().getShippedPattern()
-    );
+    Resource[] shipped = new PathMatchingResourcePatternResolver()
+      .getResources(new ProfileCatalogProperties().getShippedPattern());
     List<Resource> editedSet = new ArrayList<>(
       Arrays.stream(shipped).filter(resource -> !"hain-fluorocycler-xt.json".equals(resource.getFilename())).toList()
     );
@@ -962,6 +989,8 @@ class AnalyzerConnectionCatalogTest {
 
   private static final class RecordingRuntime implements AnalyzerConnectionRuntime {
 
+    private final List<String> activationPurposes = new ArrayList<>();
+    private final List<String> restoredPurposes = new ArrayList<>();
     private final List<String> activations = new ArrayList<>();
     private final List<String> deactivations = new ArrayList<>();
     private final List<String> restorations = new ArrayList<>();
@@ -969,6 +998,7 @@ class AnalyzerConnectionCatalogTest {
 
     @Override
     public void activate(ObjectNode connection, ObjectNode profile) {
+      activationPurposes.add(connection.path("receptionPurpose").asText());
       activations.add(connection.path("connectionId").asText());
     }
 
@@ -979,6 +1009,7 @@ class AnalyzerConnectionCatalogTest {
 
     @Override
     public void restore(ObjectNode connection, ObjectNode profile) {
+      restoredPurposes.add(connection.path("receptionPurpose").asText());
       restorations.add(connection.path("connectionId").asText());
       restoredProfiles.add(profile);
     }

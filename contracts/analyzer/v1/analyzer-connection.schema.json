@@ -21,33 +21,85 @@
     "updatedAt"
   ],
   "properties": {
-    "schemaVersion": { "const": "1.0" },
-    "connectionId": { "type": "string", "minLength": 1 },
-    "clientAnalyzerId": { "type": "string", "minLength": 1 },
-    "displayName": { "type": "string", "minLength": 1 },
-    "profileRef": { "$ref": "#/$defs/profileRef" },
-    "configRevision": { "type": "integer", "minimum": 1 },
-    "configFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "connectionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clientAnalyzerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profileRef": {
+      "$ref": "#/$defs/profileRef"
+    },
+    "configRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "configFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
     "codeOverrides": {
       "type": "object",
-      "propertyNames": { "type": "string", "minLength": 1 },
-      "additionalProperties": { "type": "string", "minLength": 1 },
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      },
       "description": "The code this instrument sends for each profile test code it renames."
     },
     "fields": {
       "type": "array",
-      "items": { "$ref": "#/$defs/field" }
+      "items": {
+        "$ref": "#/$defs/field"
+      }
     },
-    "readiness": { "$ref": "#/$defs/readiness" },
+    "readiness": {
+      "$ref": "#/$defs/readiness"
+    },
     "latestProbe": {
-      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/probeSummary" }]
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/probeSummary"
+        }
+      ]
     },
-    "desiredRuntimeState": { "$ref": "#/$defs/runtimeState" },
-    "actualRuntimeState": { "$ref": "#/$defs/runtimeState" },
+    "desiredRuntimeState": {
+      "$ref": "#/$defs/runtimeState"
+    },
+    "actualRuntimeState": {
+      "$ref": "#/$defs/runtimeState"
+    },
     "activeRuntimeRef": {
-      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/runtimeRef" }]
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/runtimeRef"
+        }
+      ]
     },
-    "updatedAt": { "type": "string", "format": "date-time" }
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "receptionPurpose": {
+      "enum": ["SETUP", "ROUTINE"]
+    }
   },
   "$defs": {
     "fingerprint": {
@@ -59,9 +111,17 @@
       "additionalProperties": false,
       "required": ["profileId", "revision", "fingerprint"],
       "properties": {
-        "profileId": { "type": "string", "minLength": 1 },
-        "revision": { "type": "integer", "minimum": 1 },
-        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+        "profileId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
       }
     },
     "jsonValue": {
@@ -72,8 +132,13 @@
       "additionalProperties": false,
       "required": ["value", "labelKey"],
       "properties": {
-        "value": { "$ref": "#/$defs/jsonValue" },
-        "labelKey": { "type": "string", "minLength": 1 }
+        "value": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "labelKey": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "condition": {
@@ -81,9 +146,16 @@
       "additionalProperties": false,
       "required": ["fieldKey", "operator", "value"],
       "properties": {
-        "fieldKey": { "type": "string", "minLength": 1 },
-        "operator": { "enum": ["EQUALS", "NOT_EQUALS", "IN", "NOT_IN"] },
-        "value": { "$ref": "#/$defs/jsonValue" }
+        "fieldKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operator": {
+          "enum": ["EQUALS", "NOT_EQUALS", "IN", "NOT_IN"]
+        },
+        "value": {
+          "$ref": "#/$defs/jsonValue"
+        }
       }
     },
     "field": {
@@ -99,38 +171,71 @@
         "validationErrors"
       ],
       "properties": {
-        "key": { "type": "string", "minLength": 1 },
-        "labelKey": { "type": "string", "minLength": 1 },
-        "helpTextKey": { "type": "string", "minLength": 1 },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "labelKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "helpTextKey": {
+          "type": "string",
+          "minLength": 1
+        },
         "inputKind": {
           "enum": ["TEXT", "NUMBER", "SELECT", "BOOLEAN", "SECRET", "FILE_PATH"]
         },
-        "required": { "type": "boolean" },
-        "defaultValue": { "$ref": "#/$defs/jsonValue" },
-        "currentValue": { "$ref": "#/$defs/jsonValue" },
-        "isSet": { "type": "boolean" },
-        "maskedValue": { "type": "string", "minLength": 1 },
+        "required": {
+          "type": "boolean"
+        },
+        "defaultValue": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "currentValue": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "isSet": {
+          "type": "boolean"
+        },
+        "maskedValue": {
+          "type": "string",
+          "minLength": 1
+        },
         "choices": {
           "type": "array",
-          "items": { "$ref": "#/$defs/choice" }
+          "items": {
+            "$ref": "#/$defs/choice"
+          }
         },
-        "visibleWhen": { "$ref": "#/$defs/condition" },
+        "visibleWhen": {
+          "$ref": "#/$defs/condition"
+        },
         "validationErrors": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "allOf": [
         {
           "if": {
-            "properties": { "inputKind": { "const": "SECRET" } },
+            "properties": {
+              "inputKind": {
+                "const": "SECRET"
+              }
+            },
             "required": ["inputKind"]
           },
           "then": {
             "required": ["isSet", "maskedValue"],
             "properties": {
               "currentValue": false,
-              "defaultValue": { "type": "null" }
+              "defaultValue": {
+                "type": "null"
+              }
             }
           },
           "else": {
@@ -147,11 +252,20 @@
       "additionalProperties": false,
       "required": ["key", "messageKey", "fieldKeys"],
       "properties": {
-        "key": { "type": "string", "minLength": 1 },
-        "messageKey": { "type": "string", "minLength": 1 },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "messageKey": {
+          "type": "string",
+          "minLength": 1
+        },
         "fieldKeys": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
         "detail": {
@@ -166,10 +280,14 @@
       "additionalProperties": false,
       "required": ["ready", "blockers"],
       "properties": {
-        "ready": { "type": "boolean" },
+        "ready": {
+          "type": "boolean"
+        },
         "blockers": {
           "type": "array",
-          "items": { "$ref": "#/$defs/blocker" }
+          "items": {
+            "$ref": "#/$defs/blocker"
+          }
         }
       }
     },
@@ -178,10 +296,21 @@
       "additionalProperties": false,
       "required": ["requestId", "configRevision", "status", "completedAt"],
       "properties": {
-        "requestId": { "type": "string", "minLength": 1 },
-        "configRevision": { "type": "integer", "minimum": 1 },
-        "status": { "enum": ["SUCCEEDED", "FAILED", "TIMEOUT", "BLOCKED"] },
-        "completedAt": { "type": "string", "format": "date-time" }
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": ["SUCCEEDED", "FAILED", "TIMEOUT", "BLOCKED"]
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "runtimeState": {
@@ -199,12 +328,30 @@
         "runtimeFingerprint"
       ],
       "properties": {
-        "connectionId": { "type": "string", "minLength": 1 },
-        "profileRef": { "$ref": "#/$defs/profileRef" },
-        "configRevision": { "type": "integer", "minimum": 1 },
-        "configFingerprint": { "$ref": "#/$defs/fingerprint" },
-        "runtimeRevision": { "type": "integer", "minimum": 1 },
-        "runtimeFingerprint": { "$ref": "#/$defs/fingerprint" }
+        "connectionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profileRef": {
+          "$ref": "#/$defs/profileRef"
+        },
+        "configRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "configFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "runtimeRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "runtimeFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "receptionPurpose": {
+          "enum": ["SETUP", "ROUTINE"]
+        }
       }
     }
   }

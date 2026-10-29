@@ -73,6 +73,8 @@ public final class FileResultRenderer {
       String hash = FileDeliveryIdentity.contentHash(bytes);
       AnalyzerEntry snapshot = new AnalyzerEntry();
       snapshot.setBridgeConnectionId(context.connectionId());
+      snapshot.setReceptionPurpose(context.receptionPurpose());
+      snapshot.setProfileFingerprint(context.profileFingerprint());
       snapshot.setId(context.analyzerId());
       snapshot.setName(context.analyzerName());
       snapshot.setProfileId(context.profileId());
@@ -144,7 +146,8 @@ public final class FileResultRenderer {
         .withTabularReading(reading),
       context,
       analyzerEntry::getLoincForProfileCode,
-      FileDeliveryIdentity.forAccession(analyzerEntry.getBridgeConnectionId(), contentHash, parsed.accessionNumber())
+      FileDeliveryIdentity.forAccession(analyzerEntry.getBridgeConnectionId(), contentHash, parsed.accessionNumber()),
+      analyzerEntry.getReceptionPurpose()
     );
   }
 }

@@ -105,7 +105,7 @@
                             "required": ["valueString"],
                             "properties": {
                               "valueString": {
-                                "enum": ["1.0", "1.1"]
+                                "enum": ["1.0", "1.1", "1.2"]
                               }
                             }
                           }
@@ -156,6 +156,48 @@
                           }
                         }
                       }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": ["resourceType", "extension"],
+                  "properties": {
+                    "resourceType": {
+                      "const": "Device"
+                    },
+                    "extension": {
+                      "contains": {
+                        "required": ["url", "valueString"],
+                        "properties": {
+                          "url": {
+                            "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-contract-version"
+                          },
+                          "valueString": {
+                            "const": "1.2"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "extension": {
+                      "contains": {
+                        "required": ["url", "valueCode"],
+                        "properties": {
+                          "url": {
+                            "const": "https://openelis-global.org/fhir/StructureDefinition/analyzer-delivery-purpose"
+                          },
+                          "valueCode": {
+                            "enum": ["SETUP", "ROUTINE"]
+                          }
+                        }
+                      },
+                      "minContains": 1,
+                      "maxContains": 1
                     }
                   }
                 }

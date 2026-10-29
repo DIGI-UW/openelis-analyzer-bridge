@@ -21,18 +21,46 @@
     "acknowledgedAt"
   ],
   "properties": {
-    "schemaVersion": { "const": "1.0" },
-    "commandId": { "type": "string", "minLength": 1 },
-    "action": { "enum": ["ACTIVATE", "DEACTIVATE"] },
-    "outcome": { "enum": ["APPLIED", "ALREADY_APPLIED", "REJECTED"] },
-    "connectionId": { "type": "string", "minLength": 1 },
-    "profileRef": { "$ref": "#/$defs/profileRef" },
-    "configRevision": { "type": "integer", "minimum": 1 },
-    "configFingerprint": { "$ref": "#/$defs/fingerprint" },
-    "runtimeRevision": { "type": "integer", "minimum": 1 },
-    "runtimeFingerprint": { "$ref": "#/$defs/fingerprint" },
-    "desiredRuntimeState": { "$ref": "#/$defs/runtimeState" },
-    "actualRuntimeState": { "$ref": "#/$defs/runtimeState" },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "commandId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action": {
+      "enum": ["ACTIVATE", "START_SETUP", "DEACTIVATE"]
+    },
+    "outcome": {
+      "enum": ["APPLIED", "ALREADY_APPLIED", "REJECTED"]
+    },
+    "connectionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profileRef": {
+      "$ref": "#/$defs/profileRef"
+    },
+    "configRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "configFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "runtimeRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "runtimeFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "desiredRuntimeState": {
+      "$ref": "#/$defs/runtimeState"
+    },
+    "actualRuntimeState": {
+      "$ref": "#/$defs/runtimeState"
+    },
     "blockers": {
       "type": "array",
       "items": {
@@ -40,41 +68,99 @@
         "additionalProperties": false,
         "required": ["key", "messageKey"],
         "properties": {
-          "key": { "type": "string", "minLength": 1 },
-          "messageKey": { "type": "string", "minLength": 1 }
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "messageKey": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
-    "acknowledgedAt": { "type": "string", "format": "date-time" }
+    "acknowledgedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "receptionPurpose": {
+      "enum": ["SETUP", "ROUTINE"]
+    }
   },
   "allOf": [
     {
       "if": {
         "properties": {
-          "action": { "const": "ACTIVATE" },
-          "outcome": { "enum": ["APPLIED", "ALREADY_APPLIED"] }
+          "action": {
+            "const": "ACTIVATE"
+          },
+          "outcome": {
+            "enum": ["APPLIED", "ALREADY_APPLIED"]
+          }
         },
         "required": ["action", "outcome"]
       },
       "then": {
         "properties": {
-          "desiredRuntimeState": { "const": "ACTIVE" },
-          "actualRuntimeState": { "const": "ACTIVE" }
+          "desiredRuntimeState": {
+            "const": "ACTIVE"
+          },
+          "actualRuntimeState": {
+            "const": "ACTIVE"
+          },
+          "receptionPurpose": {
+            "const": "ROUTINE"
+          }
         }
       }
     },
     {
       "if": {
         "properties": {
-          "action": { "const": "DEACTIVATE" },
-          "outcome": { "enum": ["APPLIED", "ALREADY_APPLIED"] }
+          "action": {
+            "const": "DEACTIVATE"
+          },
+          "outcome": {
+            "enum": ["APPLIED", "ALREADY_APPLIED"]
+          }
         },
         "required": ["action", "outcome"]
       },
       "then": {
         "properties": {
-          "desiredRuntimeState": { "const": "INACTIVE" },
-          "actualRuntimeState": { "const": "INACTIVE" }
+          "desiredRuntimeState": {
+            "const": "INACTIVE"
+          },
+          "actualRuntimeState": {
+            "const": "INACTIVE"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "START_SETUP"
+          },
+          "outcome": {
+            "enum": ["APPLIED", "ALREADY_APPLIED"]
+          }
+        },
+        "required": ["action", "outcome"]
+      },
+      "then": {
+        "required": ["receptionPurpose"],
+        "properties": {
+          "receptionPurpose": {
+            "const": "SETUP"
+          },
+          "desiredRuntimeState": {
+            "const": "ACTIVE"
+          },
+          "actualRuntimeState": {
+            "const": "ACTIVE"
+          }
         }
       }
     }
@@ -89,9 +175,17 @@
       "additionalProperties": false,
       "required": ["profileId", "revision", "fingerprint"],
       "properties": {
-        "profileId": { "type": "string", "minLength": 1 },
-        "revision": { "type": "integer", "minimum": 1 },
-        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+        "profileId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
       }
     },
     "runtimeState": {
