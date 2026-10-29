@@ -86,6 +86,19 @@ class FileMessageHandlerReplayTest {
   }
 
   @Test
+  void routinePurposeKeepsTheHashOfOlderReceiptsWhileSetupRemainsDistinct() {
+    Path path = directory.resolve("unchanged.csv");
+    var routine = FileReceiptContext.capture(path, entry, null);
+    com.fasterxml.jackson.databind.node.ObjectNode old = json.valueToTree(routine);
+    old.remove("sourcePath");
+    old.remove("receptionPurpose");
+    String historical = new org.itech.ahb.profile.ProfileFingerprintService().canonicalFingerprint(old);
+    assertEquals(historical, routine.interpretationHash(json));
+    entry.setReceptionPurpose("SETUP");
+    assertNotEquals(historical, FileReceiptContext.capture(path, entry, null).interpretationHash(json));
+  }
+
+  @Test
   void setupFileKeepsItsPurposeAfterRoutineActivationSourceDeletionAndRestart() throws Exception {
     entry.setReceptionPurpose("SETUP");
     Path file = csv("setup.csv", "SETUP-1,T1,1.02\n");

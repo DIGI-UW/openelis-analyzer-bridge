@@ -105,6 +105,8 @@ public record FileReceiptContext(
   public String interpretationHash(ObjectMapper mapper) {
     ObjectNode values = mapper.valueToTree(this);
     values.remove("sourcePath");
+    // Routine is the meaning of receipts written before purpose was explicit.
+    if ("ROUTINE".equals(receptionPurpose)) values.remove("receptionPurpose");
     return new ProfileFingerprintService().canonicalFingerprint(values);
   }
 }
