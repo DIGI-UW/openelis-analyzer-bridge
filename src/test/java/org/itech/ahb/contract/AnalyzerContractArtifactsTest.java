@@ -50,6 +50,45 @@ class AnalyzerContractArtifactsTest {
     "https://openelis-global.org/fhir/StructureDefinition/analyzer-control-recognition";
 
   @Test
+  void setupCommandsRequireAnActiveSetupAcknowledgement() throws IOException {
+    var command = (com.fasterxml.jackson.databind.node.ObjectNode) fixture("connection-activate.json");
+    command.put("action", "START_SETUP");
+    assertTrue(validationMessages("connection-runtime-command.schema.json", command).isEmpty());
+    var acknowledgement = (com.fasterxml.jackson.databind.node.ObjectNode) fixture("connection-activate-ack.json");
+    acknowledgement.put("action", "START_SETUP");
+    assertFalse(validationMessages("connection-runtime-ack.schema.json", acknowledgement).isEmpty());
+    acknowledgement.put("receptionPurpose", "SETUP");
+    assertTrue(validationMessages("connection-runtime-ack.schema.json", acknowledgement).isEmpty());
+    acknowledgement.put("receptionPurpose", "ROUTINE");
+    assertFalse(validationMessages("connection-runtime-ack.schema.json", acknowledgement).isEmpty());
+  }
+
+  @Test
+  void normalizedTwelveRequiresExactlyOneValidDeliveryPurpose() throws IOException {
+    var bundle = fixture("normalized-known-test.fhir.json");
+    var device = java.util.stream.StreamSupport.stream(bundle.path("entry").spliterator(), false)
+      .map(entry -> entry.path("resource"))
+      .filter(resource -> "Device".equals(resource.path("resourceType").asText()))
+      .findFirst()
+      .orElseThrow();
+    for (var extension : device.path("extension")) {
+      if (CONTRACT_VERSION_EXTENSION.equals(extension.path("url").asText())) {
+        ((com.fasterxml.jackson.databind.node.ObjectNode) extension).put("valueString", "1.2");
+      }
+    }
+    String url = "https://openelis-global.org/fhir/StructureDefinition/analyzer-delivery-purpose";
+    var extensions = (com.fasterxml.jackson.databind.node.ArrayNode) device.path("extension");
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", bundle).isEmpty());
+    var purpose = extensions.addObject().put("url", url).put("valueCode", "SETUP");
+    assertTrue(validationMessages("normalized-fhir-bundle.schema.json", bundle).isEmpty());
+    purpose.put("valueCode", "unknown");
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", bundle).isEmpty());
+    purpose.put("valueCode", "SETUP");
+    extensions.addObject().put("url", url).put("valueCode", "ROUTINE");
+    assertFalse(validationMessages("normalized-fhir-bundle.schema.json", bundle).isEmpty());
+  }
+
+  @Test
   @DisplayName("durable connection create, read, and update use one versioned boundary")
   void durableConnectionFixturesConform() throws IOException {
     assertConforms("connection-create.schema.json", "connection-create.json");

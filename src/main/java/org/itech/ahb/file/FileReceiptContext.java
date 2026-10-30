@@ -38,10 +38,15 @@ public record FileReceiptContext(
   @JsonInclude(JsonInclude.Include.NON_NULL) SampleFlags sampleFlags,
   @JsonInclude(JsonInclude.Include.NON_NULL) com.fasterxml.jackson.databind.JsonNode resultDefinitions,
   Character decimalSeparator,
-  Map<String, Map<String, java.util.Set<String>>> runFailures
+  Map<String, Map<String, java.util.Set<String>>> runFailures,
+  String receptionPurpose
 ) {
   public FileReceiptContext {
     if (version != 1) throw new IllegalArgumentException("Unsupported FILE receipt context version: " + version);
+    receptionPurpose = receptionPurpose == null ? "ROUTINE" : receptionPurpose;
+    if (!java.util.Set.of("SETUP", "ROUTINE").contains(receptionPurpose)) throw new IllegalArgumentException(
+      "Invalid receipt purpose"
+    );
     Objects.requireNonNull(sourcePath, "sourcePath");
     Objects.requireNonNull(extension, "extension");
     Objects.requireNonNull(connectionId, "connectionId");
@@ -86,7 +91,8 @@ public record FileReceiptContext(
       flagsOf(entry.getResultReading()),
       entry.getResultReading() == null ? null : entry.getResultReading().definitions(),
       entry.getResultReading() == null ? '.' : entry.getResultReading().decimalSeparator(),
-      entry.getResultReading() == null ? Map.of() : entry.getResultReading().runFailures()
+      entry.getResultReading() == null ? Map.of() : entry.getResultReading().runFailures(),
+      entry.getReceptionPurpose()
     );
   }
 
@@ -99,6 +105,8 @@ public record FileReceiptContext(
   public String interpretationHash(ObjectMapper mapper) {
     ObjectNode values = mapper.valueToTree(this);
     values.remove("sourcePath");
+    // Routine is the meaning of receipts written before purpose was explicit.
+    if ("ROUTINE".equals(receptionPurpose)) values.remove("receptionPurpose");
     return new ProfileFingerprintService().canonicalFingerprint(values);
   }
 }

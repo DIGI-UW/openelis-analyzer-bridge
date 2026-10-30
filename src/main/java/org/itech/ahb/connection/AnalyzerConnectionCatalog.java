@@ -251,8 +251,8 @@ public final class AnalyzerConnectionCatalog {
     String commandId = requireText(command, "commandId");
     String connectionId = requireText(command, "connectionId");
     String action = requireText(command, "action");
-    if (!Set.of("ACTIVATE", "DEACTIVATE").contains(action)) {
-      throw new AnalyzerConnectionException("action must be ACTIVATE or DEACTIVATE");
+    if (!Set.of("ACTIVATE", "START_SETUP", "DEACTIVATE").contains(action)) {
+      throw new AnalyzerConnectionException("action must be ACTIVATE, START_SETUP or DEACTIVATE");
     }
 
     ObjectNode record = requireRecord(connectionId);
@@ -273,8 +273,8 @@ public final class AnalyzerConnectionCatalog {
 
     ObjectNode profile = requirePinnedProfile((ObjectNode) record.path("profileRef"));
     ObjectNode acknowledgement;
-    if ("ACTIVATE".equals(action)) {
-      acknowledgement = activate(record, profile, commandId);
+    if (!"DEACTIVATE".equals(action)) {
+      acknowledgement = activate(record, profile, commandId, action);
     } else {
       acknowledgement = deactivate(record, profile, commandId);
     }
@@ -284,10 +284,11 @@ public final class AnalyzerConnectionCatalog {
     return acknowledgement;
   }
 
-  private ObjectNode activate(ObjectNode record, ObjectNode profile, String commandId) {
+  private ObjectNode activate(ObjectNode record, ObjectNode profile, String commandId, String action) {
+    String purpose = "START_SETUP".equals(action) ? "SETUP" : "ROUTINE";
     ArrayList<String> missing = missingRequiredFields(record, profile);
     if (!missing.isEmpty()) {
-      ObjectNode acknowledgement = runtimeAcknowledgement(record, commandId, "ACTIVATE", "REJECTED");
+      ObjectNode acknowledgement = runtimeAcknowledgement(record, commandId, action, "REJECTED");
       ObjectNode blocker = acknowledgement.withArray("blockers").addObject();
       blocker.put("key", "missing-required-values");
       blocker.put("messageKey", "analyzer.connection.readiness.missingRequiredValues");
@@ -297,12 +298,16 @@ public final class AnalyzerConnectionCatalog {
     if (
       "ACTIVE".equals(record.path("actualRuntimeState").asText()) &&
       activeRuntimeMatchesConfiguration(record) &&
+      purpose.equals(record.path("receptionPurpose").asText("ROUTINE")) &&
       !restoreFailures.containsKey(connectionId)
     ) {
-      return runtimeAcknowledgement(record, commandId, "ACTIVATE", "ALREADY_APPLIED");
+      return runtimeAcknowledgement(record, commandId, action, "ALREADY_APPLIED");
     }
 
-    runtime.activate(record.deepCopy(), profile.deepCopy());
+    ObjectNode activated = record.deepCopy();
+    activated.put("receptionPurpose", purpose);
+    runtime.activate(activated, profile.deepCopy());
+    record.put("receptionPurpose", purpose);
     restoreFailures.remove(connectionId);
     int runtimeRevision = record.path("runtimeRevision").asInt(1) + 1;
     String runtimeFingerprint = runtimeFingerprint(record, "ACTIVE", runtimeRevision);
@@ -311,6 +316,7 @@ public final class AnalyzerConnectionCatalog {
     record.put("runtimeRevision", runtimeRevision);
     record.put("runtimeFingerprint", runtimeFingerprint);
     ObjectNode active = record.putObject("activeRuntimeRef");
+    active.put("receptionPurpose", purpose);
     active.put("connectionId", record.path("connectionId").asText());
     active.set("profileRef", record.path("profileRef").deepCopy());
     active.put("configRevision", record.path("configRevision").asInt());
@@ -319,7 +325,7 @@ public final class AnalyzerConnectionCatalog {
     active.put("runtimeFingerprint", runtimeFingerprint);
     record.set("activeRuntimeConfiguration", runtimeConfiguration(record));
     record.put("updatedAt", clock.instant().toString());
-    return runtimeAcknowledgement(record, commandId, "ACTIVATE", "APPLIED");
+    return runtimeAcknowledgement(record, commandId, action, "APPLIED");
   }
 
   private ObjectNode deactivate(ObjectNode record, ObjectNode profile, String commandId) {
@@ -354,6 +360,7 @@ public final class AnalyzerConnectionCatalog {
     copy(acknowledgement, record, "runtimeFingerprint");
     copy(acknowledgement, record, "desiredRuntimeState");
     copy(acknowledgement, record, "actualRuntimeState");
+    acknowledgement.put("receptionPurpose", record.path("receptionPurpose").asText("ROUTINE"));
     acknowledgement.putArray("blockers");
     acknowledgement.put("acknowledgedAt", clock.instant().toString());
     return acknowledgement;
@@ -363,6 +370,7 @@ public final class AnalyzerConnectionCatalog {
     JsonNode active = record.path("activeRuntimeRef");
     return (
       active.isObject() &&
+      active.path("receptionPurpose").asText("ROUTINE").equals(record.path("receptionPurpose").asText("ROUTINE")) &&
       samePin(active.path("profileRef"), record.path("profileRef")) &&
       active.path("configRevision").asInt() == record.path("configRevision").asInt() &&
       active.path("configFingerprint").asText().equals(record.path("configFingerprint").asText())
@@ -376,6 +384,7 @@ public final class AnalyzerConnectionCatalog {
     materialization.put("configRevision", record.path("configRevision").asInt());
     materialization.put("configFingerprint", record.path("configFingerprint").asText());
     materialization.put("state", state);
+    materialization.put("receptionPurpose", record.path("receptionPurpose").asText("ROUTINE"));
     materialization.put("runtimeRevision", runtimeRevision);
     return fingerprints.canonicalFingerprint(materialization);
   }
@@ -409,6 +418,7 @@ public final class AnalyzerConnectionCatalog {
     if (configuration.isObject() && record.path("activeRuntimeRef").isObject()) {
       restored.set("values", configuration.path("values").deepCopy());
       restored.set("displayName", configuration.path("displayName").deepCopy());
+      restored.put("receptionPurpose", configuration.path("receptionPurpose").asText("ROUTINE"));
       ObjectNode active = (ObjectNode) record.path("activeRuntimeRef");
       for (String key : List.of("profileRef", "configRevision", "configFingerprint")) {
         restored.set(key, active.path(key).deepCopy());
@@ -453,6 +463,7 @@ public final class AnalyzerConnectionCatalog {
     ObjectNode configuration = objectMapper.createObjectNode();
     configuration.set("values", record.path("values").deepCopy());
     configuration.set("displayName", record.path("displayName").deepCopy());
+    configuration.put("receptionPurpose", record.path("receptionPurpose").asText("ROUTINE"));
     return configuration;
   }
 
@@ -616,6 +627,7 @@ public final class AnalyzerConnectionCatalog {
       copy(response, record, "actualRuntimeState");
     }
     response.set("activeRuntimeRef", record.path("activeRuntimeRef").deepCopy());
+    response.put("receptionPurpose", record.path("receptionPurpose").asText("ROUTINE"));
     copy(response, record, "updatedAt");
     return response;
   }

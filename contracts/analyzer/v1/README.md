@@ -322,3 +322,18 @@ bundle's version as well. Recognition hashes are optional provenance in the
 result payload; explicit classification and consistent recognition evidence remain
 required. Receipt identity prevents replay; separate messages remain reviewable
 even if their results have equal values or timestamps.
+
+## Setup reception (normalized contract 1.2)
+
+`START_SETUP` starts the saved connection with purpose `SETUP`; `ACTIVATE`
+selects `ROUTINE`. Successful setup acknowledgments carry `receptionPurpose:
+SETUP`. The purpose is part of the runtime fingerprint and persisted activated
+configuration. It is captured in the immutable receipt interpretation, so
+rebuilding or retrying a message after routine activation cannot change it.
+
+The normalized Device carries contract version `1.2` and exactly one
+`https://openelis-global.org/fhir/StructureDefinition/analyzer-delivery-purpose`
+`valueCode`, either `SETUP` or `ROUTINE`. All 1.1 interpretation rules continue
+to apply. OpenELIS holds SETUP deliveries as non-clinical evidence regardless
+of the current analyzer state. Old 1.0/1.1 receipts retain routine semantics.
+Stop setup reception before rolling back to a consumer without 1.2 support.

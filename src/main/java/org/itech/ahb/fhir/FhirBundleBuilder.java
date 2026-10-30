@@ -75,7 +75,34 @@ public class FhirBundleBuilder {
     java.util.function.Function<String, String> codeToLoinc,
     String messageId
   ) {
+    return buildNormalizedBundle(parsed, context, codeToLoinc, messageId, "ROUTINE");
+  }
+
+  /** Version 1.2 retains receipt-time purpose independently of the current runtime. */
+  public static String buildNormalizedBundle(
+    HL7ResultParser.ParsedResults parsed,
+    AnalyzerContext context,
+    java.util.function.Function<String, String> codeToLoinc,
+    String messageId,
+    String receptionPurpose
+  ) {
+    if (!"SETUP".equals(receptionPurpose) && !"ROUTINE".equals(receptionPurpose)) {
+      throw new IllegalArgumentException("Receipt purpose must be SETUP or ROUTINE");
+    }
     Bundle bundle = normalizedBundle(parsed.accessionNumber(), parsed.results(), context, codeToLoinc, messageId);
+    Device device = bundle
+      .getEntry()
+      .stream()
+      .map(Bundle.BundleEntryComponent::getResource)
+      .filter(Device.class::isInstance)
+      .map(Device.class::cast)
+      .findFirst()
+      .orElseThrow();
+    device.getExtensionByUrl(EXTENSION_ROOT + "analyzer-contract-version").setValue(new StringType("1.2"));
+    device.addExtension(
+      EXTENSION_ROOT + "analyzer-delivery-purpose",
+      new org.hl7.fhir.r4.model.CodeType(receptionPurpose)
+    );
     addSampleFlags(bundle, parsed.sampleFlags(), context);
     addInstrumentContext(bundle, parsed);
     return CTX.newJsonParser().setPrettyPrint(false).encodeResourceToString(bundle);

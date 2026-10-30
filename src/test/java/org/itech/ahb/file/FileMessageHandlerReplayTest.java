@@ -86,6 +86,43 @@ class FileMessageHandlerReplayTest {
   }
 
   @Test
+  void routinePurposeKeepsTheHashOfOlderReceiptsWhileSetupRemainsDistinct() {
+    Path path = directory.resolve("unchanged.csv");
+    var routine = FileReceiptContext.capture(path, entry, null);
+    com.fasterxml.jackson.databind.node.ObjectNode old = json.valueToTree(routine);
+    old.remove("sourcePath");
+    old.remove("receptionPurpose");
+    String historical = new org.itech.ahb.profile.ProfileFingerprintService().canonicalFingerprint(old);
+    assertEquals(historical, routine.interpretationHash(json));
+    entry.setReceptionPurpose("SETUP");
+    assertNotEquals(historical, FileReceiptContext.capture(path, entry, null).interpretationHash(json));
+  }
+
+  @Test
+  void setupFileKeepsItsPurposeAfterRoutineActivationSourceDeletionAndRestart() throws Exception {
+    entry.setReceptionPurpose("SETUP");
+    Path file = csv("setup.csv", "SETUP-1,T1,1.02\n");
+    handler().processFile(file, "oe-1");
+    entry.setReceptionPurpose("ROUTINE");
+    Files.delete(file);
+    reopen();
+    outbox.dispatcher.dispatchDue();
+    assertEquals(1, deliveries.size());
+    JsonNode device = java.util.stream.StreamSupport.stream(deliveries.get(0).path("entry").spliterator(), false)
+      .map(item -> item.path("resource"))
+      .filter(item -> "Device".equals(item.path("resourceType").asText()))
+      .findFirst()
+      .orElseThrow();
+    assertTrue(
+      java.util.stream.StreamSupport.stream(device.path("extension").spliterator(), false).anyMatch(
+        value ->
+          value.path("url").asText().endsWith("/analyzer-delivery-purpose") &&
+          "SETUP".equals(value.path("valueCode").asText())
+      )
+    );
+  }
+
+  @Test
   void receiptBeforeRestartKeepsCommaDecimalsAndFailureRules() throws Exception {
     entry.setDelimiter(";");
     entry.setResultReading(
