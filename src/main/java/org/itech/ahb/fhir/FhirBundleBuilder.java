@@ -745,6 +745,16 @@ public class FhirBundleBuilder {
       );
     }
 
+    /** A tabular row that is a component's record of its test; reading the row fills its other parts. */
+    public AnalyzerResult asComponentRecord(String subIdentity) {
+      if (subIdentity == null) {
+        return this;
+      }
+      return withParts(
+        new RecordParts(subIdentity, null, null, null, null, null, null, null, null, null, null, null, false, null)
+      );
+    }
+
     /** The same result with every part the instrument reported on its record. */
     public AnalyzerResult withParts(RecordParts recordParts) {
       return new AnalyzerResult(

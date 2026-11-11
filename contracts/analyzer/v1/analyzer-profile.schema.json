@@ -95,12 +95,26 @@
       "items": { "enum": ["result", "ctValue", "interpretation"] }
     },
     "test_code_values": {
-      "description": "What each value of the column mapped to testCode means, as a profile test code. A value not listed is kept as the file carries it.",
+      "description": "What each value of the column mapped to testCode means: a profile test code, or a test code and the sub_identity of the component whose record the row is. A value not listed is kept as the file carries it.",
       "type": "object",
       "minProperties": 1,
       "propertyNames": { "$ref": "#/$defs/nonBlank" },
-      "additionalProperties": { "$ref": "#/$defs/nonBlank" }
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/nonBlank" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["test_code", "sub_identity"],
+            "properties": {
+              "test_code": { "$ref": "#/$defs/nonBlank" },
+              "sub_identity": { "$ref": "#/$defs/nonBlank" }
+            }
+          }
+        ]
+      }
     },
+    "archive": { "$ref": "#/$defs/fileArchive" },
     "sheet_detection": { "$ref": "#/$defs/sheetDetection" },
     "default_test_mappings": {
       "type": "array",
@@ -765,6 +779,19 @@
           "then": { "required": ["hasHeader"] }
         }
       ]
+    },
+    "fileArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["results_entry", "run_record_entry", "sample_id_field", "export_name_pattern"],
+      "description": "A run exported as one ZIP. The results_entry workbook is read with the profile's column_mapping and sheet_detection, and every row belongs to the sample number in the JSON run_record_entry. The export's name (the folder holding the entries, else the ZIP's file name) must match export_name_pattern, whose sampleId group must equal that sample number and whose serial group must end the serial_cell of the result sheet. An export that disagrees is held for review.",
+      "properties": {
+        "results_entry": { "$ref": "#/$defs/nonBlank" },
+        "run_record_entry": { "$ref": "#/$defs/nonBlank" },
+        "sample_id_field": { "$ref": "#/$defs/nonBlank" },
+        "export_name_pattern": { "$ref": "#/$defs/nonBlank" },
+        "serial_cell": { "type": "string", "pattern": "^[A-Z]{1,3}[1-9][0-9]*$" }
+      }
     },
     "sheetDetection": {
       "type": "object",

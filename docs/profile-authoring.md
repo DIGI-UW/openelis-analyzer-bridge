@@ -84,6 +84,42 @@ FluoroCycler workbook numbers its detection channels:
 Every translated code must be a declared test. A value the map does not name is kept as the file
 carries it, so OpenELIS holds the row as a code nobody has mapped rather than guessing.
 
+A value may instead name a component's record of a test, as a `test_code` and the `sub_identity`
+of a component that test declares. The RADIONE RP033 export names each row by well and channel, and
+channel 4 of each well is that well's internal control:
+
+```json
+"test_code_values": {
+  "WellA_CH1": "Ebola",
+  "WellA_CH4": { "test_code": "Ebola", "sub_identity": "IC" }
+}
+```
+
+## A run exported as a ZIP
+
+Some instruments export each run as one ZIP whose result table has no sample column. `archive`
+says where the parts of the export are:
+
+```json
+"supported_extensions": [".zip"],
+"archive": {
+  "results_entry": "data.xlsx",
+  "run_record_entry": "PC",
+  "sample_id_field": "sampleno",
+  "export_name_pattern": "^RadioOne data Export_(?<sampleId>.+)_RP033_[0-9]{4}(-[0-9]{2}){5}_[0-9]+_(?<serial>[0-9]{4})$",
+  "serial_cell": "B1"
+}
+```
+
+The Bridge reads the `results_entry` workbook with the profile's `column_mapping` and
+`sheet_detection`, and every row belongs to the sample number in the `sample_id_field` of the JSON
+`run_record_entry`. The export's name is the folder that holds those entries, or the ZIP's file name
+when they sit at its root. It must match `export_name_pattern`, whose `sampleId` group must equal
+the run record's sample number; with `serial_cell`, the `serial` group must end that cell of the
+result sheet. A ZIP whose parts disagree, that lacks an entry or holds two runs, or whose name the
+pattern does not match (another kit) is held in the dead-message queue for review, and nothing from
+it is delivered. A row with no result value, such as an unused well, sends nothing.
+
 ## Where each part of a result sits
 
 `configDefaults.extractionOverrides.resultParts` gives the field that holds each part. ASTM names

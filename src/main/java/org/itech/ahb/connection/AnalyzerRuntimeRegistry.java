@@ -539,6 +539,12 @@ public class AnalyzerRuntimeRegistry {
     /** What the values of the FILE test-code column mean, when the profile says (test_code_values). */
     private java.util.Map<String, String> testCodeValues = java.util.Map.of();
 
+    /** The sub-identity of each test-code value the profile names as a component of its test. */
+    private java.util.Map<String, String> testCodeSubIdentities = java.util.Map.of();
+
+    /** How the profile reads a run exported as one ZIP, or null. */
+    private org.itech.ahb.fhir.FileArchive fileArchive;
+
     /**
      * File format (CSV, EXCEL, TSV). Determines which parser to use.
      * Extension-based detection is the primary dispatch; this is metadata.

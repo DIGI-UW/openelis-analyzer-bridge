@@ -1,5 +1,6 @@
 package org.itech.ahb.fhir;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,6 +13,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import javax.xml.parsers.DocumentBuilder;
@@ -27,6 +30,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellReference;
 import org.itech.ahb.fhir.FhirBundleBuilder.AnalyzerResult;
 import org.itech.ahb.profile.ControlRecognitionRule;
 import org.itech.ahb.profile.ControlResultRecognition;
@@ -64,6 +68,8 @@ public class FileResultParser {
     /** OpenDocument XML namespaces used to navigate ODS content.xml. */
     private static final String ODS_TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
     private static final String ODS_TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
      * Parse an Excel file using a file-wide test code and the pinned profile's
@@ -104,6 +110,17 @@ public class FileResultParser {
             String perFileTestCode, ControlResultRecognition recognition,
             TabularFileLayout layout, TabularResultValueSelection resultSelection,
             Map<String, String> testCodeValues) {
+        return parse(
+                inputStream, columnMappings, perFileTestCode, recognition, layout,
+                resultSelection, testCodeValues, Map.of());
+    }
+
+    /** @param subIdentities the sub-identity of each test-code value that is a component's record */
+    public static List<HL7ResultParser.ParsedResults> parse(
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, ControlResultRecognition recognition,
+            TabularFileLayout layout, TabularResultValueSelection resultSelection,
+            Map<String, String> testCodeValues, Map<String, String> subIdentities) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser: null input or empty column mappings");
@@ -111,80 +128,163 @@ public class FileResultParser {
         }
 
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
-            DataFormatter formatter = new DataFormatter();
-            SheetHeader sheetHeader = locateSheetHeader(workbook, formatter, layout);
-            if (sheetHeader == null) {
-                log.warn("FileResultParser: profile-configured result header not found");
-                return null;
-            }
-
-            Sheet sheet = sheetHeader.sheet();
-            int headerRowIndex = sheetHeader.headerRowIndex();
-
-            Row headerRow = sheet.getRow(headerRowIndex);
-            Map<String, Integer> headerIndex = buildHeaderIndex(headerRow, formatter);
-
-            Map<String, List<Integer>> fieldIndexes =
-                    buildFieldIndexes(headerIndex, columnMappings);
-
-            // Group results by accession number
-            Map<String, List<AnalyzerResult>> resultsByAccession = new HashMap<>();
-
-            for (int rowIdx = headerRowIndex + 1; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
-                Row row = sheet.getRow(rowIdx);
-                if (row == null) continue;
-
-                String sampleId = getCellValue(row, fieldIndexes.get("sampleId"), formatter);
-                String testCode = translateTestCode(
-                        getCellValue(row, fieldIndexes.get("testCode"), formatter), testCodeValues);
-                String units = getCellValue(row, fieldIndexes.get("units"), formatter);
-                String qcTask = getCellValue(row, fieldIndexes.get("qcTask"), formatter);
-                String testDate = getCellValue(row, fieldIndexes.get("testDate"), formatter);
-
-                if (sampleId == null || sampleId.isBlank()) continue;
-                if (testCode == null || testCode.isBlank()) {
-                    if (perFileTestCode != null && !perFileTestCode.isBlank()) {
-                        testCode = perFileTestCode.trim();
-                    } else {
-                        continue;
-                    }
-                }
-
-                String value = resultSelection.select(
-                        field -> getCellValue(row, fieldIndexes.get(field), formatter));
-                if (value == null || value.isBlank()) continue;
-
-                AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units);
-                ControlResultRecognitionEvaluator.Assessment assessment =
-                        evaluateControl(sampleId, qcTask, recognition);
-                ar = ar.withControlRecognition(assessment)
-                        .withControl(assessment.matchedRule().isPresent());
-                if (assessment.matchedRule().isPresent()) {
-                    ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
-                    ar = ar.withControlLevel(rule.controlLevel());
-                }
-                if (testDate != null && !testDate.isBlank()) {
-                    ar = ar.withTimestamp(testDate);
-                }
-
-                resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
-            }
-
-            if (resultsByAccession.isEmpty()) {
-                log.warn("FileResultParser: no results extracted from file");
-                return null;
-            }
-
-            List<HL7ResultParser.ParsedResults> allResults = new ArrayList<>();
-            for (Map.Entry<String, List<AnalyzerResult>> entry : resultsByAccession.entrySet()) {
-                allResults.add(new HL7ResultParser.ParsedResults(entry.getKey(), entry.getValue()));
-            }
-            return allResults;
-
+            return parseWorkbook(
+                    workbook, columnMappings, perFileTestCode, null, recognition, layout,
+                    resultSelection, testCodeValues, subIdentities);
         } catch (IOException e) {
             log.error("FileResultParser: failed to read Excel file: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    /** An export whose parts disagree on which run or instrument it is, held for a person to review. */
+    public static final class ExportMismatch extends RuntimeException {
+        ExportMismatch(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Every row of the ZIP's result workbook belongs to the run record's sample number.
+     * {@code sourcePath} names the export when its entries sit at the root of the ZIP.
+     */
+    public static List<HL7ResultParser.ParsedResults> parseArchive(
+            byte[] archiveBytes, String sourcePath, FileArchive archive,
+            Map<String, String> columnMappings, ControlResultRecognition recognition,
+            TabularFileLayout layout, TabularResultValueSelection resultSelection,
+            Map<String, String> testCodeValues, Map<String, String> subIdentities) throws IOException {
+        if (archive == null) {
+            throw new IllegalArgumentException("The pinned profile does not read ZIP exports");
+        }
+        Map<String, byte[]> entries = new HashMap<>();
+        String exportName = "";
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(archiveBytes))) {
+            for (ZipEntry entry; (entry = zip.getNextEntry()) != null; ) {
+                String path = entry.getName().replace('\\', '/');
+                String name = path.substring(path.lastIndexOf('/') + 1);
+                if (!name.equals(archive.resultsEntry()) && !name.equals(archive.runRecordEntry())) continue;
+                if (entries.put(name, new InflateLimit(zip, MAX_INFLATED_ENTRY_BYTES).readAllBytes()) != null) {
+                    throw new ExportMismatch("The ZIP holds more than one " + name);
+                }
+                if (name.equals(archive.resultsEntry()) && path.contains("/")) {
+                    String folder = path.substring(0, path.lastIndexOf('/'));
+                    exportName = folder.substring(folder.lastIndexOf('/') + 1);
+                }
+            }
+        }
+        if (exportName.isEmpty()) {
+            String fileName = java.nio.file.Path.of(sourcePath).getFileName().toString();
+            exportName = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+        }
+        byte[] results = entries.get(archive.resultsEntry());
+        byte[] runRecord = entries.get(archive.runRecordEntry());
+        if (results == null || runRecord == null) {
+            throw new ExportMismatch("Export " + exportName + " lacks " + archive.resultsEntry() + " or "
+                    + archive.runRecordEntry());
+        }
+        Matcher name = Pattern.compile(archive.exportNamePattern()).matcher(exportName);
+        if (!name.matches()) {
+            throw new ExportMismatch("Export " + exportName + " is not named as the profile expects");
+        }
+        String sampleId = JSON.readTree(runRecord).path(archive.sampleIdField()).asText().trim();
+        if (!sampleId.equals(name.group("sampleId"))) {
+            throw new ExportMismatch("Export " + exportName + " names sample " + name.group("sampleId")
+                    + " but its run record names sample " + sampleId);
+        }
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(results))) {
+            DataFormatter formatter = new DataFormatter();
+            SheetHeader sheetHeader = locateSheetHeader(workbook, formatter, layout);
+            if (sheetHeader != null && archive.serialCell() != null) {
+                CellReference cell = new CellReference(archive.serialCell());
+                String serial = getCellValue(sheetHeader.sheet().getRow(cell.getRow()), (int) cell.getCol(), formatter);
+                if (serial == null || !serial.endsWith(name.group("serial"))) {
+                    throw new ExportMismatch("Export " + exportName + " names instrument " + name.group("serial")
+                            + " but its results come from instrument " + serial);
+                }
+            }
+            return parseWorkbook(
+                    workbook, columnMappings, null, sampleId, recognition, layout, resultSelection,
+                    testCodeValues, subIdentities);
+        }
+    }
+
+    private static List<HL7ResultParser.ParsedResults> parseWorkbook(
+            Workbook workbook, Map<String, String> columnMappings,
+            String perFileTestCode, String fileSampleId, ControlResultRecognition recognition,
+            TabularFileLayout layout, TabularResultValueSelection resultSelection,
+            Map<String, String> testCodeValues, Map<String, String> subIdentities) {
+        DataFormatter formatter = new DataFormatter();
+        SheetHeader sheetHeader = locateSheetHeader(workbook, formatter, layout);
+        if (sheetHeader == null) {
+            log.warn("FileResultParser: profile-configured result header not found");
+            return null;
+        }
+
+        Sheet sheet = sheetHeader.sheet();
+        int headerRowIndex = sheetHeader.headerRowIndex();
+
+        Row headerRow = sheet.getRow(headerRowIndex);
+        Map<String, Integer> headerIndex = buildHeaderIndex(headerRow, formatter);
+
+        Map<String, List<Integer>> fieldIndexes =
+                buildFieldIndexes(headerIndex, columnMappings);
+
+        // Group results by accession number
+        Map<String, List<AnalyzerResult>> resultsByAccession = new HashMap<>();
+
+        for (int rowIdx = headerRowIndex + 1; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
+            Row row = sheet.getRow(rowIdx);
+            if (row == null) continue;
+
+            String sampleId = fileSampleId != null
+                    ? fileSampleId
+                    : getCellValue(row, fieldIndexes.get("sampleId"), formatter);
+            String code = getCellValue(row, fieldIndexes.get("testCode"), formatter);
+            String testCode = translateTestCode(code, testCodeValues);
+            String units = getCellValue(row, fieldIndexes.get("units"), formatter);
+            String qcTask = getCellValue(row, fieldIndexes.get("qcTask"), formatter);
+            String testDate = getCellValue(row, fieldIndexes.get("testDate"), formatter);
+
+            if (sampleId == null || sampleId.isBlank()) continue;
+            if (testCode == null || testCode.isBlank()) {
+                if (perFileTestCode != null && !perFileTestCode.isBlank()) {
+                    testCode = perFileTestCode.trim();
+                } else {
+                    continue;
+                }
+            }
+
+            String value = resultSelection.select(
+                    field -> getCellValue(row, fieldIndexes.get(field), formatter));
+            if (value == null || value.isBlank()) continue;
+
+            AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units)
+                    .asComponentRecord(subIdentity(code, subIdentities));
+            ControlResultRecognitionEvaluator.Assessment assessment =
+                    evaluateControl(sampleId, qcTask, recognition);
+            ar = ar.withControlRecognition(assessment)
+                    .withControl(assessment.matchedRule().isPresent());
+            if (assessment.matchedRule().isPresent()) {
+                ControlRecognitionRule rule = assessment.matchedRule().orElseThrow();
+                ar = ar.withControlLevel(rule.controlLevel());
+            }
+            if (testDate != null && !testDate.isBlank()) {
+                ar = ar.withTimestamp(testDate);
+            }
+
+            resultsByAccession.computeIfAbsent(sampleId, k -> new ArrayList<>()).add(ar);
+        }
+
+        if (resultsByAccession.isEmpty()) {
+            log.warn("FileResultParser: no results extracted from file");
+            return null;
+        }
+
+        List<HL7ResultParser.ParsedResults> allResults = new ArrayList<>();
+        for (Map.Entry<String, List<AnalyzerResult>> entry : resultsByAccession.entrySet()) {
+            allResults.add(new HL7ResultParser.ParsedResults(entry.getKey(), entry.getValue()));
+        }
+        return allResults;
     }
 
     /**
@@ -214,6 +314,16 @@ public class FileResultParser {
             String perFileTestCode, ControlResultRecognition recognition,
             TabularFileLayout layout, TabularResultValueSelection resultSelection,
             Map<String, String> testCodeValues) {
+        return parseOds(
+                inputStream, columnMappings, perFileTestCode, recognition, layout,
+                resultSelection, testCodeValues, Map.of());
+    }
+
+    public static List<HL7ResultParser.ParsedResults> parseOds(
+            InputStream inputStream, Map<String, String> columnMappings,
+            String perFileTestCode, ControlResultRecognition recognition,
+            TabularFileLayout layout, TabularResultValueSelection resultSelection,
+            Map<String, String> testCodeValues, Map<String, String> subIdentities) {
 
         if (inputStream == null || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseOds: null input or empty column mappings");
@@ -258,8 +368,8 @@ public class FileResultParser {
             if (isRowAllEmpty(row)) continue;
 
             String sampleId = getRowValue(row, fieldIndexes.get("sampleId"));
-            String testCode = translateTestCode(
-                    getRowValue(row, fieldIndexes.get("testCode")), testCodeValues);
+            String code = getRowValue(row, fieldIndexes.get("testCode"));
+            String testCode = translateTestCode(code, testCodeValues);
             String qcTask = getRowValue(row, fieldIndexes.get("qcTask"));
             String units = getRowValue(row, fieldIndexes.get("units"));
 
@@ -276,7 +386,8 @@ public class FileResultParser {
                     field -> getRowValue(row, fieldIndexes.get(field)));
             if (value == null || value.isBlank()) continue;
 
-            AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units);
+            AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units)
+                    .asComponentRecord(subIdentity(code, subIdentities));
             ControlResultRecognitionEvaluator.Assessment assessment =
                     evaluateControl(sampleId, qcTask, recognition);
             ar = ar.withControlRecognition(assessment)
@@ -494,6 +605,10 @@ public class FileResultParser {
         return testCodeValues.getOrDefault(raw.trim(), raw);
     }
 
+    private static String subIdentity(String code, Map<String, String> subIdentities) {
+        return code == null || subIdentities == null ? null : subIdentities.get(code.trim());
+    }
+
     public static List<HL7ResultParser.ParsedResults> parseCsv(
             byte[] content, Map<String, String> columnMappings,
             String delimiter, int skipRows, String perFileTestCode,
@@ -519,6 +634,17 @@ public class FileResultParser {
             String delimiter, int skipRows, String perFileTestCode,
             ControlResultRecognition recognition, TabularFileLayout layout,
             TabularResultValueSelection resultSelection, Map<String, String> testCodeValues) {
+        return parseCsv(
+                content, columnMappings, delimiter, skipRows, perFileTestCode,
+                recognition, layout, resultSelection, testCodeValues, Map.of());
+    }
+
+    public static List<HL7ResultParser.ParsedResults> parseCsv(
+            byte[] content, Map<String, String> columnMappings,
+            String delimiter, int skipRows, String perFileTestCode,
+            ControlResultRecognition recognition, TabularFileLayout layout,
+            TabularResultValueSelection resultSelection, Map<String, String> testCodeValues,
+            Map<String, String> subIdentities) {
 
         if (content == null || content.length == 0 || columnMappings == null || columnMappings.isEmpty()) {
             log.warn("FileResultParser.parseCsv: null/empty input or column mappings");
@@ -584,8 +710,8 @@ public class FileResultParser {
             try (StringReader reader = new StringReader(csvContent.toString())) {
                 for (CSVRecord record : format.parse(reader)) {
                     String sampleId = getMappedValue(record, columnMappings, "sampleId");
-                    String testCode = translateTestCode(
-                            getMappedValue(record, columnMappings, "testCode"), testCodeValues);
+                    String code = getMappedValue(record, columnMappings, "testCode");
+                    String testCode = translateTestCode(code, testCodeValues);
                     String units = getMappedValue(record, columnMappings, "units");
                     String qcTask = getMappedValue(record, columnMappings, "qcTask");
                     String testDate = getMappedValue(record, columnMappings, "testDate");
@@ -603,7 +729,8 @@ public class FileResultParser {
                             field -> getMappedValue(record, columnMappings, field));
                     if (value == null || value.isBlank()) continue;
 
-                    AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units);
+                    AnalyzerResult ar = AnalyzerResult.tabular(testCode, value, units)
+                            .asComponentRecord(subIdentity(code, subIdentities));
                     ControlResultRecognitionEvaluator.Assessment assessment =
                             evaluateControl(sampleId, qcTask, recognition);
                     ar = ar.withControlRecognition(assessment)

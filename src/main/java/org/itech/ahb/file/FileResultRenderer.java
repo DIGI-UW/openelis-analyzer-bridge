@@ -43,7 +43,8 @@ public final class FileResultRenderer {
             context.recognition(),
             context.layout(),
             context.resultSelection(),
-            context.testCodeValues()
+            context.testCodeValues(),
+            context.testCodeSubIdentities()
           );
           case ".xls", ".xlsx" -> FileResultParser.parse(
             input,
@@ -52,7 +53,8 @@ public final class FileResultRenderer {
             context.recognition(),
             context.layout(),
             context.resultSelection(),
-            context.testCodeValues()
+            context.testCodeValues(),
+            context.testCodeSubIdentities()
           );
           case ".ods" -> FileResultParser.parseOds(
             input,
@@ -61,7 +63,19 @@ public final class FileResultRenderer {
             context.recognition(),
             context.layout(),
             context.resultSelection(),
-            context.testCodeValues()
+            context.testCodeValues(),
+            context.testCodeSubIdentities()
+          );
+          case ".zip" -> FileResultParser.parseArchive(
+            bytes,
+            context.sourcePath(),
+            context.archive(),
+            context.columnMappings(),
+            context.recognition(),
+            context.layout(),
+            context.resultSelection(),
+            context.testCodeValues(),
+            context.testCodeSubIdentities()
           );
           default -> throw new IllegalArgumentException("Unsupported retained FILE extension: " + context.extension());
         };
@@ -109,6 +123,8 @@ public final class FileResultRenderer {
         );
       }
       return new Outcome.Rendered(deliveries);
+    } catch (FileResultParser.ExportMismatch mismatch) {
+      return new Outcome.Failed(FailureReason.RENDER_ERROR, "Held for review: " + mismatch.getMessage());
     } catch (Exception exception) {
       return new Outcome.Failed(
         FailureReason.RENDER_ERROR,

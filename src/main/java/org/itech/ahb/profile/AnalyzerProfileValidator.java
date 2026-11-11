@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -82,6 +83,7 @@ final class AnalyzerProfileValidator {
       validateFilePattern(profile, failures);
       validateTabularResultSelection(profile, failures);
       validateTestCodeValues(profile, failures);
+      validateArchive(profile, failures);
       validateRecordKinds(profile, failures);
       validateMappingIdentities(profile, failures);
       validateResultDescriptions(profile, failures);
@@ -190,12 +192,36 @@ final class AnalyzerProfileValidator {
       failures.add("$.test_code_values needs a column mapped to testCode in $.column_mapping");
     }
     Set<String> declared = new HashSet<>();
-    profile.path("default_test_mappings").forEach(mapping -> declared.add(mapping.path("test_code").asText()));
+    Map<String, Set<String>> subIdentitiesByTest = new HashMap<>();
+    profile
+      .path("default_test_mappings")
+      .forEach(mapping -> {
+        declared.add(mapping.path("test_code").asText());
+        Set<String> subIdentities = subIdentitiesByTest.computeIfAbsent(
+          mapping.path("test_code").asText(),
+          code -> new HashSet<>()
+        );
+        mapping.path("components").forEach(component -> subIdentities.add(component.path("sub_identity").asText()));
+      });
     profile.path("sample_flags").path("codes").forEach(code -> declared.add(code.asText()));
     values
       .fields()
       .forEachRemaining(entry -> {
-        if (!declared.contains(entry.getValue().asText())) {
+        if (entry.getValue().isObject()) {
+          String test = entry.getValue().path("test_code").asText();
+          String subIdentity = entry.getValue().path("sub_identity").asText();
+          if (!subIdentitiesByTest.getOrDefault(test, Set.of()).contains(subIdentity)) {
+            failures.add(
+              "$.test_code_values." +
+              entry.getKey() +
+              " names the " +
+              subIdentity +
+              " record of " +
+              test +
+              ", which $.default_test_mappings does not declare as a component of that test"
+            );
+          }
+        } else if (!declared.contains(entry.getValue().asText())) {
           failures.add(
             "$.test_code_values." +
             entry.getKey() +
@@ -435,6 +461,26 @@ final class AnalyzerProfileValidator {
       } else if (named.has("sub_identity")) {
         failures.add(path + ".call_component must name the component with no sub_identity: " + callComponent);
       }
+    }
+  }
+
+  private void validateArchive(JsonNode profile, List<String> failures) {
+    JsonNode archive = profile.path("archive");
+    if (!archive.isObject()) {
+      return;
+    }
+    Map<String, Integer> groups;
+    try {
+      groups = Pattern.compile(archive.path("export_name_pattern").asText()).namedGroups();
+    } catch (PatternSyntaxException exception) {
+      failures.add("$.archive.export_name_pattern must be a valid Java regular expression");
+      return;
+    }
+    if (!groups.containsKey("sampleId")) {
+      failures.add("$.archive.export_name_pattern must capture the sample number as the group sampleId");
+    }
+    if (archive.has("serial_cell") && !groups.containsKey("serial")) {
+      failures.add("$.archive.export_name_pattern must capture the group serial that $.archive.serial_cell checks");
     }
   }
 

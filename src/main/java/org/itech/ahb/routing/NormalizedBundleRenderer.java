@@ -242,7 +242,8 @@ public class NormalizedBundleRenderer {
       analyzer.getControlResultRecognition(),
       analyzer.getTabularFileLayout(),
       analyzer.getTabularResultValueSelection(),
-      analyzer.getTestCodeValues()
+      analyzer.getTestCodeValues(),
+      analyzer.getTestCodeSubIdentities()
     );
     if (accessions == null || accessions.isEmpty()) {
       return new Outcome.Failed(FailureReason.PARSE_NO_RESULTS, "CSV input produced no results");
