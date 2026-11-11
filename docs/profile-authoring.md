@@ -237,5 +237,6 @@ profile at revision 1; the site's `site.` profile and its connections are untouc
 
 `mvn test` validates every shipped profile against the schema and checks that each baseline test
 cites a source. A shipped baseline profile also replays the vendor's example messages
-(`GeneXpertBaselineProfileTest`, `MindrayBc5380BaselineProfileTest`): every record is a declared
-test, component and value, and every declared one is shown by an example.
+(`GeneXpertBaselineProfileTest`, `MindrayBc5380BaselineProfileTest`,
+`RadioneRp033BaselineProfileTest`): every record is a declared test, component and value, and every
+declared one is shown by an example.
