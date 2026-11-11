@@ -18,16 +18,23 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-/**
- * RADIONE RP033 run exports laid out as the RADIONE RP033 integration spec v0.4 (sections 2.1, 4 and
- * 10) describes the captured one.
- */
+/** RADIONE RP033 run exports laid out as the export captured at the DRC lab for OGC-1610. */
 final class RadioneExports {
 
   static final String NEGATIVE_676 = "RadioOne data Export_676_RP033_2026-10-10-00-22-19_2_0027";
   static final String SERIAL = "KM010-BE0027";
 
   private static final List<String> WELLS = List.of("A", "B", "C", "D");
+  private static final Map<String, List<Integer>> LISTED_CHANNELS = Map.of(
+    "A",
+    List.of(1, 4),
+    "B",
+    List.of(1, 4),
+    "C",
+    List.of(1, 2, 4),
+    "D",
+    List.of(1, 2, 3, 4)
+  );
   private static final List<String> HEADER = List.of("Location", "Target", "CT", "Copies", "P/N");
   private static final Map<String, Double> CT_WHEN_DETECTED = Map.of(
     "WellA_CH1",
@@ -56,6 +63,8 @@ final class RadioneExports {
     );
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     try (ZipOutputStream zip = new ZipOutputStream(bytes)) {
+      zip.putNextEntry(new ZipEntry(folder + "/"));
+      zip.closeEntry();
       byte[] runRecord = runRecord(folder, sampleNo, called);
       put(zip, folder + "/data.xlsx", workbook(folder, serial, called));
       put(zip, folder + "/PC", runRecord);
@@ -95,7 +104,7 @@ final class RadioneExports {
       }
       int rowIndex = 3;
       for (String well : WELLS) {
-        for (int channel = 1; channel <= 4; channel++) {
+        for (int channel : LISTED_CHANNELS.get(well)) {
           String location = "Well" + well + "_CH" + channel;
           String call = called.get(location);
           Row row = result.createRow(rowIndex++);
@@ -107,9 +116,7 @@ final class RadioneExports {
             row.createCell(2).setCellValue("NA");
           }
           row.createCell(3).setCellValue("NA");
-          if (call != null) {
-            row.createCell(4).setCellValue(call);
-          }
+          row.createCell(4).setCellValue(call == null ? "" : call);
         }
       }
       for (String other : List.of("Project", "Raw", "Origin", "Filter", "DeltaRn&Normalize", "Image")) {
@@ -161,7 +168,7 @@ final class RadioneExports {
   }
 
   private static String channelName(int channel) {
-    return List.of("FAM", "VIC", "ROX", "Cy5").get(channel - 1);
+    return List.of("FAM", "VIC", "ROX", "CY5").get(channel - 1);
   }
 
   private static String runTime(String folder) {

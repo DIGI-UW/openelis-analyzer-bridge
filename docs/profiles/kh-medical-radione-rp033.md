@@ -12,7 +12,7 @@ RP033 (OGC-1610, DRC Ebola response).
 | IFU          | RADIONE Ebola/Marburg Detection Kit (RP033), instructions for use Rev.03 (WHO EUL submission) | WHO EUL                                                                                      |
 | RADIONE spec | KH Medical RADIONE (KM010) Molecular POC Analyzer Integration Spec v0.4, 2026-11-05           | `openelis-work/designs/analyzer-integration/radione-rp033-integration-spec-v0.4.md`          |
 | Catalog      | Ebola and Marburg PCR: test catalog metadata, 2026-11-05                                      | `openelis-work/designs/analyzer-integration/radione-rp033-ebola-marburg-catalog-metadata.md` |
-| Export       | `RadioOne data Export_676_RP033_2026-10-10-00-22-19_2_0027.zip`, captured at a DRC lab        | OGC-1610 attachment; the spec traces it in section 10                                        |
+| Export       | `RadioOne data Export_676_RP033_2026-10-10-00-22-19_2_0027.zip`, captured at a DRC lab        | OGC-1610 attachment; the spec traces it in section 10; it replays green through the Bridge   |
 
 No vendor interface document exists; the IFU defines the kit and the spec, read from the captured
 export, defines the file. The export carries no patient identifier.
@@ -57,7 +57,7 @@ channel in `Location` tell them apart.
 | controls: sample number starting `PC-` or `NTC-`                                    | spec 6.2 (lab convention until a control export is seen) |
 
 The profile sends the four calls and no result: OpenELIS calculates `RESULT` from `EBOV` or `MARV`
-and `IC` (spec 5.3, 5.4). Wells C and D, and channels 2 and 3 of wells A and B, have a blank `P/N`
+and `IC` (spec 5.3, 5.4). Wells A and B list only channels 1 and 4; wells C and D have a blank `P/N`
 and send nothing. Ct values are not sent yet; the spec's `EBOV_CT`, `MARV_CT` and `IC_CT`
 components need a file row to carry two values.
 
@@ -72,8 +72,6 @@ components need a file row to carry two values.
 
 ## Not verified
 
-- The captured export itself: the Bridge's fixture
-  (`src/test/resources/radione-examples/`) is a reconstruction from the spec, not the file.
 - A positive, an invalid, a PC and an NTC export: only a negative run has been seen.
 - How PC and NTC runs are marked. The run record's `types` (`Unknown` on the patient run) may name
   them; until a control export shows it, the profile recognises them by sample-number prefix only.
