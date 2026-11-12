@@ -1,0 +1,220 @@
+{
+  "$schema": "https://openelis-global.org/contracts/analyzer/v1/analyzer-profile.schema.json",
+  "schemaVersion": "2.0",
+  "profileMeta": {
+    "id": "kh-medical-radione-rp033",
+    "version": "1.0.0",
+    "displayName": "KH Medical RADIONE (Ebola/Marburg RP033)",
+    "confidence": "MEDIUM"
+  },
+  "analyzer_name": "KH Medical RADIONE",
+  "manufacturer": "KH Medical",
+  "model": "RADIONE KM010",
+  "category": "MOLECULAR",
+  "protocol": {
+    "name": "FILE",
+    "format": "XLSX"
+  },
+  "capabilities": {
+    "inboundResults": true,
+    "outboundOrders": false,
+    "connectionTest": true
+  },
+  "supported_extensions": [".zip"],
+  "archive": {
+    "results_entry": "data.xlsx",
+    "run_record_entry": "PC",
+    "sample_id_field": "sampleno",
+    "export_name_pattern": "^RadioOne data Export_(?<sampleId>.+)_RP033_[0-9]{4}(-[0-9]{2}){5}_[0-9]+_(?<serial>[0-9]{4})$",
+    "serial_cell": "B1"
+  },
+  "column_mapping": {
+    "Location": "testCode",
+    "P/N": "interpretation"
+  },
+  "test_code_values": {
+    "WellA_CH1": "Ebola",
+    "WellA_CH4": {
+      "test_code": "Ebola",
+      "sub_identity": "IC"
+    },
+    "WellB_CH1": "Marburg",
+    "WellB_CH4": {
+      "test_code": "Marburg",
+      "sub_identity": "IC"
+    }
+  },
+  "result_value_order": ["interpretation"],
+  "sheet_detection": {
+    "strategy": "header_scan",
+    "preferred_sheet_names": ["Result"],
+    "header_marker": "Location",
+    "max_sheets_to_scan": 1,
+    "max_rows_to_scan": 10
+  },
+  "default_test_mappings": [
+    {
+      "test_code": "Ebola",
+      "loinc": "86518-8",
+      "result_type": "qualitative",
+      "test_name_hint": "Ebola virus RNA",
+      "values": ["P", "N"],
+      "value_codes": {
+        "P": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA11882-0"
+          }
+        ],
+        "N": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA11883-8"
+          }
+        ]
+      },
+      "call_component": "EBOV",
+      "components": [
+        {
+          "code": "EBOV",
+          "label": "Ebola target",
+          "result_type": "qualitative"
+        },
+        {
+          "code": "IC",
+          "label": "Internal control",
+          "result_type": "qualitative",
+          "sub_identity": "IC",
+          "values": ["P", "N"],
+          "value_codes": {
+            "P": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA11882-0"
+              }
+            ],
+            "N": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA11883-8"
+              }
+            ]
+          }
+        }
+      ],
+      "source": {
+        "document": "KH Medical RADIONE Ebola/Marburg Detection Kit (RP033) IFU Rev.03; RADIONE RP033 integration spec v0.4 (openelis-work designs/analyzer-integration)",
+        "section": "IFU kit layout and interpretation (well A: CH1 Ebola, CH4 internal control); spec 4.2 and 5.2"
+      }
+    },
+    {
+      "test_code": "Marburg",
+      "loinc": "86574-1",
+      "result_type": "qualitative",
+      "test_name_hint": "Marburg virus RNA",
+      "values": ["P", "N"],
+      "value_codes": {
+        "P": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA11882-0"
+          }
+        ],
+        "N": [
+          {
+            "system": "http://loinc.org",
+            "code": "LA11883-8"
+          }
+        ]
+      },
+      "call_component": "MARV",
+      "components": [
+        {
+          "code": "MARV",
+          "label": "Marburg target",
+          "result_type": "qualitative"
+        },
+        {
+          "code": "IC",
+          "label": "Internal control",
+          "result_type": "qualitative",
+          "sub_identity": "IC",
+          "values": ["P", "N"],
+          "value_codes": {
+            "P": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA11882-0"
+              }
+            ],
+            "N": [
+              {
+                "system": "http://loinc.org",
+                "code": "LA11883-8"
+              }
+            ]
+          }
+        }
+      ],
+      "source": {
+        "document": "KH Medical RADIONE Ebola/Marburg Detection Kit (RP033) IFU Rev.03; RADIONE RP033 integration spec v0.4 (openelis-work designs/analyzer-integration)",
+        "section": "IFU kit layout and interpretation (well B: CH1 Marburg, CH4 internal control); spec 4.2 and 5.2"
+      }
+    }
+  ],
+  "configDefaults": {
+    "dataFlow": "RESULTS_ONLY",
+    "fileFormat": "XLSX",
+    "filePattern": "*.{zip,ZIP}",
+    "hasHeader": true
+  },
+  "connectionFields": [
+    {
+      "key": "dataFlow",
+      "labelKey": "analyzer.setup.connect.dataFlow",
+      "inputKind": "SELECT",
+      "required": true,
+      "choices": [
+        {
+          "value": "RESULTS_ONLY",
+          "labelKey": "analyzer.setup.connect.dataFlow.resultsOnly"
+        }
+      ]
+    },
+    {
+      "key": "directory",
+      "labelKey": "analyzer.connection.field.directory",
+      "inputKind": "FILE_PATH",
+      "required": true,
+      "choices": []
+    },
+    {
+      "key": "filePattern",
+      "labelKey": "analyzer.connection.field.filePattern",
+      "helpTextKey": "analyzer.connection.field.filePattern.help",
+      "inputKind": "TEXT",
+      "required": true,
+      "choices": []
+    }
+  ],
+  "controlResultRecognition": {
+    "mode": "RULES",
+    "rules": {
+      "positive-control-sample": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "PC-"
+      },
+      "no-template-control-sample": {
+        "ruleType": "SPECIMEN_ID_PREFIX",
+        "operand": "NTC-"
+      }
+    }
+  },
+  "catalog": {
+    "revision": 1,
+    "source": "SHIPPED",
+    "status": "ACTIVE",
+    "publishedAt": "2026-11-11T00:00:00Z",
+    "publishedBy": "distribution"
+  }
+}

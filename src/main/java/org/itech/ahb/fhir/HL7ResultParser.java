@@ -579,13 +579,14 @@ public class HL7ResultParser {
         .stream()
         .map(result -> {
           String raw = result.value();
+          String subIdentity = result.parts() == null ? "" : result.parts().subIdentity();
           String canonical = effective.canonicalNumber(raw);
-          boolean failed = effective.isRunFailure(result.testCode(), "", raw);
+          boolean failed = effective.isRunFailure(result.testCode(), subIdentity, raw);
           String number = !failed && NumericValue.isBoundedDecimal(canonical) ? canonical : null;
           String call = failed || number != null ? null : raw;
           return result.withParts(
             new RecordParts(
-              "",
+              subIdentity,
               call,
               number,
               null,

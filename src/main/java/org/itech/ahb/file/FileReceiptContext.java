@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
+import org.itech.ahb.fhir.FileArchive;
 import org.itech.ahb.fhir.TabularFileLayout;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.itech.ahb.profile.ProfileFingerprintService;
@@ -35,6 +36,8 @@ public record FileReceiptContext(
   Map<String, String> codeToLoinc,
   @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> profileCodeByInstrumentCode,
   @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> testCodeValues,
+  @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> testCodeSubIdentities,
+  @JsonInclude(JsonInclude.Include.NON_NULL) FileArchive archive,
   @JsonInclude(JsonInclude.Include.NON_NULL) SampleFlags sampleFlags,
   @JsonInclude(JsonInclude.Include.NON_NULL) com.fasterxml.jackson.databind.JsonNode resultDefinitions,
   Character decimalSeparator,
@@ -59,6 +62,7 @@ public record FileReceiptContext(
       ? Map.of()
       : Map.copyOf(profileCodeByInstrumentCode);
     testCodeValues = testCodeValues == null ? Map.of() : Map.copyOf(testCodeValues);
+    testCodeSubIdentities = testCodeSubIdentities == null ? Map.of() : Map.copyOf(testCodeSubIdentities);
   }
 
   public static FileReceiptContext capture(Path path, AnalyzerEntry entry, String explicitTestCode) {
@@ -88,6 +92,8 @@ public record FileReceiptContext(
       entry.getCodeToLoinc(),
       entry.getResultReading() == null ? Map.of() : entry.getResultReading().profileCodeByInstrumentCode(),
       entry.getTestCodeValues(),
+      entry.getTestCodeSubIdentities(),
+      entry.getFileArchive(),
       flagsOf(entry.getResultReading()),
       entry.getResultReading() == null ? null : entry.getResultReading().definitions(),
       entry.getResultReading() == null ? '.' : entry.getResultReading().decimalSeparator(),

@@ -397,7 +397,19 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setIdentifierPattern(nullableText(profile, "identifier_pattern"));
     entry.setFilePattern(nullableText(values, "filePattern"));
     entry.setColumnMappings(textMap(profile.path("column_mapping")));
-    entry.setTestCodeValues(textMap(profile.path("test_code_values")));
+    Map<String, String> testCodes = new LinkedHashMap<>();
+    Map<String, String> subIdentities = new LinkedHashMap<>();
+    profile
+      .path("test_code_values")
+      .fields()
+      .forEachRemaining(value -> {
+        testCodes.put(value.getKey(), value.getValue().path("test_code").asText(value.getValue().asText()));
+        if (value.getValue().has("sub_identity")) {
+          subIdentities.put(value.getKey(), value.getValue().path("sub_identity").asText());
+        }
+      });
+    entry.setTestCodeValues(testCodes);
+    entry.setTestCodeSubIdentities(subIdentities);
     entry.setFileFormat(nullableText(values, "fileFormat"));
     // Whitespace is meaningful for a delimiter (notably a TSV tab).
     entry.setDelimiter(values.path("delimiter").isTextual() ? values.path("delimiter").asText() : null);
@@ -417,6 +429,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       }
       entry.setTabularFileLayout(tabularFileLayout(profile));
       entry.setTabularResultValueSelection(TabularResultValueSelection.fromProfile(profile));
+      entry.setFileArchive(org.itech.ahb.fhir.FileArchive.fromProfile(profile));
     }
 
     Map<String, String> codeOverrides = codeOverrides(profile, values);

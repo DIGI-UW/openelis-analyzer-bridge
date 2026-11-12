@@ -29,6 +29,8 @@ class ShippedProfileCatalogTest {
     "sha256:8f28785af6c5af38859c2b393093eb74d6cc6e4e786b22c587cebfa9e2a2a1ba",
     "hain-fluorocycler-xt-madagascar",
     "sha256:8c0d62edb064ef081883104d17b666be734c8c2723c8da80a3d5ec953825b775",
+    "kh-medical-radione-rp033",
+    "sha256:d323286815aa3f040cd9e67e939c267e270e902ff5a13e50ad5849ca5daf6a8e",
     "mindray-bc5380",
     "sha256:540edc728f0320c4439f8e06265aca4a5f83116d778104689a7ec0eb297dd2dc",
     "thermo-quantstudio",
@@ -83,6 +85,7 @@ class ShippedProfileCatalogTest {
         "hain-fluorocycler-xt",
         "hain-fluorocycler-xt-madagascar",
         "cepheid-genexpert-astm",
+        "kh-medical-radione-rp033",
         "mindray-bc5380",
         "thermo-quantstudio"
       );
@@ -146,6 +149,15 @@ class ShippedProfileCatalogTest {
             .containsExactly("VIH-1");
           assertThat(profile.path("sample_flags").path("raisedValue").asText()).isEqualTo("Invalid");
           assertThat(profile.path("sample_flags").path("names").path("IC").asText()).isEqualTo("Internal control invalid");
+        }
+        case "kh-medical-radione-rp033" -> {
+          assertThat(profile.path("supported_extensions")).extracting(JsonNode::asText).containsExactly(".zip");
+          assertThat(profile.path("archive").path("run_record_entry").asText()).isEqualTo("PC");
+          assertThat(profile.path("archive").path("sample_id_field").asText()).isEqualTo("sampleno");
+          // Each well's internal control is a component of its own test, never a sample flag.
+          assertThat(profile.path("test_code_values").path("WellA_CH4").path("test_code").asText()).isEqualTo("Ebola");
+          assertThat(profile.path("test_code_values").path("WellB_CH4").path("test_code").asText()).isEqualTo("Marburg");
+          assertThat(profile.has("sample_flags")).isFalse();
         }
         case "mindray-bc5380" -> {
           JsonNode extraction = profile.path("configDefaults").path("extractionOverrides");
