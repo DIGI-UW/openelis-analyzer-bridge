@@ -5,10 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.connection.BridgeAnalyzerConnectionRuntime;
@@ -25,15 +32,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-/**
- * Replays a RADIONE RP033 export through a saved FILE connection into what OpenELIS receives.
- * {@code -Dradione.export=<zip>} replays another export than the reconstruction, such as the captured one.
- */
+/** {@code -Dradione.export=<zip>} replays another export, such as the captured one. */
 class RadioneRp033BaselineProfileTest {
 
-  private static final Path EXPORT = Path.of(
-    System.getProperty("radione.export", "src/test/resources/radione-examples/" + RadioneExports.NEGATIVE_676 + ".zip")
-  );
 
   @TempDir
   Path imports;
@@ -41,17 +42,17 @@ class RadioneRp033BaselineProfileTest {
   private final ObjectMapper json = new ObjectMapper();
 
   @Test
-  void theProfileIsValidAndFingerprinted() throws Exception {
-    ObjectNode profile = profile();
-    assertThat(new AnalyzerProfileValidator(json).validationIssues(profile)).isEmpty();
-    assertThat(profile.path("schemaVersion").asText()).isEqualTo("2.0");
-    assertThat(profile.path("catalog").path("revision").asInt()).isEqualTo(1);
-    assertThat(profile.path("protocol").path("name").asText()).isEqualTo("FILE");
+  void theProfileIsValid() {
+    assertThat(new AnalyzerProfileValidator(json).validationIssues(profile())).isEmpty();
   }
 
   @Test
   void theTracedNegativeRunIsEachWellsTargetAndInternalControlCallForSample676() throws Exception {
-    List<RenderedDelivery> deliveries = delivered(render(EXPORT.getFileName().toString(), Files.readAllBytes(EXPORT)));
+    String replayed = System.getProperty("radione.export");
+    byte[] export = replayed == null
+      ? RadioneExports.export(RadioneExports.NEGATIVE_676, "676", RadioneExports.SERIAL, "N", "P", "N", "P")
+      : Files.readAllBytes(Path.of(replayed));
+    List<RenderedDelivery> deliveries = delivered(render(RadioneExports.NEGATIVE_676 + ".zip", export));
 
     assertThat(deliveries).extracting(RenderedDelivery::accession).containsExactly("676");
     // Wells C and D, and the unused channels of A and B, carry no call and send nothing.
@@ -90,20 +91,73 @@ class RadioneRp033BaselineProfileTest {
   @CsvSource(
     delimiter = '|',
     value = {
-      "_676_RP033_ | 677 | KM010-BE0027 | names sample 676 but its run record names sample 677",
-      "_676_RP033_ | 676 | KM010-BE0031 | names instrument 0027 but its results come from instrument KM010-BE0031",
-      "_676_RP038_ | 676 | KM010-BE0027 | is not named as the profile expects"
+      "_676_RP033_ | 677 | KM010-BE0027 | 2026-10-10-00-22-19_2 | names sample 676 but its run record names sample 677",
+      "_676_RP033_ | 676 | KM010-BE0031 | 2026-10-10-00-22-19_2 | names serial 0027 but its results hold KM010-BE0031",
+      "_676_RP033_ | 676 | KM010-BE0027 | 2026-10-11-08-00-00_1 | names runTime 2026-10-10-00-22-19_2 but its results hold 2026-10-11-08-00-00_1",
+      "_676_RP038_ | 676 | KM010-BE0027 | 2026-10-10-00-22-19_2 | is not named as the profile expects"
     }
   )
-  void anExportWhosePartsDisagreeIsHeldForReview(String sampleAndKit, String sampleNo, String serial, String why)
-    throws Exception {
+  void anExportWhosePartsDisagreeIsHeldForReview(
+    String sampleAndKit,
+    String sampleNo,
+    String serial,
+    String sheetRunTime,
+    String why
+  ) throws Exception {
     String folder = RadioneExports.NEGATIVE_676.replace("_676_RP033_", sampleAndKit);
-    Outcome outcome = render(folder + ".zip", RadioneExports.export(folder, sampleNo, serial, "N", "P", "N", "P"));
+    byte[] export = RadioneExports.exportRunAt(folder, sheetRunTime, sampleNo, serial, "N", "P", "N", "P");
 
+    assertHeld(render(folder + ".zip", export), "Export " + folder + " " + why);
+  }
+
+  @Test
+  void aZipHoldingTwoRunsIsHeldForReview() throws Exception {
+    String other = RadioneExports.NEGATIVE_676.replace("_676_", "_677_");
+    Map<String, byte[]> entries = entries(
+      RadioneExports.export(RadioneExports.NEGATIVE_676, "676", RadioneExports.SERIAL, "N", "P", "N", "P")
+    );
+    entries.putAll(entries(RadioneExports.export(other, "677", RadioneExports.SERIAL, "N", "P", "N", "P")));
+
+    assertHeld(render(other + ".zip", zip(entries)), "The ZIP holds more than one data.xlsx");
+  }
+
+  @Test
+  void aZipWithoutItsExportFolderIsHeldForReview() throws Exception {
+    Map<String, byte[]> flat = new LinkedHashMap<>();
+    entries(RadioneExports.export(RadioneExports.NEGATIVE_676, "676", RadioneExports.SERIAL, "N", "P", "N", "P"))
+      .forEach((name, content) -> flat.put(name.substring(name.indexOf('/') + 1), content));
+    flat.remove("");
+
+    assertHeld(render(RadioneExports.NEGATIVE_676 + ".zip", zip(flat)), "The ZIP holds no export folder");
+  }
+
+  private static void assertHeld(Outcome outcome, String why) {
     assertThat(outcome).isInstanceOf(Outcome.Failed.class);
     Outcome.Failed held = (Outcome.Failed) outcome;
     assertThat(held.reason()).isEqualTo(FailureReason.RENDER_ERROR);
-    assertThat(held.message()).isEqualTo("Held for review: Export " + folder + " " + why);
+    assertThat(held.message()).isEqualTo("Held for review: " + why);
+  }
+
+  private static Map<String, byte[]> entries(byte[] zip) throws Exception {
+    Map<String, byte[]> entries = new LinkedHashMap<>();
+    try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(zip))) {
+      for (ZipEntry entry; (entry = in.getNextEntry()) != null; ) {
+        entries.put(entry.getName(), in.readAllBytes());
+      }
+    }
+    return entries;
+  }
+
+  private static byte[] zip(Map<String, byte[]> entries) throws Exception {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    try (ZipOutputStream out = new ZipOutputStream(bytes)) {
+      for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+        out.putNextEntry(new ZipEntry(entry.getKey()));
+        out.write(entry.getValue());
+        out.closeEntry();
+      }
+    }
+    return bytes.toByteArray();
   }
 
   @ParameterizedTest

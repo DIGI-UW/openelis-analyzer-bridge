@@ -106,17 +106,17 @@ says where the parts of the export are:
   "results_entry": "data.xlsx",
   "run_record_entry": "PC",
   "sample_id_field": "sampleno",
-  "export_name_pattern": "^RadioOne data Export_(?<sampleId>.+)_RP033_[0-9]{4}(-[0-9]{2}){5}_[0-9]+_(?<serial>[0-9]{4})$",
-  "serial_cell": "B1"
+  "export_name_pattern": "^RadioOne data Export_(?<sampleId>.+)_RP033_(?<runTime>[0-9]{4}(-[0-9]{2}){5}_[0-9]+)_(?<serial>[0-9]{4})$",
+  "name_cells": { "serial": "B1", "runTime": "B2" }
 }
 ```
 
 The Bridge reads the `results_entry` workbook with the profile's `column_mapping` and
 `sheet_detection`, and every row belongs to the sample number in the `sample_id_field` of the JSON
-`run_record_entry`. The export's name is the folder that holds those entries, or the ZIP's file name
-when they sit at its root. It must match `export_name_pattern`, whose `sampleId` group must equal
-the run record's sample number; with `serial_cell`, the `serial` group must end that cell of the
-result sheet. A ZIP whose parts disagree, that lacks an entry or holds two runs, or whose name the
+`run_record_entry`. The export's name is the folder that holds those entries. It must match
+`export_name_pattern`, whose `sampleId` group must equal the run record's sample number; each group
+named in `name_cells` must end that cell of the result sheet, which ties the sheet to the run and the
+instrument the name gives. A ZIP whose parts disagree, that lacks an entry or holds two runs, or whose name the
 pattern does not match (another kit) is held in the dead-message queue for review, and nothing from
 it is delivered. A row with no result value, such as an unused well, sends nothing.
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class AnalyzerProfileValidatorTest {
@@ -159,8 +160,9 @@ class AnalyzerProfileValidatorTest {
     ObjectNode profile = profile(ARCHIVE_PROFILE);
     profile.withObject("archive").put("export_name_pattern", "^RadioOne data Export_(.+)_RP033_.*$");
 
-    assertThat(validator.validationIssues(profile)).containsExactly(
-      "$.archive.export_name_pattern must capture the group serial that $.archive.serial_cell checks",
+    assertThat(validator.validationIssues(profile)).containsExactlyInAnyOrder(
+      "$.archive.export_name_pattern must capture the group runTime that $.archive.name_cells checks",
+      "$.archive.export_name_pattern must capture the group serial that $.archive.name_cells checks",
       "$.archive.export_name_pattern must capture the sample number as the group sampleId"
     );
 
@@ -169,6 +171,20 @@ class AnalyzerProfileValidatorTest {
     assertThat(validator.validationIssues(profile)).containsExactly(
       "$.archive.export_name_pattern must be a valid Java regular expression"
     );
+  }
+
+  @Test
+  void anArchiveAndAZipExtensionGoTogether() throws Exception {
+    ObjectNode withoutZip = profile(ARCHIVE_PROFILE);
+    withoutZip.putArray("supported_extensions").add(".xlsx");
+    ObjectNode withoutArchive = profile(ARCHIVE_PROFILE);
+    withoutArchive.remove("archive");
+
+    for (ObjectNode profile : List.of(withoutZip, withoutArchive)) {
+      assertThat(validator.validationIssues(profile)).contains(
+        "$.archive and a .zip in $.supported_extensions go together"
+      );
+    }
   }
 
   @Test

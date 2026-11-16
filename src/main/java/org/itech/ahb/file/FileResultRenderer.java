@@ -68,7 +68,6 @@ public final class FileResultRenderer {
           );
           case ".zip" -> FileResultParser.parseArchive(
             bytes,
-            context.sourcePath(),
             context.archive(),
             context.columnMappings(),
             context.recognition(),

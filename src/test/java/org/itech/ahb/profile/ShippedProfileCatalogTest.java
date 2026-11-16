@@ -30,7 +30,7 @@ class ShippedProfileCatalogTest {
     "hain-fluorocycler-xt-madagascar",
     "sha256:8c0d62edb064ef081883104d17b666be734c8c2723c8da80a3d5ec953825b775",
     "kh-medical-radione-rp033",
-    "sha256:d323286815aa3f040cd9e67e939c267e270e902ff5a13e50ad5849ca5daf6a8e",
+    "sha256:591349cdb654fb381364930da49d4715ca340c75ac579bb7de538bb042a9463a",
     "mindray-bc5380",
     "sha256:540edc728f0320c4439f8e06265aca4a5f83116d778104689a7ec0eb297dd2dc",
     "thermo-quantstudio",

@@ -466,6 +466,13 @@ final class AnalyzerProfileValidator {
 
   private void validateArchive(JsonNode profile, List<String> failures) {
     JsonNode archive = profile.path("archive");
+    boolean readsZip = false;
+    for (JsonNode extension : profile.path("supported_extensions")) {
+      readsZip |= ".zip".equalsIgnoreCase(extension.asText());
+    }
+    if (readsZip != archive.isObject()) {
+      failures.add("$.archive and a .zip in $.supported_extensions go together");
+    }
     if (!archive.isObject()) {
       return;
     }
@@ -479,9 +486,16 @@ final class AnalyzerProfileValidator {
     if (!groups.containsKey("sampleId")) {
       failures.add("$.archive.export_name_pattern must capture the sample number as the group sampleId");
     }
-    if (archive.has("serial_cell") && !groups.containsKey("serial")) {
-      failures.add("$.archive.export_name_pattern must capture the group serial that $.archive.serial_cell checks");
-    }
+    archive
+      .path("name_cells")
+      .fieldNames()
+      .forEachRemaining(group -> {
+        if (!groups.containsKey(group)) {
+          failures.add(
+            "$.archive.export_name_pattern must capture the group " + group + " that $.archive.name_cells checks"
+          );
+        }
+      });
   }
 
   private void validateRecognitionPatterns(JsonNode profile, List<String> failures) {

@@ -144,12 +144,9 @@ public class FileResultParser {
         }
     }
 
-    /**
-     * Every row of the ZIP's result workbook belongs to the run record's sample number.
-     * {@code sourcePath} names the export when its entries sit at the root of the ZIP.
-     */
+    /** Every row of the ZIP's result workbook belongs to the run record's sample number. */
     public static List<HL7ResultParser.ParsedResults> parseArchive(
-            byte[] archiveBytes, String sourcePath, FileArchive archive,
+            byte[] archiveBytes, FileArchive archive,
             Map<String, String> columnMappings, ControlResultRecognition recognition,
             TabularFileLayout layout, TabularResultValueSelection resultSelection,
             Map<String, String> testCodeValues, Map<String, String> subIdentities) throws IOException {
@@ -173,8 +170,7 @@ public class FileResultParser {
             }
         }
         if (exportName.isEmpty()) {
-            String fileName = java.nio.file.Path.of(sourcePath).getFileName().toString();
-            exportName = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+            throw new ExportMismatch("The ZIP holds no export folder");
         }
         byte[] results = entries.get(archive.resultsEntry());
         byte[] runRecord = entries.get(archive.runRecordEntry());
@@ -194,12 +190,16 @@ public class FileResultParser {
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(results))) {
             DataFormatter formatter = new DataFormatter();
             SheetHeader sheetHeader = locateSheetHeader(workbook, formatter, layout);
-            if (sheetHeader != null && archive.serialCell() != null) {
-                CellReference cell = new CellReference(archive.serialCell());
-                String serial = getCellValue(sheetHeader.sheet().getRow(cell.getRow()), (int) cell.getCol(), formatter);
-                if (serial == null || !serial.endsWith(name.group("serial"))) {
-                    throw new ExportMismatch("Export " + exportName + " names instrument " + name.group("serial")
-                            + " but its results come from instrument " + serial);
+            if (sheetHeader != null) {
+                for (Map.Entry<String, String> nameCell : archive.nameCells().entrySet()) {
+                    CellReference cell = new CellReference(nameCell.getValue());
+                    String held =
+                            getCellValue(sheetHeader.sheet().getRow(cell.getRow()), (int) cell.getCol(), formatter);
+                    String named = name.group(nameCell.getKey());
+                    if (held == null || !held.endsWith(named)) {
+                        throw new ExportMismatch("Export " + exportName + " names " + nameCell.getKey() + " "
+                                + named + " but its results hold " + held);
+                    }
                 }
             }
             return parseWorkbook(
