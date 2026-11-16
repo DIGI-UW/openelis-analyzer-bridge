@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
+import org.itech.ahb.fhir.FileArchive;
 import org.itech.ahb.fhir.TabularFileLayout;
 import org.itech.ahb.file.FileWatcher;
 import org.itech.ahb.profile.AstmResultRecordSelection;
@@ -403,7 +404,8 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       .path("test_code_values")
       .fields()
       .forEachRemaining(value -> {
-        testCodes.put(value.getKey(), value.getValue().path("test_code").asText(value.getValue().asText()));
+        JsonNode code = value.getValue();
+        testCodes.put(value.getKey(), code.isObject() ? code.path("test_code").asText() : code.asText());
         if (value.getValue().has("sub_identity")) {
           subIdentities.put(value.getKey(), value.getValue().path("sub_identity").asText());
         }
@@ -429,7 +431,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       }
       entry.setTabularFileLayout(tabularFileLayout(profile));
       entry.setTabularResultValueSelection(TabularResultValueSelection.fromProfile(profile));
-      entry.setFileArchive(org.itech.ahb.fhir.FileArchive.fromProfile(profile));
+      entry.setFileArchive(FileArchive.fromProfile(profile));
     }
 
     Map<String, String> codeOverrides = codeOverrides(profile, values);
