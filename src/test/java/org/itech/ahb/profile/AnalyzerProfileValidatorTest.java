@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class AnalyzerProfileValidatorTest {
 
   private static final String FILE_PROFILE = "hain-fluorocycler-xt";
+  private static final String ARCHIVE_PROFILE = "kh-medical-radione-rp033";
   private static final String ASTM_PROFILE = "cepheid-genexpert-astm";
 
   private final ObjectMapper objectMapper = new ObjectMapper();
@@ -140,6 +142,49 @@ class AnalyzerProfileValidatorTest {
     flags.putObject("names").put("IC", "Internal control invalid");
 
     assertThat(validator.validationIssues(profile)).doesNotContain(issue);
+  }
+
+  @Test
+  void aTestCodeValueThatNamesAComponentNamesOneItsTestDeclares() throws Exception {
+    ObjectNode profile = profile(ARCHIVE_PROFILE);
+    profile.withObject("test_code_values").putObject("WellA_CH2").put("test_code", "Ebola").put("sub_identity", "VIC");
+
+    assertThat(validator.validationIssues(profile)).containsExactly(
+      "$.test_code_values.WellA_CH2 names the VIC record of Ebola, which $.default_test_mappings does not declare " +
+      "as a component of that test"
+    );
+  }
+
+  @Test
+  void anArchiveNamePatternCapturesWhatTheBridgeChecks() throws Exception {
+    ObjectNode profile = profile(ARCHIVE_PROFILE);
+    profile.withObject("archive").put("export_name_pattern", "^RadioOne data Export_(.+)_RP033_.*$");
+
+    assertThat(validator.validationIssues(profile)).containsExactlyInAnyOrder(
+      "$.archive.export_name_pattern must capture the group runTime that $.archive.name_cells checks",
+      "$.archive.export_name_pattern must capture the group serial that $.archive.name_cells checks",
+      "$.archive.export_name_pattern must capture the sample number as the group sampleId"
+    );
+
+    profile.withObject("archive").put("export_name_pattern", "(?<sampleId>[");
+
+    assertThat(validator.validationIssues(profile)).containsExactly(
+      "$.archive.export_name_pattern must be a valid Java regular expression"
+    );
+  }
+
+  @Test
+  void anArchiveAndAZipExtensionGoTogether() throws Exception {
+    ObjectNode withoutZip = profile(ARCHIVE_PROFILE);
+    withoutZip.putArray("supported_extensions").add(".xlsx");
+    ObjectNode withoutArchive = profile(ARCHIVE_PROFILE);
+    withoutArchive.remove("archive");
+
+    for (ObjectNode profile : List.of(withoutZip, withoutArchive)) {
+      assertThat(validator.validationIssues(profile)).contains(
+        "$.archive and a .zip in $.supported_extensions go together"
+      );
+    }
   }
 
   @Test

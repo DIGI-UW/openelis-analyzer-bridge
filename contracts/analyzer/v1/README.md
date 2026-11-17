@@ -175,6 +175,15 @@ Without a selection, the existing single-primary-test fallback applies. Multiple
 primary tests require a row-code column or an explicit selection. The selected
 value is captured with the durable file receipt and survives retries and restart.
 
+### FILE run exports
+
+A FILE profile whose `supported_extensions` is `.zip` reads one run per ZIP as its `archive` says:
+the result workbook inside it, and the sample number from a JSON entry, checked against the
+export's name and the instrument serial on the result sheet. An export whose parts disagree is held
+in the dead-message queue, never delivered under a guessed sample. A `test_code_values` entry may
+name a component's record (`test_code` and `sub_identity`), which arrives with that sub-identity
+like a component record from ASTM or HL7.
+
 ### FILE delivery identity and retries
 
 `Bundle.identifier` uses the analyzer-message-id system and identifies a delivery,

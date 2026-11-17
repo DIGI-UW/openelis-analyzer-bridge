@@ -74,6 +74,29 @@ class FileResultParserTestCodeValuesTest {
   }
 
   @Test
+  void aValueTheProfileNamesAsAComponentIsThatComponentsRecordOfItsTest() {
+    List<FhirBundleBuilder.AnalyzerResult> results = FileResultParser.parse(
+      workbook(
+        new Object[][] { { "A", 1, "S1", "Unknown", null, "Positive" }, { "A", 2, "S1", "Unknown", null, "Valid" } }
+      ),
+      COLUMNS,
+      null,
+      ControlResultRecognition.none(),
+      null,
+      new TabularResultValueSelection(List.of("result", "interpretation")),
+      Map.of("1", "VIH-1", "2", "VIH-1"),
+      Map.of("2", "IC")
+    )
+      .get(0)
+      .withTabularReading(null)
+      .results();
+
+    assertThat(results)
+      .extracting(result -> result.testCode() + " " + result.parts().subIdentity() + " " + result.parts().call())
+      .containsExactly("VIH-1  Positive", "VIH-1 IC Valid");
+  }
+
+  @Test
   void withoutTheTranslationTheColumnIsReadAsItIs() {
     List<HL7ResultParser.ParsedResults> parsed = parse(
       new Object[][] { { "A", 1, "S1", "Unknown", 1250, "Positive" } },
