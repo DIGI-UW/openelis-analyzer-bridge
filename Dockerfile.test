@@ -6,21 +6,21 @@ RUN apt-get update && apt-get install -y maven socat && rm -rf /var/lib/apt/list
 
 WORKDIR /app
 
-# Copy pom files first for better layer caching
-COPY pom.xml .
-COPY astm-http-lib/pom.xml astm-http-lib/
+# The Bridge depends on its in-tree ASTM library. Install it before resolving the Bridge POM.
+COPY astm-http-lib/pom.xml astm-http-lib/pom.xml
+COPY astm-http-lib/src astm-http-lib/src/
+RUN mvn -B -ntp -f astm-http-lib/pom.xml install -Dmaven.test.skip=true
 
-# Download dependencies
-RUN mvn dependency:go-offline -DskipTests
+COPY pom.xml .
+RUN mvn -B -ntp dependency:go-offline
 
 # Copy source code
 COPY src src/
 COPY contracts contracts/
-COPY astm-http-lib/src astm-http-lib/src/
 
 # Copy serial test entrypoint
 COPY scripts/docker-serial-test-entrypoint.sh /app/run-serial-tests.sh
 RUN chmod +x /app/run-serial-tests.sh
 
 # Default command runs the serial integration tests
-CMD ["mvn", "test", "-Dtest=SerialIntegrationTest", "-DfailIfNoTests=false"]
+CMD ["/app/run-serial-tests.sh"]
