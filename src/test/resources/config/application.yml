@@ -1,4 +1,8 @@
-# Test configuration for Spring Boot tests
+# Spring loads this after the packaged application.yml, so tests inherit its defaults.
+spring:
+  profiles:
+    active: test
+
 org:
   itech:
     ahb:

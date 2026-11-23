@@ -1,13 +1,13 @@
 package org.itech.ahb;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import jakarta.servlet.ServletContext;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-/**
- * Test that verifies the Spring Boot application context loads successfully.
- * Test configuration disables analyzer-facing listeners so this generic
- * application-context test does not bind external transport ports.
- */
+/** Checks the servlet filters installed in a running Bridge. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
@@ -16,8 +16,13 @@ import org.springframework.boot.test.context.SpringBootTest;
     })
 class AstmHttpBridgeApplicationTests {
 
+  @Autowired
+  private ServletContext servletContext;
+
   @Test
-  void contextLoads() {
-    // Context loads successfully without starting analyzer-facing listeners.
+  void doesNotRegisterTheFormContentFilter() {
+    assertThat(servletContext.getFilterRegistrations())
+        .containsKey("springSecurityFilterChain")
+        .doesNotContainKey("formContentFilter");
   }
 }
