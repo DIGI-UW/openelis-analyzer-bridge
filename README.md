@@ -83,8 +83,18 @@ mvn clean install
 cd ..
 mvn clean package
 
-java -jar target/openelis-analyzer-bridge-*.jar --spring.config.location=configuration.yml
+java -jar target/openelis-analyzer-bridge-*.jar --spring.config.additional-location=file:./configuration.yml
 ```
+
+Run the JAR from the repository root with Java 21. Give the account running the
+Bridge a private, writable `/data/openelis-analyzer-bridge` directory before
+first launch. Keep this directory across restarts. It holds the installation’s
+TLS identity, pairing record, saved connections and delivery queue.
+
+The additional configuration file supplies site settings while retaining the
+packaged production profile. On first launch, the Bridge generates its own TLS
+identity and serves HTTPS on port 8443. Start pairing through OpenELIS using the
+code from the Bridge startup log or the configured pairing code.
 
 ## Docker Deployment
 
