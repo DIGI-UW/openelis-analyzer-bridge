@@ -345,6 +345,29 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     return "TCP/IP".equals(transport) || ("HL7".equals(protocol) && "MLLP".equals(transport));
   }
 
+  private static boolean sharedListener(String protocol, ObjectNode values) {
+    return (
+      ("ASTM".equals(protocol) || "HL7".equals(protocol)) &&
+      isTcpTransport(protocol, values) &&
+      "SERVER".equals(nullableText(values, "connectionRole"))
+    );
+  }
+
+  /** A configured inbound host always restricts the numeric peer. Outbound-only hosts may use DNS. */
+  static String inboundAddress(String protocol, ObjectNode values) {
+    boolean http = "HTTP".equals(nullableText(values, "transport"));
+    String host = nullableText(values, "host");
+    if (host == null || (!http && !sharedListener(protocol, values))) return null;
+    String address = IpLiteral.canonicalize(host);
+    if (address == null) throw new AnalyzerConnectionException(
+      http
+        ? "HTTP analyzer host must be a literal IP address"
+        : "Shared listener host must be a literal IP address. Enter the analyzer's source IP, " +
+        "or clear host to use the listener's sender matching rules."
+    );
+    return address;
+  }
+
   private static String registryKey(String protocol, String connectionId, ObjectNode values) {
     if ("FILE".equals(protocol) && !"HTTP".equals(nullableText(values, "transport"))) {
       return Path.of(requiredText(values, "directory", "FILE directory")).normalize() + "#" + connectionId;
@@ -365,29 +388,17 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
     entry.setInboundTransport(nullableText(values, "transport"));
     entry.setOutboundOrdersSupported(AnalyzerOutboundEndpoint.ordersEnabled(profile, values));
     if ("HTTP".equals(entry.getInboundTransport())) {
-      String sourceAddress = IpLiteral.canonicalize(requiredText(values, "host", "HTTP analyzer IP address"));
-      if (sourceAddress == null) {
-        throw new AnalyzerConnectionException("HTTP analyzer host must be a literal IP address");
-      }
-      entry.setInboundSourceId(sourceAddress);
+      requiredText(values, "host", "HTTP analyzer IP address");
+      entry.setInboundSourceId(inboundAddress(entry.getExpectedProtocol(), values));
     } else if (
       isTcpTransport(entry.getExpectedProtocol(), values) && "CLIENT".equals(nullableText(values, "connectionRole"))
     ) {
       entry.setInboundSourceId(requiredText(values, "host", "Analyzer host"));
-    } else if (
-      isTcpTransport(entry.getExpectedProtocol(), values) &&
-      "SERVER".equals(nullableText(values, "connectionRole")) &&
-      ("ASTM".equals(entry.getExpectedProtocol()) || "HL7".equals(entry.getExpectedProtocol()))
-    ) {
-      // The analyzer connects to a shared listener; its connection is resolved per message.
+    } else if (sharedListener(entry.getExpectedProtocol(), values)) {
       entry.setListenerPort(listenerPorts.forProfile(profile));
-      String host = nullableText(values, "host");
-      if (host != null) {
-        String address = IpLiteral.canonicalize(host);
-        entry.setInboundSourceId(address != null ? address : host.trim());
-        // A hostname is kept as entered and never resolved: sender identity is numeric only.
-        entry.setInboundAddress(address);
-      }
+      String address = inboundAddress(entry.getExpectedProtocol(), values);
+      entry.setInboundSourceId(address);
+      entry.setInboundAddress(address);
       String senderId = nullableText(values, "senderId");
       entry.setSenderId(senderId == null ? null : senderId.trim());
     }

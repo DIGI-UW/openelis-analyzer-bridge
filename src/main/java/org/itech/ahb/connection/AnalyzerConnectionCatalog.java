@@ -112,7 +112,7 @@ public final class AnalyzerConnectionCatalog {
 
     String connectionId = ids.get().toString();
     ObjectNode values = effectiveValues(profile, suppliedValues);
-    validateHttpSender(values);
+    BridgeAnalyzerConnectionRuntime.inboundAddress(profile.path("protocol").path("name").asText(), values);
     runtime.validate(values, profile);
     ObjectNode record = objectMapper.createObjectNode();
     record.put("connectionId", connectionId);
@@ -158,7 +158,7 @@ public final class AnalyzerConnectionCatalog {
     ObjectNode profile = requirePinnedProfile(profileRef);
     validateValues(profile, suppliedValues);
     ObjectNode values = effectiveValues(profile, suppliedValues, (ObjectNode) existing.path("values"));
-    validateHttpSender(values);
+    BridgeAnalyzerConnectionRuntime.inboundAddress(profile.path("protocol").path("name").asText(), values);
     runtime.validate(values, profile);
     if (sameConfiguration(existing, profileRef, displayName, values)) {
       return view(existing, profile);
@@ -589,8 +589,22 @@ public final class AnalyzerConnectionCatalog {
     String restoreFailure = restoreFailures.get(connectionId);
     ArrayList<String> missingFields = profile == null ? new ArrayList<>() : missingRequiredFields(record, profile);
     ObjectNode readiness = response.putObject("readiness");
-    readiness.put("ready", profile != null && missingFields.isEmpty() && restoreFailure == null);
     ArrayNode blockers = readiness.putArray("blockers");
+    if (profile != null && restoreFailure == null) {
+      // Previously saved, inactive connections may still have a hostname in the inbound host field.
+      try {
+        BridgeAnalyzerConnectionRuntime.inboundAddress(
+          profile.path("protocol").path("name").asText(),
+          (ObjectNode) record.path("values")
+        );
+      } catch (AnalyzerConnectionException invalidHost) {
+        ObjectNode blocker = blockers.addObject();
+        blocker.put("key", "invalid-inbound-host");
+        blocker.put("messageKey", "analyzer.connection.field.host.help");
+        blocker.putArray("fieldKeys").add("host");
+        blocker.put("detail", invalidHost.getMessage());
+      }
+    }
     if (profile == null) {
       ObjectNode blocker = blockers.addObject();
       blocker.put("key", "profile-unavailable");
@@ -619,6 +633,7 @@ public final class AnalyzerConnectionCatalog {
       ArrayNode fieldKeys = blocker.putArray("fieldKeys");
       missingFields.forEach(fieldKeys::add);
     }
+    readiness.put("ready", blockers.isEmpty());
     response.set("latestProbe", record.path("latestProbe").deepCopy());
     copy(response, record, "desiredRuntimeState");
     if (restoreFailure != null) {
@@ -740,17 +755,6 @@ public final class AnalyzerConnectionCatalog {
       }
     }
     return false;
-  }
-
-  private static void validateHttpSender(ObjectNode values) {
-    String host = values.path("host").asText("");
-    if (
-      "HTTP".equals(values.path("transport").asText()) &&
-      !host.isBlank() &&
-      org.itech.ahb.util.IpLiteral.canonicalize(host) == null
-    ) {
-      throw new AnalyzerConnectionException("HTTP analyzer host must be a literal IP address");
-    }
   }
 
   /** A connection value every profile accepts: profile test code to the code this instrument sends. */

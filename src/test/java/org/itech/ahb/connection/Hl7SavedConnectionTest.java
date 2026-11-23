@@ -197,6 +197,22 @@ class Hl7SavedConnectionTest {
   }
 
   @Test
+  void matchingSenderFromADifferentAddressIsHeldOnTheSharedListener() throws Exception {
+    String id = create("oe-remote", "192.0.2.21");
+    activate(id);
+    sendFixture(sharedPort, "oe-remote");
+    assertThat(outbox.store.list(org.itech.ahb.outbox.OutboxQuery.all(100)))
+      .singleElement()
+      .satisfies(entry -> {
+        assertThat(entry.failureReason()).isEqualTo(org.itech.ahb.outbox.FailureReason.UNREGISTERED_SOURCE);
+        assertThat(entry.fhirByteLength()).isZero();
+      });
+    String local = create("oe-local");
+    activate(local);
+    assertDelivery(sharedPort, local, "oe-local");
+  }
+
+  @Test
   void historicalApplicationFacilityHintRetriesFromRetainedRawMessageAfterRestart() throws Exception {
     String id = create("oe-first");
     activate(id);
@@ -630,6 +646,10 @@ class Hl7SavedConnectionTest {
   }
 
   private String create(String analyzerId) {
+    return create(analyzerId, "127.0.0.1");
+  }
+
+  private String create(String analyzerId, String address) {
     ObjectNode request = mapper.createObjectNode();
     request
       .put("schemaVersion", "1.0")
@@ -641,7 +661,7 @@ class Hl7SavedConnectionTest {
       .put("profileId", profile.path("profileMeta").path("id").asText())
       .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
-    request.putObject("values").put("host", "127.0.0.1").put("senderId", analyzerId);
+    request.putObject("values").put("host", address).put("senderId", analyzerId);
     ObjectNode created = catalog.create(request);
     assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
     return created.path("connectionId").asText();
