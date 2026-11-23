@@ -1,4 +1,8 @@
 spring:
+  mvc:
+    formcontent:
+      filter:
+        enabled: false
   profiles:
     active: prod
 
