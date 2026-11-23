@@ -11,11 +11,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
-import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry.AnalyzerEntry;
 import org.itech.ahb.file.FileWatcher;
 import org.itech.ahb.profile.ControlResultRecognition.Mode;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -342,7 +342,7 @@ class BridgeAnalyzerConnectionRuntimeTest {
   }
 
   @Test
-  void astmServerHostIsCanonicalisedWhenLiteralAndKeptAsEnteredWhenAHostname() throws Exception {
+  void sharedListenerKeepsItsNumericRestrictionWhenAHostnameReplacementIsRefused() throws Exception {
     AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
     BridgeAnalyzerConnectionRuntime runtime = new BridgeAnalyzerConnectionRuntime(
       registry,
@@ -365,13 +365,16 @@ class BridgeAnalyzerConnectionRuntimeTest {
     hostname.put("configRevision", 2);
     hostname.withObject("values").put("host", "gx-bench-1.lab.local");
 
-    runtime.activate(hostname, profile);
-
-    entry = registry.getRegisteredAnalyzers().values().iterator().next();
-    // Never resolved: a hostname cannot claim a peer address, so it never matches on address.
-    assertThat(entry.getInboundAddress()).isNull();
-    assertThat(entry.getInboundSourceId()).isEqualTo("gx-bench-1.lab.local");
-    assertThat(entry.getListenerPort()).isEqualTo(12_001);
+    assertThatThrownBy(() -> runtime.activate(hostname, profile))
+      .isInstanceOf(AnalyzerConnectionException.class)
+      .hasMessageContaining("literal IP address");
+    assertThat(registry.getRegisteredAnalyzers().values()).containsExactly(entry);
+    assertThat(registry.resolve(12001, "2001:db8::21", null)).isInstanceOf(
+      AnalyzerRuntimeRegistry.Resolution.Resolved.class
+    );
+    assertThat(registry.resolve(12001, "2001:db8::22", null)).isInstanceOf(
+      AnalyzerRuntimeRegistry.Resolution.Unregistered.class
+    );
   }
 
   @Test

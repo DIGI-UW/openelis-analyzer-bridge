@@ -13,12 +13,15 @@ public final class AnalyzerOutboundEndpoint {
 
   public record ResolvedPort(int port, String source) {}
 
-  public static boolean ordersEnabled(JsonNode profile, JsonNode values) {
+  static boolean supportsOrders(JsonNode profile) {
     return (
       profile.path("capabilities").path("outboundOrders").asBoolean(false) &&
-      profile.path("communication").path("supports_lis_initiated").asBoolean(false) &&
-      (!values.has("dataFlow") || "TWO_WAY".equals(values.path("dataFlow").asText()))
+      profile.path("communication").path("supports_lis_initiated").asBoolean(false)
     );
+  }
+
+  public static boolean ordersEnabled(JsonNode profile, JsonNode values) {
+    return (supportsOrders(profile) && (!values.has("dataFlow") || "TWO_WAY".equals(values.path("dataFlow").asText())));
   }
 
   public static boolean needed(JsonNode profile, JsonNode values) {
@@ -29,6 +32,16 @@ public final class AnalyzerOutboundEndpoint {
       ("TCP/IP".equals(transport) || "MLLP".equals(transport)) &&
       ("CLIENT".equals(values.path("connectionRole").asText()) || ordersEnabled(profile, values))
     );
+  }
+
+  /** A shared listener may send orders to a different host. An override never identifies an incoming peer. */
+  static String resolveHost(JsonNode profile, JsonNode values) {
+    if ("SERVER".equals(values.path("connectionRole").asText()) && ordersEnabled(profile, values)) {
+      String destination = values.path("outboundHost").asText("").strip();
+      if (!destination.isEmpty()) return destination;
+    }
+    String host = values.path("host").asText("").strip();
+    return host.isEmpty() ? null : host;
   }
 
   public ResolvedPort resolvePort(JsonNode profile, JsonNode values) {

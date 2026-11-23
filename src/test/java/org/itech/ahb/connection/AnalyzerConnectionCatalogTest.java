@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -159,6 +160,103 @@ class AnalyzerConnectionCatalogTest {
 
     assertThat(field(created, "port").path("required").asBoolean()).isFalse();
     assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = { "cepheid-genexpert-astm", "mindray-bc5380" })
+  void savingSharedListenerAddressesValidatesTheEffectiveHost(String profileId) {
+    ObjectNode profile = profiles.requireLatest(profileId).profile();
+    AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID);
+    ObjectNode request = createRequest(profile, "create", "oe-bench");
+    request.withObject("values").put("host", "bench.example.test");
+    assertThatThrownBy(() -> catalog.create(request)).hasMessageContaining("literal IP address");
+    request.withObject("values").put("host", "192.0.2.21");
+    ObjectNode saved = catalog.create(request);
+    ObjectNode edit = updateRequest(saved, "edit");
+    edit.putObject("values").put("host", "bench.example.test");
+    assertThatThrownBy(() -> catalog.update(edit)).hasMessageContaining("literal IP address");
+    assertThat(catalog.require(saved.path("connectionId").asText())).isEqualTo(saved);
+    edit.withObject("values").put("host", "").put("senderId", "LAB-BENCH");
+    ObjectNode senderOnly = catalog.update(edit);
+    assertThat(currentValue(senderOnly, "host").asText()).isEmpty();
+    assertThat(currentValue(senderOnly, "senderId").asText()).isEqualTo("LAB-BENCH");
+  }
+
+  @ParameterizedTest
+  @CsvSource({ "true, ERROR, runtime-restore-failed", "false, INACTIVE, invalid-inbound-host" })
+  void aLegacyHostnameCanBeCorrectedAndReactivated(boolean active, String state, String blocker) throws Exception {
+    ObjectNode profile = profiles.requireLatest("cepheid-genexpert-astm").profile();
+    AnalyzerConnectionCatalog original = catalog(UUID::randomUUID, new RecordingRuntime());
+    ObjectNode request = createRequest(profile, "create", "oe-bench");
+    request.withObject("values").put("host", "192.0.2.21");
+    ObjectNode saved = original.create(request);
+    String id = saved.path("connectionId").asText();
+    if (active) original.applyRuntimeCommand(runtimeCommand(saved, "activate", "ACTIVATE"));
+    Path file = temporaryDirectory.resolve("connections").resolve(id + ".json");
+    ObjectNode legacy = (ObjectNode) objectMapper.readTree(file.toFile());
+    legacy.withObject("values").put("host", "bench.example.test");
+    if (active) legacy.withObject("activeRuntimeConfiguration").withObject("values").put("host", "bench.example.test");
+    objectMapper.writeValue(file.toFile(), legacy);
+
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerConnectionCatalog reopened = catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        registry,
+        null,
+        mock(AstmConnectionListeners.class),
+        mock(SerialConnectionListeners.class)
+      )
+    );
+    ObjectNode held = reopened.require(id);
+    assertThat(held.path("actualRuntimeState").asText()).isEqualTo(state);
+    assertThat(blockerKeys(held)).contains(blocker);
+    assertThat(held.path("readiness").path("ready").asBoolean()).isFalse();
+    assertThat(registry.findAnalyzerEntryByConnectionId(id)).isEmpty();
+    ObjectNode edit = updateRequest(held, "repair");
+    edit.putObject("values");
+    assertThatThrownBy(() -> reopened.update(edit)).hasMessageContaining("literal IP address");
+    edit.withObject("values").put("host", "192.0.2.21");
+    ObjectNode repaired = reopened.update(edit);
+    assertThat(
+      reopened.applyRuntimeCommand(runtimeCommand(repaired, "resume", "ACTIVATE")).path("outcome").asText()
+    ).isEqualTo("APPLIED");
+    assertThat(reopened.require(id).path("readiness").path("ready").asBoolean()).isTrue();
+    assertThat(registry.findAnalyzerEntryByConnectionId(id).orElseThrow().getInboundAddress()).isEqualTo("192.0.2.21");
+  }
+
+  @Test
+  void clearingTheOrderDestinationLeavesTheSavedPeerRestrictionInPlace() {
+    ObjectNode profile = profiles.requireLatest("cepheid-genexpert-astm").profile();
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerConnectionCatalog catalog = catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        registry,
+        null,
+        mock(AstmConnectionListeners.class),
+        mock(SerialConnectionListeners.class)
+      )
+    );
+    ObjectNode request = createRequest(profile, "create", "oe-two-way");
+    request
+      .withObject("values")
+      .put("dataFlow", "TWO_WAY")
+      .put("host", "192.0.2.21")
+      .put("outboundHost", "orders.example.test");
+    ObjectNode saved = catalog.create(request);
+    String id = saved.path("connectionId").asText();
+    ObjectNode edit = updateRequest(saved, "rename");
+    edit.put("displayName", "Updated bench").putObject("values");
+    saved = catalog.update(edit);
+    assertThat(currentValue(saved, "outboundHost").asText()).isEqualTo("orders.example.test");
+    edit = updateRequest(saved, "clear");
+    edit.putObject("values").put("outboundHost", "");
+    saved = catalog.update(edit);
+    catalog.applyRuntimeCommand(runtimeCommand(saved, "activate", "ACTIVATE"));
+    AnalyzerEntry entry = registry.findAnalyzerEntryByConnectionId(id).orElseThrow();
+    assertThat(entry.getOutboundHost()).isEqualTo("192.0.2.21");
+    assertThat(entry.getInboundAddress()).isEqualTo("192.0.2.21");
   }
 
   @Test
@@ -618,8 +716,10 @@ class AnalyzerConnectionCatalogTest {
       "senderId",
       "port",
       "serialPort",
-      "numberFormat"
+      "numberFormat",
+      "outboundHost"
     );
+    assertThat(field(created, "outboundHost").path("visibleWhen").path("value").asText()).isEqualTo("SERVER");
     assertThat(currentValue(created, "transport").asText()).isEqualTo("TCP/IP");
     assertThat(currentValue(created, "connectionRole").asText()).isEqualTo("SERVER");
     assertThat(field(created, "host").path("validationErrors")).isEmpty();

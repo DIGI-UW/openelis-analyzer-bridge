@@ -460,7 +460,7 @@ public class AnalyzerRuntimeRegistry {
      */
     private Integer listenerPort;
 
-    /** Canonical literal IP from the saved {@code host}; null when unset or given as a hostname. */
+    /** Canonical literal IP from the saved {@code host}; null when no inbound address was configured. */
     private String inboundAddress;
 
     /**

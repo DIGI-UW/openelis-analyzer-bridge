@@ -354,8 +354,23 @@ both be active, while two analyzers of one type need a `host` or `senderId`. Res
 connections at boot only logs a warning, so an existing pair cannot stop the
 bridge.
 
-`host` must be a literal IP address to match: a hostname is kept as entered and
-never resolved, because sender identity is numeric. Each GeneXpert needs a
+On a shared ASTM or HL7 listener (SERVER role), enter the analyzer's numeric IPv4
+or IPv6 address in `host`. A blank host leaves address matching open to peers
+admitted by the listener. Use `senderId` to identify an instrument behind a
+shared address. The Bridge rejects DNS names in the inbound host field when
+saving or activating a connection. A CLIENT connection can use a DNS name for
+its outbound destination.
+
+Before upgrading, check shared-listener connections with a hostname. Their
+saved settings are retained, but they cannot resume receiving until corrected
+and activated. For a two-way SERVER connection, use `host` for the incoming
+source IP and `outboundHost` for a separate order destination (DNS name or IP).
+The connection test and outgoing orders use that destination. If it is blank,
+they use the saved source IP. A DNS name used for orders never admits an
+incoming peer. When upgrading an old inbound hostname, move the name to
+`outboundHost` and explicitly choose the source IP or sender-only matching.
+
+Each GeneXpert needs a
 unique System Name (Cepheid LIS Interface Protocol Specification 302-2261,
 Table 10-1); where two share a listener, enter that name as `senderId`. Where the
 first component does not identify one instrument, as when a lab enters its own
