@@ -31,10 +31,15 @@ jobs:
           cd astm-http-lib
           mvn clean install
 
-      - name: Run tests
-        run: >-
-          mvn clean
-          test
+      - name: Install virtual serial port support
+        run: |
+          if ! command -v socat >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y socat
+          fi
+
+      - name: Run tests with virtual serial ports
+        run: bash scripts/docker-serial-test-entrypoint.sh clean test
 
       - name: Generate test report
         if: always()

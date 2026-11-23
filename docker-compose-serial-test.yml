@@ -6,9 +6,10 @@
 # Usage:
 #   docker compose -f docker-compose-serial-test.yml run --rm serial-test-runner
 
+name: bridge-serial-test
+
 services:
   serial-test-runner:
     build:
       context: .
       dockerfile: Dockerfile.test
-    command: ["/bin/bash", "/app/run-serial-tests.sh"]

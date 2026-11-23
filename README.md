@@ -838,7 +838,7 @@ a deployment, run `mvn test -Dtest=Hl7SavedConnectionTest,HapiConnectionLifecycl
 # Assembled Bridge transport and normalized-contract tests
 mvn -Dtest=UnifiedRoutingTest,HttpForwardingRouterTest test
 
-# Virtual serial integration, when socat ports are available
+# ASTM and HL7 serial delivery over a virtual port pair created inside Docker
 ./scripts/e2e-tests/test-serial.sh
 ```
 

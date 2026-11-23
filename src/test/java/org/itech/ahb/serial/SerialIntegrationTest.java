@@ -1,26 +1,33 @@
 package org.itech.ahb.serial;
 
-import org.itech.ahb.outbox.OutboxTestSupport;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import ca.uhn.fhir.context.FhirContext;
+import com.fazecast.jSerialComm.SerialPort;
 import com.sun.net.httpserver.HttpServer;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.Device;
+import org.hl7.fhir.r4.model.Observation;
+import org.hl7.fhir.r4.model.Specimen;
+import org.itech.ahb.outbox.OutboxState;
+import org.itech.ahb.outbox.OutboxTestSupport;
 import org.itech.ahb.config.properties.HTTPForwardServerConfigurationProperties;
 import org.itech.ahb.connection.AnalyzerRuntimeRegistry;
 import org.itech.ahb.connection.SerialConnectionSettings;
 import org.itech.ahb.normalizer.AnalyzerIdentifier;
 import org.itech.ahb.normalizer.MessageNormalizer;
-import org.itech.ahb.routing.HttpForwardingRouter;
 import org.itech.ahb.profile.AstmResultRecordSelection;
 import org.itech.ahb.profile.ControlResultRecognition;
 import org.junit.jupiter.api.AfterEach;
@@ -28,9 +35,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 
 /**
  * Integration tests for serial port communication.
@@ -77,11 +83,10 @@ class SerialIntegrationTest {
         messageLatch = new CountDownLatch(1);
 
         // Start embedded HTTP server to receive forwarded messages
-        httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+        httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         serverPort = httpServer.getAddress().getPort();
 
         // Set up handler to capture messages
-        // HttpForwardingRouter sends to /api/OpenELIS-Global/analyzer/{protocol}
         httpServer.createContext("/api/OpenELIS-Global/analyzer/", exchange -> {
             String path = exchange.getRequestURI().getPath();
             String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
@@ -95,12 +100,12 @@ class SerialIntegrationTest {
             }
 
             receivedMessages.add(new ReceivedMessage(path, body, contentType, hasSourceHeaders));
-            messageLatch.countDown();
 
             exchange.sendResponseHeaders(200, 2);
             try (OutputStream os = exchange.getResponseBody()) {
-                os.write("OK".getBytes());
+                os.write("OK".getBytes(StandardCharsets.US_ASCII));
             }
+            messageLatch.countDown();
         });
 
         httpServer.start();
@@ -127,6 +132,8 @@ class SerialIntegrationTest {
         private String testPort;
         private String testPortPair;
         private SerialPortListener listener;
+        private OutboxTestSupport outbox;
+        @TempDir Path directory;
 
         @BeforeEach
         void setUp() {
@@ -139,6 +146,7 @@ class SerialIntegrationTest {
             if (listener != null) {
                 listener.stopAll();
             }
+            if (outbox != null) outbox.close();
         }
 
         @Test
@@ -147,9 +155,8 @@ class SerialIntegrationTest {
             assumeTrue(testPort != null, "SERIAL_TEST_PORT not set");
             assumeTrue(testPortPair != null, "SERIAL_TEST_PORT_PAIR not set");
 
-            // Create HTTP config and wire M7 pipeline: HttpForwardingRouter -> MessageNormalizer -> SerialMessageHandler
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global"));
+            httpConfig.setUri(java.net.URI.create("http://127.0.0.1:" + serverPort + "/api/OpenELIS-Global"));
 
             SerialMessageHandler handler = normalizedHandler(httpConfig, "ASTM");
 
@@ -167,16 +174,10 @@ class SerialIntegrationTest {
 
             // Wait for message to be received
             boolean received = messageLatch.await(10, TimeUnit.SECONDS);
-            assertTrue(received, "Message should be received within timeout");
+            assertTrue(received, () -> "Expected delivery to the receiver, outbox states: " + outbox.store.countsByState());
 
             // Verify message
-            assertEquals(1, receivedMessages.size());
-            ReceivedMessage msg = receivedMessages.get(0);
-            assertEquals("/api/OpenELIS-Global/analyzer/fhir", msg.path);
-            assertFalse(msg.hasSourceHeaders);
-            assertTrue(msg.body.contains("bridge-serial-it"));
-            assertTrue(msg.body.contains("WBC"));
-            assertTrue(msg.body.contains("\"valueCode\":\"SERIAL\""));
+            assertDelivery("ASTM");
         }
 
         @Test
@@ -186,7 +187,7 @@ class SerialIntegrationTest {
             assumeTrue(testPortPair != null, "SERIAL_TEST_PORT_PAIR not set");
 
             HTTPForwardServerConfigurationProperties httpConfig = new HTTPForwardServerConfigurationProperties();
-            httpConfig.setUri(java.net.URI.create("http://localhost:" + serverPort + "/api/OpenELIS-Global"));
+            httpConfig.setUri(java.net.URI.create("http://127.0.0.1:" + serverPort + "/api/OpenELIS-Global"));
 
             SerialMessageHandler handler = normalizedHandler(httpConfig, "HL7");
 
@@ -203,13 +204,37 @@ class SerialIntegrationTest {
             sendHL7Message(testPortPair);
 
             boolean received = messageLatch.await(10, TimeUnit.SECONDS);
-            assertTrue(received, "Message should be received within timeout");
+            assertTrue(received, () -> "Expected delivery to the receiver, outbox states: " + outbox.store.countsByState());
 
+            assertDelivery("HL7");
+        }
+
+        private void assertDelivery(String protocol) {
             assertEquals(1, receivedMessages.size());
             ReceivedMessage msg = receivedMessages.get(0);
             assertEquals("/api/OpenELIS-Global/analyzer/fhir", msg.path);
-            assertTrue(msg.body.contains("bridge-serial-it"));
-            assertTrue(msg.body.contains("WBC"));
+            assertEquals("application/fhir+json", msg.contentType);
+            assertFalse(msg.hasSourceHeaders);
+            Bundle bundle = FhirContext.forR4Cached().newJsonParser().parseResource(Bundle.class, msg.body);
+            assertEquals(Bundle.BundleType.TRANSACTION, bundle.getType());
+            Device device = bundle.getEntry().stream().map(Bundle.BundleEntryComponent::getResource)
+                    .filter(Device.class::isInstance).map(Device.class::cast).findFirst().orElseThrow();
+            assertTrue(device.getIdentifier().stream().anyMatch(id -> "bridge-serial-it".equals(id.getValue())));
+            String extensions = "https://openelis-global.org/fhir/StructureDefinition/";
+            assertEquals(protocol, device.getExtensionByUrl(extensions + "analyzer-source-protocol").getValue().primitiveValue());
+            var specimen = bundle.getEntry().stream().filter(e -> e.getResource() instanceof Specimen)
+                    .findFirst().orElseThrow();
+            assertEquals("12345", ((Specimen) specimen.getResource()).getIdentifierFirstRep().getValue());
+            var observations = bundle.getEntry().stream().map(Bundle.BundleEntryComponent::getResource)
+                    .filter(Observation.class::isInstance).map(Observation.class::cast).toList();
+            assertEquals(1, observations.size());
+            Observation result = observations.get(0);
+            assertEquals("WBC", result.getCode().getCodingFirstRep().getCode());
+            assertEquals("7.5", result.getValueQuantity().getValue().toPlainString());
+            assertEquals(specimen.getFullUrl(), result.getSpecimen().getReference());
+            assertEquals("SERIAL", result.getExtensionByUrl(extensions + "analyzer-source-transport").getValue().primitiveValue());
+            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5)).untilAsserted(() ->
+                    assertEquals(1, outbox.store.countsByState().getOrDefault(OutboxState.DELIVERED, 0)));
         }
 
         private SerialMessageHandler normalizedHandler(
@@ -221,13 +246,14 @@ class SerialIntegrationTest {
             entry.setProfileId("site.serial-it");
             entry.setProfileRevision(1);
             entry.setExpectedProtocol(protocol);
+            entry.setInboundTransport("RS-232");
             entry.setControlResultRecognition(ControlResultRecognition.none());
             entry.setRecognitionFingerprint("sha256:" + "0".repeat(64));
             if ("ASTM".equals(protocol)) {
                 entry.setAstmResultRecordSelection(AstmResultRecordSelection.all());
             }
             registry.register("connection:serial-it", entry);
-            OutboxTestSupport outbox = OutboxTestSupport.createTemp(httpConfig, registry);
+            outbox = OutboxTestSupport.create(directory, httpConfig, registry).startDispatcher();
             MessageNormalizer normalizer = outbox.normalizer(new AnalyzerIdentifier(registry), null);
             return new SerialMessageHandler(normalizer);
         }
@@ -236,31 +262,21 @@ class SerialIntegrationTest {
          * Sends an ASTM message via a serial port.
          */
         private void sendASTMMessage(String portPath) throws Exception {
-            com.fazecast.jSerialComm.SerialPort port = com.fazecast.jSerialComm.SerialPort.getCommPort(portPath);
-            port.setBaudRate(9600);
-            port.setComPortTimeouts(com.fazecast.jSerialComm.SerialPort.TIMEOUT_WRITE_BLOCKING, 1000, 1000);
-
-            if (!port.openPort()) {
-                throw new RuntimeException("Could not open port: " + portPath);
-            }
-
+            SerialPort port = openPeer(portPath);
             try {
                 // ASTM protocol: ENQ
-                port.writeBytes(new byte[]{0x05}, 1);
-                Thread.sleep(100);
-
-                // Wait for ACK (in real test, should read this)
-                Thread.sleep(100);
+                assertEquals(1, port.writeBytes(new byte[]{0x05}, 1));
+                assertEquals(0x06, readByte(port), "ASTM enquiry acknowledgment");
 
                 // Send frame: <STX><FN><data><ETX><checksum><CR><LF>
                 String text = "H|\\^&|||TEST|||||||P|1\rP|1||PATIENT-1\r"
                         + "O|1|12345\rR|1|^^^WBC|7.5|10*3/uL\rL|1|N";
                 byte[] frame = buildASTMFrame(1, text, true);
-                port.writeBytes(frame, frame.length);
-                Thread.sleep(100);
+                assertEquals(frame.length, port.writeBytes(frame, frame.length));
+                assertEquals(0x06, readByte(port), "ASTM frame acknowledgment");
 
                 // Send EOT
-                port.writeBytes(new byte[]{0x04}, 1);
+                assertEquals(1, port.writeBytes(new byte[]{0x04}, 1));
 
             } finally {
                 port.closePort();
@@ -271,17 +287,11 @@ class SerialIntegrationTest {
          * Sends an HL7 message via a serial port using MLLP framing.
          */
         private void sendHL7Message(String portPath) throws Exception {
-            com.fazecast.jSerialComm.SerialPort port = com.fazecast.jSerialComm.SerialPort.getCommPort(portPath);
-            port.setBaudRate(9600);
-            port.setComPortTimeouts(com.fazecast.jSerialComm.SerialPort.TIMEOUT_WRITE_BLOCKING, 1000, 1000);
-
-            if (!port.openPort()) {
-                throw new RuntimeException("Could not open port: " + portPath);
-            }
-
+            SerialPort port = openPeer(portPath);
             try {
                 String hl7 = "MSH|^~\\&|TEST|LAB|OPENELIS|LAB|20260205120000||ORU^R01|MSG001|P|2.5.1\r" +
-                            "PID|1||12345\r" +
+                            "PID|1||PATIENT-1\r" +
+                            "OBR|1||12345|CBC\r" +
                             "OBX|1|NM|WBC||7.5|10^3/uL";
 
                 // MLLP: <VT>message<FS><CR>
@@ -291,10 +301,30 @@ class SerialIntegrationTest {
                 message[hl7.length() + 1] = 0x1C;  // FS
                 message[hl7.length() + 2] = 0x0D;  // CR
 
-                port.writeBytes(message, message.length);
+                assertEquals(message.length, port.writeBytes(message, message.length));
+                assertEquals(0x0B, readByte(port), "HL7 acknowledgment start");
+                ByteArrayOutputStream response = new ByteArrayOutputStream();
+                int next;
+                while ((next = readByte(port)) != 0x1C) response.write(next);
+                assertEquals(0x0D, readByte(port), "HL7 acknowledgment terminator");
+                assertTrue(response.toString(StandardCharsets.UTF_8).contains("\rMSA|AA|MSG001\r"));
             } finally {
                 port.closePort();
             }
+        }
+
+        private SerialPort openPeer(String portPath) {
+            SerialPort port = SerialPort.getCommPort(portPath);
+            port.setBaudRate(9600);
+            port.setComPortTimeouts(SerialPort.TIMEOUT_READ_BLOCKING | SerialPort.TIMEOUT_WRITE_BLOCKING, 3000, 3000);
+            assertTrue(port.openPort(), "Could not open test peer " + portPath);
+            return port;
+        }
+
+        private int readByte(SerialPort port) {
+            byte[] one = new byte[1];
+            assertEquals(1, port.readBytes(one, 1), "Timed out waiting for a serial acknowledgment");
+            return Byte.toUnsignedInt(one[0]);
         }
 
         private byte[] buildASTMFrame(int frameNumber, String text, boolean isFinal) {
