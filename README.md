@@ -363,8 +363,14 @@ its outbound destination.
 
 Before upgrading, check shared-listener connections with a hostname. Their
 saved settings are retained, but they cannot resume receiving until corrected
-and activated. For a two-way SERVER connection, the shared host also serves as
-the order destination. Each GeneXpert needs a
+and activated. For a two-way SERVER connection, use `host` for the incoming
+source IP and `outboundHost` for a separate order destination (DNS name or IP).
+The connection test and outgoing orders use that destination. If it is blank,
+they use the saved source IP. A DNS name used for orders never admits an
+incoming peer. When upgrading an old inbound hostname, move the name to
+`outboundHost` and explicitly choose the source IP or sender-only matching.
+
+Each GeneXpert needs a
 unique System Name (Cepheid LIS Interface Protocol Specification 302-2261,
 Table 10-1); where two share a listener, enter that name as `senderId`. Where the
 first component does not identify one instrument, as when a lab enters its own

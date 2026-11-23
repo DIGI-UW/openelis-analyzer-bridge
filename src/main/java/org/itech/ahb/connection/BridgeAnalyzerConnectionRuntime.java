@@ -402,7 +402,7 @@ public final class BridgeAnalyzerConnectionRuntime implements AnalyzerConnection
       String senderId = nullableText(values, "senderId");
       entry.setSenderId(senderId == null ? null : senderId.trim());
     }
-    entry.setOutboundHost(nullableText(values, "host"));
+    entry.setOutboundHost(AnalyzerOutboundEndpoint.resolveHost(profile, values));
     entry.setOutboundPort(
       AnalyzerOutboundEndpoint.needed(profile, values) ? outboundEndpoint.resolvePort(profile, values).port() : 0
     );

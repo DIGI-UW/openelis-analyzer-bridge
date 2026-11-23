@@ -543,6 +543,7 @@ public final class AnalyzerConnectionCatalog {
     if ("SERVER".equals(values.path("connectionRole").asText()) || !fieldDescriptors(profile).containsKey("port")) {
       values.remove("port");
     }
+    if (!"SERVER".equals(values.path("connectionRole").asText())) values.remove("outboundHost");
     return values;
   }
 
@@ -805,7 +806,7 @@ public final class AnalyzerConnectionCatalog {
     JsonNode declared = profile.path("connectionFields");
     String protocol = profile.path("protocol").path("name").asText();
     if (!"ASTM".equals(protocol) && !"HL7".equals(protocol)) return declared;
-    JsonNode projected = declared.deepCopy();
+    ArrayNode projected = declared.deepCopy();
     projected.forEach(field -> {
       String key = field.path("key").asText();
       if ("port".equals(key) || "outboundPort".equals(key)) ((ObjectNode) field).put("required", false);
@@ -816,6 +817,20 @@ public final class AnalyzerConnectionCatalog {
           .put("value", "CLIENT");
       }
     });
+    if (
+      AnalyzerOutboundEndpoint.supportsOrders(profile) && !projected.findValuesAsText("key").contains("outboundHost")
+    ) {
+      ObjectNode destination = projected.addObject();
+      destination.put("key", "outboundHost").put("inputKind", "TEXT").put("required", false);
+      destination.put("labelKey", "analyzer.connection.field.outboundHost");
+      destination.put("helpTextKey", "analyzer.connection.field.outboundHost.help");
+      destination.putArray("choices");
+      destination
+        .putObject("visibleWhen")
+        .put("fieldKey", "connectionRole")
+        .put("operator", "EQUALS")
+        .put("value", "SERVER");
+    }
     return projected;
   }
 

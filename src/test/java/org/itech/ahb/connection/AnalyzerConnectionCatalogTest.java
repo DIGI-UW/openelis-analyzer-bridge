@@ -226,6 +226,40 @@ class AnalyzerConnectionCatalogTest {
   }
 
   @Test
+  void clearingTheOrderDestinationLeavesTheSavedPeerRestrictionInPlace() {
+    ObjectNode profile = profiles.requireLatest("cepheid-genexpert-astm").profile();
+    AnalyzerRuntimeRegistry registry = new AnalyzerRuntimeRegistry();
+    AnalyzerConnectionCatalog catalog = catalog(
+      UUID::randomUUID,
+      new BridgeAnalyzerConnectionRuntime(
+        registry,
+        null,
+        mock(AstmConnectionListeners.class),
+        mock(SerialConnectionListeners.class)
+      )
+    );
+    ObjectNode request = createRequest(profile, "create", "oe-two-way");
+    request
+      .withObject("values")
+      .put("dataFlow", "TWO_WAY")
+      .put("host", "192.0.2.21")
+      .put("outboundHost", "orders.example.test");
+    ObjectNode saved = catalog.create(request);
+    String id = saved.path("connectionId").asText();
+    ObjectNode edit = updateRequest(saved, "rename");
+    edit.put("displayName", "Updated bench").putObject("values");
+    saved = catalog.update(edit);
+    assertThat(currentValue(saved, "outboundHost").asText()).isEqualTo("orders.example.test");
+    edit = updateRequest(saved, "clear");
+    edit.putObject("values").put("outboundHost", "");
+    saved = catalog.update(edit);
+    catalog.applyRuntimeCommand(runtimeCommand(saved, "activate", "ACTIVATE"));
+    AnalyzerEntry entry = registry.findAnalyzerEntryByConnectionId(id).orElseThrow();
+    assertThat(entry.getOutboundHost()).isEqualTo("192.0.2.21");
+    assertThat(entry.getInboundAddress()).isEqualTo("192.0.2.21");
+  }
+
+  @Test
   void aServerConnectionKeepsNoPortAndAnOldOneLosesItOnItsNextUpdate() throws Exception {
     ObjectNode profile = profiles.require("cepheid-genexpert-astm", 1).profile();
     AnalyzerConnectionCatalog catalog = catalog(UUID::randomUUID, new RecordingRuntime());
@@ -682,8 +716,10 @@ class AnalyzerConnectionCatalogTest {
       "senderId",
       "port",
       "serialPort",
-      "numberFormat"
+      "numberFormat",
+      "outboundHost"
     );
+    assertThat(field(created, "outboundHost").path("visibleWhen").path("value").asText()).isEqualTo("SERVER");
     assertThat(currentValue(created, "transport").asText()).isEqualTo("TCP/IP");
     assertThat(currentValue(created, "connectionRole").asText()).isEqualTo("SERVER");
     assertThat(field(created, "host").path("validationErrors")).isEmpty();

@@ -10,13 +10,13 @@ import java.net.Socket;
 import java.time.Clock;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.itech.ahb.profile.PackagedProfiles;
 import org.itech.ahb.config.properties.ASTME138195ListenServerConfigurationProperties;
 import org.itech.ahb.config.properties.ASTMLIS1AListenServerConfigurationProperties;
 import org.itech.ahb.connectivity.DefaultConnectionProbeExecutor;
 import org.itech.ahb.lib.astm.interpretation.DefaultASTMInterpreterFactory;
 import org.itech.ahb.mllp.MLLPConfig;
 import org.itech.ahb.normalizer.MessageNormalizer;
+import org.itech.ahb.profile.PackagedProfiles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -81,6 +81,7 @@ class OutboundConnectionProbeTest {
   @ParameterizedTest
   @ValueSource(strings = { "Connection override", "Profile default", "Bridge default" })
   void probesTheResolvedRemoteDestinationWhileTheInboundListenerIsHealthy(String source) throws Exception {
+    connection.withObject("values").put("host", "192.0.2.21").put("outboundHost", "localhost");
     try (ServerSocket remote = new ServerSocket(0)) {
       defaults.setAstmPort(remote.getLocalPort());
       if ("Profile default".equals(source)) profile

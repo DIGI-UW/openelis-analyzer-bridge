@@ -326,6 +326,30 @@ class Hl7SavedConnectionTest {
     assertClosed(sharedPort);
   }
 
+  @Test
+  void twoWayListenerSendsOrdersToItsOwnDestinationAcrossRestart() throws Exception {
+    try (ServerSocket peer = new ServerSocket(0)) {
+      peer.setSoTimeout(5000);
+      selectTransport("MLLP");
+      profile.withObject("configDefaults").put("connectionRole", "SERVER").put("dataFlow", "TWO_WAY");
+      profile.withObject("transport_config").withObject("MLLP").put("default_port", peer.getLocalPort());
+      publishProfile();
+      boot(true);
+      String id = create("oe-two-way", "192.0.2.21", "localhost");
+      activate(id);
+      assertOrder(peer, id, "ORDER-ONE", "AA", true);
+      listeners.stopAll();
+      boot(true);
+      assertOrder(peer, id, "ORDER-TWO", "AA", true);
+      sendFixture(sharedPort, "oe-two-way");
+      assertThat(outbox.store.list(org.itech.ahb.outbox.OutboxQuery.all(100)))
+        .singleElement()
+        .satisfies(
+          entry -> assertThat(entry.failureReason()).isEqualTo(org.itech.ahb.outbox.FailureReason.UNREGISTERED_SOURCE)
+        );
+    }
+  }
+
   /** Real saved publication and outbound wire traffic. This does not claim durable outbound-order queuing. */
   @ParameterizedTest
   @ValueSource(strings = { "TCP/IP", "MLLP" })
@@ -650,6 +674,10 @@ class Hl7SavedConnectionTest {
   }
 
   private String create(String analyzerId, String address) {
+    return create(analyzerId, address, null);
+  }
+
+  private String create(String analyzerId, String address, String destination) {
     ObjectNode request = mapper.createObjectNode();
     request
       .put("schemaVersion", "1.0")
@@ -661,7 +689,8 @@ class Hl7SavedConnectionTest {
       .put("profileId", profile.path("profileMeta").path("id").asText())
       .put("revision", 1)
       .put("fingerprint", profile.path("catalog").path("revisionFingerprint").asText());
-    request.putObject("values").put("host", address).put("senderId", analyzerId);
+    ObjectNode values = request.putObject("values").put("host", address).put("senderId", analyzerId);
+    if (destination != null) values.put("outboundHost", destination);
     ObjectNode created = catalog.create(request);
     assertThat(created.path("readiness").path("ready").asBoolean()).isTrue();
     return created.path("connectionId").asText();

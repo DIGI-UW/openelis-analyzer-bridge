@@ -166,7 +166,7 @@ public final class AnalyzerConnectionProbe {
   }
 
   private ProbeCheck remoteCheck(ObjectNode profile, ObjectNode values) {
-    String host = text(values, "host");
+    String host = AnalyzerOutboundEndpoint.resolveHost(profile, values);
     if (host == null) return missing("REMOTE_PROTOCOL", "remote.configuration.missing");
     AnalyzerOutboundEndpoint.ResolvedPort destination;
     try {
