@@ -36,10 +36,18 @@ public class PairingConfiguration {
   public BridgeIdentity bridgeIdentity(
     @Value("${server.ssl.key-store}") String keystore,
     @Value("${server.ssl.key-store-type:PKCS12}") String type,
-    @Value("${server.ssl.key-store-password:}") String password
+    @Value("${server.ssl.key-store-password:}") String password,
+    @Value("${bridge.pairing.certificate-file:}") String publicCertificate
   ) {
     String path = keystore.startsWith("file:") ? keystore.substring("file:".length()) : keystore;
-    return BridgeIdentity.load(new BridgeIdentity.Keystore(Path.of(path), type, password.toCharArray()));
+    BridgeIdentity identity = BridgeIdentity.load(
+      new BridgeIdentity.Keystore(Path.of(path), type, password.toCharArray())
+    );
+    if (!publicCertificate.isBlank()) {
+      identity.exportCertificate(Path.of(publicCertificate));
+    }
+    log.info("Bridge pairing certificate SHA-256: {}", identity.fingerprint());
+    return identity;
   }
 
   /** Ask clients for a certificate without requiring one: health, pairing and HTTP input need none. */

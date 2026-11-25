@@ -546,13 +546,8 @@ OpenELIS authenticates by pairing. Until it pairs, anonymous callers reach only
 `GET /actuator/health` (overall status), `GET /pairing`, `POST /pairing`, and the
 analyzer transport `POST /input`. Every other endpoint, including any added
 later, answers 401. To pair, OpenELIS posts the pairing code to `/pairing` while
-presenting its TLS client certificate:
-
-```bash
-curl -k --cert openelis.crt --key openelis.key -H 'Content-Type: application/json' \
-  -d '{"code":"LSHE-NEYZ-MNJ4-RP98-QR7B","serverCertificateSha256":"<sha256 of the certificate OpenELIS serves>"}' \
-  https://localhost:8442/pairing
-```
+presenting its TLS client certificate. OpenELIS verifies the Bridge TLS
+certificate before transmitting the code.
 
 The Bridge records the SHA-256 fingerprints of that client certificate and of
 the certificate OpenELIS serves (the client certificate's, when
@@ -562,6 +557,8 @@ authenticates, and result delivery and the OpenELIS health probe present the
 Bridge certificate and trust OpenELIS by its pinned fingerprint, or by the trust
 store `bridge.truststore.path` names (the JVM's own when it is not set) for its
 host.
+
+The Bridge logs its public certificate SHA-256 fingerprint at startup. For a remote installation, read it on the Bridge host and enter it with the code in OpenELIS. A bundled installation can set `BRIDGE_PAIRING_CERTIFICATE_FILE` to publish its public certificate in a volume mounted read-only by OpenELIS. The private key stays in the Bridge identity directory.
 
 The code comes from `BRIDGE_PAIRING_CODE`. Without one, an unpaired Bridge logs a
 generated code at each start. A code pairs once; ten wrong codes close pairing

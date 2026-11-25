@@ -18,10 +18,16 @@ class BridgeIdentityTest {
     BridgeIdentity.Keystore generated = BridgeIdentity.ensureGenerated(directory);
 
     assertThat(generated.path()).exists();
-    assertThat(Files.getPosixFilePermissions(directory.resolve(BridgeIdentity.PASSWORD_FILE)))
-      .containsExactlyInAnyOrder(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
+    assertThat(
+      Files.getPosixFilePermissions(directory.resolve(BridgeIdentity.PASSWORD_FILE))
+    ).containsExactlyInAnyOrder(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
     BridgeIdentity identity = BridgeIdentity.load(generated);
     assertThat(identity.certificate().getSubjectX500Principal().getName()).contains("openelis-analyzer-bridge");
+    Path shared = directory.resolve("bridge.crt");
+    Files.writeString(shared, "old certificate");
+    identity.exportCertificate(shared);
+    assertThat(Files.readString(shared)).isEqualTo(identity.certificatePem());
+    assertThat(Files.getPosixFilePermissions(shared)).contains(PosixFilePermission.OTHERS_READ);
     assertThat(identity.fingerprint()).matches("[0-9a-f]{64}");
     assertThat(identity.certificatePem()).startsWith("-----BEGIN CERTIFICATE-----");
 
