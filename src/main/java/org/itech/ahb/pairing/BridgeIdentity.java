@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
@@ -151,6 +152,22 @@ public final class BridgeIdentity {
 
   public String fingerprint() {
     return fingerprint(certificate);
+  }
+
+  /** Publishes only the public certificate for a colocated OpenELIS to read during pairing. */
+  public void exportCertificate(Path destination) {
+    try {
+      Path pending = Files.createTempFile(destination.toAbsolutePath().getParent(), "bridge-cert-", ".tmp");
+      try {
+        Files.writeString(pending, certificatePem(), StandardCharsets.US_ASCII);
+        Files.setPosixFilePermissions(pending, PosixFilePermissions.fromString("rw-r--r--"));
+        Files.move(pending, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+      } finally {
+        Files.deleteIfExists(pending);
+      }
+    } catch (IOException e) {
+      throw new UncheckedIOException("Cannot export the Bridge public certificate to " + destination, e);
+    }
   }
 
   public String certificatePem() {
